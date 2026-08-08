@@ -758,6 +758,13 @@ class Params
 		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_COMMON_YesX"};
 		default = __EVAL(profileNamespace getVariable ["ITW_ParamBillboard",1]);
 	};
+	class CLASHObserver
+	{
+		title = "C.L.A.S.H. Tranche 1 observer";
+		values[] = {0,1};
+		texts[] = {"Off (baseline)","On (RPT logging only)"};
+		default = 0;
+	};
 	class HeadlessClient
 	{
 		title = "$STR_ITW_PARAM_HeadlessClient";
