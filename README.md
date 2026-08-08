@@ -4,7 +4,7 @@ Private integration workspace for **C.L.A.S.H.**, the arbitration bridge between
 
 ## Status
 
-Tranche 0 parity tooling is in progress. Repository-to-baseline parity is **not established** because the buildable current Impasse mission source and frozen baseline artifact are not present in this repository. No runtime integration has been implemented, and no mission or HAL package has been modified or repacked.
+Tranche 0 parity tooling is in progress. The frozen baseline artifact and its PBO footer are verified, but repository-to-baseline parity is **not established** because the buildable current Impasse mission source and its build command are still absent. No runtime integration has been implemented, and no mission or HAL package has been modified or repacked.
 
 ## Authority model
 

@@ -4,7 +4,7 @@
 
 **BLOCKED â€” parity has not been established.**
 
-The repository currently contains planning documentation and the parity harness only. It does not contain the buildable current Impasse mission source, the frozen current baseline artifact, or an extracted tree from either input. Passing tests for the harness prove the comparator works; they do not prove mission parity.
+The authoritative baseline artifact has been recovered and verified locally. Its SHA-256 matches the pinned value; its PBO footer SHA-1 is valid; its header contains 86 uncompressed entries and no case-insensitive path collisions. The repository still does not contain the buildable current Impasse mission source or its known-good build command. Passing tests for the harness and extracting the baseline do not prove candidate parity.
 
 ## Authority and exclusions
 
@@ -21,9 +21,8 @@ Do not reconstruct the repository from the old PBO. Do not label a source tree â
 ## What must be supplied
 
 1. The source tree that builds the current Impasse Altis mission.
-2. The frozen `13715765820790864929_legacy.bin` artifact matching the pinned SHA-256.
-3. The known-good build and extraction commands, including tool names and versions.
-4. Any intentional source-to-baseline divergences, each documented by path and reason.
+2. The known-good mission build command, including tool name and version.
+3. Any intentional source-to-baseline divergences, each documented by path and reason.
 
 The mission root and build command must be identified from those inputs. This tranche deliberately does not invent a `src/mission` layout or a new packing toolchain.
 
@@ -40,7 +39,17 @@ Authoritative binaries and extracted trees stay local and are ignored by Git:
     extracted/
 ```
 
-After building and extracting with the verified project toolchain, run:
+Extract the verified baseline with the repository's constrained reader:
+
+```powershell
+python tools/extract_pbo.py `
+  .local/baseline/13715765820790864929_legacy.bin `
+  .local/baseline/extracted
+```
+
+The extractor supports only the validated `Vers` PBO subset used here: uncompressed entries with a valid footer checksum. It refuses unknown packing methods, unsafe paths, path collisions, a bad footer, or a pre-existing output directory.
+
+After building and extracting the candidate with the known-good project toolchain, run:
 
 ```powershell
 python tools/parity_gate.py `
@@ -80,7 +89,7 @@ An intentional divergence does not become parity by fiat. Resolve it or document
 Tranche 0 closes only when:
 
 1. the current source and its mission root are identified;
-2. the baseline checksum is verified;
+2. the baseline checksum and extracted structure are verified;
 3. a clean candidate build is reproducible;
 4. extracted-tree comparison passes, or every divergence is reviewed and recorded; and
 5. the exact build, extraction, and comparison commands are committed.

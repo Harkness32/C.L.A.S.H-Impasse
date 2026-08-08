@@ -1,10 +1,14 @@
 {
   "schema_version": 1,
   "baseline": {
+    "archive_size_bytes": 2900422,
     "artifact_name": "13715765820790864929_legacy.bin",
     "expected_file_count": 86,
+    "footer_sha1": "8e13a72b770e6a7feb99557bc53a396349c91c9b",
+    "packing": "uncompressed",
     "role": "authoritative_frozen_parity_oracle",
-    "sha256": "c0221d9ed4291c1293985808b438754198848b54987f50a9877ef15e83c16401"
+    "sha256": "c0221d9ed4291c1293985808b438754198848b54987f50a9877ef15e83c16401",
+    "verification_status": "VERIFIED_2026-08-08"
   },
   "rejected_seed": {
     "artifact_name": "mission(1).pbo",
@@ -19,7 +23,7 @@
   "parity_status": "BLOCKED",
   "blockers": [
     "buildable current Impasse mission source is absent",
-    "authoritative frozen baseline artifact and its extracted tree are absent",
-    "current mission build and extraction commands are not recorded"
+    "current mission build command and tool version are not recorded",
+    "candidate build output is absent"
   ]
 }
