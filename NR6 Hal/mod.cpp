@@ -1,0 +1,14 @@
+name = "NR6 PACK 4.11";
+picture = "hal_cover.paa";
+actionName = "BI Forum";
+action = "https://forums.bohemia.net/forums/topic/220327-nr6-pack-hal-artificial-leader-evolved/";
+description = "Versions: HAL 1.26.2 RC1 - NR6 PACK 4.11";
+logo = "hal_cover.paa";
+logoOver = "hal_cover.paa";
+tooltip = "NR6 PACK";
+tooltipOwned = "NR6 PACK Owned";
+overview = "The NR6 PACK ADDON version contains the latest version of NR6 HAL bundled with many mission making additions usable in comprehensive modules for ease of use.";
+author = "NinjaRider600 (NR6 PACK), Rydygier (HAL), zorrobyte (ZBE_Caching), Rimmy, Radek and RockDood (NR6 Pack Contributors)";
+overviewPicture = "hal_cover.paa";
+overviewText = "NR6 PACK overviewText";
+overviewFootnote = "As CBA is licensed under GPLv2 and ZBE_Caching by Zorrobyte is licensed under GPLv4, this pack which contains modified versions of both is released under the more recent Creative Commons Attribution-ShareAlike 4.0 International License as well.";
