@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "artifact_name": "13715765820790864929_legacy.bin",
+    "expected_file_count": 86,
+    "role": "authoritative_frozen_parity_oracle",
+    "sha256": "c0221d9ed4291c1293985808b438754198848b54987f50a9877ef15e83c16401"
+  },
+  "rejected_seed": {
+    "artifact_name": "mission(1).pbo",
+    "reason": "outdated mission copy; provenance and diff use only",
+    "sha256": "1d1026cee91ad9c7627e2f967115e3f66acfe4d3b119fec2cbbef53e4afb8019"
+  },
+  "integration_target": {
+    "artifact_name": "NR6 Hal.zip",
+    "version": "1.26.2 RC1",
+    "sha256": "5443bb459a056c58b755ffaf9784b658f1dcd004bc3f259373f0ed92fbacdfef"
+  },
+  "parity_status": "BLOCKED",
+  "blockers": [
+    "buildable current Impasse mission source is absent",
+    "authoritative frozen baseline artifact and its extracted tree are absent",
+    "current mission build and extraction commands are not recorded"
+  ]
+}

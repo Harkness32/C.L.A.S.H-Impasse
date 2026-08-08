@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.log
+
+# Local-only authoritative inputs and build products.
+.local/
+build/
+dist/
+baseline/artifacts/
+baseline/extracted/
+*.pbo
+*.ebo
+*.bin
+*.zip

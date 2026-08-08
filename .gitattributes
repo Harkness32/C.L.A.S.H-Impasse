@@ -1,0 +1,12 @@
+*.md text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+
+# Preserve Arma source bytes. Git line-ending conversion can create false
+# parity failures or silently change a mission build.
+*.sqf -text
+*.sqm -text
+*.ext -text
+*.hpp -text
+*.cpp -text
+*.rvmat -text
