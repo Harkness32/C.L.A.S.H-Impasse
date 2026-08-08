@@ -462,7 +462,7 @@ ITW_AtkManager = {
                         {
                             private _objIdx = _x;
                             private _obj = ITW_Objectives#_objIdx;
-                            if (_objIdx call ITW_ObjContestedOwnerIsFriendly == _isFriendly) then {
+                            if (_newSquads isNotEqualTo [] && {_objIdx call ITW_ObjContestedOwnerIsFriendly == _isFriendly}) then {
                                 // assign to groups
                                 private _units = _newSquads deleteAt 0;
                                 {ALLOW_DAMAGE(_x,true)} forEach _units; // do this before they leave the spawngroup since it's protected from headlessCLient control

@@ -69,3 +69,16 @@ Tranche 1 passes only if:
 - no undefined-variable, type, locality, scheduler, or remote-execution errors appear in the RPT.
 
 If behavior diverges, stop before Tranche 2 and attach the RPT with the approximate mission time of the divergence.
+## Hosted smoke test and hardening
+
+The first hosted multiplayer smoke test confirmed that the mission loads, the observer starts, eligible OPFOR infantry is discovered, lifecycle changes are observed, and Impasse waypoint writers are visible. It did not exercise a dedicated-server zone transition, so Tranche 1 remains open.
+
+The test exposed three contained defects:
+
+- empty groups were removed from observer state and immediately rediscovered, producing repeated `dead-or-empty` lines;
+- saves referenced `ITW_targetsAllowed` when Targets were disabled and the variable had never been initialized;
+- objective pre-population could consume an empty `_newSquads` array and leave `_units` undefined.
+
+The hardening patch retains empty-group terminal state until the group becomes null, saves an empty Targets allow-list when necessary, and guards objective assignment when no new squad remains.
+
+A Git-blob comparison of the merged observer mission against the accepted 86-file Altis baseline found 80 byte-identical inherited files, six intentionally modified observer-hook files, no missing inherited files, and one added observer file (`ITW_CLASH.sqf`). After this hardening patch, `ITW_Save.sqf` becomes one additional documented descendant; the baseline artifact itself remains untouched.
