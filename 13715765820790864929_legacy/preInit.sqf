@@ -15,6 +15,7 @@ isNil {call compile preprocessFileLineNumbers "ITW_Garage.sqf";                }
 isNil {call compile preprocessFileLineNumbers "ITW_Garrison.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_SideOps.sqf";               };
 isNil {call compile preprocessFileLineNumbers "ITW_Objectives.sqf";            };
+isNil {call compile preprocessFileLineNumbers "ITW_CLASH.sqf";                 };
 isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";            };
 isNil {call compile preprocessFileLineNumbers "ITW_Radio.sqf";                 };
 isNil {call compile preprocessFileLineNumbers "ITW_Save.sqf";                  };
