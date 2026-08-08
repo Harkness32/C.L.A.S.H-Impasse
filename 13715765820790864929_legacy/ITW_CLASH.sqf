@@ -180,11 +180,15 @@ ITW_CLASH_fnc_Reconcile = {
         private _id = _x;
         private _entry = ITW_CLASH_ObserverGroups get _id;
         private _group = _entry#0;
-        if (isNull _group || {count units _group == 0}) then {
+        if (isNull _group) then {
             if ((_entry#1) isEqualTo "ELIGIBLE") then {
                 ["would-release",["deleted-or-merged",_id,str _group]] call ITW_CLASH_fnc_Log;
             };
             ITW_CLASH_ObserverGroups deleteAt _id;
+        } else {
+            if (count units _group == 0 && {(_entry#1) isEqualTo "ELIGIBLE"}) then {
+                ["reconcile",_group] call ITW_CLASH_fnc_ObserveGroup;
+            };
         };
     } forEach +(keys ITW_CLASH_ObserverGroups);
 
