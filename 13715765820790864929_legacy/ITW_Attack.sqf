@@ -1555,6 +1555,7 @@ ITW_AtkEngageInfantry = {
     if (!_populateObj && {!(vehicle leader _group in ITW_Statics)}) then {
         private _objSize = _objTo#ITW_OBJ_SIZE;
         private _toPos = _toPos getPos [_objSize,_toPos getDir (getPosATL leader _group)];
+        ["engage-infantry",_group] call ITW_CLASH_fnc_ObserveWriter;
         ITW_DELETE_WAYPOINTS(_group);
         _group addWaypoint [_toPos,100];
         ATK_DEBUG(_group,"ITW_AtkEngageInfantry waypoints updated",_toPos); 
@@ -2109,7 +2110,10 @@ ITW_AtkStuckHandler = {
                             private _newWpGrp = grpNull;
                             if (_veh isEqualTo _unit && {leader _unit == _unit}) then {_newWpGrp = group _unit};
                             if !(_veh isEqualTo _unit) then {_newWpGrp = group driver _veh};
-                            if (!isNull _newWpGrp) then {{deleteWaypoint _x} forEachReversed waypoints _newWpGrp};
+                            if (!isNull _newWpGrp) then {
+                                ["stuck-handler",_newWpGrp] call ITW_CLASH_fnc_ObserveWriter;
+                                {deleteWaypoint _x} forEachReversed waypoints _newWpGrp;
+                            };
                             // under stuck limit (or players too nearby)
                             private _isShip = _veh isKindOf "Ship";
                             if (isTouchingGround _veh && !_isShip) then {
@@ -2336,6 +2340,7 @@ ITW_AtkInfantryManager = {
                     if (_garrisonCreatedMap getOrDefault [_objIdx,0] < time) then {
                         // _garrisonCreatedMap ensures we don't re-garrison while the garrison thread is still populating the objective
                         _garrisonHashMap set [_objIdx,_cnt - count units _grp];
+                        ["infantry-manager-garrison",_grp] call ITW_CLASH_fnc_ObserveWriter;
                         ITW_DELETE_WAYPOINTS(_grp);
                         [_objPt,_objSize,[_grp],_objIdx] spawn ITW_Garrison;
                         _garrisonCreatedMap set [_objIdx,time + 60];
@@ -2349,6 +2354,7 @@ ITW_AtkInfantryManager = {
             if (vehicle _leader == _leader &&                                 // not in transit
                   {!VAR_GET_WAIT_TRANSP(_grp) &&                              // not awaiting transport
                   {/*_wpIdx == 0 ||*/ _wpIdx >= count waypoints _grp}}) then {    // not executing any waypoints
+                ["infantry-manager-waypoints",_grp] call ITW_CLASH_fnc_ObserveWriter;
                 ITW_DELETE_WAYPOINTS(_grp);
                 private _wpPos = _leader getPos [0 max (_dist - _objSize),_leader getDir _objPt];
                 if (surfaceIsWater _wpPos) then {
@@ -2417,6 +2423,7 @@ ITW_AtkInfantryManager = {
                 };
                 if (time - _farTime > 30) then {
                     _grp setVariable ["ITW_FarTime",nil];
+                    ["infantry-manager-move-up",_grp] call ITW_CLASH_fnc_ObserveWriter;
                     [_grp,_objPt] spawn ITW_AtkInfantryMoveUp;
                 };
             };
@@ -2445,6 +2452,7 @@ ITW_AtkInfantryManager = {
             private _otherSquads = (_managedGroups select {side _x == _side}) - [_grp];
             private _nearestSquad = [_otherSquads, getPosATL leader _grp] call BIS_fnc_nearestPosition;
             if (typeName _nearestSquad == "GROUP" && {getPosATL leader _nearestSquad distance leader _grp < 800}) then {
+                ["infantry-manager-merge",_grp] call ITW_CLASH_fnc_ObserveWriter;
                 units _grp joinSilent _nearestSquad;
                 [[_grp],"deleteGroup",_grp] call ITW_FncRemoteLocalGroup;
             };
@@ -2577,6 +2585,7 @@ ITW_AtkInfantryMoveUp = {
         };
         
         if !(_pos isEqualTo []) then {
+            ["infantry-move-up",_group] call ITW_CLASH_fnc_ObserveWriter;
             [[_group,_pos],"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup;
             sleep 0.1;
             {deleteWaypoint _x} forEachReversed waypoints _group;
@@ -3467,6 +3476,7 @@ ITW_AtkMoveOutVeh = {
 
 ITW_AtkDefendStart = {
     params ["_isZoneDefend"]; // is it zone or flag triggered defend?
+    ["defend-start",[_isZoneDefend,ITW_defendPhaseObjIdx]] call ITW_CLASH_fnc_ObserveLifecycle;
     // reassign all vehicles and delete units far from objs & players
 
     private _defendObjIdx = ITW_defendPhaseObjIdx;
@@ -3514,6 +3524,7 @@ ITW_AtkDefendStart = {
 ITW_AtkDefendDone = {
     // try to free up enemy vehicles when defend mode is complete
     params ["_isZoneDefend","_defendObjIdx"]; // if _isZoneDefend we will clean up more aggressively
+    ["defend-done",[_isZoneDefend,_defendObjIdx]] call ITW_CLASH_fnc_ObserveLifecycle;
     
     private _currObjsPos = (ITW_Zones#ITW_ZoneIndex) apply {ITW_Objectives#_x#ITW_OBJ_POS};
     private _defendPos = ITW_Objectives#_defendObjIdx#ITW_OBJ_POS;
