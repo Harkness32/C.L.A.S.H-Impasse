@@ -4,7 +4,7 @@ Private integration workspace for **C.L.A.S.H.**, the arbitration bridge between
 
 ## Status
 
-Planning and source-audit stage. No runtime integration has been implemented, and no mission or HAL package has been modified or repacked.
+Tranche 0 parity tooling is in progress. The frozen baseline artifact and its PBO footer are verified, but repository-to-baseline parity is **not established** because the buildable current Impasse mission source and its build command are still absent. No runtime integration has been implemented, and no mission or HAL package has been modified or repacked.
 
 ## Authority model
 
@@ -25,5 +25,6 @@ Bidirectional fronts, counteroffensives, headquarters disruption, strategic retr
 ## Documentation
 
 - [Implementation audit](docs/CLASH_IMPLEMENTATION_AUDIT.md)
+- [Tranche 0 parity gate](docs/TRANCHE_0_PARITY.md)
 
 The frozen current Impasse mission remains the behavioral parity oracle until the repository build is proven equivalent.
