@@ -1,0 +1,1009 @@
+#include "\a3\ui_f\hpp\definecommongrids.inc"
+//#include "\a3\ui_f\hpp\defineResincl.inc" // added by factions and can't be added twice it seems
+#include "scripts\Factions\display.hpp"
+#include "scripts\Dlcs\display.hpp"
+#include "defines_gui.hpp"
+#include "dialogs.hpp"
+#include "scripts\SKULL\SKL_TeamSwitch.hpp"
+
+author = "SkullTT";
+onLoadName = "Impasse Total War";
+briefingName = "Impasse Total War";
+onLoadMission = "Full map, persistent war as players push to capture the entire map";
+overviewText = "Randomly generated missions. Push the enemy back from key locations.";
+loadScreen = "images\splash.jpg";
+overViewPicture = "images\splash.jpg";
+overViewPictureLocked="images\splash.jpg";
+
+class Header
+{
+	gameType =  Coop; // Game type
+	minPlayers = 1;	  // minimum number of players the mission supports
+	maxPlayers = 17;  // maximum number of players the mission supports
+};
+
+joinUnassigned = 0; // auto assign to slot in mission lobby
+enableDebugConsole = 1;
+allowFunctionsLog = 0;
+
+showGPS=1;
+saving = 0;
+disabledAI = 1;
+briefing = 0;
+skipLobby = 0;
+
+ReviveMode = 1;                         //0: disabled, 1: enabled, 2: controlled by player attributes
+ReviveUnconsciousStateMode = 0;         //0: basic, 1: advanced, 2: realistic
+ReviveRequiredTrait = 0;                //0: none, 1: medic trait is required
+ReviveRequiredItems = 2;                //0: none, 1: medkit, 2: medkit or first aid kit
+ReviveRequiredItemsFakConsumed = 1;     //0: first aid kit is not consumed upon revive, 1: first aid kit is consumed
+ReviveDelay = 15;                       //time needed to revive someone (in secs)
+ReviveMedicSpeedMultiplier = 2;         //speed multiplier for revive performed by medic
+ReviveForceRespawnDelay = 4;            //time needed to perform force respawn (in secs)
+ReviveBleedOutDelay = 1200;             //unconscious state duration (in secs)
+minPlayerDistance = 500;                //distance between player and wreck or corpse cleanup
+
+corpseManagerMode = 2;
+corpseLimit = 15;
+corpseRemovalMinTime = 600;
+corpseRemovalMaxTime = 3600;
+
+respawn = 3;
+respawnButton = 1;
+respawnDelay = 3;
+respawnDialog = 0;
+respawnOnStart = -1;
+respawnTemplates[] = { "Base" };
+
+__EXEC(call compile " ITW_SavedMaps = allVariables profileNamespace select {_x select [0,11] == 'ITW_SaveObj'} apply {_x select [11]}");
+
+class Params
+{    
+	class Spacer0
+	{
+		title = "$STR_ITW_PARAM_Info";
+		values[] = {0};
+		texts[] = {""};
+		default = 0;
+	};
+	class NewGame
+	{
+		title = "$STR_ITW_PARAM_NewGame";
+		values[] = {0, 1, 2};
+		texts[] = {"$STR_ITW_PARAM_NewGame_No","$STR_ITW_PARAM_NewGame","$STR_ITW_PARAM_NewFaction"};
+		default = 0;
+	}; 	
+    // --------------- OBJECTIVES -----------------
+	class Spacer1
+	{
+		title = "$STR_ITW_PARAM_Objectives";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class ObjectiveCount
+	{
+		title = "$STR_ITW_PARAM_ObjectiveCount";
+		values[] = {1,2,4,6,10,16,18,777,0}; // is a ratio (divide by 10)
+		texts[] = {"$STR_ITW_COMMON_VeryFew","$STR_ITW_COMMON_Few","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_Some","$STR_ITW_COMMON_AverageX","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_PARAM_Random_","$STR_ITW_PARAM_ObjectiveCount_Choose"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectiveCount",10]);
+	};
+	class ObjectivesPerZone
+	{
+		title = "$STR_ITW_PARAM_ObjectivesPerZone";
+		values[] = {1,2,3,4,5,6,777};
+		texts[] = {"1","2*","3","4","5","6","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectivesPerZone",2]);
+	};
+	class ObjectiveSize
+	{
+		title = "$STR_ITW_PARAM_ObjectiveSize";
+		values[] = {25,50,100,150,200,250,400,500,750,1000,777};
+		texts[] = {"50","100","200","300","400*","500","800","1000","1500","2000","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectiveSize",200]);
+	};
+	class ObjectiveVariation
+	{
+		title = "$STR_ITW_PARAM_ObjectivesVary";
+		values[] = {0,1,2,3};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_PARAM_ObjectivesVarySize","$STR_ITW_PARAM_ObjectivesVaryNum","$STR_ITW_PARAM_ObjectivesVarySizeNum"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectiveVariation",3]);
+	};
+	class ObjectiveInTowns
+	{
+		title = "$STR_ITW_PARAM_Towns";
+		values[] = {40,15,5,0,777};
+		texts[] = {"$STR_ITW_PARAM_TownsBig","$STR_ITW_PARAM_TownsMedium","$STR_ITW_PARAM_TownsSmallX","$STR_ITW_PARAM_TownsAny","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectiveInTowns",5]);
+	};
+	class ObjectiveCaptureSpeed
+	{
+		title = "$STR_ITW_PARAM_ObjectiveCaptureSpeed";
+		values[] = {1,2,3,5,8,777,150};
+		texts[] = {"$STR_ITW_COMMON_VerySlow","$STR_ITW_COMMON_Slow","$STR_ITW_COMMON_MediumX","$STR_ITW_COMMON_Fast","$STR_ITW_COMMON_VeryFast","$STR_ITW_PARAM_Random_","$STR_ITW_PARAM_ObjectiveCaptureSpeed_Ultra"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectiveCaptureSpeed",3]);
+	}; 		
+	class ObjectivesVisible3D
+	{
+		title = "$STR_ITW_PARAM_ObjectivesVisible3D";
+		values[] = {0,1};
+		texts[] = {"$STR_ITW_PARAM_ObjectivesVisible3D_Map","$STR_ITW_PARAM_ObjectivesVisible3D_All"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectivesVisible3D",1]);
+	}; 		
+	class ExtraBuildings
+	{
+		title = "$STR_ITW_PARAM_ExtraBuildings";
+		values[] = {0,1,2,3,777};
+		texts[] = {"$STR_ITW_PARAM_ExtraBuildings_No","$STR_ITW_PARAM_ExtraBuildings_House","$STR_ITW_PARAM_ExtraBuildings_Both","$STR_ITW_PARAM_ExtraBuildings_Military","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamExtraBuildings",1]);
+	};
+	class EnemyAiCnt
+	{
+		title = "$STR_ITW_PARAM_EnemyAiCnt";
+		values[] = {0,10,20,30,40,50,60,70,80,100,150,777};
+		texts[] = {"$STR_ITW_PARAM_EnemyAiCnt_0","10","20","30","40","50*","60","70","80","100","150","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamEnemyAiCnt",50]);
+	};
+	class ExtraLaunchers
+	{
+		title = "$STR_ITW_PARAM_ExtraLaunchers";
+		values[] = {0,1,2,777};
+		texts[] = {"$STR_ITW_PARAM_ExtraLaunchers_No","$STR_ITW_PARAM_ExtraLaunchers_Some","$STR_ITW_PARAM_ExtraLaunchers_Lots","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamExtraLaunchers",1]);
+	};
+	class Mines
+	{
+		title = "$STR_ITW_PARAM_Mines";
+		values[] = {0,1,2,3,777};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_PARAM_Mines_Some","$STR_ITW_PARAM_Mines_Often","$STR_ITW_PARAM_Mines_Lots","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamMines",1]);
+	};
+	class Artillery
+	{
+		title = "$STR_ITW_PARAM_Artillery";
+		values[] = {0,3,5,10,15,20,25,777};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_PARAM_Artillery_3","$STR_ITW_PARAM_Artillery_5","$STR_ITW_PARAM_Artillery_10","$STR_ITW_PARAM_Artillery_15","$STR_ITW_PARAM_Artillery_20","$STR_ITW_PARAM_Artillery_25","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamArtillery",10]);
+	};
+	class Bombardment
+	{
+		title = "$STR_ITW_PARAM_Bombardment";
+		values[] = {0,1,2,3,4,5,6,7,8,9,777};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_PARAM_Bombardment_ZoneSmoke","$STR_ITW_PARAM_Bombardment_ZoneArty","$STR_ITW_PARAM_Bombardment_ZoneBoth",
+                    "$STR_ITW_PARAM_Bombardment_DefendSmoke","$STR_ITW_PARAM_Bombardment_DefendArty","$STR_ITW_PARAM_Bombardment_DefendBoth",
+                    "$STR_ITW_PARAM_Bombardment_BothSmoke","$STR_ITW_PARAM_Bombardment_BothArty","$STR_ITW_PARAM_Bombardment_BothBoth","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamBombardment",0]);
+	};
+	class ArtilleryType
+	{
+		title = "$STR_ITW_PARAM_ArtilleryType";
+		values[] = {1,0};
+		texts[] = {"$STR_ITW_COMMON_Yes","$STR_ITW_PARAM_ArtilleryType_No"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamArtilleryType",0]);
+	};
+	class Statics
+	{
+		title = "$STR_ITW_PARAM_Statics";
+		values[] = {0,1,2,3,4,-1,-2,-3,-4,777};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_PARAM_Statics_Few","$STR_ITW_PARAM_Statics_More","$STR_ITW_PARAM_Statics_Lot","$STR_ITW_PARAM_Statics_TooMany","$STR_ITW_PARAM_Statics_Few_NM","$STR_ITW_PARAM_Statics_More_NM","$STR_ITW_PARAM_Statics_Lot_NM","$STR_ITW_PARAM_Statics_TooMany_NM","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamStatics",1]);
+	};
+	class Garrison
+	{
+		title = "$STR_ITW_PARAM_Garrison";
+		values[] = {0,1,2,777};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_PARAM_Garrison_Little","$STR_ITW_PARAM_Garrison_Lot","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamGarrison",1]);
+	};
+	class ObjLockTime
+	{
+		title = "$STR_ITW_PARAM_ObjLockTime";
+		values[] = {0,60,120,300,600,900,1200,1500,1800,777};
+		texts[] = {"0*","1","2","5","10","15","20","25","30","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjLockTime",0]);
+	};
+	class SpawnDelay
+	{
+		title = "$STR_ITW_PARAM_SpawnDelayAlly";
+		values[] = {60,120,180,240,300,420,600,777};
+		texts[] = {"1","2*","3","4","5","7","10","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamSpawnDelay",120]);
+	};
+	class SpawnDelayEnemy
+	{
+		title = "$STR_ITW_PARAM_SpawnDelayEnemy";
+		values[] = {60,120,180,240,300,420,600,777};
+		texts[] = {"1","2*","3","4","5","7","10","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamSpawnDelayEnemy",120]);
+	};
+	class AutoCombatDisable
+	{
+		title = "$STR_ITW_PARAM_AutoCombatDisable";
+		values[] = {0,1,2,3};
+		texts[] = {"$STR_ITW_PARAM_AutoCombatNoX","$STR_ITW_PARAM_AutoCombatYes","$STR_ITW_PARAM_AutoCombatAlly","$STR_ITW_PARAM_AutoCombatEnemy"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAutoCombatDisable",0]);
+	};
+	class Targets
+	{
+		title = "$STR_ITW_PARAM_Targets";
+		values[] = {0,1,175,150,125,2,275,250,225,777}; // needed backward compatibility with {0,1,2}, so for partial chances multiply by 100 and add partial amount
+		texts[] = {"$STR_ITW_COMMON_NoX",
+            "$STR_ITW_PARAM_TargetYesHinder100","$STR_ITW_PARAM_TargetYesHinder75","$STR_ITW_PARAM_TargetYesHinder50","$STR_ITW_PARAM_TargetYesHinder25",
+            "$STR_ITW_PARAM_TargetYesEnhance100","$STR_ITW_PARAM_TargetYesEnhance75","$STR_ITW_PARAM_TargetYesEnhance50","$STR_ITW_PARAM_TargetYesEnhance25","$STR_ITW_PARAM_Random_"
+        };
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTargets",0]);
+	};
+	class StartWithZonesCaptured
+	{
+		title = "$STR_ITW_PARAM_StartWithZonesCaptured";
+		values[] = {0,1,2,3,4,5};
+		texts[] = {"$STR_SKL_COMMON_NoneX","1","2","3","4","5"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamStartWithZonesCaptured",0]);
+	};
+	class DamageBuildings
+	{
+		title = "$STR_ITW_PARAM_DamageBuildings";
+		values[] = {0,1,777};
+		texts[] = {"$STR_SKL_COMMON_NoneX","$STR_ITW_COMMON_Yes","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDamageBuildings",0]);
+	};
+    // --------------- VEHICLES -----------------
+	class Spacer2
+	{
+		title = "$STR_ITW_PARAM_Vehicles";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class Vehicles
+	{
+		title = "$STR_ITW_PARAM_AiVehicles";
+		values[] = {0, 1, 2, 3, 777};
+		texts[] = {"$STR_ITW_PARAM_Vehicles_All","$STR_ITW_PARAM_Vehicles_Side","$STR_ITW_PARAM_Vehicles_DLC","$STR_ITW_PARAM_Vehicles_Faction","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicles",3]);
+	};
+	class VehicleChooser
+	{
+		title = "$STR_ITW_PARAM_VehicleChooser";
+		values[] = {0, 1, 2, 3, 4, 5, 6};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_PARAM_VehicleChooser_Enemy","$STR_ITW_PARAM_VehicleChooser_Player","$STR_ITW_PARAM_VehicleChooser_Both",
+                   "$STR_ITW_PARAM_VehicleChooser_AddEnemy","$STR_ITW_PARAM_VehicleChooser_AddPlayer","$STR_ITW_PARAM_VehicleChooser_AddBoth"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicleChooser",0]);
+	};
+	class VehicleEscalation
+	{
+		title = "$STR_ITW_PARAM_VehicleEscalation";
+		values[] = {1,2,0,777};
+		texts[] = {"$STR_ITW_PARAM_VehicleEscalation_Progress","$STR_ITW_PARAM_VehicleEscalation_Owned","$STR_ITW_PARAM_VehicleEscalation_No","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicleEscalation",0]);
+	};
+	class VehicleSideAdjustment
+	{
+		title = "$STR_ITW_PARAM_VehicleSideAdjustment";
+		values[] = {0,1,4,7,10,13,16,19,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_PARAM_MuchLess_Harder","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_SlightlyLess","$STR_ITW_COMMON_BalancedX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_PARAM_MuchMore_easier","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicleSideAdjustment",10]);
+	};
+	class VehicleAirLandBalance
+	{
+		title = "$STR_ITW_PARAM_VehicleAirLandBalance";
+		values[] = {-2,-1,0,1,2,777};
+		texts[] = {"$STR_ITW_PARAM_VehicleAirLandBalance_ALot","$STR_ITW_PARAM_VehicleAirLandBalance_ALittle","$STR_ITW_COMMON_BalancedX","$STR_ITW_PARAM_VehicleAirLandBalance_LLittle","$STR_ITW_PARAM_VehicleAirLandBalance_LLot","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicleAirLandBalance",0]);
+	};
+	class VehicleSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_VehicleSpawnAdjustment";
+		values[] = {2,4,7,10,13,16,777};
+		texts[] = {"$STR_ITW_COMMON_VeryFew","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicleSpawnAdjustment",10]);
+	};
+	class AttackPlaneSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_AttackPlaneSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAttackPlaneSpawnAdjustment",10]);
+	};
+	class AttackHeliSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_AttackHeliSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAttackHeliSpawnAdjustment",10]);
+	};
+	class AttackTankSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_AttackTankSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAttackTankSpawnAdjustment",10]);
+	};
+	class AttackApcSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_AttackApcSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAttackApcSpawnAdjustment",10]);
+	};
+	class AttackCarSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_AttackCarSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAttackCarSpawnAdjustment",10]);
+	};
+	class AttackShipSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_AttackShipSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAttackShipSpawnAdjustment",10]);
+	};
+	class TransportPlaneSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_TransportPlaneSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTransportPlaneSpawnAdjustment",10]);
+	};
+	class TransportHeliSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_TransportHeliSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTransportHeliSpawnAdjustment",10]);
+	};
+	class TransportTankSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_TransportTankSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTransportTankSpawnAdjustment",10]);
+	};
+	class TransportApcSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_TransportApcSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTransportApcSpawnAdjustment",10]);
+	};
+	class TransportCarSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_TransportCarSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTransportCarSpawnAdjustment",10]);
+	};
+	class TransportShipSpawnAdjustment
+	{
+		title = "$STR_ITW_PARAM_TransportShipSpawnAdjustment";
+		values[] = {0,1,2,5,10,20,30,40,50,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAny","$STR_ITW_COMMON_MuchLess","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_NormalX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_COMMON_MassivelyMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTransportShipSpawnAdjustment",10]);
+	};
+	class CivilianVehicleFallback
+	{
+		title = "$STR_ITW_PARAM_FallbackCivilianVehicle";
+		values[] = {0,1};
+		texts[] = {"$STR_ITW_PARAM_FallbackVehicleNo","$STR_ITW_PARAM_FallbackVehicleYesX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamCivilianVehicleFallback",1]);
+	};
+	class AirDropVehicles
+	{
+		title = "$STR_ITW_PARAM_AirDropVehicles";
+		values[] = {0,1,777};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_COMMON_YesX","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAirDropVehicles",1]);
+	};
+	class AirplaneWithoutAirport
+	{
+		title = "$STR_ITW_PARAM_AirplaneWithoutAirport";
+		values[] = {0,1,777};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_COMMON_Yes","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAirplaneWithoutAirport",0]);
+	};
+	class AggressivePlanes
+	{
+		title = "$STR_ITW_PARAM_AggressivePlanes";
+		values[] = {0,1};
+		texts[] = {"$STR_ITW_PARAM_AggressivePlanes_Yes","$STR_ITW_PARAM_AggressivePlanes_No"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAggressivePlanes",1]);
+	};
+	class DespawnTransports
+	{
+		title = "$STR_ITW_PARAM_DespawnTransports";
+		values[] = {0,1};
+		texts[] = {"$STR_ITW_PARAM_DespawnTransports_No","$STR_ITW_PARAM_DespawnTransports_Yes"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDespawnTransports",0]);
+	};
+	class VehicleArmor
+	{
+		title = "$STR_ITW_PARAM_VehicleArmor";
+		values[] = {0,1,2,3,4,5,777};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_PARAM_VehicleArmor_Yes","$STR_ITW_PARAM_VehicleArmor_Air","$STR_ITW_PARAM_VehicleArmor_Transport",
+                   "$STR_ITW_PARAM_VehicleArmor_AirTransport","$STR_ITW_PARAM_VehicleArmor_Player","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicleArmor",0]);
+	};
+	class VehicleArmorAmount
+	{
+		title = "$STR_ITW_PARAM_VehicleArmorAmount";
+		values[] = {990,975,950,925,900,875,850,825,800,775,750,725,700,777}; // amount of damage kept * 100 ie. 700 => 0.7 => 30% damage reduction
+		texts[] = {"1%","2.5%","5%*","7.5%","10%","12.5%","15%","17.5%","20%","22.5%","25%","27.5%","30%","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehicleArmorAmount",950]);
+	};
+	class HelisUnload
+	{
+		title = "$STR_ITW_PARAM_HelisUnload";
+		values[] = {0,25,50,75,100,777};
+		texts[] = {"$STR_ITW_PARAM_HelisUnload_Land","$STR_ITW_PARAM_HelisUnload_SomeLand","$STR_ITW_PARAM_HelisUnload_Both","$STR_ITW_PARAM_HelisUnload_SomeAir",
+                   "$STR_ITW_PARAM_HelisUnload_Air","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamHelisUnload",50]);
+	};
+	class TransportUnloadDist
+	{
+		title = "$STR_ITW_PARAM_TransportUnloadDist";
+		values[] = {100,200,400,600,800,1000,777};
+		texts[] = {"100","200","400*","600","800","1000","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTransportUnloadDist",400]);
+	};
+	class VehBoostZone
+	{
+		title = "$STR_ITW_PARAM_VehBoostZone";
+		values[] = {0,1,2,3,777};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVehBoostZone",0]);
+	};
+    // --------------- FRIENDLY -----------------
+	class Spacer3
+	{
+		title = "$STR_ITW_PARAM_Friendly";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class FriendlyAiCntAdjustment
+	{
+		title = "$STR_ITW_PARAM_FriendlyAiCntAdjustment";
+		values[] = {-10,-4,-3,-2,-1,0,1,2,3,777};
+		texts[] = {"$STR_ITW_COMMON_None","$STR_ITW_COMMON_HardlyAnyHard","Much less","$STR_ITW_COMMON_Less","$STR_ITW_COMMON_SlightlyLess","$STR_ITW_COMMON_BalancedX","Slightly more","$STR_ITW_COMMON_More","$STR_ITW_PARAM_MuchMoreEasier","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamFriendlyAiCntAdjustment",0]);
+	};
+	class FriendlySquadSkill
+	{
+		title = "$STR_ITW_PARAM_FriendlySquadSkill";
+		values[] = {4,6,8,10,0};
+		texts[] = {"$STR_ITW_PARAM_Beginner","$STR_ITW_PARAM_CompetentX","$STR_ITW_PARAM_Skilled","$STR_ITW_PARAM_Expert","$STR_ITW_PARAM_UseServerSettings"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamFriendlySquadSkill",6]);
+	};
+	class FriendlySquadSize
+	{
+		title = "$STR_ITW_PARAM_FriendlySquadSize";
+		values[] = {4,6,8,10,12,9999};
+		texts[] = {"4","6","8*","10","12","$STR_ITW_PARAM_Unlimited"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamFriendlySquadSize",8]);
+	};
+	class FriendlyRevive
+	{
+		title = "$STR_ITW_PARAM_FriendlyRevive";
+		values[] = {1, 0, -1};
+		texts[] = {"$STR_ITW_PARAM_FriendlyRevive_Yes","$STR_ITW_PARAM_FriendlyRevive_No","$STR_ITW_PARAM_FriendlyRevive_Disable"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamFriendlyRevive",1]);
+	};
+	class PlayerDeathChance
+	{
+		title = "$STR_ITW_PARAM_PlayerDeathChance";
+		values[] = {0,10,20,30,40,50,60,70,80,90};
+		texts[] = {"0%*","10%","20%","30%","40%","50%","60%","70%","80%","90%"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamPlayerDeathChance",0]);
+	};
+	class TeammateDeathChance
+	{
+		title = "$STR_ITW_PARAM_TeammateDeathChance";
+		values[] = {0,10,20,30,40,50,60,70,80,90};
+		texts[] = {"0%*","10%","20%","30%","40%","50%","60%","70%","80%","90%"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTeammateDeathChance",0]);
+	};
+	class FriendlySquadDelivery
+	{
+		title = "$STR_ITW_PARAM_FriendlySquadDelivery";
+		values[] = {0,1,2,3,4,5};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_PARAM_FriendlySquadDelivery_1","$STR_ITW_PARAM_FriendlySquadDelivery_2","$STR_ITW_PARAM_FriendlySquadDelivery_3","$STR_ITW_PARAM_FriendlySquadDelivery_4","$STR_ITW_PARAM_FriendlySquadDelivery_5"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamFriendlySquadDelivery",0]);
+	};
+	class TeammateSwitch
+	{
+		title = "$STR_ITW_PARAM_TeammateSwitch";
+		values[] = {0,1,2};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_PARAM_TeammateSwitch_YesSwitchGear","$STR_ITW_PARAM_TeammateSwitch_YesKeepGearX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTeammateSwitch",2]);
+	};
+	class TeamSwitchAllow
+	{
+		title = "$STR_ITW_PARAM_TeamSwitchAllow";
+		values[] = {0,1,2};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_PARAM_TeamSwitch_YesBase","$STR_ITW_PARAM_TeamSwitch_YesKeyX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTeamSwitchAllow",2]);
+	};
+	class PlayerArtillery
+	{
+		title = "$STR_ITW_PARAM_PlayerArtillery";
+		values[] = {0,1,60,120,300,600,900,1200};
+		texts[] = {"$STR_ITW_COMMON_NotAvailable","0","1","2","5*","10","15","20"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamPlayerArtillery",300]);
+	};
+	class PlayerCAS
+	{
+		title = "$STR_ITW_PARAM_PlayerCAS";
+		values[] = {0,1,300,600,900,1200,1800,2700};
+		texts[] = {"$STR_ITW_COMMON_NotAvailable","0","5","10","15","20*","30","45"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamPlayerCAS",1200]);
+	};
+	class PlayerUavSupport
+	{
+		title = "$STR_ITW_PARAM_PlayerUavSupport";
+		values[] = {0,1,120,300,600,900,1200,1800,2700};
+		texts[] = {"$STR_ITW_COMMON_NotAvailable","0","2","5","10*","15","20","30","45"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamPlayerUavSupport",600]);
+	};
+	class PlayerUavTerminal
+	{
+		title = "$STR_ITW_PARAM_PlayerUavTerminal";
+		values[] = {1,0};
+		texts[] = {"$STR_ITW_COMMON_YesX","$STR_ITW_COMMON_No"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamPlayerUavTerminal",1]);
+	};
+	class FriendlyInvasionDelay
+	{
+		title = "$STR_ITW_PARAM_FriendlyInvasionDelay";
+		values[] = {30,75,180,300,600,900,777};
+		texts[] = {"0*","1","3","5","10","15","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamFriendlyInvasionDelay",30]);
+	};
+    // --------------- ENEMY -----------------
+	class Spacer4
+	{
+		title = "$STR_ITW_PARAM_Enemy";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class Difficulty
+	{
+		title = "$STR_ITW_PARAM_Difficulty";
+		values[] = {4, 6, 8, 10, 0};
+		texts[] = {"$STR_ITW_COMMON_Casual","$STR_ITW_COMMON_EasyX","$STR_ITW_COMMON_Standard","$STR_ITW_COMMON_Hard","$STR_ITW_PARAM_UseServerSettings"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDifficulty",6]);
+	};
+	class ShowEnemyOnMap
+	{
+		title = "$STR_ITW_PARAM_ShowEnemyOnMap";
+		values[] = {1, 0};
+		texts[] = {"$STR_ITW_PARAM_ShowEnemyOnMap_Yes","$STR_ITW_PARAM_ShowEnemyOnMap_No"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamShowEnemyOnMap",1]);
+	};
+	class ShowEnemyZonesOnMap
+	{
+		title = "$STR_ITW_PARAM_ShowEnemyZonesOnMap";
+		values[] = {0,1,2};
+		texts[] = {"$STR_ITW_PARAM_ShowEnemyZonesOnMap_No","$STR_ITW_PARAM_ShowEnemyZonesOnMap_Circles","$STR_ITW_PARAM_ShowEnemyZonesOnMap_Lines"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamShowEnemyZonesOnMap",2]);
+	};
+    // --------------- DEEEND PHASE -----------------
+	class Spacer5
+	{
+		title = "$STR_ITW_PARAM_Defend";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class DefendPhaseType
+	{
+		title = "$STR_ITW_PARAM_DefendPhaseType";
+		values[] = {0,21,22,23,24,25,26,27,28,29,20,30,11,12,13,14,15,16,17,18,19,10};
+		texts[] = {"$STR_SKL_COMMON_None","$STR_ITW_PARAM_DefendTypeZone1","$STR_ITW_PARAM_DefendTypeZone2","$STR_ITW_PARAM_DefendTypeZone3",
+                   "$STR_ITW_PARAM_DefendTypeZone4","$STR_ITW_PARAM_DefendTypeZone5","$STR_ITW_PARAM_DefendTypeZone6","$STR_ITW_PARAM_DefendTypeZone7",
+                   "$STR_ITW_PARAM_DefendTypeZone8","$STR_ITW_PARAM_DefendTypeZone9","$STR_ITW_PARAM_DefendTypeZone0X","$STR_ITW_PARAM_DefendTypeZone0Plus",
+                   "$STR_ITW_PARAM_DefendTypeFlag1","$STR_ITW_PARAM_DefendTypeFlag2","$STR_ITW_PARAM_DefendTypeFlag3",
+                   "$STR_ITW_PARAM_DefendTypeFlag4","$STR_ITW_PARAM_DefendTypeFlag5","$STR_ITW_PARAM_DefendTypeFlag6",
+                   "$STR_ITW_PARAM_DefendTypeFlag7","$STR_ITW_PARAM_DefendTypeFlag8","$STR_ITW_PARAM_DefendTypeFlag9","$STR_ITW_PARAM_DefendTypeFlag0"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDefendPhaseType",20]);
+	};
+	class DefendPhaseIntensity
+	{
+		title = "$STR_ITW_PARAM_DefendPhaseIntensity";
+		values[] = {1,2,3,4,5,6,7,8,9,10,777};
+		texts[] = {"$STR_ITW_PARAM_DefendIntense1","2","3","4","5*","6","7","8","9","$STR_ITW_PARAM_DefendIntense10","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDefendPhaseIntensity",5]);
+	};
+	class DefendVehBoost
+	{
+		title = "$STR_ITW_PARAM_VehBoostDefend";
+		values[] = {0,1,2,3,777};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_COMMON_SlightlyMore","$STR_ITW_COMMON_More","$STR_ITW_COMMON_MuchMore","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDefendVehBoost",0]);
+	};
+	class DefendPhaseDelay
+	{
+		title = "$STR_ITW_PARAM_DefendPhaseDelay";
+		values[] = {0,120,240,360,480,600};
+		texts[] = {"0","2*","4","6","8","10"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDefendPhaseDelay",120]);
+	};
+	class DefendPhaseDuration
+	{
+		title = "$STR_ITW_PARAM_DefendPhaseDuration";
+		values[] = {450,600,750,900,1050,1200,1500,1800,777};
+		texts[] = {"7.5","10","12.5","15*","17.5","20","25","30","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDefendPhaseDuration",900]);
+	};
+	class DefendNofication
+	{
+		title = "$STR_ITW_PARAM_DefendTimeNotification";
+		values[] = {1,2,5,10,800};
+		texts[] = {"1","2","5*","10","$STR_ITW_COMMON_Never"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDefendNofication",5]);
+	};
+	class DefendPhaseEnd
+	{
+		title = "$STR_ITW_PARAM_DefendPhaseEnd";
+		values[] = {0,1};
+		texts[] = {"$STR_ITW_PARAM_DefendEndRetreatX","$STR_ITW_PARAM_DefendEndEngage"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamDefendPhaseEnd",0]);
+	};
+    // --------------- SIDE OPS -----------------
+	class Spacer6
+	{
+		title = "$STR_ITW_PARAM_SideOps";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class SdoEffect
+	{
+		title = "$STR_ITW_PARAM_SdoEffect";
+		values[] = {0,1,2,-1};
+		texts[] = {"$STR_ITW_PARAM_SdoEffectAi","$STR_ITW_PARAM_SdoEffectCap","$STR_ITW_PARAM_SdoEffectVeh","$STR_ITW_PARAM_SdoEffectRndX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamSdoEffect",-1]);
+	};
+	class SdoIntensity
+	{
+		title = "$STR_ITW_PARAM_SdoIntensity";
+		values[] = {0,1,2,3,4,5,6,7,8,9,10,777};
+		texts[] = {"$STR_ITW_PARAM_SdoIntens0","$STR_ITW_PARAM_SdoIntens1","2","3","4","5*","6","7","8","9","$STR_ITW_PARAM_SdoIntens10","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamSdoIntensity",5]);
+	};
+	class SdoDuration
+	{
+		title = "$STR_ITW_PARAM_SdoDuration";
+		values[] = {300,600,900,1200,1500,1800,777};
+		texts[] = {"5","10","15*","20","25","30","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamSdoDuration",900]);
+	};
+    // --------------- MISCELLANEOUS -----------------
+	class Spacer7
+	{
+		title = "$STR_ITW_PARAM_Miscellaneous";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class FastTravel
+	{
+		title = "$STR_ITW_PARAM_FastTravel";
+		values[] = {0, 1, 2, 3, 4, 5, 6, 7};
+		texts[] = {"$STR_ITW_PARAM_FastTravel_Bases","$STR_ITW_PARAM_FastTravel_Flags","$STR_ITW_PARAM_FastTravel_ParachuteX","$STR_ITW_PARAM_FastTravel_Plane","$STR_ITW_PARAM_FastTravel_Direct","$STR_ITW_PARAM_FastTravel_ParachuteE","$STR_ITW_PARAM_FastTravel_PlaneE","$STR_ITW_PARAM_FastTravel_DirectE"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamFastTravel",2]);
+	};
+	class BaseEra
+	{
+		title = "$STR_ITW_PARAM_BaseEra";
+		values[] = {0, 1, 2, 3, 4};
+		texts[] = {"$STR_ITW_PARAM_BaseEra_Arma","$STR_ITW_PARAM_BaseEra_Old","$STR_ITW_PARAM_BaseEra_SPE","$STR_ITW_PARAM_BaseEra_VN","$STR_ITW_PARAM_BaseEra_GM"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamBaseEra",0]);
+	};
+	class SmallBases
+	{
+		title = "$STR_ITW_PARAM_SmallBases";
+		values[] = {0, 1, 2};
+		texts[] = {"$STR_ITW_PARAM_SmallBases_No","$STR_ITW_PARAM_SmallBases_Yes","$STR_ITW_PARAM_SmallBases_One"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamSmallBases",0]);
+	};
+	class ObjectivesFlagGui
+	{
+		title = "$STR_ITW_PARAM_ObjectivesFlagGui";
+		values[] = {0,1,2,3};
+		texts[] = {"$STR_ITW_PARAM_ObjectivesFlagGui_No","$STR_ITW_PARAM_ObjectivesFlagGui_Right","$STR_ITW_PARAM_ObjectivesFlagGui_Left","$STR_ITW_PARAM_ObjectivesFlagGui_Top"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamObjectivesFlagGui",1]);
+	}; 		
+	class RedOut
+	{
+		title = "$STR_ITW_PARAM_RedOut";
+		values[] = {0,30,60,90,9999};
+		texts[] = {"0","30*","60","90","$STR_ITW_COMMON_Never"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamRedOut",30]);
+	}; 		
+	class Civilians
+	{
+		title = "$STR_ITW_PARAM_Civilians";
+		values[] = {0,1,2,3,777};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_PARAM_Civilians_Few","$STR_ITW_PARAM_Civilians_More","$STR_ITW_PARAM_Civilians_Lots","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamCivilians",0]);
+	};
+	class VirtualArsenal
+	{
+		title = "$STR_ITW_PARAM_VirtualArsenal";
+		values[] = {0,1,2,777};
+		texts[] = {"$STR_ITW_PARAM_VirtualArsenal_Full","$STR_ITW_PARAM_VirtualArsenal_DLC","$STR_ITW_PARAM_VirtualArsenal_Faction","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVirtualArsenal",2]);
+	};
+	class AceArsenal
+	{
+		title = "$STR_ITW_PARAM_AceArsenal";
+		values[] = {0,1};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_COMMON_YesX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAceArsenal",1]);
+	};
+	class VirtualGarage
+	{
+		title = "$STR_ITW_PARAM_VirtualGarage";
+		values[] = {0,1,2,777};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_PARAM_VirtualGarage_AI","$STR_ITW_PARAM_VirtualGarage_All","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamVirtualGarage",1]);
+	};
+	class Billboard
+	{
+		title = "$STR_ITW_PARAM_Billboard";
+		values[] = {0, 1};
+		texts[] = {"$STR_ITW_COMMON_No","$STR_ITW_COMMON_YesX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamBillboard",1]);
+	};
+	class HeadlessClient
+	{
+		title = "$STR_ITW_PARAM_HeadlessClient";
+		values[] = {1,0};
+		texts[] = {"$STR_ITW_COMMON_Enable","$STR_ITW_PARAM_DisableX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamHeadlessClient",0]);
+	};
+	class Identity
+	{
+		title = "$STR_ITW_PARAM_Identity";
+		values[] = {0,1,2,777};
+		texts[] = {"$STR_ITW_PARAM_Identity_Player","$STR_ITW_PARAM_Identity_Faction","$STR_ITW_PARAM_Identity_PFaceFVoice","$STR_ITW_PARAM_Random_"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamIdentity",1]);
+	};
+	class RadioVolume
+	{
+		title = "$STR_ITW_PARAM_RadioVolume";
+		values[] = {0,8,11,15,20};
+		texts[] = {"$STR_ITW_COMMON_Off","25%","50%*","75%","$STR_ITW_COMMON_Full"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamRadioVolume",11]);
+	};
+	class CleanupDelay
+	{
+		title = "$STR_ITW_PARAM_CleanupDelay";
+		values[] = {0,3600,800,100}; // units will be removed after this much time, and kept at least this/4 much time even if players not around
+		texts[] = {"$STR_ITW_PARAM_CleanupDelay_None","$STR_ITW_COMMON_Slow","$STR_ITW_COMMON_NormalX","$STR_ITW_PARAM_CleanupDelay_Aggressive"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamCleanupDelay",800]);
+	};
+    class ForceNVGs
+	{
+		title = "$STR_ITW_PARAM_ForceNVGs";
+		values[] = {0,1};
+		texts[] = {"$STR_ITW_COMMON_NoX","$STR_ITW_COMMON_Yes"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamForceNVGs",0]);
+	};
+    class AddEject
+	{
+		title = "$STR_ITW_PARAM_EjectAdd";
+		values[] = {1,0};
+		texts[] = {"$STR_ITW_COMMON_YesX","$STR_ITW_COMMON_No"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAddEject",1]);
+	};
+    class AutoSave
+	{
+		title = "$STR_ITW_PARAM_AutoSave";
+		values[] = {1,2,0};
+		texts[] = {"$STR_ITW_PARAM_AutoSaveZone","$STR_ITW_PARAM_AutoSaveZoneTimerX","$STR_ITW_PARAM_AutoSaveNever"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamAutoSave",2]);
+	};
+	class TimeOfDay
+	{
+		title = "$STR_ITW_PARAM_TimeOfDay";
+		values[] = {0, 1, 2, 3, 4, 5};
+		texts[] = {"$STR_ITW_PARAM_RandomX","$STR_ITW_PARAM_TimeOfDay_RandomDay","$STR_ITW_PARAM_TimeOfDay_Dawn","$STR_ITW_PARAM_TimeOfDay_Day","$STR_ITW_PARAM_TimeOfDay_Dusk","$STR_ITW_PARAM_TimeOfDay_Night"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTimeOfDay",0]);
+	};
+	class Weather
+	{
+		title = "$STR_ITW_PARAM_Weather";
+		values[] = {0, 1, 2, 3};
+		texts[] = {"$STR_ITW_PARAM_RandomX","$STR_ITW_PARAM_Weather_Fair","$STR_ITW_PARAM_Weather_Moderate","$STR_ITW_PARAM_Weather_Bad"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamWeather",0]);
+	};
+    class TimeMultiplier
+	{
+		title="$STR_ITW_PARAM_TimeMultiplier";
+		values[]={1, 6, 12, 24};
+		texts[]={"$STR_ITW_PARAM_TimeMult1","$STR_ITW_PARAM_TimeMult6","$STR_ITW_PARAM_TimeMult12","$STR_ITW_PARAM_TimeMult24"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamTimeMultiplier",1]);
+	};
+		class ViewDistance
+	{
+		title = "$STR_ITW_PARAM_ViewDistance";
+		values[] = {0,1500,2000,2500,3000,3500,4000,4500,5000,6000,7000,8000,9000,10000};
+		texts[] = {"$STR_ITW_PARAM_ViewDistance_client","1500","2000","2500","3000","3500","4000","4500","5000","6000*","7000","8000","9000","10000"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamViewDistance",6000]);
+	};
+	class Stamina
+	{
+		title = "$STR_ITW_PARAM_Stamina";
+		values[] = {0, 1, 2};
+		texts[] = {"$STR_ITW_COMMON_Disable","$STR_ITW_COMMON_Enable","$STR_ITW_PARAM_UseServerSettingsX"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamStamina",2]);
+	};
+	class EndMission
+	{
+		title = "$STR_ITW_PARAM_EndMission";
+		values[] = {1, 0};
+		texts[] = {"$STR_ITW_COMMON_YesX","$STR_ITW_PARAM_EndMissionNo"};
+		default = __EVAL(profileNamespace getVariable ["ITW_ParamEndMission",1]);
+	};
+    // -------------------------------
+	class Spacer8
+	{
+		title = "----------------------------";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+	class ResetParamsEraseSave
+	{
+		title = "$STR_ITW_PARAM_ResetParams";
+		values[] = {0,1,2,3};
+		texts[] = {"$STR_SKL_COMMON_NoneX","$STR_ITW_PARAM_Reset","$STR_ITW_PARAM_EraseGame","$STR_ITW_PARAM_ResetAndErase"};
+		default = 0;
+	};
+	class Spacer9
+	{
+		title = "----------------------------";
+		values[] = {0};
+		texts[] = {"-------"};
+		default = 0;
+	};
+};
+
+class CfgDebriefing
+{
+	// Used when ParamReset option choosen
+	class endParamReset
+	{
+		title = "$STR_ITW_PARAM_ResetDone";
+		description = "$STR_ITW_PARAM_ResetInfo";
+		picture = "\a3\ui_f\data\GUI\Cfg\Hints\Rules_ca.paa";
+	};
+	// Used when EraseMissions option choosen
+	class endEraseSaves
+	{
+		title = "$STR_ITW_PARAM_EraseDone";
+		description = "$STR_ITW_PARAM_EraseInfo";
+		picture = "\a3\ui_f\data\GUI\Cfg\Hints\Rules_ca.paa";
+	};
+	// Used when ParamReset and EraseMissions option choosen
+	class endParamResetEraseSaves
+	{
+		title = "$STR_ITW_PARAM_ResetEraseDone";
+		description = "$STR_ITW_PARAM_ResetEraseInfo";
+		picture = "\a3\ui_f\data\GUI\Cfg\Hints\Rules_ca.paa";
+	};
+};
+
+class CfgFunctions
+{
+	class Impasse_TW
+	{
+        class ImpasseTW
+        {
+            class preInit
+            {
+                file = "preInit.sqf";
+                preInit = 1;
+            };
+        };
+    };
+};
+
+class CfgRemoteExec {
+    // List of Functions allowed to be sent from client via remoteExec
+    class Functions {
+        mode = 2;           // 2: Allow All
+        jip = 1;            // 1: JIP Allowed
+        allowedTargets = 0; // 0: All machines
+    };
+    // List of Commands allowed to be sent from client via remoteExec
+    class Commands {
+        mode = 2;           // 2: Allow All
+        jip = 1;            // 1: JIP Allowed
+        allowedTargets = 0; // 0: All machines
+    };
+};
+
+import RscDisplayGarage;
+class RscDisplayGarageSKL: RscDisplayGarage
+{
+	onLoad="[""onLoad"",_this,""RscDisplayGarageSKL"",'GUI'] call BIS_fnc_initDisplay";
+};
+
+class CfgCommunicationMenu
+{
+	class lifeSignScan
+	{
+		text = "$STR_ITW_RADIO_CommLifeSignScan";		// Text displayed in the menu and in a notification
+		submenu = ""; // Submenu opened upon activation (expression is ignored when submenu is not empty.)
+		expression = "_this spawn ITW_RadioLifeSignScan";	// Code executed upon activation
+		icon = ""; // "images\HeliArrive.paa";				// Icon displayed permanently next to the command menu
+		cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\weapon_ca.paa";				// Custom cursor displayed when the item is selected
+		enable = "1";					// Simple expression condition for enabling the item
+		removeAfterExpressionCall = 0;	// 1 to remove the item after calling
+	};
+	class showFriendlies
+	{
+		text = "$STR_ITW_RADIO_CommShowFriendlies";		// Text displayed in the menu and in a notification
+		submenu = "#USER:ITW_SF_SubMenu"; // Submenu opened upon activation (expression is ignored when submenu is not empty.)
+		expression = "";	// Code executed upon activation
+		icon = ""; // "\a3\Ui_f\data\GUI\Cfg\CommunicationMenu\call_ca.paa";				// Icon displayed permanently next to the command menu
+		cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\weapon_ca.paa";				// Custom cursor displayed when the item is selected
+		enable = "1";					// Simple expression condition for enabling the item
+		removeAfterExpressionCall = 0;	// 1 to remove the item after calling
+	};
+	class supports
+	{
+		text = "$STR_ITW_RADIO_CommSupports";		// Text displayed in the menu and in a notification
+		submenu = ""; // Submenu opened upon activation (expression is ignored when submenu is not empty.)
+		expression = "['SUPPORT'] spawn ITW_RadioCommsMenu";	// Code executed upon activation
+		icon = ""; // "images\HeliArrive.paa";				// Icon displayed permanently next to the command menu
+		cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\weapon_ca.paa";				// Custom cursor displayed when the item is selected
+		enable = "1";					// Simple expression condition for enabling the item
+		removeAfterExpressionCall = 0;	// 1 to remove the item after calling
+	};
+	class transports
+	{
+		text = "$STR_ITW_RADIO_CommTransports";		// Text displayed in the menu and in a notification
+		submenu = ""; // Submenu opened upon activation (expression is ignored when submenu is not empty.)
+		expression = "['TRANSPORT'] spawn ITW_RadioCommsMenu";	// Code executed upon activation
+		icon = ""; // "images\quaddrop.paa";				// Icon displayed permanently next to the command menu
+		cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\iconCursorSupport_ca.paa";				// Custom cursor displayed when the item is selected
+		enable = "1";					// Simple expression condition for enabling the item
+		removeAfterExpressionCall = 0;	// 1 to remove the item after calling
+	};
+	class commander
+	{
+		text = "$STR_ITW_RADIO_CommCommander";		// Text displayed in the menu and in a notification
+		submenu = "#USER:ITW_RadioCommanderMenu"; // Submenu opened upon activation (expression is ignored when submenu is not empty.)
+		expression = "";	// Code executed upon activation
+		icon = ""; // "\a3\Ui_f\data\GUI\Cfg\CommunicationMenu\supplydrop_ca.paa";				// Icon displayed permanently next to the command menu
+		cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\iconCursorSupport_ca.paa";				// Custom cursor displayed when the item is selected
+		enable = "1";					// Simple expression condition for enabling the item
+		removeAfterExpressionCall = 0;	// 1 to remove the item after calling
+	};
+	class sideops
+	{
+		text = "$STR_ITW_Sdo_CommSideOps";  // Text displayed in the menu and in a notification
+		submenu = "#USER:ITW_SdoMainMenu";    // Submenu opened upon activation (expression is ignored when submenu is not empty.)
+		expression = "";	// Code executed upon activation
+		icon = ""; // "\a3\Ui_f\data\GUI\Cfg\Cursors\add_gs.paa"; // Icon displayed permanently next to the command menu
+		cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\iconCursorSupport_ca.paa";				// Custom cursor displayed when the item is selected
+		enable = "1";					// Simple expression condition for enabling the item
+		removeAfterExpressionCall = 0;	// 1 to remove the item after calling
+	};
+};
+
+class CfgFactionClasses {
+    class TEST_Missing_Flag_Faction {
+        displayName = "QA Test Faction (No Flag)";
+        side = 2; // Independent
+        priority = 1;
+        icon = ""; 
+        // The flag property is intentionally omitted here to simulate a broken mod
+    };
+};

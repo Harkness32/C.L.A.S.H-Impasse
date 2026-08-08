@@ -1,0 +1,1 @@
+player setVariable ["ITW_SavedLoadout",getUnitLoadout player];
