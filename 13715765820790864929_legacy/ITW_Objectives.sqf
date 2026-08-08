@@ -1405,7 +1405,7 @@ ITW_ObjGetZones = {
             private _ptToLineDist = {
                 params ["_pt","_line"];
                 _line params ["_a","_b","_c"];
-                // find distance between _pt and line: d = |Ax0 + By0 + C| / sqrt(a² + b²)
+                // find distance between _pt and line: d = |Ax0 + By0 + C| / sqrt(aÂ² + bÂ²)
                 abs(_a*(_pt#0) + _b*(_pt#1) + _c)/sqrt((_a*_a) + (_b*_b))
             };
             
@@ -2153,6 +2153,7 @@ ITW_ObjNext = {
             false
         } count (ITW_Zones#_prevZoneIndex);
         
+        ["before-atk-next",[_prevZoneIndex,_newZoneIndex]] call ITW_CLASH_fnc_ObserveLifecycle;
         0 call ITW_AtkNext;
         
         ITW_ObjContestedState = _contestedObjectives apply {[_x,false,-1]};
@@ -2178,6 +2179,7 @@ ITW_ObjNext = {
     publicVariable "ITW_Bases";
     publicVariable "ITW_Objectives";
     publicVariable "ITW_ObjContestedState";
+    ["objective-state-published",[_prevZoneIndex,_newZoneIndex,+_contestedObjectives]] call ITW_CLASH_fnc_ObserveLifecycle;
     
     0 call ITW_EnemyCivManager;
     
@@ -2549,7 +2551,10 @@ ITW_ObjFlagTask = {
         } forEach _currObjIdxs;
         _prevZoneIndex = ITW_ZoneIndex;
         
-        if (_contestedStateChanged) then {publicVariable "ITW_ObjContestedState"};
+        if (_contestedStateChanged) then {
+            publicVariable "ITW_ObjContestedState";
+            ["contested-state-published",[ITW_ZoneIndex,+ITW_ObjContestedState]] call ITW_CLASH_fnc_ObserveLifecycle;
+        };
         if (_allCaptured && _dpZoneTrigger && !ITW_defendRunning) then {
             0 call ITW_ObjDefendPhase;
             _dpZoneTrigger = false; 
@@ -2563,8 +2568,10 @@ ITW_ObjFlagTask = {
         
         if (_zoneCaptured) then {
             ITW_ObjZonesUpdating = true;
+            ["zone-transition-begin",[ITW_ZoneIndex]] call ITW_CLASH_fnc_ObserveLifecycle;
             false call ITW_ObjNext;
             ITW_ObjZonesUpdating = false;
+            ["zone-transition-end",[ITW_ZoneIndex]] call ITW_CLASH_fnc_ObserveLifecycle;
         };
         
         sleep FLAG_SLEEP;

@@ -120,7 +120,8 @@ ITW_EnemyDebugVehArray = {
 
 ITW_EnemyGroupCallback = {
     params ["_group"];
-    ITW_EnemyGroups pushBack _group; 
+    ITW_EnemyGroups pushBack _group;
+    ["enemy-group-callback",_group] call ITW_CLASH_fnc_ObserveGroup;
 };
 
 ITW_EnemyAttackVectors = {

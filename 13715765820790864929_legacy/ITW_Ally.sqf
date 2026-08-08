@@ -150,6 +150,7 @@ ITW_AllyGroupCallback = {
     if (side _group != ITW_PlayerSide) exitWith {if (!isNull _group) then {diag_log format ["Error Pos: ITW_AllyGroupCallback called with non-player group : %1",_group]}};
     
     ITW_AllyGroups pushBack _group; // add to groups able to revive players
+    ["ally-group-callback",_group] call ITW_CLASH_fnc_ObserveGroup;
     {_x hcSetGroup [_group]} forEach ITW_HcCmdr;
     
     // we want to make ITW_AllyGroups public, but it only needs to be updated slowly to keep from pushing lots

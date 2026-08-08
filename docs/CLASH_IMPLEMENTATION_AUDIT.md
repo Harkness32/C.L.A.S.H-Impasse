@@ -55,10 +55,7 @@ The prior feasibility work established these constraints for the first implement
 - Rebuild HAL’s tactical objective set whenever the active Impasse zone changes.
 - HAL may eventually request force capabilities, but Impasse must approve, substitute, defer, or deny the request and perform all spawning and ticket/budget accounting.
 
-Two decisions are still open and must not be silently invented:
-
-1. The first live commander topology: OPFOR-only pilot or simultaneous BLUFOR/OPFOR commanders.
-2. Whether special forces should be the only reconnaissance-capable groups. HAL’s classifications make that a deliberate policy implementation, not a single safe switch.
+The first live commander topology is locked to an **OPFOR-only** pilot. Whether special forces should be the only reconnaissance-capable groups remains a later policy decision; HAL’s classifications make that a deliberate implementation choice, not a single safe switch.
 
 ## Ownership contract
 
@@ -123,7 +120,7 @@ Impasse creates cargo groups before moving them and calls the group callback at 
 - its group is local to the server; and
 - the active objective generation has not begun a transition.
 
-HAL cargo tasking should be disabled for managed groups with the appropriate `NoCargo` policy. Impasse remains the sole transport authority.
+Impasse remains the sole transport authority. `RydHQ_NoCargo` only prevents a group from serving as transport; it does not prevent infantry from receiving transport. The pilot must set `RydHQ_CargoFind = 0`, in addition to `RydHQ_SubAll = false`, before any live registration.
 
 ### 4. Tactical waypoint ownership
 
@@ -138,7 +135,7 @@ Removing HAL groups from `ITW_AtkGetInfantryGroups` globally would be unsafe bec
 
 ### 5. Objective authority and zone transitions
 
-`ITW_ObjFlagCapture` calculates capture from conscious units. When the current objective set is complete, it raises `ITW_ObjZonesUpdating`, calls `ITW_ObjNext`, then clears the transition state. `ITW_ObjNext` is the authoritative campaign seam: it marks captured objectives, converts prior zones into bases, invokes `ITW_AtkNext`, rebuilds contested state and mission objects, and saves the new zone.
+`ITW_ObjFlagTask` calculates capture from conscious units. When the current objective set is complete, it raises `ITW_ObjZonesUpdating`, calls `ITW_ObjNext`, then clears the transition state. `ITW_ObjNext` is the authoritative campaign seam: it marks captured objectives, converts prior zones into bases, invokes `ITW_AtkNext`, rebuilds contested state and mission objects, and saves the new zone.
 
 HAL simple objectives (`RydHQ_SimpleObjs`) can represent Impasse’s three active objectives, but HAL also maintains its own `SetTaken*` and `RydHQ_Taken` state and can independently infer capture from nearby units. That state must be treated as a mirror only. It may never trigger `ITW_ObjNext` or other campaign progression.
 
@@ -189,15 +186,14 @@ HAL secondary tasks should be disabled to avoid duplicating Impasse tasks. HAL t
 
 ## Recommended implementation sequence
 
-### Tranche 0 — Repository and parity gate
+### Tranche 0 — Accepted Altis baseline
 
-- Restore repository access and identify its buildable mission root.
-- Create a feature branch such as `feature/clash-phase-0`.
-- Build the repository without C.L.A.S.H. changes and compare its unpacked output to the current baseline.
-- Resolve differences before integration. Do not use the old PBO to seed the repository.
-- Record the current baseline checksum in the repository’s audit/test documentation.
+- `13715765820790864929_legacy.bin` is the authoritative inherited Impasse state.
+- Its 86-file extraction is the editable mission seed and cross-reference tree.
+- The comparator remains available for regression/diff work; it is not a pre-integration blocker.
+- A repack must load and behave correctly, but byte-identical PBO container metadata is not required.
 
-**Exit gate:** the repository is demonstrably the source for the current mission or every intended difference is documented.
+**Exit gate:** complete. The accepted artifact and readable extraction are both present in the private repository.
 
 ### Tranche 1 — Disabled observability bridge
 
@@ -218,7 +214,7 @@ It should:
 
 ### Tranche 2 — One-side, dismounted-infantry pilot
 
-Recommendation: start with the defending OPFOR commander because that limits the pilot to the current one-way campaign’s defensive side. This is a recommendation, not a recovered final decision.
+The first pilot is locked to the defending OPFOR commander, limiting HAL control to the current one-way campaign’s defensive side.
 
 - Set `RydHQ_SubAll = false` before HAL starts.
 - Register only ordinary, server-local, fully dismounted OPFOR infantry.
@@ -309,4 +305,4 @@ If any blocker fails, HAL group registration should stay disabled. The observabi
 
 ## Immediate next action
 
-Once repository access works, begin Tranche 0 in Git rather than modifying or repacking the frozen PBOs. The first code change should be the disabled observability bridge and classification state machine—not live HAL inclusion. That establishes the contracts needed to integrate safely and gives the project a rollback switch from its first commit.
+Run the Tranche 1 observer through one complete three-objective zone on a dedicated server. HAL inclusion stays disabled until the RPT proves correct classification, lifecycle release points, objective publication hooks, and Impasse waypoint-writer coverage without behavioral divergence.
