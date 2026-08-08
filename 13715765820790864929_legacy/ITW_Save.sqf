@@ -182,6 +182,7 @@ ITW_SaveGame = {
     private _teammates = call ITW_TeammatesSave;
     private _fortifications = call ITW_FortificationsSave;
     private _sideOps = call ITW_SideOpsSave;
+    private _targetsAllowed = missionNamespace getVariable ["ITW_targetsAllowed",[]];
     
     private _objData = [ITW_ZoneIndex, +ITW_Objectives, +ITW_Bases, +ITW_ObjContestedState];
     profileNamespace setVariable [format["ITW_SaveObj%1",worldName],_objData];
@@ -191,7 +192,7 @@ ITW_SaveGame = {
     profileNamespace setVariable [format["ITW_Teammates%1",worldName],_teammates];
     profileNamespace setVariable [format["ITW_Fortifications%1",worldName],_fortifications];
     profileNamespace setVariable [format["ITW_StoVeh%1",worldName],ITW_storedVehicles];
-    profileNamespace setVariable [format["ITW_Misc%1",worldName],[ITW_defendPhaseFlagCount,ITW_defendPhaseZoneDone,ITW_targetsAllowed,_sideOps]];
+    profileNamespace setVariable [format["ITW_Misc%1",worldName],[ITW_defendPhaseFlagCount,ITW_defendPhaseZoneDone,_targetsAllowed,_sideOps]];
     profileNamespace setVariable [format["ITW_Time%1",worldName],date];
 
     // save a few adjustable parameters in case they were adjusted
