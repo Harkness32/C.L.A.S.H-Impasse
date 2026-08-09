@@ -19,9 +19,19 @@ ITW_CLASH_LastMirroredZone = -1;
 ITW_CLASH_LastObjectiveSignature = "";
 ITW_CLASH_LastDoctrineSignature = "";
 ITW_CLASH_LastAllocationSignature = "";
+ITW_CLASH_LastAnchorSignature = "";
 ITW_CLASH_AllocationDriftMargin = 150;
 ITW_CLASH_AllocationDriftCooldown = 60;
+ITW_CLASH_MinAnchorSoldiers = 3;
+ITW_CLASH_AnchorAuditGrace = 75;
+ITW_CLASH_AnchorOrderCooldown = 60;
+ITW_CLASH_AnchorRefillGrace = 120;
+ITW_CLASH_AnchorAuditReadyAt = 1e10;
+ITW_CLASH_ReserveRatio = 0.20;
+ITW_CLASH_CommanderObjective = -1;
 ITW_CLASH_ManagedGroups = [];
+ITW_CLASH_AnchorGroups = createHashMap;
+ITW_CLASH_AnchorRefills = createHashMap;
 ITW_CLASH_ObserverNextId = 0;
 ITW_CLASH_ObserverGroups = createHashMap;
 ITW_CLASH_ObserverWriterLast = createHashMap;
@@ -52,6 +62,54 @@ ITW_CLASH_fnc_IsCommanderGroup = {
             _group getVariable ["ITW_CLASH_Commander",false]
         }
     }
+};
+
+ITW_CLASH_fnc_IsConscious = {
+    params ["_unit"];
+    if (isNull _unit || {!alive _unit}) exitWith {false};
+#if __has_include("\z\ace\addons\main\script_component.hpp")
+    !(_unit getVariable ["ACE_isUnconscious",false])
+#else
+    lifeState _unit in ["HEALTHY","INJURED"]
+#endif
+};
+
+ITW_CLASH_fnc_CountConscious = {
+    params ["_units",["_center",[]],["_radius",-1]];
+    {
+        [_x] call ITW_CLASH_fnc_IsConscious && {
+            _radius < 0 || {
+                _center isNotEqualTo [] && {
+                    _x distance _center < _radius
+                }
+            }
+        }
+    } count _units
+};
+
+ITW_CLASH_fnc_AnchorKey = {
+    params [["_objectiveIndex",-1]];
+    str _objectiveIndex
+};
+
+ITW_CLASH_fnc_GetObjectiveRadius = {
+    params [["_objectiveIndex",-1]];
+    if (isNil "ITW_Objectives" || {
+        _objectiveIndex < 0 || {_objectiveIndex >= count ITW_Objectives}
+    }) exitWith {0};
+
+    private _objective = ITW_Objectives#_objectiveIndex;
+    if (count _objective <= ITW_OBJ_SIZE) exitWith {0};
+    _objective#ITW_OBJ_SIZE
+};
+
+ITW_CLASH_fnc_GetObjectiveCenter = {
+    params [["_objectiveIndex",-1],["_flag",objNull]];
+    if (isNull _flag) then {
+        _flag = [_objectiveIndex] call ITW_CLASH_fnc_GetObjectiveFlag;
+    };
+    if (isNull _flag) exitWith {[]};
+    _flag getVariable ["ITW_FlagPos",getPosATL _flag]
 };
 
 ITW_CLASH_fnc_GetObjectiveFlag = {
@@ -86,6 +144,68 @@ ITW_CLASH_fnc_GetHeldObjectives = {
         };
     } forEach (ITW_Zones#ITW_ZoneIndex);
     _held
+};
+
+ITW_CLASH_fnc_GetCommanderPosition = {
+    params [["_objectiveIndex",-1],["_flag",objNull]];
+    if (isNull _flag) exitWith {[0,0,0]};
+
+    private _radius = [_objectiveIndex] call ITW_CLASH_fnc_GetObjectiveRadius;
+    private _center = [_objectiveIndex,_flag] call ITW_CLASH_fnc_GetObjectiveCenter;
+    private _distance = _radius + 75;
+    private _position = _center getPos [_distance,0];
+    private _found = false;
+    {
+        private _candidate = _center getPos [_distance,_x];
+        if (!surfaceIsWater _candidate) exitWith {
+            _position = _candidate;
+            _found = true;
+        };
+    } forEach [0,90,180,270];
+
+    if (!_found) then {
+        _position = [
+            _center,
+            _radius + 50,
+            _radius + 250,
+            2,
+            0,
+            0.5,
+            0,
+            [],
+            [_position,_position]
+        ] call BIS_fnc_findSafePos;
+    };
+    _position set [2,0];
+    _position
+};
+
+ITW_CLASH_fnc_SyncCommanderObjective = {
+    params [["_heldObjectives",[]]];
+    if (!isServer || {isNull ITW_CLASH_HALLeader}) exitWith {-1};
+    if (_heldObjectives isEqualTo []) then {
+        _heldObjectives = call ITW_CLASH_fnc_GetHeldObjectives;
+    };
+    if (_heldObjectives isEqualTo []) exitWith {-1};
+
+    private _objectiveIndex = _heldObjectives#0#0;
+    private _flag = _heldObjectives#0#1;
+    if (isNull _flag) exitWith {-1};
+
+    private _position = [
+        _objectiveIndex,
+        _flag
+    ] call ITW_CLASH_fnc_GetCommanderPosition;
+    ITW_CLASH_HALLeader setPosATL _position;
+    if (ITW_CLASH_CommanderObjective != _objectiveIndex) then {
+        ITW_CLASH_CommanderObjective = _objectiveIndex;
+        ["commander-objective",[
+            _objectiveIndex,
+            _position,
+            round (_position distance2D _flag)
+        ]] call ITW_CLASH_fnc_Log;
+    };
+    _objectiveIndex
 };
 
 ITW_CLASH_fnc_ClassifyGroup = {
@@ -197,8 +317,16 @@ ITW_CLASH_fnc_ApplyDefensiveDoctrine = {
     RydHQ_AttackAlways = false;
     RydHQ_IdleDef = true;
     RydHQ_DefendObjectives = 1;
-    RydHQ_CRDefRes = 0;
+    RydHQ_CRDefRes = ITW_CLASH_ReserveRatio;
     RydHQ_NoDef = [];
+    RydHQ_MAtt = true;
+    RydHQ_Personality = "COMPETENT";
+    RydHQ_Recklessness = 0.5;
+    RydHQ_Consistency = 0.5;
+    RydHQ_Activity = 0.5;
+    RydHQ_Reflex = 0.5;
+    RydHQ_Circumspection = 0.5;
+    RydHQ_Fineness = 0.5;
 
     if (!isNull ITW_CLASH_HALHQ) then {
         ITW_CLASH_HALHQ setVariable ["RydHQ_Order","DEFEND"];
@@ -206,8 +334,16 @@ ITW_CLASH_fnc_ApplyDefensiveDoctrine = {
         ITW_CLASH_HALHQ setVariable ["RydHQ_AttackAlways",false];
         ITW_CLASH_HALHQ setVariable ["RydHQ_IdleDef",true];
         ITW_CLASH_HALHQ setVariable ["RydHQ_DefendObjectives",1];
-        ITW_CLASH_HALHQ setVariable ["RydHQ_CRDefRes",0];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_CRDefRes",ITW_CLASH_ReserveRatio];
         ITW_CLASH_HALHQ setVariable ["RydHQ_NoDef",[]];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_MAtt",true];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Personality","COMPETENT"];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Recklessness",0.5];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Consistency",0.5];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Activity",0.5];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Reflex",0.5];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Circumspection",0.5];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Fineness",0.5];
     };
 
     private _signature = str [
@@ -215,11 +351,20 @@ ITW_CLASH_fnc_ApplyDefensiveDoctrine = {
         RydHQ_Berserk,
         RydHQ_IdleDef,
         RydHQ_DefendObjectives,
-        count RydHQ_NoDef
+        count RydHQ_NoDef,
+        RydHQ_CRDefRes,
+        RydHQ_Personality
     ];
     if (_signature != ITW_CLASH_LastDoctrineSignature) then {
         ITW_CLASH_LastDoctrineSignature = _signature;
-        ["doctrine",["DEFEND",true,RydHQ_DefendObjectives,count RydHQ_NoDef]] call ITW_CLASH_fnc_Log;
+        ["doctrine",[
+            "DEFEND",
+            true,
+            RydHQ_DefendObjectives,
+            count RydHQ_NoDef,
+            RydHQ_CRDefRes,
+            RydHQ_Personality
+        ]] call ITW_CLASH_fnc_Log;
     };
     true
 };
@@ -292,6 +437,9 @@ ITW_CLASH_fnc_MirrorObjectives = {
     } forEach (ITW_Zones#ITW_ZoneIndex);
 
     ITW_CLASH_HALObjectives = _mirrors;
+    private _heldObjectives = call ITW_CLASH_fnc_GetHeldObjectives;
+    private _commanderObjective = [_heldObjectives] call ITW_CLASH_fnc_SyncCommanderObjective;
+
     RydHQ_SimpleMode = true;
     RydHQ_SimpleObjs = +_mirrors;
     RydHQ_Taken = +_taken;
@@ -313,17 +461,535 @@ ITW_CLASH_fnc_MirrorObjectives = {
     private _signature = str [
         ITW_ZoneIndex,
         _mirrors apply {str _x},
-        _taken apply {str _x}
+        _taken apply {str _x},
+        _commanderObjective
     ];
     if (_signature != ITW_CLASH_LastObjectiveSignature) then {
         ITW_CLASH_LastObjectiveSignature = _signature;
         ["objective-mirror",[
             ITW_ZoneIndex,
             ITW_Zones#ITW_ZoneIndex,
-            (call ITW_CLASH_fnc_GetHeldObjectives) apply {_x#0}
+            _heldObjectives apply {_x#0},
+            _commanderObjective
         ]] call ITW_CLASH_fnc_Log;
     };
     !(_mirrors isEqualTo [])
+};
+
+ITW_CLASH_fnc_ClearAnchorSlot = {
+    params [["_objectiveIndex",-1],["_reason","unspecified"]];
+    private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+    private _entry = ITW_CLASH_AnchorGroups getOrDefault [_key,[]];
+    if (_entry isEqualTo []) exitWith {false};
+
+    private _group = _entry#0;
+    private _id = _entry#1;
+    if (!isNull _group) then {
+        _group setVariable ["ITW_CLASH_AnchorObjective",nil];
+        _group setVariable ["ITW_CLASH_AnchorAssignedAt",nil];
+        _group setVariable ["ITW_CLASH_AnchorOrderPending",nil];
+        if (!isNull ITW_CLASH_HALHQ) then {
+            ITW_CLASH_HALHQ setVariable [
+                "RydHQ_DefSpot",
+                (ITW_CLASH_HALHQ getVariable ["RydHQ_DefSpot",[]]) - [_group]
+            ];
+            ITW_CLASH_HALHQ setVariable [
+                "RydHQ_Def",
+                (ITW_CLASH_HALHQ getVariable ["RydHQ_Def",[]]) - [_group]
+            ];
+        };
+        if (_reason isEqualTo "promoted-replacement") then {
+            _group setVariable ["Break",true];
+            _group setVariable ["Defending",false];
+        };
+    };
+    ITW_CLASH_AnchorGroups deleteAt _key;
+    ["anchor-vacant",[
+        _objectiveIndex,
+        _id,
+        _reason,
+        if (isNull _group) then {0} else {
+            [units _group] call ITW_CLASH_fnc_CountConscious
+        }
+    ]] call ITW_CLASH_fnc_Log;
+    true
+};
+
+ITW_CLASH_fnc_ResetAnchors = {
+    params [["_reason","reset"]];
+    private _count = 0;
+    {
+        private _entry = ITW_CLASH_AnchorGroups get _x;
+        if (_entry isNotEqualTo []) then {
+            private _group = _entry#0;
+            if (!isNull _group) then {
+                _group setVariable ["ITW_CLASH_AnchorObjective",nil];
+                _group setVariable ["ITW_CLASH_AnchorAssignedAt",nil];
+                _group setVariable ["ITW_CLASH_AnchorOrderPending",nil];
+            };
+            _count = _count + 1;
+        };
+    } forEach +(keys ITW_CLASH_AnchorGroups);
+
+    ITW_CLASH_AnchorGroups = createHashMap;
+    ITW_CLASH_AnchorRefills = createHashMap;
+    ITW_CLASH_LastAnchorSignature = "";
+    ITW_CLASH_AnchorAuditReadyAt = time + 45;
+    ["anchor-reset",[_reason,_count]] call ITW_CLASH_fnc_Log;
+    _count
+};
+
+ITW_CLASH_fnc_SelectAnchorGroup = {
+    params ["_objectiveIndex","_flag","_radius"];
+    if (isNull _flag) exitWith {grpNull};
+
+    private _center = [_objectiveIndex,_flag] call ITW_CLASH_fnc_GetObjectiveCenter;
+    private _bestStrong = grpNull;
+    private _bestStrongScore = 1e10;
+    private _bestWeak = grpNull;
+    private _bestWeakScore = 1e10;
+
+    {
+        private _group = _x;
+        if (!isNull _group && {
+            _group getVariable ["ITW_CLASH_Managed",false] && {
+                !(_group getVariable ["ITW_CLASH_Releasing",false]) && {
+                    (_group getVariable ["ITW_CLASH_AssignedObjective",-1]) == _objectiveIndex
+                }
+            }
+        }) then {
+            private _otherAnchor = _group getVariable ["ITW_CLASH_AnchorObjective",-1];
+            if (_otherAnchor in [-1,_objectiveIndex]) then {
+                private _aliveCount = [units _group] call ITW_CLASH_fnc_CountConscious;
+                if (_aliveCount > 0) then {
+                    private _insideCount = [
+                        units _group,
+                        _center,
+                        _radius
+                    ] call ITW_CLASH_fnc_CountConscious;
+                    private _distance = leader _group distance2D _flag;
+
+                    if (_aliveCount >= ITW_CLASH_MinAnchorSoldiers) then {
+                        private _score = if (_insideCount >= ITW_CLASH_MinAnchorSoldiers) then {
+                            (_aliveCount * 100) + _distance
+                        } else {
+                            100000 + _distance + (_aliveCount * 10)
+                        };
+                        if (_score < _bestStrongScore) then {
+                            _bestStrongScore = _score;
+                            _bestStrong = _group;
+                        };
+                    } else {
+                        private _score = 200000 + _distance - (_insideCount * 100);
+                        if (_score < _bestWeakScore) then {
+                            _bestWeakScore = _score;
+                            _bestWeak = _group;
+                        };
+                    };
+                };
+            };
+        };
+    } forEach +ITW_CLASH_ManagedGroups;
+
+    if (!isNull _bestStrong) exitWith {_bestStrong};
+    _bestWeak
+};
+
+ITW_CLASH_fnc_OrderAnchor = {
+    params ["_group","_objectiveIndex","_flag","_radius"];
+    if (!isServer || {
+        !ITW_CLASH_LiveEnabled || {
+            !ITW_CLASH_HALReady || {
+                isNull _group || {isNull _flag}
+            }
+        }
+    }) exitWith {false};
+    if (isNil "HAL_GoDef" || {isNil "RYD_Spawn"}) exitWith {
+        ["anchor-order-unavailable",[
+            _objectiveIndex,
+            [_group] call ITW_CLASH_fnc_GroupId
+        ]] call ITW_CLASH_fnc_Log;
+        false
+    };
+    if (_group getVariable ["ITW_CLASH_AnchorOrderPending",false]) exitWith {false};
+
+    private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+    private _entry = ITW_CLASH_AnchorGroups getOrDefault [_key,[]];
+    if (_entry isEqualTo [] || {!((_entry#0) isEqualTo _group)}) exitWith {false};
+
+    private _center = [_objectiveIndex,_flag] call ITW_CLASH_fnc_GetObjectiveCenter;
+    private _safeRadius = 20 max (_radius - 35);
+    private _target = [
+        _center,
+        10,
+        _safeRadius,
+        2,
+        0,
+        0.4,
+        0,
+        [],
+        [_center,_center]
+    ] call BIS_fnc_findSafePos;
+    if (surfaceIsWater _target) then {
+        _target = +_center;
+    };
+
+    _entry set [3,time];
+    ITW_CLASH_AnchorGroups set [_key,_entry];
+    _group setVariable ["ITW_CLASH_AnchorOrderPending",true];
+    ["anchor-order-requested",[
+        _objectiveIndex,
+        _entry#1,
+        round (leader _group distance2D _flag),
+        _target
+    ]] call ITW_CLASH_fnc_Log;
+
+    [_group,_objectiveIndex,_target] spawn {
+        params ["_group","_objectiveIndex","_target"];
+        if (isNull _group) exitWith {};
+
+        _group setVariable ["Break",true];
+        _group setVariable ["Defending",false];
+        if (!isNull ITW_CLASH_HALHQ) then {
+            ITW_CLASH_HALHQ setVariable [
+                "RydHQ_DefSpot",
+                (ITW_CLASH_HALHQ getVariable ["RydHQ_DefSpot",[]]) - [_group]
+            ];
+            ITW_CLASH_HALHQ setVariable [
+                "RydHQ_Def",
+                (ITW_CLASH_HALHQ getVariable ["RydHQ_Def",[]]) - [_group]
+            ];
+        };
+
+        sleep 6;
+        if (isNull _group || {
+            !ITW_CLASH_LiveEnabled || {
+                !ITW_CLASH_HALReady || {
+                    !(_group getVariable ["ITW_CLASH_Managed",false]) || {
+                        (_group getVariable ["ITW_CLASH_AnchorObjective",-1]) != _objectiveIndex
+                    }
+                }
+            }
+        }) exitWith {
+            if (!isNull _group) then {
+                _group setVariable ["ITW_CLASH_AnchorOrderPending",nil];
+            };
+        };
+
+        _group setVariable ["Break",false];
+        _group setVariable ["Defending",false];
+        private _defSpot = ITW_CLASH_HALHQ getVariable ["RydHQ_DefSpot",[]];
+        _defSpot pushBackUnique _group;
+        ITW_CLASH_HALHQ setVariable ["RydHQ_DefSpot",_defSpot];
+
+        private _angle = ITW_CLASH_HALHQ getVariable ["RydHQ_Angle",0];
+        [[
+            _group,
+            _target,
+            0,
+            0,
+            false,
+            _angle,
+            ITW_CLASH_HALHQ
+        ],HAL_GoDef] call RYD_Spawn;
+
+        _group setVariable ["ITW_CLASH_AnchorOrderPending",nil];
+        ["anchor-order-issued",[
+            _objectiveIndex,
+            [_group] call ITW_CLASH_fnc_GroupId,
+            _target
+        ]] call ITW_CLASH_fnc_Log;
+    };
+    true
+};
+
+ITW_CLASH_fnc_RequestAnchorRefill = {
+    params ["_objectiveIndex",["_reason","anchor-deficit"],["_deficit",1]];
+    if (!isServer || {!ITW_CLASH_LiveEnabled} || {!ITW_CLASH_HALReady}) exitWith {false};
+
+    private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+    private _entry = ITW_CLASH_AnchorRefills getOrDefault [_key,[]];
+    if (_entry isNotEqualTo [] && {(_entry#0) isEqualTo "assigned"}) then {
+        private _group = _entry#1;
+        if (!isNull _group && {
+            ([units _group] call ITW_CLASH_fnc_CountConscious) > 0 && {
+                time - (_entry#2) < ITW_CLASH_AnchorRefillGrace
+            }
+        }) exitWith {false};
+        ["anchor-refill-retry",[
+            _objectiveIndex,
+            if (isNull _group) then {"<null>"} else {
+                [_group] call ITW_CLASH_fnc_GroupId
+            },
+            time - (_entry#2)
+        ]] call ITW_CLASH_fnc_Log;
+        _entry = [];
+    };
+    if (_entry isNotEqualTo [] && {(_entry#0) isEqualTo "pending"}) exitWith {false};
+
+    ITW_CLASH_AnchorRefills set [
+        _key,
+        ["pending",grpNull,time,_reason,_deficit]
+    ];
+    ["anchor-deficit",[
+        _objectiveIndex,
+        _reason,
+        _deficit,
+        ITW_CLASH_MinAnchorSoldiers
+    ]] call ITW_CLASH_fnc_Log;
+    true
+};
+
+ITW_CLASH_fnc_NextAnchorRefill = {
+    if (!isServer || {!ITW_CLASH_LiveEnabled} || {!ITW_CLASH_HALReady}) exitWith {-1};
+
+    private _nextObjective = -1;
+    {
+        private _objectiveIndex = _x#0;
+        private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+        private _entry = ITW_CLASH_AnchorRefills getOrDefault [_key,[]];
+        if (_entry isNotEqualTo [] && {(_entry#0) isEqualTo "pending"}) exitWith {
+            _nextObjective = _objectiveIndex;
+        };
+    } forEach (call ITW_CLASH_fnc_GetHeldObjectives);
+    _nextObjective
+};
+
+ITW_CLASH_fnc_AcknowledgeAnchorRefill = {
+    params ["_group","_objectiveIndex"];
+    if (!isServer || {
+        !ITW_CLASH_LiveEnabled || {
+            isNull _group || {_objectiveIndex < 0}
+        }
+    }) exitWith {false};
+
+    private _held = call ITW_CLASH_fnc_GetHeldObjectives;
+    if ((_held findIf {(_x#0) == _objectiveIndex}) < 0) exitWith {false};
+
+    private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+    private _entry = ITW_CLASH_AnchorRefills getOrDefault [_key,[]];
+    if (_entry isEqualTo [] || {!((_entry#0) isEqualTo "pending")}) exitWith {false};
+
+    _group setVariable ["ITW_CLASH_RefillObjective",_objectiveIndex];
+    ITW_CLASH_AnchorRefills set [
+        _key,
+        ["assigned",_group,time,_entry#3,_entry#4]
+    ];
+    ["anchor-refill-assigned",[
+        _objectiveIndex,
+        [_group] call ITW_CLASH_fnc_GroupId,
+        count units _group
+    ]] call ITW_CLASH_fnc_Log;
+    true
+};
+
+ITW_CLASH_fnc_AuditAnchors = {
+    if (!isServer || {
+        !ITW_CLASH_LiveEnabled || {
+            !ITW_CLASH_HALReady || {
+                ITW_CLASH_Transitioning || {
+                    time < ITW_CLASH_AnchorAuditReadyAt || {
+                        time < ITW_CLASH_RegistrationFrozenUntil
+                    }
+                }
+            }
+        }
+    }) exitWith {[]};
+
+    private _heldObjectives = call ITW_CLASH_fnc_GetHeldObjectives;
+    private _heldKeys = _heldObjectives apply {
+        [_x#0] call ITW_CLASH_fnc_AnchorKey
+    };
+
+    {
+        if !(_x in _heldKeys) then {
+            private _objectiveIndex = parseNumber _x;
+            [_objectiveIndex,"objective-not-held"] call ITW_CLASH_fnc_ClearAnchorSlot;
+        };
+    } forEach +(keys ITW_CLASH_AnchorGroups);
+    {
+        if !(_x in _heldKeys) then {
+            ITW_CLASH_AnchorRefills deleteAt _x;
+        };
+    } forEach +(keys ITW_CLASH_AnchorRefills);
+
+    private _coverage = [];
+    private _enemyCoverageUnits = (units ITW_EnemySide) select {
+        !([group _x] call ITW_CLASH_fnc_IsCommanderGroup)
+    };
+    {
+        _x params ["_objectiveIndex","_flag"];
+        private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+        private _radius = [_objectiveIndex] call ITW_CLASH_fnc_GetObjectiveRadius;
+        private _center = [_objectiveIndex,_flag] call ITW_CLASH_fnc_GetObjectiveCenter;
+        private _entry = ITW_CLASH_AnchorGroups getOrDefault [_key,[]];
+        private _anchor = if (_entry isEqualTo []) then {grpNull} else {_entry#0};
+
+        private _anchorValid = !isNull _anchor && {
+            _anchor getVariable ["ITW_CLASH_Managed",false] && {
+                !(_anchor getVariable ["ITW_CLASH_Releasing",false]) && {
+                    (_anchor getVariable ["ITW_CLASH_AssignedObjective",-1]) == _objectiveIndex && {
+                        ([units _anchor] call ITW_CLASH_fnc_CountConscious) > 0
+                    }
+                }
+            }
+        };
+        if (!_anchorValid && {_entry isNotEqualTo []}) then {
+            [_objectiveIndex,"dead-or-ineligible"] call ITW_CLASH_fnc_ClearAnchorSlot;
+            _entry = [];
+            _anchor = grpNull;
+        };
+
+        private _anchorAlive = if (isNull _anchor) then {0} else {
+            [units _anchor] call ITW_CLASH_fnc_CountConscious
+        };
+        private _anchorInside = if (isNull _anchor) then {0} else {
+            [units _anchor,_center,_radius] call ITW_CLASH_fnc_CountConscious
+        };
+
+        if (isNull _anchor || {
+            _anchorAlive < ITW_CLASH_MinAnchorSoldiers || {
+                _anchorInside < ITW_CLASH_MinAnchorSoldiers
+            }
+        }) then {
+            private _candidate = [
+                _objectiveIndex,
+                _flag,
+                _radius
+            ] call ITW_CLASH_fnc_SelectAnchorGroup;
+            private _candidateAlive = if (isNull _candidate) then {0} else {
+                [units _candidate] call ITW_CLASH_fnc_CountConscious
+            };
+            private _candidateInside = if (isNull _candidate) then {0} else {
+                [units _candidate,_center,_radius] call ITW_CLASH_fnc_CountConscious
+            };
+
+            if (!isNull _candidate && {
+                !(_candidate isEqualTo _anchor) && {
+                    isNull _anchor || {
+                        _anchorAlive < ITW_CLASH_MinAnchorSoldiers || {
+                            _candidateInside >= ITW_CLASH_MinAnchorSoldiers
+                        }
+                    }
+                }
+            }) then {
+                if (!isNull _anchor) then {
+                    [_objectiveIndex,"promoted-replacement"] call ITW_CLASH_fnc_ClearAnchorSlot;
+                };
+
+                private _id = [_candidate] call ITW_CLASH_fnc_GroupId;
+                _candidate setVariable ["ITW_CLASH_AnchorObjective",_objectiveIndex];
+                _candidate setVariable ["ITW_CLASH_AnchorAssignedAt",time];
+                ITW_CLASH_AnchorGroups set [
+                    _key,
+                    [_candidate,_id,time,-1000]
+                ];
+                ["anchor-promoted",[
+                    _objectiveIndex,
+                    _id,
+                    _candidateAlive,
+                    _candidateInside,
+                    round (leader _candidate distance2D _flag)
+                ]] call ITW_CLASH_fnc_Log;
+
+                _entry = ITW_CLASH_AnchorGroups get _key;
+                _anchor = _candidate;
+                _anchorAlive = _candidateAlive;
+                _anchorInside = _candidateInside;
+            };
+        };
+
+        if (!isNull _anchor && {
+            _anchorInside < ITW_CLASH_MinAnchorSoldiers
+        }) then {
+            private _lastOrder = _entry#3;
+            if (time - _lastOrder >= ITW_CLASH_AnchorOrderCooldown) then {
+                [
+                    _anchor,
+                    _objectiveIndex,
+                    _flag,
+                    _radius
+                ] call ITW_CLASH_fnc_OrderAnchor;
+                _entry = ITW_CLASH_AnchorGroups getOrDefault [_key,_entry];
+            };
+        };
+
+        private _totalEnemyInside = [
+            _enemyCoverageUnits,
+            _center,
+            _radius
+        ] call ITW_CLASH_fnc_CountConscious;
+        private _state = "UNCOVERED";
+
+        if (_anchorInside >= ITW_CLASH_MinAnchorSoldiers) then {
+            _state = "COVERED";
+        } else {
+            if (_totalEnemyInside >= ITW_CLASH_MinAnchorSoldiers) then {
+                _state = "LOCAL-COVERAGE";
+            } else {
+                if (isNull _anchor) then {
+                    _state = "VACANT";
+                } else {
+                    if (_anchorAlive < ITW_CLASH_MinAnchorSoldiers) then {
+                        _state = "DEGRADED";
+                    } else {
+                        _state = "MOVING";
+                    };
+                };
+            };
+        };
+
+        if (_state in ["COVERED","LOCAL-COVERAGE"]) then {
+            private _refill = ITW_CLASH_AnchorRefills getOrDefault [_key,[]];
+            if (_refill isNotEqualTo []) then {
+                ITW_CLASH_AnchorRefills deleteAt _key;
+                ["anchor-refill-satisfied",[
+                    _objectiveIndex,
+                    _state,
+                    _anchorInside,
+                    _totalEnemyInside
+                ]] call ITW_CLASH_fnc_Log;
+            };
+        } else {
+            private _assignedAt = if (_entry isEqualTo []) then {0} else {_entry#2};
+            if (isNull _anchor || {
+                _anchorAlive < ITW_CLASH_MinAnchorSoldiers || {
+                    time - _assignedAt >= ITW_CLASH_AnchorAuditGrace
+                }
+            }) then {
+                [
+                    _objectiveIndex,
+                    toLowerANSI _state,
+                    ITW_CLASH_MinAnchorSoldiers - _totalEnemyInside
+                ] call ITW_CLASH_fnc_RequestAnchorRefill;
+            };
+        };
+
+        private _refill = ITW_CLASH_AnchorRefills getOrDefault [_key,[]];
+        private _refillState = if (_refill isEqualTo []) then {"none"} else {_refill#0};
+        _coverage pushBack [
+            _objectiveIndex,
+            round _radius,
+            if (_entry isEqualTo []) then {"<none>"} else {_entry#1},
+            _anchorAlive,
+            _anchorInside,
+            _totalEnemyInside,
+            _state,
+            _refillState
+        ];
+    } forEach _heldObjectives;
+
+    private _signature = str [
+        ITW_ZoneIndex,
+        _coverage apply {
+            [_x#0,_x#2,_x#3,_x#4,_x#5,_x#6,_x#7]
+        }
+    ];
+    if (_signature != ITW_CLASH_LastAnchorSignature) then {
+        ITW_CLASH_LastAnchorSignature = _signature;
+        ["anchor-coverage",[ITW_ZoneIndex,_coverage]] call ITW_CLASH_fnc_Log;
+    };
+    _coverage
 };
 
 ITW_CLASH_fnc_AuditAllocations = {
@@ -388,6 +1054,20 @@ ITW_CLASH_fnc_AuditAllocations = {
                 }
             };
 
+            private _role = if (
+                (_group getVariable ["ITW_CLASH_AnchorObjective",-1]) == _assignedObjective
+            ) then {
+                "anchor"
+            } else {
+                if (!isNull ITW_CLASH_HALHQ && {
+                    _group in (ITW_CLASH_HALHQ getVariable ["RydHQ_DefRes",[]])
+                }) then {
+                    "reserve"
+                } else {
+                    "main"
+                }
+            };
+
             private _entry = [
                 _id,
                 _assignedObjective,
@@ -395,7 +1075,8 @@ ITW_CLASH_fnc_AuditAllocations = {
                 _nearestObjective,
                 _waypointType,
                 round _assignedDistance,
-                round _nearestDistance
+                round _nearestDistance,
+                _role
             ];
             _allocations pushBack _entry;
 
@@ -432,7 +1113,7 @@ ITW_CLASH_fnc_AuditAllocations = {
     private _signature = str [
         ITW_ZoneIndex,
         _coverage,
-        _allocations apply {[_x#0,_x#1,_x#2,_x#3,_x#4]}
+        _allocations apply {[_x#0,_x#1,_x#2,_x#3,_x#4,_x#7]}
     ];
     if (_signature != ITW_CLASH_LastAllocationSignature) then {
         ITW_CLASH_LastAllocationSignature = _signature;
@@ -471,6 +1152,90 @@ ITW_CLASH_fnc_RegisterGroup = {
             }
         }
     } count ITW_CLASH_ManagedGroups;
+
+    private _isAnchorRefill = (
+        _group getVariable ["ITW_CLASH_RefillObjective",-1]
+    ) == _objectiveIndex;
+    if (_isAnchorRefill && {
+        count ITW_CLASH_ManagedGroups >= ITW_CLASH_MaxManagedGroups || {
+            _sameObjectiveCount >= ITW_CLASH_MaxManagedPerObjective
+        }
+    }) then {
+        private _victim = grpNull;
+        private _victimSize = 1e10;
+
+        {
+            private _candidate = _x;
+            if (!isNull _candidate && {
+                (_candidate getVariable ["ITW_CLASH_AssignedObjective",-1]) == _objectiveIndex && {
+                    (_candidate getVariable ["ITW_CLASH_AnchorObjective",-1]) < 0 && {
+                        (_candidate getVariable ["ITW_CLASH_RefillObjective",-1]) < 0 && {
+                            !(_candidate getVariable ["ITW_CLASH_Releasing",false])
+                        }
+                    }
+                }
+            }) then {
+                private _candidateSize = [
+                    units _candidate
+                ] call ITW_CLASH_fnc_CountConscious;
+                if (_candidateSize < _victimSize) then {
+                    _victim = _candidate;
+                    _victimSize = _candidateSize;
+                };
+            };
+        } forEach +ITW_CLASH_ManagedGroups;
+
+        if (isNull _victim && {
+            count ITW_CLASH_ManagedGroups >= ITW_CLASH_MaxManagedGroups
+        }) then {
+            {
+                private _candidate = _x;
+                private _candidateObjective = _candidate getVariable [
+                    "ITW_CLASH_AssignedObjective",
+                    -1
+                ];
+                private _objectiveCount = {
+                    !isNull _x && {
+                        (_x getVariable ["ITW_CLASH_AssignedObjective",-1]) == _candidateObjective
+                    }
+                } count ITW_CLASH_ManagedGroups;
+                if (!isNull _candidate && {
+                    _objectiveCount > 1 && {
+                        (_candidate getVariable ["ITW_CLASH_AnchorObjective",-1]) < 0 && {
+                            (_candidate getVariable ["ITW_CLASH_RefillObjective",-1]) < 0 && {
+                                !(_candidate getVariable ["ITW_CLASH_Releasing",false])
+                            }
+                        }
+                    }
+                }) then {
+                    private _candidateSize = [
+                        units _candidate
+                    ] call ITW_CLASH_fnc_CountConscious;
+                    if (_candidateSize < _victimSize) then {
+                        _victim = _candidate;
+                        _victimSize = _candidateSize;
+                    };
+                };
+            } forEach +ITW_CLASH_ManagedGroups;
+        };
+
+        if (!isNull _victim) then {
+            ["anchor-capacity-reclaim",[
+                _objectiveIndex,
+                [_victim] call ITW_CLASH_fnc_GroupId,
+                _victimSize,
+                [_group] call ITW_CLASH_fnc_GroupId
+            ]] call ITW_CLASH_fnc_Log;
+            [_victim,"anchor-refill-capacity"] call ITW_CLASH_fnc_ReleaseGroup;
+            _sameObjectiveCount = {
+                !isNull _x && {
+                    (_x getVariable ["ITW_CLASH_Managed",false]) && {
+                        VAR_GET_OBJ_IDX(_x) == _objectiveIndex
+                    }
+                }
+            } count ITW_CLASH_ManagedGroups;
+        };
+    };
 
     if (count ITW_CLASH_ManagedGroups >= ITW_CLASH_MaxManagedGroups || {
         _sameObjectiveCount >= ITW_CLASH_MaxManagedPerObjective
@@ -518,6 +1283,17 @@ ITW_CLASH_fnc_BeginRelease = {
     _group setVariable ["ITW_CLASH_ReleaseStarted",diag_tickTime];
     _group setVariable ["ITW_CLASH_Releasing",true];
     _group setVariable ["RydHQ_MIA",true];
+    private _anchorObjective = _group getVariable ["ITW_CLASH_AnchorObjective",-1];
+    if (_anchorObjective >= 0) then {
+        private _key = [_anchorObjective] call ITW_CLASH_fnc_AnchorKey;
+        private _entry = ITW_CLASH_AnchorGroups getOrDefault [_key,[]];
+        if (_entry isNotEqualTo [] && {(_entry#0) isEqualTo _group}) then {
+            [
+                _anchorObjective,
+                format ["release:%1",_reason]
+            ] call ITW_CLASH_fnc_ClearAnchorSlot;
+        };
+    };
     ITW_CLASH_ManagedGroups = ITW_CLASH_ManagedGroups - [_group];
     call ITW_CLASH_fnc_SyncHALIncluded;
 
@@ -557,6 +1333,10 @@ ITW_CLASH_fnc_FinishRelease = {
     [_group] call ITW_CLASH_fnc_ClearGroupWaypoints;
     _group setVariable ["ITW_CLASH_Managed",false];
     _group setVariable ["ITW_CLASH_AssignedObjective",nil];
+    _group setVariable ["ITW_CLASH_AnchorObjective",nil];
+    _group setVariable ["ITW_CLASH_AnchorAssignedAt",nil];
+    _group setVariable ["ITW_CLASH_AnchorOrderPending",nil];
+    _group setVariable ["ITW_CLASH_RefillObjective",nil];
     _group setVariable ["ITW_CLASH_Releasing",false];
     _group setVariable ["ITW_CLASH_ReleaseReason",nil];
     _group setVariable ["ITW_CLASH_ReleaseStarted",nil];
@@ -750,6 +1530,7 @@ ITW_CLASH_fnc_ObserveLifecycle = {
 
     if (_event in ["zone-transition-begin","before-atk-next","defend-start","defend-done"]) then {
         if (ITW_CLASH_LiveEnabled) then {
+            [_event] call ITW_CLASH_fnc_ResetAnchors;
             [_event] call ITW_CLASH_fnc_ReleaseAll;
             if !(_event isEqualTo "zone-transition-begin") then {
                 ITW_CLASH_RegistrationFrozenUntil = ITW_CLASH_RegistrationFrozenUntil max (time + 5);
@@ -769,6 +1550,7 @@ ITW_CLASH_fnc_ObserveLifecycle = {
         if (ITW_CLASH_LiveEnabled) then {
             call ITW_CLASH_fnc_MirrorObjectives;
             ITW_CLASH_RegistrationFrozenUntil = time + 35;
+            ITW_CLASH_AnchorAuditReadyAt = time + 45;
         } else {
             ITW_CLASH_RegistrationFrozenUntil = 0;
         };
@@ -808,6 +1590,7 @@ ITW_CLASH_fnc_Reconcile = {
     if (ITW_CLASH_LiveEnabled) then {
         if (ITW_CLASH_HALReady && {!ITW_CLASH_Transitioning}) then {
             call ITW_CLASH_fnc_MirrorObjectives;
+            call ITW_CLASH_fnc_AuditAnchors;
             call ITW_CLASH_fnc_AuditAllocations;
         };
         call ITW_CLASH_fnc_SyncHALIncluded;
@@ -836,6 +1619,9 @@ ITW_CLASH_fnc_DiagnosticSnapshot = {
         ["tracked",count ITW_CLASH_ObserverGroups],
         ["eligible",_eligible],
         ["managed",count ITW_CLASH_ManagedGroups],
+        ["anchorSlots",count (keys ITW_CLASH_AnchorGroups)],
+        ["anchorRefills",count (keys ITW_CLASH_AnchorRefills)],
+        ["anchorMinimum",ITW_CLASH_MinAnchorSoldiers],
         ["rejected",_rejected],
         ["zone",missionNamespace getVariable ["ITW_ZoneIndex",-1]],
         ["transition",missionNamespace getVariable ["ITW_ObjZonesUpdating",false]]
@@ -861,7 +1647,15 @@ ITW_CLASH_fnc_ConfigureHAL = {
     RydHQ_AttackAlways = false;
     RydHQ_IdleDef = true;
     RydHQ_DefendObjectives = 1;
-    RydHQ_CRDefRes = 0;
+    RydHQ_CRDefRes = ITW_CLASH_ReserveRatio;
+    RydHQ_MAtt = true;
+    RydHQ_Personality = "COMPETENT";
+    RydHQ_Recklessness = 0.5;
+    RydHQ_Consistency = 0.5;
+    RydHQ_Activity = 0.5;
+    RydHQ_Reflex = 0.5;
+    RydHQ_Circumspection = 0.5;
+    RydHQ_Fineness = 0.5;
     RydHQ_SimpleMode = true;
     RydHQ_SimpleObjs = [];
     RydHQ_GetHQInside = false;
@@ -902,8 +1696,16 @@ ITW_CLASH_fnc_CreateCommander = {
     };
 
     private _position = [0,0,0];
-    if (ITW_CLASH_HALObjectives isNotEqualTo []) then {
-        _position = getPosATL (ITW_CLASH_HALObjectives#0);
+    private _heldObjectives = call ITW_CLASH_fnc_GetHeldObjectives;
+    if (_heldObjectives isNotEqualTo []) then {
+        _position = [
+            _heldObjectives#0#0,
+            _heldObjectives#0#1
+        ] call ITW_CLASH_fnc_GetCommanderPosition;
+    } else {
+        if (ITW_CLASH_HALObjectives isNotEqualTo []) then {
+            _position = getPosATL (ITW_CLASH_HALObjectives#0);
+        };
     };
 
     ITW_CLASH_HALHQ = createGroup ITW_EnemySide;
@@ -923,6 +1725,8 @@ ITW_CLASH_fnc_CreateCommander = {
 
     leaderHQ = ITW_CLASH_HALLeader;
     publicVariable "leaderHQ";
+    call ITW_CLASH_fnc_ApplyDefensiveDoctrine;
+    [_heldObjectives] call ITW_CLASH_fnc_SyncCommanderObjective;
     true
 };
 
@@ -955,6 +1759,7 @@ ITW_CLASH_fnc_FailPilot = {
     ["pilot-failing",[_reason,_details,count ITW_CLASH_ManagedGroups]] call ITW_CLASH_fnc_Log;
 
     private _released = [format ["pilot-failed:%1",_reason]] call ITW_CLASH_fnc_ReleaseAll;
+    [format ["pilot-failed:%1",_reason]] call ITW_CLASH_fnc_ResetAnchors;
     ITW_CLASH_ManagedGroups = [];
     RydHQ_Included = [];
     RydHQ_NoDef = [];
@@ -1063,6 +1868,7 @@ ITW_CLASH_fnc_StartLivePilot = {
 
         call ITW_CLASH_fnc_MirrorObjectives;
         call ITW_CLASH_fnc_SyncHALIncluded;
+        ITW_CLASH_AnchorAuditReadyAt = time + 45;
         if !(call ITW_CLASH_fnc_StartCommanderWatchdog) exitWith {
             ["watchdog-start-failed",[]] call ITW_CLASH_fnc_FailPilot;
         };
@@ -1070,7 +1876,9 @@ ITW_CLASH_fnc_StartLivePilot = {
             "opfor-dismounted-live",
             count ITW_CLASH_ManagedGroups,
             ITW_CLASH_MaxManagedGroups,
-            ITW_CLASH_MaxManagedPerObjective
+            ITW_CLASH_MaxManagedPerObjective,
+            ITW_CLASH_MinAnchorSoldiers,
+            ITW_CLASH_ReserveRatio
         ]] call ITW_CLASH_fnc_Log;
     };
     true
@@ -1105,13 +1913,28 @@ ITW_CLASH_fnc_StartObserver = {
 ["ITW_CLASH_fnc_Log"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_GroupId"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_IsCommanderGroup"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_IsConscious"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_CountConscious"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_AnchorKey"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_GetObjectiveRadius"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_GetObjectiveCenter"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_GetObjectiveFlag"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_GetHeldObjectives"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_GetCommanderPosition"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_SyncCommanderObjective"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ClassifyGroup"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ClearGroupWaypoints"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ApplyDefensiveDoctrine"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_SyncHALIncluded"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_MirrorObjectives"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_ClearAnchorSlot"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_ResetAnchors"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_SelectAnchorGroup"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_OrderAnchor"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_RequestAnchorRefill"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_NextAnchorRefill"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_AcknowledgeAnchorRefill"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_AuditAnchors"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_AuditAllocations"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_RegisterGroup"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_BeginRelease"] call SKL_fnc_CompileFinal;
