@@ -23,7 +23,7 @@ ITW_CLASH_LastAllocationSignature = "";
 ITW_CLASH_LastAnchorSignature = "";
 ITW_CLASH_AllocationDriftMargin = 150;
 ITW_CLASH_AllocationDriftCooldown = 60;
-ITW_CLASH_MinAnchorSoldiers = 3;
+ITW_CLASH_MinAnchorSoldiers = 6;
 ITW_CLASH_AnchorAuditGrace = 75;
 ITW_CLASH_AnchorOrderCooldown = 60;
 ITW_CLASH_AnchorRefillGrace = 120;
@@ -572,16 +572,18 @@ ITW_CLASH_fnc_SelectAnchorGroup = {
 
                     if (_aliveCount >= ITW_CLASH_MinAnchorSoldiers) then {
                         private _score = if (_insideCount >= ITW_CLASH_MinAnchorSoldiers) then {
-                            (_aliveCount * 100) + _distance
+                            _distance
                         } else {
-                            100000 + _distance + (_aliveCount * 10)
+                            100000 + _distance
                         };
                         if (_score < _bestStrongScore) then {
                             _bestStrongScore = _score;
                             _bestStrong = _group;
                         };
                     } else {
-                        private _score = 200000 + _distance - (_insideCount * 100);
+                        private _score = (
+                            (ITW_CLASH_MinAnchorSoldiers - _aliveCount) * 100000
+                        ) + _distance - (_insideCount * 1000);
                         if (_score < _bestWeakScore) then {
                             _bestWeakScore = _score;
                             _bestWeak = _group;
@@ -868,8 +870,12 @@ ITW_CLASH_fnc_AuditAnchors = {
             if (!isNull _candidate && {
                 !(_candidate isEqualTo _anchor) && {
                     isNull _anchor || {
-                        _anchorAlive < ITW_CLASH_MinAnchorSoldiers || {
-                            _candidateInside >= ITW_CLASH_MinAnchorSoldiers
+                        _candidateAlive >= ITW_CLASH_MinAnchorSoldiers && {
+                            _anchorAlive < ITW_CLASH_MinAnchorSoldiers || {
+                                _candidateInside >= ITW_CLASH_MinAnchorSoldiers && {
+                                    _anchorInside < ITW_CLASH_MinAnchorSoldiers
+                                }
+                            }
                         }
                     }
                 }
@@ -925,22 +931,18 @@ ITW_CLASH_fnc_AuditAnchors = {
         if (_anchorInside >= ITW_CLASH_MinAnchorSoldiers) then {
             _state = "COVERED";
         } else {
-            if (_totalEnemyInside >= ITW_CLASH_MinAnchorSoldiers) then {
-                _state = "LOCAL-COVERAGE";
+            if (isNull _anchor) then {
+                _state = "VACANT";
             } else {
-                if (isNull _anchor) then {
-                    _state = "VACANT";
+                if (_anchorAlive < ITW_CLASH_MinAnchorSoldiers) then {
+                    _state = "DEGRADED";
                 } else {
-                    if (_anchorAlive < ITW_CLASH_MinAnchorSoldiers) then {
-                        _state = "DEGRADED";
-                    } else {
-                        _state = "MOVING";
-                    };
+                    _state = "MOVING";
                 };
             };
         };
 
-        if (_state in ["COVERED","LOCAL-COVERAGE"]) then {
+        if (_state isEqualTo "COVERED") then {
             private _refill = ITW_CLASH_AnchorRefills getOrDefault [_key,[]];
             if (_refill isNotEqualTo []) then {
                 ITW_CLASH_AnchorRefills deleteAt _key;
@@ -961,7 +963,7 @@ ITW_CLASH_fnc_AuditAnchors = {
                 [
                     _objectiveIndex,
                     toLowerANSI _state,
-                    ITW_CLASH_MinAnchorSoldiers - _totalEnemyInside
+                    ITW_CLASH_MinAnchorSoldiers - _anchorInside
                 ] call ITW_CLASH_fnc_RequestAnchorRefill;
             };
         };
