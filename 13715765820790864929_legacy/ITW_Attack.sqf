@@ -2220,8 +2220,8 @@ ITW_AtkStuckHandler = {
 ITW_AtkGetInfantryGroups = {
     private _managedGroups = allGroups select {
         private _grp = _x;
-        if (_grp getVariable ["ITW_CLASH_Commander",false]) exitWith {false};
         private _leader = leader _grp;
+        !(_grp getVariable ["ITW_CLASH_Commander",false]) && {
         side _x in [east,west,independent] && {
         count units _grp > 0               && {
         _leader isEqualTo vehicle _leader  && {
@@ -2229,7 +2229,7 @@ ITW_AtkGetInfantryGroups = {
         !(_leader getVariable ["LV_PAUSE",false]) && {
         !(_grp getVariable ["itwDelivery",false]) && {
         !(!isNil "IGIT_HCC_HC_Groups_Array" && {_grp in IGIT_HCC_HC_Groups_Array}) && { // // hack for HCC (High Command Converter)
-        {isPlayer _x} count units _grp == 0 }}}}}}}
+        {isPlayer _x} count units _grp == 0 }}}}}}}}
     };    
     _managedGroups
 };
