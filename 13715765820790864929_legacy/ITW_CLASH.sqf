@@ -17,6 +17,10 @@ ITW_CLASH_HALHQ = grpNull;
 ITW_CLASH_HALObjectives = [];
 ITW_CLASH_LastMirroredZone = -1;
 ITW_CLASH_LastObjectiveSignature = "";
+ITW_CLASH_LastDoctrineSignature = "";
+ITW_CLASH_LastAllocationSignature = "";
+ITW_CLASH_AllocationDriftMargin = 150;
+ITW_CLASH_AllocationDriftCooldown = 60;
 ITW_CLASH_ManagedGroups = [];
 ITW_CLASH_ObserverNextId = 0;
 ITW_CLASH_ObserverGroups = createHashMap;
@@ -50,6 +54,40 @@ ITW_CLASH_fnc_IsCommanderGroup = {
     }
 };
 
+ITW_CLASH_fnc_GetObjectiveFlag = {
+    params [["_objectiveIndex",-1]];
+    if (isNil "ITW_Objectives" || {
+        _objectiveIndex < 0 || {_objectiveIndex >= count ITW_Objectives}
+    }) exitWith {objNull};
+
+    private _objective = ITW_Objectives#_objectiveIndex;
+    if (count _objective <= ITW_OBJ_FLAG) exitWith {objNull};
+    _objective#ITW_OBJ_FLAG
+};
+
+ITW_CLASH_fnc_GetHeldObjectives = {
+    if (isNil "ITW_Zones" || {
+        isNil "ITW_ZoneIndex" || {
+            isNil "ITW_Objectives" || {
+                isNil "ITW_ObjContestedOwnerIsFriendly"
+            }
+        }
+    }) exitWith {[]};
+    if (ITW_ZoneIndex < 0 || {ITW_ZoneIndex >= count ITW_Zones}) exitWith {[]};
+
+    private _held = [];
+    {
+        private _objectiveIndex = _x;
+        private _flag = [_objectiveIndex] call ITW_CLASH_fnc_GetObjectiveFlag;
+        if (!isNull _flag && {
+            !([_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly)
+        }) then {
+            _held pushBack [_objectiveIndex,_flag];
+        };
+    } forEach (ITW_Zones#ITW_ZoneIndex);
+    _held
+};
+
 ITW_CLASH_fnc_ClassifyGroup = {
     params ["_group"];
 
@@ -75,6 +113,10 @@ ITW_CLASH_fnc_ClassifyGroup = {
     if (missionNamespace getVariable ["ITW_ObjZonesUpdating",false]) exitWith {[false,"zone-transition",[]]};
     if (ITW_CLASH_Transitioning || {time < ITW_CLASH_RegistrationFrozenUntil}) exitWith {
         [false,"bridge-frozen",[ITW_CLASH_RegistrationFrozenUntil - time]]
+    };
+    private _reeligibleAt = _group getVariable ["ITW_CLASH_ReeligibleAt",0];
+    if (time < _reeligibleAt) exitWith {
+        [false,"allocation-cooldown",[_reeligibleAt - time]]
     };
 
     private _managedVehicleIndex = -1;
@@ -106,6 +148,27 @@ ITW_CLASH_fnc_ClassifyGroup = {
 
     private _objectiveIndex = VAR_GET_OBJ_IDX(_group);
     if (_objectiveIndex < 0) exitWith {[false,"unassigned-objective",[]]};
+    if (isNil "ITW_Zones" || {
+        isNil "ITW_ZoneIndex" || {
+            isNil "ITW_ObjContestedOwnerIsFriendly"
+        }
+    }) exitWith {[false,"objective-state-not-ready",[]]};
+    if (ITW_ZoneIndex < 0 || {ITW_ZoneIndex >= count ITW_Zones}) exitWith {
+        [false,"objective-zone-invalid",[ITW_ZoneIndex]]
+    };
+    if !(_objectiveIndex in (ITW_Zones#ITW_ZoneIndex)) exitWith {
+        [false,"objective-outside-active-zone",[_objectiveIndex,ITW_ZoneIndex]]
+    };
+    if ([_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly) exitWith {
+        [false,"objective-not-enemy-held",[_objectiveIndex]]
+    };
+
+    private _assignedObjective = _group getVariable ["ITW_CLASH_AssignedObjective",-1];
+    if (_group getVariable ["ITW_CLASH_Managed",false] && {
+        _assignedObjective >= 0 && {_assignedObjective != _objectiveIndex}
+    }) exitWith {
+        [false,"objective-reassigned",[_assignedObjective,_objectiveIndex]]
+    };
 
     [true,"eligible",[
         count _aliveUnits,
@@ -126,6 +189,41 @@ ITW_CLASH_fnc_ClearGroupWaypoints = {
     true
 };
 
+ITW_CLASH_fnc_ApplyDefensiveDoctrine = {
+    if (!isServer || {!ITW_CLASH_LiveEnabled}) exitWith {false};
+
+    RydHQ_Order = "DEFEND";
+    RydHQ_Berserk = false;
+    RydHQ_AttackAlways = false;
+    RydHQ_IdleDef = true;
+    RydHQ_DefendObjectives = 1;
+    RydHQ_CRDefRes = 0;
+    RydHQ_NoDef = [];
+
+    if (!isNull ITW_CLASH_HALHQ) then {
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Order","DEFEND"];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Berserk",false];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_AttackAlways",false];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_IdleDef",true];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_DefendObjectives",1];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_CRDefRes",0];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_NoDef",[]];
+    };
+
+    private _signature = str [
+        RydHQ_Order,
+        RydHQ_Berserk,
+        RydHQ_IdleDef,
+        RydHQ_DefendObjectives,
+        count RydHQ_NoDef
+    ];
+    if (_signature != ITW_CLASH_LastDoctrineSignature) then {
+        ITW_CLASH_LastDoctrineSignature = _signature;
+        ["doctrine",["DEFEND",true,RydHQ_DefendObjectives,count RydHQ_NoDef]] call ITW_CLASH_fnc_Log;
+    };
+    true
+};
+
 ITW_CLASH_fnc_SyncHALIncluded = {
     if (!isServer || {!ITW_CLASH_LiveEnabled}) exitWith {[]};
 
@@ -140,11 +238,12 @@ ITW_CLASH_fnc_SyncHALIncluded = {
     };
 
     RydHQ_Included = +ITW_CLASH_ManagedGroups;
-    RydHQ_NoDef = +ITW_CLASH_ManagedGroups;
+    RydHQ_NoDef = [];
     if (!isNull ITW_CLASH_HALHQ) then {
         ITW_CLASH_HALHQ setVariable ["RydHQ_Included",+ITW_CLASH_ManagedGroups];
-        ITW_CLASH_HALHQ setVariable ["RydHQ_NoDef",+ITW_CLASH_ManagedGroups];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_NoDef",[]];
     };
+    call ITW_CLASH_fnc_ApplyDefensiveDoctrine;
     +ITW_CLASH_ManagedGroups
 };
 
@@ -218,9 +317,139 @@ ITW_CLASH_fnc_MirrorObjectives = {
     ];
     if (_signature != ITW_CLASH_LastObjectiveSignature) then {
         ITW_CLASH_LastObjectiveSignature = _signature;
-        ["objective-mirror",[ITW_ZoneIndex,count _mirrors,count _taken]] call ITW_CLASH_fnc_Log;
+        ["objective-mirror",[
+            ITW_ZoneIndex,
+            ITW_Zones#ITW_ZoneIndex,
+            (call ITW_CLASH_fnc_GetHeldObjectives) apply {_x#0}
+        ]] call ITW_CLASH_fnc_Log;
     };
     !(_mirrors isEqualTo [])
+};
+
+ITW_CLASH_fnc_AuditAllocations = {
+    if (!isServer || {
+        !ITW_CLASH_LiveEnabled || {
+            !ITW_CLASH_HALReady || {
+                ITW_CLASH_Transitioning
+            }
+        }
+    }) exitWith {[]};
+
+    private _heldObjectives = call ITW_CLASH_fnc_GetHeldObjectives;
+    private _allocations = [];
+    private _drifted = [];
+
+    {
+        private _group = _x;
+        if (!isNull _group && {
+            _group getVariable ["ITW_CLASH_Managed",false]
+        }) then {
+            private _id = [_group] call ITW_CLASH_fnc_GroupId;
+            private _assignedObjective = _group getVariable [
+                "ITW_CLASH_AssignedObjective",
+                VAR_GET_OBJ_IDX(_group)
+            ];
+            private _assignedFlag = [_assignedObjective] call ITW_CLASH_fnc_GetObjectiveFlag;
+            private _waypointIndex = currentWaypoint _group;
+            private _waypointCount = count waypoints _group;
+            private _hasWaypoint = _waypointCount > 0 && {
+                _waypointIndex >= 0 && {_waypointIndex < _waypointCount}
+            };
+            private _waypointPosition = getPosATL (leader _group);
+            private _waypointType = "";
+            if (_hasWaypoint) then {
+                _waypointPosition = waypointPosition [_group,_waypointIndex];
+                _waypointType = waypointType [_group,_waypointIndex];
+            };
+
+            private _nearestObjective = -1;
+            private _nearestDistance = 1e10;
+            {
+                _x params ["_objectiveIndex","_flag"];
+                private _distance = _waypointPosition distance2D _flag;
+                if (_distance < _nearestDistance) then {
+                    _nearestObjective = _objectiveIndex;
+                    _nearestDistance = _distance;
+                };
+            } forEach _heldObjectives;
+
+            private _assignedDistance = if (isNull _assignedFlag) then {
+                1e10
+            } else {
+                _waypointPosition distance2D _assignedFlag
+            };
+            private _state = if (_group getVariable ["Defending",false]) then {
+                "defending"
+            } else {
+                if (_group getVariable ["Busy" + str _group,false]) then {
+                    "busy"
+                } else {
+                    "awaiting-order"
+                }
+            };
+
+            private _entry = [
+                _id,
+                _assignedObjective,
+                _state,
+                _nearestObjective,
+                _waypointType,
+                round _assignedDistance,
+                round _nearestDistance
+            ];
+            _allocations pushBack _entry;
+
+            if (_state isEqualTo "defending" && {
+                _hasWaypoint && {
+                    _nearestObjective >= 0 && {
+                        _nearestObjective != _assignedObjective && {
+                            _nearestDistance + ITW_CLASH_AllocationDriftMargin < _assignedDistance
+                        }
+                    }
+                }
+            }) then {
+                _drifted pushBack [_group,_entry];
+            };
+        };
+    } forEach +ITW_CLASH_ManagedGroups;
+
+    private _coverage = [];
+    {
+        private _objectiveIndex = _x#0;
+        _coverage pushBack [
+            _objectiveIndex,
+            {
+                !isNull _x && {
+                    (_x getVariable ["ITW_CLASH_AssignedObjective",-1]) == _objectiveIndex
+                }
+            } count ITW_CLASH_ManagedGroups,
+            {
+                (_x#3) == _objectiveIndex
+            } count _allocations
+        ];
+    } forEach _heldObjectives;
+
+    private _signature = str [
+        ITW_ZoneIndex,
+        _coverage,
+        _allocations apply {[_x#0,_x#1,_x#2,_x#3,_x#4]}
+    ];
+    if (_signature != ITW_CLASH_LastAllocationSignature) then {
+        ITW_CLASH_LastAllocationSignature = _signature;
+        ["objective-allocation",[ITW_ZoneIndex,_coverage,_allocations]] call ITW_CLASH_fnc_Log;
+    };
+
+    {
+        _x params ["_group","_entry"];
+        _group setVariable [
+            "ITW_CLASH_ReeligibleAt",
+            time + ITW_CLASH_AllocationDriftCooldown
+        ];
+        ["allocation-drift",_entry] call ITW_CLASH_fnc_Log;
+        [_group,"objective-allocation-drift"] call ITW_CLASH_fnc_ReleaseGroup;
+    } forEach _drifted;
+
+    _allocations
 };
 
 ITW_CLASH_fnc_RegisterGroup = {
@@ -262,6 +491,7 @@ ITW_CLASH_fnc_RegisterGroup = {
     _group setVariable ["RydHQ_MIA",nil];
     [_group] call ITW_CLASH_fnc_ClearGroupWaypoints;
     _group setVariable ["ITW_CLASH_Managed",true];
+    _group setVariable ["ITW_CLASH_AssignedObjective",_objectiveIndex];
     ITW_CLASH_ManagedGroups pushBackUnique _group;
     call ITW_CLASH_fnc_SyncHALIncluded;
 
@@ -326,6 +556,7 @@ ITW_CLASH_fnc_FinishRelease = {
     private _id = [_group] call ITW_CLASH_fnc_GroupId;
     [_group] call ITW_CLASH_fnc_ClearGroupWaypoints;
     _group setVariable ["ITW_CLASH_Managed",false];
+    _group setVariable ["ITW_CLASH_AssignedObjective",nil];
     _group setVariable ["ITW_CLASH_Releasing",false];
     _group setVariable ["ITW_CLASH_ReleaseReason",nil];
     _group setVariable ["ITW_CLASH_ReleaseStarted",nil];
@@ -577,6 +808,7 @@ ITW_CLASH_fnc_Reconcile = {
     if (ITW_CLASH_LiveEnabled) then {
         if (ITW_CLASH_HALReady && {!ITW_CLASH_Transitioning}) then {
             call ITW_CLASH_fnc_MirrorObjectives;
+            call ITW_CLASH_fnc_AuditAllocations;
         };
         call ITW_CLASH_fnc_SyncHALIncluded;
     };
@@ -624,8 +856,12 @@ ITW_CLASH_fnc_ConfigureHAL = {
     RydHQ_SecTasks = false;
     RydHQ_ResetOnDemand = false;
     RydHQ_ResetTime = 30;
-    RydHQ_Order = "ATTACK";
-    RydHQ_IdleDef = false;
+    RydHQ_Order = "DEFEND";
+    RydHQ_Berserk = false;
+    RydHQ_AttackAlways = false;
+    RydHQ_IdleDef = true;
+    RydHQ_DefendObjectives = 1;
+    RydHQ_CRDefRes = 0;
     RydHQ_SimpleMode = true;
     RydHQ_SimpleObjs = [];
     RydHQ_GetHQInside = false;
@@ -869,10 +1105,14 @@ ITW_CLASH_fnc_StartObserver = {
 ["ITW_CLASH_fnc_Log"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_GroupId"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_IsCommanderGroup"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_GetObjectiveFlag"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_GetHeldObjectives"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ClassifyGroup"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ClearGroupWaypoints"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_ApplyDefensiveDoctrine"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_SyncHALIncluded"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_MirrorObjectives"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_AuditAllocations"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_RegisterGroup"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_BeginRelease"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ReleaseAcknowledged"] call SKL_fnc_CompileFinal;

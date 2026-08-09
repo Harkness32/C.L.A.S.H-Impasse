@@ -44,6 +44,10 @@ The bridge:
 - suppresses any instrumented Impasse tactical writer that nevertheless reaches the commander;
 - runs a commander-health watchdog after HAL initialization and fails closed if the HQ or leader becomes invalid;
 - mirrors the current Impasse objectives into HAL simple-mode objectives;
+- forces HAL into defensive doctrine and keeps managed groups out of `RydHQ_NoDef`;
+- admits only groups assigned to an active objective that OPFOR still holds;
+- preserves each group's Impasse objective affinity and reclaims cross-objective HAL allocations;
+- logs held-objective coverage and HAL's inferred waypoint allocation;
 - uses an explicit allow-list with `RydHQ_SubAll = false`;
 - disables HAL transport assignment with `RydHQ_CargoFind = 0`;
 - manages no more than 12 groups total and no more than four groups per objective;
@@ -101,7 +105,9 @@ The hosted run does not satisfy the dedicated-server or zone-transition gate. On
 Search for `CLASH OBS |`. A useful run should include:
 
 - `observer-start` with mode 2;
-- `objective-mirror`;
+- `objective-mirror` with the active and OPFOR-held objective indexes;
+- `doctrine` reporting `DEFEND`, defense enabled, and zero `NoDef` groups;
+- `objective-allocation` mapping each managed group from its Impasse objective to HAL's inferred defense point;
 - exactly one `pilot-ready`;
 - no `register` line for `CLASH HAL OPFOR`;
 - `register` for eligible enemy foot groups;
@@ -122,7 +128,9 @@ Tranche 2 passes only if:
 - the `CLASH HAL OPFOR` group remains valid, is never registered, and never appears in HAL's managed allow-list;
 - no `commander-writer-suppressed`, `pilot-failing`, or `pilot-failed` line appears;
 - no more than 12 groups are managed and no more than four belong to one objective;
-- no player, vehicle, transport, garrison, support, headless-owned, transitional, or unassigned group is registered;
+- no player, vehicle, transport, garrison, support, headless-owned, transitional, unassigned, inactive-objective, or player-held-objective group is registered;
+- every managed group remains associated with its original Impasse objective while HAL owns it;
+- no `allocation-drift` occurs; if one does, the group must release cleanly and remain in cooldown before re-registration;
 - Impasse tactical writers do not overwrite HAL waypoints while a group is managed;
 - every reclaimed group leaves HAL's allow-list before Impasse mutates, merges, garrisons, or deletes it;
 - no late HAL waypoint lands after release;
