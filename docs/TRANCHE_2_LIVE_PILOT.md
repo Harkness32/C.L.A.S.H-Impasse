@@ -52,7 +52,7 @@ The bridge:
 - disables HAL transport assignment with `RydHQ_CargoFind = 0`;
 - manages no more than 12 groups total and no more than four groups per objective;
 - changes no group locality and performs no bridge remote execution;
-- defines one three-conscious-soldier HAL anchor slot per OPFOR-held objective;
+- defines one designated HAL anchor squad per OPFOR-held objective, healthy only while at least six conscious members of that squad remain inside the capture radius;
 - redirects the next normally authorized OPFOR infantry squad to a genuinely uncovered objective when no local group can restore the anchor;
 - never increases Impasse's AI ceiling, grants tickets, accelerates spawning, changes faction selection, or alters the save schema.
 
@@ -133,7 +133,7 @@ Tranche 2 passes only if:
 - no more than 12 groups are managed and no more than four belong to one objective;
 - no player, vehicle, transport, garrison, support, headless-owned, transitional, unassigned, inactive-objective, or player-held-objective group is registered;
 - every managed group remains associated with its original Impasse objective while HAL owns it;
-- every OPFOR-held objective reaches `COVERED` or `LOCAL-COVERAGE` without collapsing all managed groups into the capture circle;
+- every OPFOR-held objective has one designated anchor squad and reaches `COVERED` with at least six conscious members of that squad inside the capture radius, without collapsing the remaining managed groups into the circle;
 - a wiped or degraded anchor creates at most one objective-specific refill, and the next normally authorized replacement is assigned to the correct objective;
 - no old-zone anchor or refill survives `zone-transition-begin`;
 - no `allocation-drift` occurs; if one does, the group must release cleanly and remain in cooldown before re-registration;
