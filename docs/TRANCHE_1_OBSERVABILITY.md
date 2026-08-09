@@ -82,3 +82,17 @@ The test exposed three contained defects:
 The hardening patch retains empty-group terminal state until the group becomes null, saves an empty Targets allow-list when necessary, and guards objective assignment when no new squad remains.
 
 A Git-blob comparison of the merged observer mission against the accepted 86-file Altis baseline found 80 byte-identical inherited files, six intentionally modified observer-hook files, no missing inherited files, and one added observer file (`ITW_CLASH.sqf`). After this hardening patch, `ITW_Save.sqf` becomes one additional documented descendant; the baseline artifact itself remains untouched.
+
+## Observer-on transition findings
+
+The second hosted multiplayer session ran the observer through a full `ZoneNext 1 >> 2` transition without observer SQF errors. It confirmed one transition-time ownership defect: a freshly eligible group could be reclassified as transitional before the release scan, so the scan missed it. The observer now releases from its stored `ELIGIBLE` state before Impasse mutates or deletes the group.
+
+The same RPT exposed three pre-existing cleanup/load races that would obscure a live HAL pilot:
+
+- legacy or no-Targets saves could store `nil` in the Targets slot, leaving `_targetsAllowed` undefined during load;
+- `ITW_AtkUnloadProtUnit` used a unit object as the remote-execution target while mass cleanup could delete that object;
+- defend cleanup called the nonexistent `ITW_AtkUnassignVeh`, and vehicle management could call `setCombatMode` after its group became null.
+
+The final hardening patch normalizes the Targets slot with a typed `param` fallback, routes unload protection to the captured unit owner and verifies locality on arrival, replaces the stale unassign call with `ITW_AtkMoveOutVeh` through Impasse's group-locality helper, and guards null groups before cleanup/combat-mode work.
+
+The remaining Tranche 1 gate is one actual dedicated-server run with the observer enabled through a complete three-objective zone transition. HAL must still receive zero groups in that test.

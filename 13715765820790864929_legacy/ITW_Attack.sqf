@@ -1068,13 +1068,17 @@ ITW_AtkUnloadProtect = {
     _veh addEventHandler ["GetOut", {   
         params ["_veh", "_role", "_unit"];
         if (!isNull _unit) then {
-            _this remoteExec ["ITW_AtkUnloadProtUnit",_unit];
+            private _unitOwner = owner _unit;
+            if (_unitOwner > 0) then {
+                _this remoteExec ["ITW_AtkUnloadProtUnit",_unitOwner];
+            };
         };
     }];
 };
 
 ITW_AtkUnloadProtUnit = {
     params ["_veh", "_role", "_unit"];
+    if (isNull _unit || {!local _unit}) exitWith {};
     // don't allow units to take damage from friendly vehicles for a while after unloading
     // run where unit is local
     _unit setVariable ["ITW_unloadDmgTimeout",time + 240];
@@ -2985,7 +2989,9 @@ ITW_AtkVehicleManager = {
                 ',_objPt,_objSize,_type,_moveType]];             
                 ATK_DEBUG(_grp,"ITW_AtkVehicleManager waypoints updated 0",_wpPos); 
                 _wpIdx = currentWaypoint _grp;
-                _grp setCombatMode "RED";
+                if (!isNull _grp) then {
+                    _grp setCombatMode "RED";
+                };
             };
             
             // Travel handler - slow down/speed up vehicles if vehicles in their way
@@ -3463,7 +3469,7 @@ ITW_AtkUnloadLand = {
         if (isNull _grp) then {continue};
         _units append units _grp; 
         _grp leaveVehicle _veh; 
-        [_grp] remoteExec ["ITW_AtkUnassignVeh",leader _grp];
+        [[_grp],"ITW_AtkMoveOutVeh",_grp] call ITW_FncRemoteLocalGroup;
     } forEach _cargoGroups;
     _units allowGetIn false;
 };
@@ -3471,6 +3477,7 @@ ITW_AtkUnloadLand = {
 ITW_AtkMoveOutVeh = {
     // call where group leader is local
     params ["_group"];
+    if (isNull _group) exitWith {};
     {unassignVehicle _x; moveOut _x; sleep 1} forEach units _group;
 };
 

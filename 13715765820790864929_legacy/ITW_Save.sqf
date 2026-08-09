@@ -136,7 +136,7 @@ ITW_LoadGame = {
     // handle misc first
     ITW_defendPhaseFlagCount = _misc#0;
     ITW_defendPhaseZoneDone = if (count _misc <= 1) then {-1} else {_misc#1};
-    private _targetsAllowed = if (count _misc <= 2) then {[]} else {_misc#2};
+    private _targetsAllowed = _misc param [2,[],[[]]];
     private _sideOps        = if (count _misc <= 3) then {[]} else {_misc#3};
     
     [_targetsAllowed]        call ITW_TargetsLoad;
