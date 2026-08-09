@@ -1,5 +1,6 @@
 #include "defines.hpp"
 
+ITW_CLASH_Version = 5;
 ITW_CLASH_Mode = 0;
 ITW_CLASH_ObserverEnabled = false;
 ITW_CLASH_ObserverStarted = false;
@@ -1873,6 +1874,7 @@ ITW_CLASH_fnc_StartLivePilot = {
             ["watchdog-start-failed",[]] call ITW_CLASH_fnc_FailPilot;
         };
         ["pilot-ready",[
+            ["version",ITW_CLASH_Version],
             "opfor-dismounted-live",
             count ITW_CLASH_ManagedGroups,
             ITW_CLASH_MaxManagedGroups,
