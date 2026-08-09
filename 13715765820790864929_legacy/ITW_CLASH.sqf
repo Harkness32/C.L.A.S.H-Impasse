@@ -147,16 +147,15 @@ ITW_CLASH_fnc_WouldReleaseAll = {
 
     private _count = 0;
     {
-        private _group = _x;
-        if (!isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}) then {
-            private _result = [_group] call ITW_CLASH_fnc_ClassifyGroup;
-            if (_result#0) then {
-                _count = _count + 1;
-                private _id = [_group] call ITW_CLASH_fnc_GroupId;
-                ["would-release",[_reason,_id,str _group,_result#2]] call ITW_CLASH_fnc_Log;
-            };
+        private _id = _x;
+        private _entry = ITW_CLASH_ObserverGroups get _id;
+        if ((_entry#1) isEqualTo "ELIGIBLE") then {
+            private _group = _entry#0;
+            _count = _count + 1;
+            ["would-release",[_reason,_id,str _group,_entry#4]] call ITW_CLASH_fnc_Log;
+            ITW_CLASH_ObserverGroups set [_id,[_group,"RELEASED",_reason,time,_entry#4]];
         };
-    } forEach allGroups;
+    } forEach +(keys ITW_CLASH_ObserverGroups);
 
     ["release-scan",[_reason,_count]] call ITW_CLASH_fnc_Log;
     _count
