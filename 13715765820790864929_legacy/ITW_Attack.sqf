@@ -1559,10 +1559,11 @@ ITW_AtkEngageInfantry = {
     if (!_populateObj && {!(vehicle leader _group in ITW_Statics)}) then {
         private _objSize = _objTo#ITW_OBJ_SIZE;
         private _toPos = _toPos getPos [_objSize,_toPos getDir (getPosATL leader _group)];
-        ["engage-infantry",_group] call ITW_CLASH_fnc_ObserveWriter;
-        ITW_DELETE_WAYPOINTS(_group);
-        _group addWaypoint [_toPos,100];
-        ATK_DEBUG(_group,"ITW_AtkEngageInfantry waypoints updated",_toPos); 
+        if !(["engage-infantry",_group] call ITW_CLASH_fnc_ObserveWriter) then {
+            ITW_DELETE_WAYPOINTS(_group);
+            _group addWaypoint [_toPos,100];
+            ATK_DEBUG(_group,"ITW_AtkEngageInfantry waypoints updated",_toPos);
+        };
     };
 };
 
@@ -2358,7 +2359,7 @@ ITW_AtkInfantryManager = {
             if (vehicle _leader == _leader &&                                 // not in transit
                   {!VAR_GET_WAIT_TRANSP(_grp) &&                              // not awaiting transport
                   {/*_wpIdx == 0 ||*/ _wpIdx >= count waypoints _grp}}) then {    // not executing any waypoints
-                ["infantry-manager-waypoints",_grp] call ITW_CLASH_fnc_ObserveWriter;
+                if (["infantry-manager-waypoints",_grp] call ITW_CLASH_fnc_ObserveWriter) then {continue};
                 ITW_DELETE_WAYPOINTS(_grp);
                 private _wpPos = _leader getPos [0 max (_dist - _objSize),_leader getDir _objPt];
                 if (surfaceIsWater _wpPos) then {
@@ -2427,8 +2428,9 @@ ITW_AtkInfantryManager = {
                 };
                 if (time - _farTime > 30) then {
                     _grp setVariable ["ITW_FarTime",nil];
-                    ["infantry-manager-move-up",_grp] call ITW_CLASH_fnc_ObserveWriter;
-                    [_grp,_objPt] spawn ITW_AtkInfantryMoveUp;
+                    if !(["infantry-manager-move-up",_grp] call ITW_CLASH_fnc_ObserveWriter) then {
+                        [_grp,_objPt] spawn ITW_AtkInfantryMoveUp;
+                    };
                 };
             };
         } forEach _managedGroups;
@@ -2589,13 +2591,14 @@ ITW_AtkInfantryMoveUp = {
         };
         
         if !(_pos isEqualTo []) then {
-            ["infantry-move-up",_group] call ITW_CLASH_fnc_ObserveWriter;
-            [[_group,_pos],"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup;
-            sleep 0.1;
-            {deleteWaypoint _x} forEachReversed waypoints _group;
-            private _wpPos = _toPos getPos [ITW_ParamObjectiveSize - 100,_toPos getDir _pos];
-            _group addWaypoint [_wpPos,0];
-            ATK_DEBUG(_group,"ITW_AtkInfantryMoveUp waypoints updated",_wpPos); 
+            if !(["infantry-move-up",_group] call ITW_CLASH_fnc_ObserveWriter) then {
+                [[_group,_pos],"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup;
+                sleep 0.1;
+                {deleteWaypoint _x} forEachReversed waypoints _group;
+                private _wpPos = _toPos getPos [ITW_ParamObjectiveSize - 100,_toPos getDir _pos];
+                _group addWaypoint [_wpPos,0];
+                ATK_DEBUG(_group,"ITW_AtkInfantryMoveUp waypoints updated",_wpPos);
+            };
         };
     };
 };

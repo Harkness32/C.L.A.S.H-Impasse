@@ -760,9 +760,9 @@ class Params
 	};
 	class CLASHObserver
 	{
-		title = "C.L.A.S.H. Tranche 1 observer";
-		values[] = {0,1};
-		texts[] = {"Off (baseline)","On (RPT logging only)"};
+		title = "C.L.A.S.H. control mode";
+		values[] = {0,1,2};
+		texts[] = {"Off (baseline)","Observer only (RPT logging)","Live OPFOR infantry pilot"};
 		default = 0;
 	};
 	class HeadlessClient
