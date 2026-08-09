@@ -4,7 +4,7 @@
 
 V4 proved that HAL can defend the three active objectives without cross-objective allocation drift. It did not guarantee that any HAL-controlled soldiers remained inside Impasse's actual capture radius.
 
-V5 adds a minimum-coverage contract without turning each flag into an infantry cluster.
+V5 establishes one squad anchor per held objective while leaving every additional HAL group free for the outer defense.
 
 ## Authority model
 
@@ -14,11 +14,11 @@ HAL remains tactical commander for the existing twelve-group OPFOR dismounted-in
 
 C.L.A.S.H. is the contract layer between them:
 
-- one anchor slot exists for each active objective still held by OPFOR;
-- the slot requires three conscious enemy soldiers inside that objective's real `ITW_OBJ_SIZE` capture radius;
-- the smallest suitable HAL-managed group with matching Impasse objective affinity is preferred;
+- one designated anchor-squad slot exists for each active objective still held by OPFOR;
+- the assigned squad is healthy only when at least six of its conscious members are inside that objective's real `ITW_OBJ_SIZE` capture radius;
+- the nearest viable HAL-managed squad with matching Impasse objective affinity is preferred; if none has six conscious members, the strongest available partial squad temporarily holds the role;
 - all other HAL groups remain available for the outer screen, maneuver, and reserve roles;
-- existing non-HAL Impasse defenders count as local mechanical coverage, preventing a redundant refill.
+- other OPFOR soldiers inside the radius still count for Impasse capture mechanics and telemetry, but they never satisfy the anchor slot or cancel its refill request.
 
 The anchor is a role, not a permanent squad.
 
@@ -37,16 +37,17 @@ This is deliberately not described as HAL independently selecting the anchor. Th
 
 ## Coverage lifecycle
 
-The default minimum is three conscious soldiers.
+The default contract is one designated squad with at least six conscious members inside the radius.
 
 A slot can report:
 
-- `COVERED`: the assigned HAL anchor has at least three conscious soldiers inside the radius;
-- `LOCAL-COVERAGE`: other OPFOR soldiers satisfy the mechanical requirement, so no refill is requested;
-- `MOVING`: a viable anchor is executing the native HAL order;
-- `DEGRADED`: the anchor has fewer than three conscious soldiers;
+- `COVERED`: the designated HAL anchor squad has at least six conscious members inside the radius;
+- `MOVING`: the anchor has at least six conscious members but fewer than six have reached the radius;
+- `DEGRADED`: the anchor squad has fewer than six conscious members;
 - `VACANT`: no suitable HAL group is available;
-- `UNCOVERED`: no mechanical coverage exists.
+- `UNCOVERED`: no designated anchor coverage exists.
+
+Incidental OPFOR presence is reported separately as total local coverage. It may delay capture in Impasse, but it never changes the anchor state to `COVERED`.
 
 C.L.A.S.H. waits 75 seconds for a viable promoted anchor to reach its point before requesting manpower. Anchor orders have a 60-second cooldown so the audit cannot thrash a squad.
 
@@ -68,7 +69,7 @@ The handshake does not increase the AI ceiling, grant tickets, accelerate the sp
 
 If the twelve-group or four-groups-per-objective pilot cap is full, the refill may reclaim one non-anchor HAL slot. That existing group is cleanly released back to Impasse; it is not deleted.
 
-An assigned refill has 120 seconds to restore coverage. A dead or ineffective refill reopens the same objective request.
+An assigned refill has 120 seconds to establish a designated six-conscious-soldier anchor inside the radius. A partial, dead, or ineffective refill reopens the same objective request.
 
 ## Deterministic doctrine controls
 
@@ -119,15 +120,17 @@ Lifecycle events include:
 3. Select **C.L.A.S.H. control mode = Live OPFOR infantry pilot**.
 4. Let all three objectives establish anchors.
 5. Attack one objective from the front and one from a flank.
-6. Reduce one anchor below three conscious soldiers without capturing the point.
+6. Reduce one anchor below six conscious soldiers without capturing the point.
 7. Wipe one anchor group completely.
 8. Let Impasse's population manager spawn a replacement.
 9. Continue for at least ten minutes.
 
 ### Hosted pass gate
 
-- one anchor slot exists per OPFOR-held objective;
-- `COVERED` or `LOCAL-COVERAGE` is reached without massing all managed groups at a flag;
+- one designated anchor squad exists per OPFOR-held objective;
+- each slot reaches `COVERED` only when at least six conscious members of its designated squad are inside the capture radius;
+- incidental OPFOR presence does not satisfy the slot or suppress a required refill;
+- the remaining managed groups retain outer-screen, maneuver, and reserve behavior;
 - an intact moving anchor does not produce repeated orders inside the cooldown;
 - a degraded or wiped anchor produces one objective-specific deficit;
 - the next normally authorized OPFOR squad is assigned to the correct objective;
