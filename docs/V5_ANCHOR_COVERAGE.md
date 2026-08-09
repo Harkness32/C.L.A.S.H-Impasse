@@ -1,0 +1,144 @@
+# V5 — HAL anchor coverage and Impasse refill handshake
+
+## Purpose
+
+V4 proved that HAL can defend the three active objectives without cross-objective allocation drift. It did not guarantee that any HAL-controlled soldiers remained inside Impasse's actual capture radius.
+
+V5 adds a minimum-coverage contract without turning each flag into an infantry cluster.
+
+## Authority model
+
+Impasse remains campaign authority. It owns objectives, ownership, zone progression, AI limits, tickets, spawning cadence, faction selection, transport, garrisoning, merging, cleanup, persistence, and every decision to create a new squad.
+
+HAL remains tactical commander for the existing twelve-group OPFOR dismounted-infantry pilot.
+
+C.L.A.S.H. is the contract layer between them:
+
+- one anchor slot exists for each active objective still held by OPFOR;
+- the slot requires three conscious enemy soldiers inside that objective's real `ITW_OBJ_SIZE` capture radius;
+- the smallest suitable HAL-managed group with matching Impasse objective affinity is preferred;
+- all other HAL groups remain available for the outer screen, maneuver, and reserve roles;
+- existing non-HAL Impasse defenders count as local mechanical coverage, preventing a redundant refill.
+
+The anchor is a role, not a permanent squad.
+
+## HAL-native anchor order
+
+NR6 exposes no durable public API for “group X anchors objective Y.” Its defensive planner repeatedly builds positions and assigns the nearest available group.
+
+V5 therefore uses the narrowest available native path:
+
+1. C.L.A.S.H. selects a suitable group from HAL's existing allow-list.
+2. C.L.A.S.H. chooses a safe point inside Impasse's capture circle.
+3. NR6's own `HAL_GoDef` executes one defensive order.
+4. C.L.A.S.H. does not run a waypoint-maintenance loop; HAL retains the group afterward.
+
+This is deliberately not described as HAL independently selecting the anchor. The bridge selects the coverage role because stock NR6 has no stable anchor-assignment interface. HAL executes and maintains the tactical task.
+
+## Coverage lifecycle
+
+The default minimum is three conscious soldiers.
+
+A slot can report:
+
+- `COVERED`: the assigned HAL anchor has at least three conscious soldiers inside the radius;
+- `LOCAL-COVERAGE`: other OPFOR soldiers satisfy the mechanical requirement, so no refill is requested;
+- `MOVING`: a viable anchor is executing the native HAL order;
+- `DEGRADED`: the anchor has fewer than three conscious soldiers;
+- `VACANT`: no suitable HAL group is available;
+- `UNCOVERED`: no mechanical coverage exists.
+
+C.L.A.S.H. waits 75 seconds for a viable promoted anchor to reach its point before requesting manpower. Anchor orders have a 60-second cooldown so the audit cannot thrash a squad.
+
+When a group dies, becomes ineligible, is merged, is garrisoned, or is released, its slot is detached immediately. A dead or null group does not enter the ordinary fifteen-second release handshake.
+
+## Objective-specific refill handshake
+
+A genuine deficit creates one pending request for that objective.
+
+Impasse fulfills it only when its normal population loop has already authorized and spawned an OPFOR squad:
+
+1. the next unassigned OPFOR squad is redirected to the deficient held objective;
+2. the squad is positioned through Impasse's existing objective-population path;
+3. its normal Impasse objective index is set to the requested objective;
+4. C.L.A.S.H. records the assignment and admits it through the ordinary classifier;
+5. the anchor audit promotes it when suitable.
+
+The handshake does not increase the AI ceiling, grant tickets, accelerate the spawn loop, choose a faction unit, or bypass Impasse's campaign rules.
+
+If the twelve-group or four-groups-per-objective pilot cap is full, the refill may reclaim one non-anchor HAL slot. That existing group is cleanly released back to Impasse; it is not deleted.
+
+An assigned refill has 120 seconds to restore coverage. A dead or ineffective refill reopens the same objective request.
+
+## Deterministic doctrine controls
+
+V5 locks HAL's commander personality to `COMPETENT`:
+
+- `RydHQ_MAtt = true`
+- all six personality scalars = `0.5`
+
+The reserve probability is explicitly `RydHQ_CRDefRes = 0.20`. This makes the configured probability stable, but NR6 still samples individual reserve membership and tactical positions randomly.
+
+The hidden commander moves to a land position 75 metres outside the first OPFOR-held objective's actual capture radius. It therefore cannot count as an immortal defender. HAL still receives the complete `RydHQ_Taken` ownership list; the nearby HQ point becomes an additional outer defense point for a real held objective instead of a wasted point at a player-held flag.
+
+## Telemetry
+
+`doctrine` now reports:
+
+`["DEFEND", true, DefendObjectives, NoDef count, reserve probability, personality]`
+
+`objective-mirror` now reports:
+
+`[zone index, active objectives, OPFOR-held objectives, commander-represented objective]`
+
+`objective-allocation` appends each group's role:
+
+`[group id, assigned objective, HAL state, inferred objective, waypoint type, assigned distance, inferred distance, anchor|reserve|main]`
+
+`anchor-coverage` reports:
+
+`[zone index, [[objective, radius, anchor id, anchor conscious, anchor inside, all OPFOR inside, state, refill state], ...]]`
+
+Lifecycle events include:
+
+- `anchor-promoted`
+- `anchor-order-requested`
+- `anchor-order-issued`
+- `anchor-vacant`
+- `anchor-deficit`
+- `anchor-refill-assigned`
+- `anchor-refill-satisfied`
+- `anchor-refill-retry`
+- `anchor-capacity-reclaim`
+- `anchor-reset`
+
+## Hosted V5 behavior test
+
+1. Pack current `main` and confirm Arma displays **Impasse - C.L.A.S.H V5**.
+2. Use untouched **NR6 Pack 4.11 / HAL 1.26.2 RC1** exactly once.
+3. Select **C.L.A.S.H. control mode = Live OPFOR infantry pilot**.
+4. Let all three objectives establish anchors.
+5. Attack one objective from the front and one from a flank.
+6. Reduce one anchor below three conscious soldiers without capturing the point.
+7. Wipe one anchor group completely.
+8. Let Impasse's population manager spawn a replacement.
+9. Continue for at least ten minutes.
+
+### Hosted pass gate
+
+- one anchor slot exists per OPFOR-held objective;
+- `COVERED` or `LOCAL-COVERAGE` is reached without massing all managed groups at a flag;
+- an intact moving anchor does not produce repeated orders inside the cooldown;
+- a degraded or wiped anchor produces one objective-specific deficit;
+- the next normally authorized OPFOR squad is assigned to the correct objective;
+- global and per-objective HAL caps remain intact;
+- no duplicate refill, allocation drift, release timeout, commander warning, or SQF error occurs;
+- visual behavior retains an outer screen and reserve rather than collapsing all groups into the capture circles.
+
+## Dedicated transition gate
+
+After the hosted V5 gate passes, run a genuine dedicated server through `ZoneNext 1 >> 2`.
+
+The old zone must show `anchor-reset` before group release. No old-zone refill may be fulfilled after transition begin. After transition end and the 45-second grace period, only the new OPFOR-held objective set may create anchor slots or refill requests.
+
+The dedicated gate fails on stale anchor state, a refill assigned to an old objective, a late HAL order after release, `release-timeout`, `allocation-drift`, `pilot-failed`, or any campaign progression divergence.
