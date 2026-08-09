@@ -479,6 +479,50 @@ ITW_AtkManager = {
                         } forEach _objectiveIds;
                     };
                 };
+
+                //// C.L.A.S.H. objective-specific anchor refills ////
+                if (!_isFriendly && {
+                    _newSquads isNotEqualTo [] && {
+                        !isNil "ITW_CLASH_fnc_NextAnchorRefill"
+                    }
+                }) then {
+                    private _refillObjective = call ITW_CLASH_fnc_NextAnchorRefill;
+                    while {
+                        _newSquads isNotEqualTo [] && {
+                            _refillObjective >= 0
+                        }
+                    } do {
+                        private _obj = ITW_Objectives#_refillObjective;
+                        private _units = _newSquads deleteAt 0;
+                        {ALLOW_DAMAGE(_x,true)} forEach _units;
+
+                        private _group = createGroup [_side,false];
+                        _units joinSilent _group;
+                        _group deleteGroupWhenEmpty true;
+                        _group setVariable ["itwInitGrp",true];
+                        _group setVariable [
+                            "ITW_CLASH_RefillObjective",
+                            _refillObjective
+                        ];
+
+                        [_group,_obj] call ITW_AtkAddInfantryGroup;
+                        if (isNull _group) then {
+                            _refillObjective = call ITW_CLASH_fnc_NextAnchorRefill;
+                            continue;
+                        };
+                        VAR_SET_OBJ_IDX(_group,_refillObjective);
+                        ITW_DELETE_WAYPOINTS(_group);
+                        [
+                            _group,
+                            _refillObjective
+                        ] call ITW_CLASH_fnc_AcknowledgeAnchorRefill;
+                        _group setVariable ["itwInitGrp",nil];
+                        [_group] call _fnGroupsCallback;
+
+                        YIELD_CPU;
+                        _refillObjective = call ITW_CLASH_fnc_NextAnchorRefill;
+                    };
+                };
             };
 
             //// Spawn Vehicles ////
