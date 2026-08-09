@@ -1984,6 +1984,7 @@ ITW_AtkStuckHandler = {
         {
             private _unit = _x;
             private _grp = group _unit;
+            if (_grp getVariable ["ITW_CLASH_Commander",false]) then {continue};
             if (_unit isKindOf "LOGIC") then {continue};
             private _unitGrp = group _unit;
             private _unitCurWpIdx = currentWaypoint _unitGrp;      
@@ -2116,7 +2117,7 @@ ITW_AtkStuckHandler = {
                             if (_veh isEqualTo _unit && {leader _unit == _unit}) then {_newWpGrp = group _unit};
                             if !(_veh isEqualTo _unit) then {_newWpGrp = group driver _veh};
                             if (!isNull _newWpGrp) then {
-                                ["stuck-handler",_newWpGrp] call ITW_CLASH_fnc_ObserveWriter;
+                                if (["stuck-handler",_newWpGrp] call ITW_CLASH_fnc_ObserveWriter) then {continue};
                                 {deleteWaypoint _x} forEachReversed waypoints _newWpGrp;
                             };
                             // under stuck limit (or players too nearby)
@@ -2219,6 +2220,7 @@ ITW_AtkStuckHandler = {
 ITW_AtkGetInfantryGroups = {
     private _managedGroups = allGroups select {
         private _grp = _x;
+        if (_grp getVariable ["ITW_CLASH_Commander",false]) exitWith {false};
         private _leader = leader _grp;
         side _x in [east,west,independent] && {
         count units _grp > 0               && {
@@ -2344,8 +2346,8 @@ ITW_AtkInfantryManager = {
                 if (_cnt > 1) then { // not > 0 just to keep from adding a lot when only a few more are allowed
                     if (_garrisonCreatedMap getOrDefault [_objIdx,0] < time) then {
                         // _garrisonCreatedMap ensures we don't re-garrison while the garrison thread is still populating the objective
+                        if (["infantry-manager-garrison",_grp] call ITW_CLASH_fnc_ObserveWriter) then {continue};
                         _garrisonHashMap set [_objIdx,_cnt - count units _grp];
-                        ["infantry-manager-garrison",_grp] call ITW_CLASH_fnc_ObserveWriter;
                         ITW_DELETE_WAYPOINTS(_grp);
                         [_objPt,_objSize,[_grp],_objIdx] spawn ITW_Garrison;
                         _garrisonCreatedMap set [_objIdx,time + 60];
@@ -2458,7 +2460,7 @@ ITW_AtkInfantryManager = {
             private _otherSquads = (_managedGroups select {side _x == _side}) - [_grp];
             private _nearestSquad = [_otherSquads, getPosATL leader _grp] call BIS_fnc_nearestPosition;
             if (typeName _nearestSquad == "GROUP" && {getPosATL leader _nearestSquad distance leader _grp < 800}) then {
-                ["infantry-manager-merge",_grp] call ITW_CLASH_fnc_ObserveWriter;
+                if (["infantry-manager-merge",_grp] call ITW_CLASH_fnc_ObserveWriter) then {continue};
                 units _grp joinSilent _nearestSquad;
                 [[_grp],"deleteGroup",_grp] call ITW_FncRemoteLocalGroup;
             };

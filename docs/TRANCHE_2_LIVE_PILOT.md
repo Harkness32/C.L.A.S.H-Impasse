@@ -13,7 +13,7 @@ This build is a pilot, not a production integration. The lobby default remains O
 - Load the untouched **NR6 Pack 4.11 / HAL 1.26.2 RC1** exactly once.
 - Do not load the repository's trimmed `NR6 Hal/` reference folder.
 - Do not place or initialize another HAL commander. The pilot fails closed if it detects an existing HAL commander or `leaderHQ`.
-- This stacked branch includes the Tranche 1 final-hardening changes from PR #5.
+- Use the latest mission source from `main`; the Tranche 1 hardening and Tranche 2 pilot are already merged.
 
 ## Enable the pilot
 
@@ -40,6 +40,9 @@ HAL owns only tactical waypoint decisions for groups currently marked `ITW_CLASH
 The bridge:
 
 - creates one hidden, invulnerable, simulation-disabled enemy HAL commander;
+- excludes that commander from C.L.A.S.H. classification, HAL's managed allow-list, Impasse's infantry manager, and Impasse's stuck handler;
+- suppresses any instrumented Impasse tactical writer that nevertheless reaches the commander;
+- runs a commander-health watchdog after HAL initialization and fails closed if the HQ or leader becomes invalid;
 - mirrors the current Impasse objectives into HAL simple-mode objectives;
 - uses an explicit allow-list with `RydHQ_SubAll = false`;
 - disables HAL transport assignment with `RydHQ_CargoFind = 0`;
@@ -51,7 +54,7 @@ The bridge:
 
 Only server-local, alive, fully dismounted enemy infantry assigned to a current objective may enter the pilot.
 
-The classifier rejects player groups, vehicles and crews, cargo, assigned or pending transport, delivery groups, garrisons, support specialists, headless-owned groups, unassigned groups, objective-reset groups, transition states, and dead or empty groups.
+The classifier rejects the hidden C.L.A.S.H. commander, player groups, vehicles and crews, cargo, assigned or pending transport, delivery groups, garrisons, support specialists, headless-owned groups, unassigned groups, objective-reset groups, transition states, and dead or empty groups.
 
 ## Handoff behavior
 
@@ -92,6 +95,7 @@ Search for `CLASH OBS |`. A useful run should include:
 - `observer-start` with mode 2;
 - `objective-mirror`;
 - exactly one `pilot-ready`;
+- no `register` line for `CLASH HAL OPFOR`;
 - `register` for eligible enemy foot groups;
 - `impasse-writer-suppressed` while HAL owns a group;
 - `release` when Impasse reclaims a group;
@@ -99,12 +103,16 @@ Search for `CLASH OBS |`. A useful run should include:
 - `zone-transition-begin` and `zone-transition-end`;
 - a post-transition `snapshot`, if requested.
 
+A `commander-writer-suppressed` line means the last-resort writer shield worked, but it also identifies an Impasse path that bypassed the manager exclusions and must be reviewed. A `pilot-failing` / `pilot-failed` pair with reason `commander-invalid` confirms the watchdog released all managed groups and disabled live mode; it is an intentional fail-closed response, not a passing run.
+
 ## Pass gate
 
 Tranche 2 passes only if:
 
 - the run reports `isDedicated = true`;
 - the pilot initializes once without detecting another HAL commander;
+- the `CLASH HAL OPFOR` group remains valid, is never registered, and never appears in HAL's managed allow-list;
+- no `commander-writer-suppressed`, `pilot-failing`, or `pilot-failed` line appears;
 - no more than 12 groups are managed and no more than four belong to one objective;
 - no player, vehicle, transport, garrison, support, headless-owned, transitional, or unassigned group is registered;
 - Impasse tactical writers do not overwrite HAL waypoints while a group is managed;
@@ -117,7 +125,8 @@ Tranche 2 passes only if:
 
 Stop the run and retain the RPT if:
 
-- `pilot-failed` or `pilot-init-timeout` appears;
+- `pilot-failed`, `pilot-init-timeout`, or `commander-writer-suppressed` appears;
+- the watchdog reports `commander-invalid`;
 - HAL controls an excluded group;
 - a managed group keeps receiving HAL orders after release;
 - Impasse progression stalls or diverges from baseline;

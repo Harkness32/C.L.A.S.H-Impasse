@@ -6,6 +6,8 @@ ITW_CLASH_ObserverStarted = false;
 ITW_CLASH_LiveEnabled = false;
 ITW_CLASH_LiveStarted = false;
 ITW_CLASH_HALReady = false;
+ITW_CLASH_PilotFailed = false;
+ITW_CLASH_CommanderWatchdogStarted = false;
 ITW_CLASH_Transitioning = false;
 ITW_CLASH_RegistrationFrozenUntil = 0;
 ITW_CLASH_MaxManagedGroups = 12;
@@ -39,10 +41,20 @@ ITW_CLASH_fnc_GroupId = {
     _id
 };
 
+ITW_CLASH_fnc_IsCommanderGroup = {
+    params ["_group"];
+    !isNull _group && {
+        _group isEqualTo ITW_CLASH_HALHQ || {
+            _group getVariable ["ITW_CLASH_Commander",false]
+        }
+    }
+};
+
 ITW_CLASH_fnc_ClassifyGroup = {
     params ["_group"];
 
     if (isNull _group) exitWith {[false,"null-group",[]]};
+    if ([_group] call ITW_CLASH_fnc_IsCommanderGroup) exitWith {[false,"clash-commander",[]]};
     if (isNil "ITW_EnemySide") exitWith {[false,"side-not-ready",[]]};
     if (side _group != ITW_EnemySide) exitWith {[false,"not-opfor",[side _group]]};
 
@@ -119,8 +131,10 @@ ITW_CLASH_fnc_SyncHALIncluded = {
 
     ITW_CLASH_ManagedGroups = ITW_CLASH_ManagedGroups select {
         !isNull _x && {
-            count units _x > 0 && {
-                _x getVariable ["ITW_CLASH_Managed",false]
+            !([_x] call ITW_CLASH_fnc_IsCommanderGroup) && {
+                count units _x > 0 && {
+                    _x getVariable ["ITW_CLASH_Managed",false]
+                }
             }
         }
     };
@@ -214,6 +228,7 @@ ITW_CLASH_fnc_RegisterGroup = {
     if (!isServer || {!ITW_CLASH_LiveEnabled}) exitWith {false};
     if (!ITW_CLASH_HALReady && {!_allowBeforeReady}) exitWith {false};
     if (isNull _group || {!local _group}) exitWith {false};
+    if ([_group] call ITW_CLASH_fnc_IsCommanderGroup) exitWith {false};
     if (_group getVariable ["ITW_CLASH_Managed",false]) exitWith {true};
 
     private _result = [_group] call ITW_CLASH_fnc_ClassifyGroup;
@@ -428,6 +443,17 @@ ITW_CLASH_fnc_ObserveGroup = {
 ITW_CLASH_fnc_ObserveWriter = {
     params ["_writer","_group"];
     if (!isServer || {!ITW_CLASH_ObserverEnabled} || {isNull _group}) exitWith {false};
+
+    if ([_group] call ITW_CLASH_fnc_IsCommanderGroup) exitWith {
+        private _id = [_group] call ITW_CLASH_fnc_GroupId;
+        private _key = format ["%1|commander|%2",_id,_writer];
+        private _last = ITW_CLASH_ObserverWriterLast getOrDefault [_key,-1000];
+        if (time - _last >= 10) then {
+            ITW_CLASH_ObserverWriterLast set [_key,time];
+            ["commander-writer-suppressed",[_writer,_id,str _group]] call ITW_CLASH_fnc_Log;
+        };
+        true
+    };
 
     private _eligible = ["writer-scan",_group] call ITW_CLASH_fnc_ObserveGroup;
     if (!_eligible) exitWith {false};
@@ -664,6 +690,78 @@ ITW_CLASH_fnc_CreateCommander = {
     true
 };
 
+ITW_CLASH_fnc_CommanderHealthy = {
+    if (!isServer || {!ITW_CLASH_LiveEnabled} || {!ITW_CLASH_HALReady}) exitWith {false};
+
+    !isNull ITW_CLASH_HALHQ && {
+        !isNull ITW_CLASH_HALLeader && {
+            alive ITW_CLASH_HALLeader && {
+                group ITW_CLASH_HALLeader isEqualTo ITW_CLASH_HALHQ && {
+                    leader ITW_CLASH_HALHQ isEqualTo ITW_CLASH_HALLeader && {
+                        ITW_CLASH_HALHQ getVariable ["ITW_CLASH_Commander",false] && {
+                            ITW_CLASH_HALHQ in (missionNamespace getVariable ["RydxHQ_AllHQ",[]])
+                        }
+                    }
+                }
+            }
+        }
+    }
+};
+
+ITW_CLASH_fnc_FailPilot = {
+    params [["_reason","commander-invalid"],["_details",[]]];
+    if (!isServer || {ITW_CLASH_PilotFailed}) exitWith {false};
+
+    ITW_CLASH_PilotFailed = true;
+    ITW_CLASH_HALReady = false;
+    ITW_CLASH_Transitioning = true;
+    ITW_CLASH_RegistrationFrozenUntil = 1e10;
+    ["pilot-failing",[_reason,_details,count ITW_CLASH_ManagedGroups]] call ITW_CLASH_fnc_Log;
+
+    private _released = [format ["pilot-failed:%1",_reason]] call ITW_CLASH_fnc_ReleaseAll;
+    ITW_CLASH_ManagedGroups = [];
+    RydHQ_Included = [];
+    RydHQ_NoDef = [];
+    if (!isNull ITW_CLASH_HALHQ) then {
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Included",[]];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_NoDef",[]];
+    };
+
+    ITW_CLASH_LiveEnabled = false;
+    ["pilot-failed",[_reason,_details,_released]] call ITW_CLASH_fnc_Log;
+    true
+};
+
+ITW_CLASH_fnc_StartCommanderWatchdog = {
+    if (!isServer || {!ITW_CLASH_LiveEnabled} || {!ITW_CLASH_HALReady}) exitWith {false};
+    if (ITW_CLASH_CommanderWatchdogStarted) exitWith {true};
+
+    ITW_CLASH_CommanderWatchdogStarted = true;
+    [] spawn {
+        scriptName "ITW_CLASH_CommanderWatchdog";
+        while {ITW_CLASH_LiveEnabled && {
+            !ITW_CLASH_PilotFailed && {
+                !(missionNamespace getVariable ["ITW_GameOver",false])
+            }
+        }} do {
+            sleep 1;
+            if !(call ITW_CLASH_fnc_CommanderHealthy) exitWith {
+                private _details = [
+                    isNull ITW_CLASH_HALHQ,
+                    isNull ITW_CLASH_HALLeader,
+                    if (isNull ITW_CLASH_HALLeader) then {false} else {alive ITW_CLASH_HALLeader},
+                    if (isNull ITW_CLASH_HALLeader) then {"<null>"} else {str (group ITW_CLASH_HALLeader)},
+                    if (isNull ITW_CLASH_HALHQ) then {"<null>"} else {str (leader ITW_CLASH_HALHQ)},
+                    ITW_CLASH_HALHQ in (missionNamespace getVariable ["RydxHQ_AllHQ",[]])
+                ];
+                ["commander-invalid",_details] call ITW_CLASH_fnc_FailPilot;
+            };
+            while {missionNamespace getVariable ["LV_PAUSE",false]} do {sleep 5};
+        };
+    };
+    true
+};
+
 ITW_CLASH_fnc_StartLivePilot = {
     if (!isServer) exitWith {false};
     if (ITW_CLASH_LiveStarted) exitWith {true};
@@ -729,6 +827,9 @@ ITW_CLASH_fnc_StartLivePilot = {
 
         call ITW_CLASH_fnc_MirrorObjectives;
         call ITW_CLASH_fnc_SyncHALIncluded;
+        if !(call ITW_CLASH_fnc_StartCommanderWatchdog) exitWith {
+            ["watchdog-start-failed",[]] call ITW_CLASH_fnc_FailPilot;
+        };
         ["pilot-ready",[
             "opfor-dismounted-live",
             count ITW_CLASH_ManagedGroups,
@@ -767,6 +868,7 @@ ITW_CLASH_fnc_StartObserver = {
 
 ["ITW_CLASH_fnc_Log"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_GroupId"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_IsCommanderGroup"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ClassifyGroup"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ClearGroupWaypoints"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_SyncHALIncluded"] call SKL_fnc_CompileFinal;
@@ -785,6 +887,9 @@ ITW_CLASH_fnc_StartObserver = {
 ["ITW_CLASH_fnc_DiagnosticSnapshot"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_ConfigureHAL"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_CreateCommander"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_CommanderHealthy"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_FailPilot"] call SKL_fnc_CompileFinal;
+["ITW_CLASH_fnc_StartCommanderWatchdog"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_StartLivePilot"] call SKL_fnc_CompileFinal;
 ["ITW_CLASH_fnc_StartObserver"] call SKL_fnc_CompileFinal;
 
