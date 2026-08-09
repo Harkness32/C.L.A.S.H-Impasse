@@ -114,7 +114,7 @@ Lifecycle events include:
 
 ## Hosted V5 behavior test
 
-1. Pack current `main` and confirm Arma displays **Impasse - C.L.A.S.H V5**.
+1. Pack the V5 branch and confirm `CLASH OBS | pilot-ready` reports `["version",5]`.
 2. Use untouched **NR6 Pack 4.11 / HAL 1.26.2 RC1** exactly once.
 3. Select **C.L.A.S.H. control mode = Live OPFOR infantry pilot**.
 4. Let all three objectives establish anchors.
