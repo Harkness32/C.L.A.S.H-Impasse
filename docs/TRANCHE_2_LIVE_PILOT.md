@@ -44,8 +44,9 @@ The bridge:
 - suppresses any instrumented Impasse tactical writer that nevertheless reaches the commander;
 - runs a commander-health watchdog after HAL initialization and fails closed if the HQ or leader becomes invalid;
 - mirrors the current Impasse objectives into HAL simple-mode objectives;
-- forces HAL into defensive doctrine, locks the commander personality to `COMPETENT`, uses an explicit 20% reserve probability, and keeps managed groups out of `RydHQ_NoDef`;
-- admits only groups assigned to an active objective that OPFOR still holds;
+- uses `DEFEND` while OPFOR holds the complete active series and native `ATTACK` recovery doctrine when any active point is lost, locks the commander personality to `COMPETENT`, uses an explicit 20% reserve probability, and keeps managed groups out of `RydHQ_NoDef`;
+- keeps every active point in HAL's objective graph, places only OPFOR-held points in `RydHQ_Taken`, and reserves surviving anchors through `RydHQ_NoAttack` and `RydHQ_NoRecon`;
+- admits groups assigned to any objective in the active series, including a temporarily BLUFOR-held recovery target;
 - preserves each group's Impasse objective affinity and reclaims cross-objective HAL allocations;
 - logs held-objective coverage, HAL's inferred waypoint allocation, anchor/main/reserve roles, and conscious-soldier coverage inside each real capture radius;
 - uses an explicit allow-list with `RydHQ_SubAll = false`;
@@ -53,6 +54,7 @@ The bridge:
 - manages no more than 12 groups total and no more than four groups per objective;
 - changes no group locality and performs no bridge remote execution;
 - defines one designated HAL anchor squad per OPFOR-held objective, healthy only while at least six conscious members of that squad remain inside the capture radius;
+- dissolves a lost point's anchor and refill immediately, keeps its groups under HAL, and restores an anchor after recapture;
 - redirects the next normally authorized OPFOR infantry squad to a genuinely uncovered objective when no local group can restore the anchor;
 - never increases Impasse's AI ceiling, grants tickets, accelerates spawning, changes faction selection, or alters the save schema.
 
@@ -108,8 +110,8 @@ Search for `CLASH OBS |`. A useful run should include:
 
 - `observer-start` with mode 2;
 - `objective-mirror` with the active and OPFOR-held objective indexes;
-- `doctrine` reporting `DEFEND`, defense enabled, and zero `NoDef` groups;
-- `objective-allocation` mapping each managed group from its Impasse objective to HAL's inferred defense point and identifying it as `anchor`, `reserve`, or `main`;
+- `doctrine` reporting `DEFEND` when all points are held or `ATTACK` while recovery targets exist, plus zero `NoDef` groups and the surviving-anchor `NoAttack` count;
+- `objective-allocation` mapping each managed group from its Impasse objective to HAL's inferred objective target and identifying it as `anchor`, `reserve`, or `main`;
 - `anchor-coverage` reporting the assigned anchor, conscious soldiers inside the actual objective radius, total OPFOR local coverage, and refill state;
 - exactly one `pilot-ready`;
 - no `register` line for `CLASH HAL OPFOR`;
@@ -131,10 +133,11 @@ Tranche 2 passes only if:
 - the `CLASH HAL OPFOR` group remains valid, is never registered, and never appears in HAL's managed allow-list;
 - no `commander-writer-suppressed`, `pilot-failing`, or `pilot-failed` line appears;
 - no more than 12 groups are managed and no more than four belong to one objective;
-- no player, vehicle, transport, garrison, support, headless-owned, transitional, unassigned, inactive-objective, or player-held-objective group is registered;
+- no player, vehicle, transport, garrison, support, headless-owned, transitional, unassigned, or inactive-objective group is registered; groups assigned to temporarily lost objectives remain eligible only while those objectives remain in the active series;
 - every managed group remains associated with its original Impasse objective while HAL owns it;
 - every OPFOR-held objective has one designated anchor squad and reaches `COVERED` with at least six conscious members of that squad inside the capture radius, without collapsing the remaining managed groups into the circle;
 - a wiped or degraded anchor creates at most one objective-specific refill, and the next normally authorized replacement is assigned to the correct objective;
+- a partial BLUFOR capture removes that point from `RydHQ_Taken` but not `RydHQ_SimpleObjs`, switches HAL to recovery, cancels the lost anchor/refill, preserves the other anchors, and ends with HAL-led recapture plus anchor restoration;
 - no old-zone anchor or refill survives `zone-transition-begin`;
 - no `allocation-drift` occurs; if one does, the group must release cleanly and remain in cooldown before re-registration;
 - Impasse tactical writers do not overwrite HAL waypoints while a group is managed;
