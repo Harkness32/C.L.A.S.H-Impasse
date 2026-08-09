@@ -39,20 +39,22 @@ HAL owns only tactical waypoint decisions for groups currently marked `ITW_CLASH
 
 The bridge:
 
-- creates one hidden, invulnerable, simulation-disabled enemy HAL commander;
+- creates one hidden, invulnerable, simulation-disabled enemy HAL commander and places its compulsory HQ defense point just outside the capture radius of an objective OPFOR actually holds, so the commander cannot count as an immortal defender;
 - excludes that commander from C.L.A.S.H. classification, HAL's managed allow-list, Impasse's infantry manager, and Impasse's stuck handler;
 - suppresses any instrumented Impasse tactical writer that nevertheless reaches the commander;
 - runs a commander-health watchdog after HAL initialization and fails closed if the HQ or leader becomes invalid;
 - mirrors the current Impasse objectives into HAL simple-mode objectives;
-- forces HAL into defensive doctrine and keeps managed groups out of `RydHQ_NoDef`;
+- forces HAL into defensive doctrine, locks the commander personality to `COMPETENT`, uses an explicit 20% reserve probability, and keeps managed groups out of `RydHQ_NoDef`;
 - admits only groups assigned to an active objective that OPFOR still holds;
 - preserves each group's Impasse objective affinity and reclaims cross-objective HAL allocations;
-- logs held-objective coverage and HAL's inferred waypoint allocation;
+- logs held-objective coverage, HAL's inferred waypoint allocation, anchor/main/reserve roles, and conscious-soldier coverage inside each real capture radius;
 - uses an explicit allow-list with `RydHQ_SubAll = false`;
 - disables HAL transport assignment with `RydHQ_CargoFind = 0`;
 - manages no more than 12 groups total and no more than four groups per objective;
 - changes no group locality and performs no bridge remote execution;
-- does not alter spawning, tickets, budgets, save schema, or mission assets.
+- defines one three-conscious-soldier HAL anchor slot per OPFOR-held objective;
+- redirects the next normally authorized OPFOR infantry squad to a genuinely uncovered objective when no local group can restore the anchor;
+- never increases Impasse's AI ceiling, grants tickets, accelerates spawning, changes faction selection, or alters the save schema.
 
 ## Eligible groups
 
@@ -107,7 +109,8 @@ Search for `CLASH OBS |`. A useful run should include:
 - `observer-start` with mode 2;
 - `objective-mirror` with the active and OPFOR-held objective indexes;
 - `doctrine` reporting `DEFEND`, defense enabled, and zero `NoDef` groups;
-- `objective-allocation` mapping each managed group from its Impasse objective to HAL's inferred defense point;
+- `objective-allocation` mapping each managed group from its Impasse objective to HAL's inferred defense point and identifying it as `anchor`, `reserve`, or `main`;
+- `anchor-coverage` reporting the assigned anchor, conscious soldiers inside the actual objective radius, total OPFOR local coverage, and refill state;
 - exactly one `pilot-ready`;
 - no `register` line for `CLASH HAL OPFOR`;
 - `register` for eligible enemy foot groups;
@@ -130,6 +133,9 @@ Tranche 2 passes only if:
 - no more than 12 groups are managed and no more than four belong to one objective;
 - no player, vehicle, transport, garrison, support, headless-owned, transitional, unassigned, inactive-objective, or player-held-objective group is registered;
 - every managed group remains associated with its original Impasse objective while HAL owns it;
+- every OPFOR-held objective reaches `COVERED` or `LOCAL-COVERAGE` without collapsing all managed groups into the capture circle;
+- a wiped or degraded anchor creates at most one objective-specific refill, and the next normally authorized replacement is assigned to the correct objective;
+- no old-zone anchor or refill survives `zone-transition-begin`;
 - no `allocation-drift` occurs; if one does, the group must release cleanly and remain in cooldown before re-registration;
 - Impasse tactical writers do not overwrite HAL waypoints while a group is managed;
 - every reclaimed group leaves HAL's allow-list before Impasse mutates, merges, garrisons, or deletes it;
@@ -152,4 +158,4 @@ For a controlled server-console abort, release managed groups before disabling l
 
 `["manual-abort"] call ITW_CLASH_fnc_ReleaseAll; ITW_CLASH_LiveEnabled = false;`
 
-Do not continue into broader group types until this dedicated-server pilot passes.
+Do not continue into broader group types until the V5 hosted behavior test and this dedicated-server transition both pass. See `docs/V5_ANCHOR_COVERAGE.md` for the anchor/refill test matrix.
