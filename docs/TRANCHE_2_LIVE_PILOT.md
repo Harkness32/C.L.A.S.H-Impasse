@@ -74,6 +74,14 @@ Release is a quiescence barrier:
 
 A `release-timeout` line is a test failure requiring RPT review.
 
+## Hosted smoke-test evidence
+
+The post-PR #7 hosted run confirmed that the commander guard held: `CLASH HAL OPFOR` was classified as `clash-commander`, was never registered, and triggered neither the writer shield nor the watchdog.
+
+That run also exposed a control-flow regression in `ITW_AtkGetInfantryGroups`: an `exitWith {false}` inside the `select` predicate escaped the function when the commander appeared first in `allGroups`, returning a Boolean where the infantry manager required an array. The commander exclusion is now a Boolean term of the predicate, preserving the function's array return contract.
+
+The hosted run does not satisfy the dedicated-server or zone-transition gate. One isolated `[0,0,0]` waypoint warning remains under observation and is not treated as a confirmed C.L.A.S.H. defect without recurrence.
+
 ## Dedicated-server test
 
 1. Start a clean dedicated-server session with the prerequisites above.
