@@ -6,9 +6,11 @@
 #include "dialogs.hpp"
 #include "scripts\SKULL\SKL_TeamSwitch.hpp"
 
+#define ITW_CLASH_MISSION_NAME "Impasse - C.L.A.S.H V4"
+
 author = "SkullTT";
-onLoadName = "Impasse Total War";
-briefingName = "Impasse Total War";
+onLoadName = ITW_CLASH_MISSION_NAME;
+briefingName = ITW_CLASH_MISSION_NAME;
 onLoadMission = "Full map, persistent war as players push to capture the entire map";
 overviewText = "Randomly generated missions. Push the enemy back from key locations.";
 loadScreen = "images\splash.jpg";
