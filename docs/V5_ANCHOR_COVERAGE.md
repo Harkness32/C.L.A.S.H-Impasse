@@ -4,7 +4,7 @@
 
 V4 proved that HAL can defend the three active objectives without cross-objective allocation drift. It did not guarantee that any HAL-controlled soldiers remained inside Impasse's actual capture radius.
 
-V5 establishes one squad anchor per held objective while leaving every additional HAL group free for the outer defense.
+V5 establishes one squad anchor per held objective while leaving every additional HAL group free for the outer defense. If BLUFOR captures a point before the complete series falls, HAL changes from static defense to native recovery and attempts to retake it.
 
 ## Authority model
 
@@ -18,6 +18,8 @@ C.L.A.S.H. is the contract layer between them:
 - the assigned squad is healthy only when at least six of its conscious members are inside that objective's real `ITW_OBJ_SIZE` capture radius;
 - the nearest viable HAL-managed squad with matching Impasse objective affinity is preferred; if none has six conscious members, the strongest available partial squad temporarily holds the role;
 - all other HAL groups remain available for the outer screen, maneuver, and reserve roles;
+- a BLUFOR-captured objective remains in HAL's active objective graph as an untaken recovery target;
+- groups associated with a temporarily lost objective remain HAL-managed instead of being handed back to a competing Impasse waypoint loop;
 - other OPFOR soldiers inside the radius still count for Impasse capture mechanics and telemetry, but they never satisfy the anchor slot or cancel its refill request.
 
 The anchor is a role, not a permanent squad.
@@ -53,6 +55,8 @@ C.L.A.S.H. waits 75 seconds for a viable promoted anchor to reach its point befo
 
 When a group dies, becomes ineligible, is merged, is garrisoned, or is released, its slot is detached immediately. A dead or null group does not enter the ordinary fifteen-second release handshake.
 
+When an objective is captured by BLUFOR, its anchor slot is dissolved and any pending refill is cancelled immediately. The former anchor becomes a maneuver group. If OPFOR recaptures the point, the ordinary audit creates a new anchor slot there.
+
 ## Objective-specific refill handshake
 
 A genuine deficit creates one pending request for that objective.
@@ -71,7 +75,18 @@ If the twelve-group or four-groups-per-objective pilot cap is full, the refill m
 
 An assigned refill has 120 seconds to establish a designated six-conscious-soldier anchor inside the radius. A partial, dead, or ineffective refill reopens the same objective request.
 
-## Deterministic doctrine controls
+## Deterministic defend/recovery doctrine
+
+HAL always receives the complete active objective series through `RydHQ_SimpleObjs`. Only points currently held by OPFOR appear in `RydHQ_Taken`.
+
+- If every active objective is OPFOR-held, HAL uses `DEFEND`.
+- If any active objective is BLUFOR-held, HAL uses `ATTACK`; stock NR6 derives its recovery targets as `objectives - taken`.
+- Surviving anchors are placed in `RydHQ_NoAttack` and `RydHQ_NoRecon` so they remain behind while every non-anchor group is available to recover lost ground.
+- On the first ownership loss, stale outer-defense tasks are detached once so those squads can enter HAL's attack pool.
+- If a second objective falls during recovery, its former anchor is detached immediately even though HAL is already in `ATTACK`.
+- A recaptured point regains an anchor obligation. HAL returns to `DEFEND` when no recovery target remains.
+
+Impasse still publishes ownership and supplies normally authorized forces. It does not issue the recovery waypoints.
 
 V5 locks HAL's commander personality to `COMPETENT`:
 
@@ -86,7 +101,7 @@ The hidden commander moves to a land position 75 metres outside the first OPFOR-
 
 `doctrine` now reports:
 
-`["DEFEND", true, DefendObjectives, NoDef count, reserve probability, personality]`
+`[order, IdleDef, DefendObjectives, NoDef count, NoAttack count, reserve probability, personality, recovery active, held count, active count]`
 
 `objective-mirror` now reports:
 
@@ -95,6 +110,10 @@ The hidden commander moves to a land position 75 metres outside the first OPFOR-
 `objective-allocation` appends each group's role:
 
 `[group id, assigned objective, HAL state, inferred objective, waypoint type, assigned distance, inferred distance, anchor|reserve|main]`
+
+Its per-objective summary includes ownership state:
+
+`[objective, held|recovery, affinity count, inferred allocation count]`
 
 `anchor-coverage` reports:
 
@@ -110,8 +129,11 @@ Lifecycle events include:
 - `anchor-refill-assigned`
 - `anchor-refill-satisfied`
 - `anchor-refill-retry`
+- `anchor-refill-cancelled`
 - `anchor-capacity-reclaim`
 - `anchor-reset`
+- `objective-ownership`
+- `recovery-start`
 
 ## Hosted V5 behavior test
 
@@ -123,7 +145,11 @@ Lifecycle events include:
 6. Reduce one anchor below six conscious soldiers without capturing the point.
 7. Wipe one anchor group completely.
 8. Let Impasse's population manager spawn a replacement.
-9. Continue for at least ten minutes.
+9. Capture one OPFOR objective while at least one other objective remains OPFOR-held.
+10. Confirm its anchor and refill dissolve, HAL reports `ATTACK`, and the surviving anchors remain in `RydHQ_NoAttack` / `RydHQ_NoRecon`.
+11. Observe non-anchor groups counterattack the lost objective through HAL's native capture behavior.
+12. Recapture the point and confirm a new anchor is established there; if it was the only lost point, doctrine returns to `DEFEND`.
+13. Continue for at least ten minutes.
 
 ### Hosted pass gate
 
@@ -137,6 +163,10 @@ Lifecycle events include:
 - global and per-objective HAL caps remain intact;
 - no duplicate refill, allocation drift, release timeout, commander warning, or SQF error occurs;
 - visual behavior retains an outer screen and reserve rather than collapsing all groups into the capture circles.
+- a temporarily lost point remains an untaken HAL objective instead of causing its assigned groups to be released;
+- HAL, not Impasse, conducts the counterattack;
+- surviving anchors do not join the attack, while the lost point's former anchor becomes maneuver-capable;
+- recapture restores the anchor contract and clears recovery doctrine when no lost point remains.
 
 ## Dedicated transition gate
 
