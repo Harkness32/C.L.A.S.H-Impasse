@@ -169,7 +169,7 @@ The current controller reports version 6 and retains every V5 anchor/recovery co
 
 C.L.A.S.H. confirms exhaustion for 20 seconds, immediately vacates any anchor, removes the squad from HAL and Impasse tactical writers, and orders it to the objective-specific `ITW_OBJ_V_SPAWN` staging point. If that objective is no longer enemy-held, it uses the nearest enemy-held active objective staging point; the enemy home staging point is the final fallback.
 
-At 125 metres the survivors are absorbed and Impasse receives one reconstitution credit. The next enemy manager cycle creates the recorded original class composition at the active rear staging point even when living AI already meets the headcount cap. Normal spawning remains suppressed until casualties return headcount below the configured ceiling.
+At 125 metres the survivors are absorbed and Impasse receives one reconstitution credit. The next enemy manager cycle creates the recorded original class composition at the active rear staging point even when living AI already meets the headcount cap. Credits are consumed FIFO at one per enemy cycle; ordinary squad generation remains suspended while credits wait and until casualties return headcount below the configured ceiling.
 
 Search for:
 
