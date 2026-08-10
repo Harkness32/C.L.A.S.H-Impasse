@@ -6,7 +6,7 @@
 #include "dialogs.hpp"
 #include "scripts\SKULL\SKL_TeamSwitch.hpp"
 
-#define ITW_CLASH_MISSION_NAME "Impasse - C.L.A.S.H V4"
+#define ITW_CLASH_MISSION_NAME "Impasse - C.L.A.S.H V6"
 
 author = "SkullTT";
 onLoadName = ITW_CLASH_MISSION_NAME;
