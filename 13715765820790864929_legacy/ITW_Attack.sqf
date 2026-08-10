@@ -14,6 +14,57 @@ ITW_AirVehsDef = [[[],[],[]],[[],[],[]]]; // vehDefs for air vehicles allowed in
 ITW_AtkStaticNeedsCrew = [[],[]];
 ITW_AtkPlayersJoinWave = [];
 ITW_AtkTeammatesJoinWave = []; // array of  [player,array of teammates that didn't fit into vehicle]
+ITW_AtkReconstitutionQueue = [];
+ITW_AtkReconstitutionNextId = 0;
+
+ITW_AtkQueueReconstitution = {
+    params [
+        ["_archetype",[]],
+        ["_objectiveIndex",-1],
+        ["_lineage",""],
+        ["_origin",[0,0,0]]
+    ];
+    if (!isServer || {_archetype isEqualTo []}) exitWith {""};
+
+    private _classes = _archetype select {
+        _x isEqualType "" && {
+            isClass (configFile >> "CfgVehicles" >> _x)
+        }
+    };
+    if (_classes isEqualTo [] || {
+        count _classes != count _archetype
+    }) exitWith {""};
+
+    ITW_AtkReconstitutionNextId = ITW_AtkReconstitutionNextId + 1;
+    private _requestId = format ["RC%1",ITW_AtkReconstitutionNextId];
+    ITW_AtkReconstitutionQueue pushBack [
+        _requestId,
+        +_classes,
+        _objectiveIndex,
+        _lineage,
+        +_origin,
+        time
+    ];
+
+    if (!isNil "ITW_CLASH_fnc_Log") then {
+        ["reconstitution-queued",[
+            _requestId,
+            _lineage,
+            _objectiveIndex,
+            count _classes,
+            count ITW_AtkReconstitutionQueue
+        ]] call ITW_CLASH_fnc_Log;
+    };
+    _requestId
+};
+
+ITW_AtkNextReconstitution = {
+    if (!isServer || {
+        ITW_AtkReconstitutionQueue isEqualTo []
+    }) exitWith {[]};
+    ITW_AtkReconstitutionQueue deleteAt 0
+};
+
 #define WEAPONLESS_FACTIONS ["OPTRE_FC_COVENANT","HL_ZOMBIES","RYANZOMBIESFACTION","RYANZOMBIESFACTIONOPFOR","RYANZOMBIESFACTIONMODULE"] // units that are 'kindOf' these are not checked for weapons (UPPER CASE)
 #define ATK_DEBUG(msg1,msg2,msg3) //diag_log format ["ITW: %1 %2 %3",msg1,msg2,msg3]
 #define ATK_DEBUG2(msg1,msg2,msg3,msg4) //diag_log format ["ITW: %1 %2 %3 %4",msg1,msg2,msg3,msg4]
@@ -380,6 +431,172 @@ ITW_AtkManager = {
                 _maxAiCount = _maxAiCount * (1.05 + (0.05*(floor (_zoneLimtedCount/3)))); // 20% extra units when weakest, 15% in middle, and 10% extra when just 1 level is limited
             };
             private _activeAiCnt = {alive _x} count (units _side);
+
+            //// C.L.A.S.H. cap-exempt squad reconstitution ////
+            if (!_isFriendly && {
+                ITW_AtkReconstitutionQueue isNotEqualTo []
+            }) then {
+                private _request = call ITW_AtkNextReconstitution;
+                if (_request isNotEqualTo []) then {
+                    _request params [
+                        "_requestId",
+                        "_archetype",
+                        "_requestedObjective",
+                        "_lineage",
+                        "_origin",
+                        "_queuedAt"
+                    ];
+
+                    private _targetObjective = -1;
+                    private _bestDistance = 1e10;
+                    if (!isNil "ITW_Zones" && {
+                        !isNil "ITW_ZoneIndex" && {
+                            ITW_ZoneIndex >= 0 && {
+                                ITW_ZoneIndex < count ITW_Zones
+                            }
+                        }
+                    }) then {
+                        {
+                            private _objectiveIndex = _x;
+                            if !([_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly) then {
+                                private _objectivePos = (
+                                    ITW_Objectives#_objectiveIndex
+                                )#ITW_OBJ_POS;
+                                private _distance = _origin distance2D _objectivePos;
+                                if (_objectiveIndex == _requestedObjective) then {
+                                    _distance = -1;
+                                };
+                                if (_distance < _bestDistance) then {
+                                    _bestDistance = _distance;
+                                    _targetObjective = _objectiveIndex;
+                                };
+                            };
+                        } forEach (ITW_Zones#ITW_ZoneIndex);
+                    };
+
+                    if (_targetObjective < 0) then {
+                        ITW_AtkReconstitutionQueue pushBack _request;
+                        if (!isNil "ITW_CLASH_fnc_Log") then {
+                            ["reconstitution-deferred",[
+                                _requestId,
+                                _lineage,
+                                _requestedObjective,
+                                missionNamespace getVariable [
+                                    "ITW_ZoneIndex",
+                                    -1
+                                ],
+                                "no-enemy-held-active-objective"
+                            ]] call ITW_CLASH_fnc_Log;
+                        };
+                    } else {
+                        private _targetObject = ITW_Objectives#_targetObjective;
+                        private _stagingPos = +(_targetObject#ITW_OBJ_V_SPAWN);
+                        if (_stagingPos isEqualTo []) then {
+                            _stagingPos = +(_targetObject#ITW_OBJ_POS);
+                        };
+                        private _spawnPos = [
+                            _stagingPos,
+                            0,
+                            35,
+                            1,
+                            0,
+                            0,
+                            0,
+                            [],
+                            [_stagingPos,_stagingPos]
+                        ] call BIS_fnc_findSafePos;
+                        if (count _spawnPos < 3) then {
+                            _spawnPos pushBack 0;
+                        };
+
+                        private _reconstitutionGroup = createGroup [_side,false];
+                        _reconstitutionGroup setVariable ["noHeadless",true];
+                        _reconstitutionGroup setVariable ["itwInitGrp",true,true];
+                        private _createdUnits = [];
+                        {
+                            private _unit = [
+                                _reconstitutionGroup,
+                                [_x],
+                                _spawnPos,
+                                false
+                            ] call ITW_AtkUnitToGroup;
+                            if (!isNull _unit) then {
+                                _createdUnits pushBack _unit;
+                            };
+                            YIELD_CPU;
+                        } forEach _archetype;
+
+                        if (count _createdUnits != count _archetype) then {
+                            {deleteVehicle _x} forEach _createdUnits;
+                            deleteGroup _reconstitutionGroup;
+                            ITW_AtkReconstitutionQueue pushBack _request;
+                            if (!isNil "ITW_CLASH_fnc_Log") then {
+                                ["reconstitution-spawn-failed",[
+                                    _requestId,
+                                    _lineage,
+                                    count _createdUnits,
+                                    count _archetype
+                                ]] call ITW_CLASH_fnc_Log;
+                            };
+                        } else {
+                            {ALLOW_DAMAGE(_x,true)} forEach _createdUnits;
+                            _reconstitutionGroup deleteGroupWhenEmpty true;
+                            _reconstitutionGroup setVariable [
+                                "ITW_CLASH_Archetype",
+                                +_archetype
+                            ];
+                            _reconstitutionGroup setVariable [
+                                "ITW_CLASH_ReconstitutionRequest",
+                                _requestId
+                            ];
+                            _reconstitutionGroup setVariable [
+                                "ITW_CLASH_Lineage",
+                                _lineage
+                            ];
+                            VAR_SET_OBJ_IDX(
+                                _reconstitutionGroup,
+                                _targetObjective
+                            );
+                            _reconstitutionGroup setVariable ["itwInitGrp",nil];
+                            {
+                                _x addCuratorEditableObjects [
+                                    _createdUnits,
+                                    true
+                                ];
+                            } forEach allCurators;
+
+                            private _accepted = false;
+                            if (!isNil "ITW_CLASH_fnc_AcknowledgeReconstitution") then {
+                                _accepted = [
+                                    _reconstitutionGroup,
+                                    _requestId,
+                                    _targetObjective,
+                                    _archetype,
+                                    _lineage,
+                                    _queuedAt
+                                ] call ITW_CLASH_fnc_AcknowledgeReconstitution;
+                            };
+                            [_reconstitutionGroup] call _fnGroupsCallback;
+                            if (!_accepted) then {
+                                [_reconstitutionGroup] call ITW_AtkAddInfantryGroup;
+                            };
+
+                            _activeAiCnt = _activeAiCnt + count _createdUnits;
+                            if (!isNil "ITW_CLASH_fnc_Log") then {
+                                ["reconstitution-spawned",[
+                                    _requestId,
+                                    _lineage,
+                                    _targetObjective,
+                                    count _createdUnits,
+                                    _activeAiCnt,
+                                    _isFriendly call ITW_AtkAiCount
+                                ]] call ITW_CLASH_fnc_Log;
+                            };
+                        };
+                    };
+                };
+            };
+
             private _spawnRate = if (time < 300 || (time < _defendPushTime)) then {_spawnRateFast} else {_spawnRateSlow};
             private _maxAiRightNow = _maxAiCount min (_activeAiCnt + _spawnRate);
             // ensure we can populate the owned objectives with one squad each right at the start
@@ -1547,6 +1764,14 @@ ITW_AtkAddCrewToStatic = {
 
 ITW_AtkAddInfantryGroup = {
     params ["_group",["_objToPopulate",[]],["_teleportToAttackPos",true]];
+    if (!isNull _group && {
+        (_group getVariable ["ITW_CLASH_Archetype",[]]) isEqualTo []
+    }) then {
+        _group setVariable [
+            "ITW_CLASH_Archetype",
+            (units _group) apply {toLowerANSI typeOf _x}
+        ];
+    };
     [_group,_teleportToAttackPos,_objToPopulate] call ITW_AtkEngageInfantry;
 };
 
@@ -2266,6 +2491,7 @@ ITW_AtkGetInfantryGroups = {
         private _grp = _x;
         private _leader = leader _grp;
         !(_grp getVariable ["ITW_CLASH_Commander",false]) && {
+        !(_grp getVariable ["ITW_CLASH_Withdrawing",false]) && {
         side _x in [east,west,independent] && {
         count units _grp > 0               && {
         _leader isEqualTo vehicle _leader  && {
@@ -2273,7 +2499,7 @@ ITW_AtkGetInfantryGroups = {
         !(_leader getVariable ["LV_PAUSE",false]) && {
         !(_grp getVariable ["itwDelivery",false]) && {
         !(!isNil "IGIT_HCC_HC_Groups_Array" && {_grp in IGIT_HCC_HC_Groups_Array}) && { // // hack for HCC (High Command Converter)
-        {isPlayer _x} count units _grp == 0 }}}}}}}}
+        {isPlayer _x} count units _grp == 0 }}}}}}}}}
     };    
     _managedGroups
 };
@@ -3991,6 +4217,8 @@ ITW_AtkDeliveryCntChange = {
 ["ITW_AtkMgrDebug"] call SKL_fnc_CompileFinal;
 ["ITW_AtkManager"] call SKL_fnc_CompileFinal;
 ["ITW_AtkAiCount"] call SKL_fnc_CompileFinal;
+["ITW_AtkQueueReconstitution"] call SKL_fnc_CompileFinal;
+["ITW_AtkNextReconstitution"] call SKL_fnc_CompileFinal;
 ["ITW_AtkUnitToGroup"] call SKL_fnc_CompileFinal;
 ["ITW_AtkSpawnVeh"] call SKL_fnc_CompileFinal;
 ["ITW_AtkAddInfantryGroup"] call SKL_fnc_CompileFinal;
