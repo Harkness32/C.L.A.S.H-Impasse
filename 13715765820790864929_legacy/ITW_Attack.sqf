@@ -609,7 +609,11 @@ ITW_AtkManager = {
                 
                 //// Infantry AI Spawner ////
                 private _squad = [];
-                while {_activeAiCnt < _maxAiRightNow} do {
+                while {
+                    _activeAiCnt < _maxAiRightNow && {
+                        ITW_AtkReconstitutionQueue isEqualTo []
+                    }
+                } do {
                    _spawnPos = [_homeSpawnPt,0,25,1,0,0,0,[],[[0,0,0],[0,0,0]]] call BIS_fnc_findSafePos;
                     if (count _spawnPos < 3) then {_spawnPos pushBack 0} else {_spawnPos = _homeSpawnPt};
     
