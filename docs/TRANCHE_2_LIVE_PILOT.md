@@ -162,3 +162,25 @@ For a controlled server-console abort, release managed groups before disabling l
 `["manual-abort"] call ITW_CLASH_fnc_ReleaseAll; ITW_CLASH_LiveEnabled = false;`
 
 Do not continue into broader group types until the V5 hosted behavior test and this dedicated-server transition both pass. See `docs/V5_ANCHOR_COVERAGE.md` for the anchor/refill test matrix.
+
+## V6 withdrawal and reconstitution overlay
+
+The current controller reports version 6 and retains every V5 anchor/recovery contract. It adds a one-way lifecycle for HAL-managed dismounted squads that HAL persistently classifies in `RydHQ_Exhausted`.
+
+C.L.A.S.H. confirms exhaustion for 20 seconds, immediately vacates any anchor, removes the squad from HAL and Impasse tactical writers, and orders it to the objective-specific `ITW_OBJ_V_SPAWN` staging point. If that objective is no longer enemy-held, it uses the nearest enemy-held active objective staging point; the enemy home staging point is the final fallback.
+
+At 125 metres the survivors are absorbed and Impasse receives one reconstitution credit. The next enemy manager cycle creates the recorded original class composition at the active rear staging point even when living AI already meets the headcount cap. Credits are consumed FIFO at one per enemy cycle; ordinary squad generation remains suspended while credits wait and until casualties return headcount below the configured ceiling.
+
+Search for:
+
+- `exhaustion-observed`
+- `withdrawal-start`
+- `withdrawal-order`
+- `withdrawal-state`
+- `withdrawal-arrived`
+- `reconstitution-queued`
+- `reconstitution-absorbed`
+- `reconstitution-spawned`
+- `reconstitution-acknowledged`
+
+The V6 gate passes only if a squad wiped before egress earns no credit, a squad reaching egress produces exactly one full-archetype replacement, the replacement preserves objective affinity and lineage, normal spawning stops while headcount is over cap, and neither HAL nor Impasse overwrites the withdrawal waypoint. See `docs/V6_WITHDRAWAL_RECONSTITUTION.md` for the complete matrix.
