@@ -93,7 +93,7 @@ The C.L.A.S.H. pilot still caps HAL at 12 managed groups and four per objective.
 - Objective loss: redirect to another OPFOR-held active objective; do not walk into a captured base.
 - Pilot failure: cancel uncompleted withdrawals, clear the exclusion marker, and return survivors to Impasse control.
 - Replacement spawn failure: delete the partial spawn and requeue the original credit.
-- Multiple completed withdrawals: stack credits, but consume no more than one per enemy spawn cycle.
+- Multiple completed withdrawals: stack FIFO credits, consume no more than one per enemy spawn cycle, and suppress ordinary squad generation until the credit queue is empty.
 
 ## Telemetry
 
