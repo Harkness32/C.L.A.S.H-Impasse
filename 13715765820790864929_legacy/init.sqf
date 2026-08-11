@@ -41,22 +41,21 @@ if (isServer) then {
     };
 
     // #24's transport dispatcher is defined inside ITW_Attack.sqf and normally
-    // compileFinal'd at the end of that file. Defer only that finalizer so the
-    // V6 return-contract repair can wrap it after Attack has loaded.
-    private _deferredFinalizers = missionNamespace getVariable [
-        "ITW_CLASH_DeferredFinalizers",
-        []
-    ];
-    _deferredFinalizers pushBackUnique "ITW_AtkDispatchReconstitutionTransport";
-    missionNamespace setVariable [
-        "ITW_CLASH_DeferredFinalizers",
-        _deferredFinalizers
-    ];
-
+    // compileFinal'd at the end of that file. Only defer that finalizer when the
+    // repair payload is actually present; otherwise baseline finalization stays intact.
     if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
+        private _deferredFinalizers = missionNamespace getVariable [
+            "ITW_CLASH_DeferredFinalizers",
+            []
+        ];
+        _deferredFinalizers pushBackUnique "ITW_AtkDispatchReconstitutionTransport";
+        missionNamespace setVariable [
+            "ITW_CLASH_DeferredFinalizers",
+            _deferredFinalizers
+        ];
         [] execVM "ITW_CLASH_ReconstitutionDispatchFix.sqf";
     } else {
-        diag_log "CLASH BOOT | reconstitution-dispatch-fix-missing | transport fallback guard remains active";
+        diag_log "CLASH BOOT | reconstitution-dispatch-fix-missing | baseline finalization retained";
     };
 
     if (fileExists "ITW_CLASH_LogisticsGuard.sqf") then {
