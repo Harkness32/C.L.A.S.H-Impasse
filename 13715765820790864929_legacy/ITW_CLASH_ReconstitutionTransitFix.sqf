@@ -19,7 +19,15 @@ waitUntil {
 sleep 0.1;
 
 if (missionNamespace getVariable ["ITW_AtkReconstitutionTransitManagerStarted",false]) exitWith {
-    diag_log "CLASH BOOT | FAILED | reconstitution-transit-fix-manager-already-running";
+    // Too late to replace a coroutine that is already running. Restore normal
+    // finalization rather than leaving a mutable half-patched public function.
+    isNil {
+        private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
+        _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
+        missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
+    };
+    ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;
+    diag_log "CLASH BOOT | FAILED | reconstitution-transit-fix-manager-already-running | baseline manager finalized";
 };
 
 ITW_AtkReconstitutionTransitManager = {
@@ -141,9 +149,13 @@ ITW_AtkReconstitutionTransitManager = {
     ITW_AtkReconstitutionTransitManagerStarted = false;
 };
 
-private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
-_deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
-missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
+// This script and the dispatcher repair can wake together after ITW_Attack.sqf.
+// Keep the shared deferral-list read/modify/write unscheduled and atomic.
+isNil {
+    private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
+    _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
+    missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
+};
 
 private _finalized = ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;
 if (_finalized) then {
