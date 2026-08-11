@@ -70,8 +70,8 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
 
     // Freshly delivered normal Impasse infantry should not be adopted by HAL
     // on the same frame their transport finishes unloading. Watch for the
-    // physical in-vehicle -> on-foot transition and hold the group in Impasse's
-    // existing spawn-transition state for a short settling window.
+    // physical in-vehicle -> on-foot transition, then use C.L.A.S.H.'s existing
+    // re-eligibility cooldown while Impasse finishes its own cargo bookkeeping.
     if (!isNil "ITW_EnemySide") then {
         {
             private _grp = _x;
@@ -89,9 +89,10 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
             } else {
                 if (_grp getVariable ["ITW_CLASH_TransportSeen",false]) then {
                     _grp setVariable ["ITW_CLASH_TransportSeen",false];
-                    private _settleUntil = time + ITW_CLASH_PostTransportSettle;
-                    _grp setVariable ["ITW_CLASH_PostTransportUntil",_settleUntil];
-                    _grp setVariable ["itwInitGrp",true,true];
+                    private _reeligibleAt = (
+                        time + ITW_CLASH_PostTransportSettle
+                    ) max (_grp getVariable ["ITW_CLASH_ReeligibleAt",0]);
+                    _grp setVariable ["ITW_CLASH_ReeligibleAt",_reeligibleAt];
 
                     if (!isNil "ITW_CLASH_fnc_Log") then {
                         ["transport-handoff-settle",[
@@ -102,14 +103,12 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                         ]] call ITW_CLASH_fnc_Log;
                     };
 
-                    [_grp,_settleUntil] spawn {
-                        params ["_grp","_settleUntil"];
-                        sleep ITW_CLASH_PostTransportSettle;
+                    [_grp,_reeligibleAt] spawn {
+                        params ["_grp","_reeligibleAt"];
+                        private _delay = (_reeligibleAt - time) max 0;
+                        sleep _delay;
                         if (isNull _grp) exitWith {};
-                        if ((_grp getVariable ["ITW_CLASH_PostTransportUntil",0]) > time) exitWith {};
-
-                        _grp setVariable ["ITW_CLASH_PostTransportUntil",nil];
-                        _grp setVariable ["itwInitGrp",nil,true];
+                        if ((_grp getVariable ["ITW_CLASH_ReeligibleAt",0]) > time) exitWith {};
                         if (!isNil "ITW_CLASH_fnc_Log") then {
                             ["transport-handoff-ready",[
                                 str _grp,
