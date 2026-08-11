@@ -6,6 +6,7 @@ on:
       - main
     types:
       - opened
+      - reopened
 
 permissions:
   contents: write
@@ -38,6 +39,7 @@ jobs:
       - name: Validate
         shell: bash
         run: |
+          python -m pip install pytest
           PYTHONPATH=. pytest -q
           git diff --check
       - name: Commit patch
