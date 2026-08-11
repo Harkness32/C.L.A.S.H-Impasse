@@ -74,11 +74,7 @@ ITW_CLASH_fnc_IsCommanderGroup = {
 ITW_CLASH_fnc_IsConscious = {
     params ["_unit"];
     if (isNull _unit || {!alive _unit}) exitWith {false};
-#if __has_include("\z\ace\addons\main\script_component.hpp")
-    !(_unit getVariable ["ACE_isUnconscious",false])
-#else
-    lifeState _unit in ["HEALTHY","INJURED"]
-#endif
+    CONSCIOUS(_unit)
 };
 
 ITW_CLASH_fnc_CountConscious = {
