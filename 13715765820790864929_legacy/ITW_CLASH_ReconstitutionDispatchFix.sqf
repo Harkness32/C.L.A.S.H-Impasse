@@ -158,9 +158,13 @@ ITW_AtkDispatchReconstitutionTransport = {
     _dispatched
 };
 
-private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
-_deferred = _deferred - ["ITW_AtkDispatchReconstitutionTransport"];
-missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
+// Both Attack repairs wake at roughly the same time. Make shared deferral-list
+// cleanup unscheduled/atomic so their read-modify-write operations cannot race.
+isNil {
+    private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
+    _deferred = _deferred - ["ITW_AtkDispatchReconstitutionTransport"];
+    missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
+};
 
 private _finalized = ["ITW_AtkDispatchReconstitutionTransport"] call SKL_fnc_CompileFinal;
 if (_finalized) then {
