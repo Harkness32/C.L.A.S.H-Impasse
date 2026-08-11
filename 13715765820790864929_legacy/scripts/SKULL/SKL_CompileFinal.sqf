@@ -56,7 +56,6 @@ if (_var in _deferredFinalizers) exitWith {
     diag_log format ["CLASH BOOT | finalization-deferred | %1",_var];
     true
 };
-
 private _codestr = str _code;
 _codestr = _codestr select [1,count _codestr - 2]; // remove begin and end parenthesizes 
 #ifdef __A3_DEBUG__
