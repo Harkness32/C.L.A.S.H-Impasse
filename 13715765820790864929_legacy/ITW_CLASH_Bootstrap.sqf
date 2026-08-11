@@ -3,8 +3,9 @@
 
     The controller is deliberately not loaded from preInit. This wrapper runs
     after mission parameters are ready, compiles ITW_CLASH.sqf exactly once,
-    validates the complete V6 function surface, and leaves baseline Impasse
-    fail-open if anything is missing.
+    applies the validated V6 runtime-integrity hotfix, validates the complete
+    V6 function surface, and leaves baseline Impasse fail-open if anything is
+    missing.
 */
 
 if (!isServer) exitWith {false};
@@ -83,6 +84,56 @@ if (_sourceChars <= 0) exitWith {
 // synchronous definition pass returns to the scheduler.
 call compile _source;
 
+// Apply the small V6 runtime-integrity hotfix synchronously before the
+// controller's scheduled observer/live startup can run.
+private _patchPath = "ITW_CLASH_RuntimePatch.sqf";
+private _patchExists = fileExists _patchPath;
+private _patchSource = if (_patchExists) then {
+    preprocessFileLineNumbers _patchPath
+} else {
+    ""
+};
+private _patchChars = count toArray _patchSource;
+diag_log format [
+    "CLASH BOOT | runtime-patch | exists=%1 chars=%2 path=%3",
+    _patchExists,
+    _patchChars,
+    _patchPath
+];
+if (!_patchExists || {_patchChars <= 0}) exitWith {
+    ITW_CLASH_BootstrapFailure = "runtime-patch-missing-or-empty";
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+call compile _patchSource;
+
+private _patchVersion = missionNamespace getVariable [
+    "ITW_CLASH_RuntimePatchVersion",
+    -1
+];
+private _patchRequired = [
+    "ITW_CLASH_fnc_GetHomeBaseSpawn",
+    "ITW_CLASH_fnc_ClassifyGroup",
+    "ITW_CLASH_fnc_ObserveWriter",
+    "ITW_CLASH_fnc_GetEgressPoint",
+    "ITW_CLASH_fnc_AcknowledgeReconstitution"
+];
+private _patchMissing = _patchRequired select {isNil _x};
+if (_patchVersion != 1 || {_patchMissing isNotEqualTo []}) exitWith {
+    ITW_CLASH_BootstrapFailure = format [
+        "runtime-patch-validation-failed version=%1 missing=%2",
+        _patchVersion,
+        _patchMissing
+    ];
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+diag_log format [
+    "CLASH BOOT | runtime-patch-loaded | version=%1 functions=%2",
+    _patchVersion,
+    count _patchRequired
+];
+
 private _required = [
     "ITW_CLASH_fnc_Log",
     "ITW_CLASH_fnc_GroupId",
@@ -155,9 +206,10 @@ if (_version != 6 || {_missing isNotEqualTo []}) exitWith {
 ITW_CLASH_HookFallbacksActive = false;
 ITW_CLASH_BootstrapReady = true;
 diag_log format [
-    "CLASH BOOT | READY | version=%1 sourceChars=%2 functions=%3",
+    "CLASH BOOT | READY | version=%1 sourceChars=%2 functions=%3 patch=%4",
     _version,
     _sourceChars,
-    count _required
+    count _required,
+    _patchVersion
 ];
 true
