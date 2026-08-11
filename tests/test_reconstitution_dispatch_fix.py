@@ -15,6 +15,13 @@ def test_dispatch_finalizer_is_deferred_before_attack_startup():
     assert init.index('pushBackUnique "ITW_AtkDispatchReconstitutionTransport"') < init.index('execVM "ITW_Start.sqf"')
 
 
+def test_dispatch_fix_waits_for_attack_file_tail_before_wrapping():
+    source = text("ITW_CLASH_ReconstitutionDispatchFix.sqf")
+    assert '!isNil "ITW_AtkDispatchReconstitutionTransport"' in source
+    assert '!isNil "ITW_AtkDeliveryCntChange"' in source
+    assert "sleep 0.1;" in source
+
+
 def test_dispatch_fix_wraps_base_and_returns_live_transport_state():
     source = text("ITW_CLASH_ReconstitutionDispatchFix.sqf")
     assert "ITW_CLASH_AtkDispatchReconstitutionTransport_V6Base" in source
