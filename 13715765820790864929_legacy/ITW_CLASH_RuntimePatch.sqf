@@ -210,8 +210,6 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
         call ITW_CLASH_fnc_AcknowledgeReconstitution_V6Base
 };
 
-// Canonical V6 can choose a sub-six-man group when no intact candidate exists.
-// Preserve its strong-candidate scoring, but reject the weak fallback entirely.
 ITW_CLASH_fnc_SelectAnchorGroup_V6Base = ITW_CLASH_fnc_SelectAnchorGroup;
 ITW_CLASH_fnc_SelectAnchorGroup = {
     private _candidate = _this call ITW_CLASH_fnc_SelectAnchorGroup_V6Base;
@@ -232,14 +230,17 @@ ITW_CLASH_fnc_SelectAnchorGroup = {
     _candidate
 };
 
-// An anchor that falls below six conscious troops immediately becomes a maneuver
-// group again. The normal anchor audit then sees a vacant slot and raises/keeps
-// objective-specific refill pressure instead of preserving a DEGRADED anchor.
 ITW_CLASH_fnc_AuditAnchors_V6Base = ITW_CLASH_fnc_AuditAnchors;
 ITW_CLASH_fnc_AuditAnchors = {
     if (isServer && {
         ITW_CLASH_LiveEnabled && {
-            ITW_CLASH_HALReady && {!ITW_CLASH_Transitioning}
+            ITW_CLASH_HALReady && {
+                !ITW_CLASH_Transitioning && {
+                    time >= ITW_CLASH_AnchorAuditReadyAt && {
+                        time >= ITW_CLASH_RegistrationFrozenUntil
+                    }
+                }
+            }
         }
     }) then {
         {
