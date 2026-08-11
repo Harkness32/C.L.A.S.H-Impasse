@@ -39,6 +39,12 @@ if (isServer) then {
         ITW_CLASH_fnc_ObserveLifecycle = {false};
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
+
+    if (fileExists "ITW_CLASH_LogisticsGuard.sqf") then {
+        [] execVM "ITW_CLASH_LogisticsGuard.sqf";
+    } else {
+        diag_log "CLASH BOOT | logistics-guard-missing | continuing without V6 handoff guard";
+    };
 };
 
 [] execVM "ITW_Start.sqf";
