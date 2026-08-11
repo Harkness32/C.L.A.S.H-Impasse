@@ -131,13 +131,14 @@ private _patchVersion = missionNamespace getVariable [
 ];
 private _patchRequired = [
     "ITW_CLASH_fnc_GetHomeBaseSpawn",
+    "ITW_CLASH_fnc_GetSupportCorridorSpawn",
     "ITW_CLASH_fnc_ClassifyGroup",
     "ITW_CLASH_fnc_ObserveWriter",
     "ITW_CLASH_fnc_GetEgressPoint",
     "ITW_CLASH_fnc_AcknowledgeReconstitution"
 ];
 private _patchMissing = _patchRequired select {isNil _x};
-if (_patchVersion != 2 || {_patchMissing isNotEqualTo []}) exitWith {
+if (_patchVersion != 3 || {_patchMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "runtime-patch-validation-failed version=%1 missing=%2",
         _patchVersion,
