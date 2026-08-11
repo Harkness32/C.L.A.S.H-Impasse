@@ -39,6 +39,33 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                 objNull
             ];
 
+            // A physically dismounted reconstitution squad can retain Arma's
+            // assigned-vehicle relationship after leaving its lift. C.L.A.S.H.
+            // correctly rejects assigned vehicle groups, which produced a clean
+            // transit arrival but a false reconstitution acknowledgment in the
+            // hosted run. Once every survivor is physically on foot, clear that
+            // stale assignment before the 10-second transit manager can hand the
+            // squad to HAL.
+            private _transitUnits = (units _grp) select {alive _x};
+            private _transitOnFoot = _transitUnits isNotEqualTo [] && {
+                (_transitUnits findIf {vehicle _x != _x}) < 0
+            };
+            private _assigned = assignedVehicles _grp;
+            if (_liveState in ["transport","walking"] && {
+                _transitOnFoot && {_assigned isNotEqualTo []}
+            }) then {
+                {unassignVehicle _x} forEach _transitUnits;
+                if (!isNil "ITW_CLASH_fnc_Log") then {
+                    ["reconstitution-transport-unassigned",[
+                        _entry#1,
+                        _entry#4,
+                        _liveState,
+                        count _transitUnits,
+                        count _assigned
+                    ]] call ITW_CLASH_fnc_Log;
+                };
+            };
+
             // Only infer transport from the live vehicle when both cached and
             // group state are still the stale waiting state. If the transit
             // manager has already changed the group to walking after an early
