@@ -1,1 +1,0 @@
-The only runtime code change in this diagnostic branch is the three-line `init.sqf` call that invokes `ITW_CLASH_PP_Bisect.sqf` before the existing bootstrap. The probe files are source mirrors used only by `loadFile`, `preprocessFile`, and `preprocessFileLineNumbers` measurements.
