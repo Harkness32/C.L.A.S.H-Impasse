@@ -36,6 +36,14 @@ def test_live_vehicle_only_repairs_stale_waiting_state():
     assert "must not force it back to transport" in guard
 
 
+def test_reconstitution_dismount_clears_stale_assigned_vehicle_before_hal():
+    guard = text("ITW_CLASH_LogisticsGuard.sqf")
+    assert "assignedVehicles _grp" in guard
+    assert '_liveState in ["transport","walking"]' in guard
+    assert "{unassignVehicle _x} forEach _transitUnits;" in guard
+    assert '"reconstitution-transport-unassigned"' in guard
+
+
 def test_normal_transport_dismount_gets_clash_settling_window():
     guard = text("ITW_CLASH_LogisticsGuard.sqf")
     assert "ITW_CLASH_PostTransportSettle = 30;" in guard
