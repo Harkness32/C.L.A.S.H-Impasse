@@ -3,9 +3,9 @@
 
     The controller is deliberately not loaded from preInit. This wrapper runs
     after mission parameters are ready, compiles ITW_CLASH.sqf exactly once,
-    applies the validated V6 runtime-integrity hotfix, validates the complete
-    V6 function surface, and leaves baseline Impasse fail-open if anything is
-    missing.
+    defers finalization for the small V6 runtime-integrity correction surface,
+    applies that correction synchronously, validates the complete V6 function
+    surface, and leaves baseline Impasse fail-open if anything is missing.
 */
 
 if (!isServer) exitWith {false};
@@ -20,6 +20,7 @@ if (missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]) exitWith {
 diag_log "CLASH BOOT | begin | init-server";
 ITW_CLASH_BootstrapReady = false;
 ITW_CLASH_BootstrapFailure = "";
+ITW_CLASH_DeferredFinalizers = [];
 
 private _path = "ITW_CLASH.sqf";
 private _installFallbacks = {
@@ -27,6 +28,7 @@ private _installFallbacks = {
     ITW_CLASH_HookFallbacksActive = true;
     ITW_CLASH_ObserverEnabled = false;
     ITW_CLASH_LiveEnabled = false;
+    ITW_CLASH_DeferredFinalizers = [];
 
     // If a partial controller reached its scheduled self-start, these flags
     // make both startup entry points return without enabling C.L.A.S.H.
@@ -79,13 +81,29 @@ if (_sourceChars <= 0) exitWith {
     call _installFallbacks;
 };
 
-// Sole runtime compile of ITW_CLASH.sqf. Its existing scheduled startup is
-// retained; because params are already complete, it can start only after this
-// synchronous definition pass returns to the scheduler.
-call compile _source;
+// These four functions are corrected immediately after the canonical
+// controller definition pass. SKL_fnc_CompileFinal sees this list and leaves
+// only these names mutable; every other C.L.A.S.H. function finalizes normally.
+ITW_CLASH_DeferredFinalizers = [
+    "ITW_CLASH_fnc_ClassifyGroup",
+    "ITW_CLASH_fnc_ObserveWriter",
+    "ITW_CLASH_fnc_GetEgressPoint",
+    "ITW_CLASH_fnc_AcknowledgeReconstitution"
+];
+diag_log format [
+    "CLASH BOOT | finalization-window | deferred=%1",
+    ITW_CLASH_DeferredFinalizers
+];
 
-// Apply the small V6 runtime-integrity hotfix synchronously before the
-// controller's scheduled observer/live startup can run.
+// Sole runtime compile of ITW_CLASH.sqf. Its scheduled startup is retained;
+// because params are already complete, it can start only after this synchronous
+// definition/correction pass returns to the scheduler.
+call compile _source;
+ITW_CLASH_DeferredFinalizers = [];
+
+// Apply the V6 runtime-integrity correction while the four selected controller
+// functions are still mutable, then finalize the corrected functions in the
+// patch itself before observer/live startup can run.
 private _patchPath = "ITW_CLASH_RuntimePatch.sqf";
 private _patchExists = fileExists _patchPath;
 private _patchSource = if (_patchExists) then {
@@ -119,7 +137,7 @@ private _patchRequired = [
     "ITW_CLASH_fnc_AcknowledgeReconstitution"
 ];
 private _patchMissing = _patchRequired select {isNil _x};
-if (_patchVersion != 1 || {_patchMissing isNotEqualTo []}) exitWith {
+if (_patchVersion != 2 || {_patchMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "runtime-patch-validation-failed version=%1 missing=%2",
         _patchVersion,

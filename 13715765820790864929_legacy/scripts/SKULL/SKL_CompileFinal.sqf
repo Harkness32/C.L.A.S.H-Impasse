@@ -44,6 +44,18 @@
 params [["_var","",[""]], ["_skipDebug",false,[false]],["_ns",missionNamespace,[missionNamespace]]];
 private _code = _ns getVariable [_var, 0];
 if (typeName _code != typeName {}) exitWith {false};
+
+// C.L.A.S.H. may defer a very small named set of finalizers while its
+// controller is synchronously compiled. The bootstrap clears this list before
+// normal mission startup, so the default behavior remains compileFinal.
+private _deferredFinalizers = missionNamespace getVariable [
+    "ITW_CLASH_DeferredFinalizers",
+    []
+];
+if (_var in _deferredFinalizers) exitWith {
+    diag_log format ["CLASH BOOT | finalization-deferred | %1",_var];
+    true
+};
 private _codestr = str _code;
 _codestr = _codestr select [1,count _codestr - 2]; // remove begin and end parenthesizes 
 #ifdef __A3_DEBUG__

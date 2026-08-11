@@ -1,9 +1,10 @@
 #include "defines.hpp"
 
-ITW_CLASH_RuntimePatchVersion = 1;
+ITW_CLASH_RuntimePatchVersion = 2;
 
 /*
-    V6 runtime integrity hotfix:
+    V6 runtime integrity correction, applied during the bootstrap finalization
+    window before observer/live startup:
     - C.L.A.S.H. owns OPFOR point defense; Impasse garrison writes are suppressed.
     - Mixed combat squads remain eligible when they merely contain embedded support specialists.
     - Exhausted squads egress to the enemy home AI staging/base.
@@ -231,17 +232,22 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
     ] call ITW_CLASH_fnc_AcknowledgeReconstitution_V6Base
 };
 
+// The four public overrides and their saved base implementations were left
+// mutable only for this synchronous correction window. Finalize them now using
+// the helper's required string-name contract.
 if (!isNil "SKL_fnc_CompileFinal") then {
-    ITW_CLASH_fnc_GetHomeBaseSpawn =
-        [ITW_CLASH_fnc_GetHomeBaseSpawn] call SKL_fnc_CompileFinal;
-    ITW_CLASH_fnc_ClassifyGroup =
-        [ITW_CLASH_fnc_ClassifyGroup] call SKL_fnc_CompileFinal;
-    ITW_CLASH_fnc_ObserveWriter =
-        [ITW_CLASH_fnc_ObserveWriter] call SKL_fnc_CompileFinal;
-    ITW_CLASH_fnc_GetEgressPoint =
-        [ITW_CLASH_fnc_GetEgressPoint] call SKL_fnc_CompileFinal;
-    ITW_CLASH_fnc_AcknowledgeReconstitution =
-        [ITW_CLASH_fnc_AcknowledgeReconstitution] call SKL_fnc_CompileFinal;
+    {
+        [_x] call SKL_fnc_CompileFinal;
+    } forEach [
+        "ITW_CLASH_fnc_GetHomeBaseSpawn",
+        "ITW_CLASH_fnc_ClassifyGroup_V6Base",
+        "ITW_CLASH_fnc_ClassifyGroup",
+        "ITW_CLASH_fnc_ObserveWriter_V6Base",
+        "ITW_CLASH_fnc_ObserveWriter",
+        "ITW_CLASH_fnc_GetEgressPoint",
+        "ITW_CLASH_fnc_AcknowledgeReconstitution_V6Base",
+        "ITW_CLASH_fnc_AcknowledgeReconstitution"
+    ];
 };
 
 diag_log format [
