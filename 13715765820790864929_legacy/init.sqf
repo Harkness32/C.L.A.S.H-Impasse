@@ -29,7 +29,16 @@ if (isNil "BIS_fnc_arsenal_campos_0") then {
 };
 
 if (isServer) then {
-    call compile preprocessFileLineNumbers "ITW_CLASH.sqf";
+    if (fileExists "ITW_CLASH_Bootstrap.sqf") then {
+        call compile preprocessFileLineNumbers "ITW_CLASH_Bootstrap.sqf";
+    } else {
+        ITW_CLASH_BootstrapReady = false;
+        ITW_CLASH_HookFallbacksActive = true;
+        ITW_CLASH_fnc_ObserveGroup = {false};
+        ITW_CLASH_fnc_ObserveWriter = {false};
+        ITW_CLASH_fnc_ObserveLifecycle = {false};
+        diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
+    };
 };
 
 [] execVM "ITW_Start.sqf";
