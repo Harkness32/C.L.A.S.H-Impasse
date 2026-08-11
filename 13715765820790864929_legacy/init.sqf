@@ -40,6 +40,25 @@ if (isServer) then {
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
 
+    // #24's transport dispatcher is defined inside ITW_Attack.sqf and normally
+    // compileFinal'd at the end of that file. Defer only that finalizer so the
+    // V6 return-contract repair can wrap it after Attack has loaded.
+    private _deferredFinalizers = missionNamespace getVariable [
+        "ITW_CLASH_DeferredFinalizers",
+        []
+    ];
+    _deferredFinalizers pushBackUnique "ITW_AtkDispatchReconstitutionTransport";
+    missionNamespace setVariable [
+        "ITW_CLASH_DeferredFinalizers",
+        _deferredFinalizers
+    ];
+
+    if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
+        [] execVM "ITW_CLASH_ReconstitutionDispatchFix.sqf";
+    } else {
+        diag_log "CLASH BOOT | reconstitution-dispatch-fix-missing | transport fallback guard remains active";
+    };
+
     if (fileExists "ITW_CLASH_LogisticsGuard.sqf") then {
         [] execVM "ITW_CLASH_LogisticsGuard.sqf";
     } else {
