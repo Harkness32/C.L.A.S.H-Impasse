@@ -33,16 +33,16 @@ def test_live_vehicle_only_repairs_stale_waiting_state():
     assert '_cachedState isEqualTo "waiting-transport"' in guard
     assert '_liveState isEqualTo "waiting-transport"' in guard
     assert '_liveState = "transport";' in guard
-    assert "early\n            // dismount" in guard
+    assert "must not force it back to transport" in guard
 
 
-def test_normal_transport_dismount_gets_settling_window():
+def test_normal_transport_dismount_gets_clash_settling_window():
     guard = text("ITW_CLASH_LogisticsGuard.sqf")
     assert "ITW_CLASH_PostTransportSettle = 30;" in guard
     assert '"ITW_CLASH_TransportSeen",true' in guard
-    assert '"ITW_CLASH_PostTransportUntil"' in guard
-    assert '"itwInitGrp",true,true' in guard
-    assert '"itwInitGrp",nil,true' in guard
+    assert '"ITW_CLASH_ReeligibleAt"' in guard
+    assert '"itwInitGrp",true,true' not in guard
+    assert '"itwInitGrp",nil,true' not in guard
     assert "transport-handoff-settle" in guard
     assert "transport-handoff-ready" in guard
 
