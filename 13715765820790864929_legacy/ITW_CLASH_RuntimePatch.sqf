@@ -1,6 +1,7 @@
 #include "defines.hpp"
 
 ITW_CLASH_RuntimePatchVersion = 3;
+ITW_CLASH_ReconstitutionTransitVersion = 1;
 
 /*
     V6 runtime integrity correction, applied during the bootstrap finalization
@@ -8,7 +9,7 @@ ITW_CLASH_RuntimePatchVersion = 3;
     - C.L.A.S.H. owns OPFOR point defense; Impasse garrison writes are suppressed.
     - Mixed combat squads remain eligible when they merely contain embedded support specialists.
     - Exhausted squads egress through the same Impasse attack-from base that supports their objective.
-    - Reconstituted squads return at that support corridor before HAL registration.
+    - Reconstituted squads stay in transit and are handed to HAL only after physical return to the AO.
 */
 
 ITW_CLASH_fnc_GetHomeBaseSpawn = {
@@ -120,6 +121,15 @@ ITW_CLASH_fnc_GetSupportCorridorSpawn = {
 ITW_CLASH_fnc_ClassifyGroup_V6Base = ITW_CLASH_fnc_ClassifyGroup;
 ITW_CLASH_fnc_ClassifyGroup = {
     params ["_group"];
+
+    if (!isNull _group && {
+        _group getVariable ["ITW_CLASH_ReconstitutionTransit",false]
+    }) exitWith {
+        [false,"reconstitution-transit",[
+            _group getVariable ["ITW_CLASH_TransitObjective",-1],
+            _group getVariable ["ITW_CLASH_TransitState",""]
+        ]]
+    };
 
     private _result = [_group] call ITW_CLASH_fnc_ClassifyGroup_V6Base;
     if ((_result#0) || {
@@ -245,47 +255,13 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
     ];
 
     if (isServer && {!isNull _group}) then {
-        private _corridor = [
-            _objectiveIndex
-        ] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
-        if (_corridor isNotEqualTo []) then {
-            private _corridorPosition = +(_corridor#0);
-            private _members = units _group;
-            private _memberCount = (count _members) max 1;
-
-            {
-                private _direction = _forEachIndex * (360 / _memberCount);
-                private _radius = 3 + ((_forEachIndex mod 3) * 2);
-                private _position = _corridorPosition getPos [
-                    _radius,
-                    _direction
-                ];
-                _position set [2,0];
-                _x setPosATL _position;
-            } forEach _members;
-
-            _group setVariable [
-                "ITW_CLASH_ReconstitutionSupportBase",
-                _corridor#3
-            ];
-            _group setVariable [
-                "ITW_CLASH_ReconstitutionSpawnSource",
-                _corridor#2
-            ];
-
-            ["reconstitution-relocated-corridor",[
-                _requestId,
-                _lineage,
-                _objectiveIndex,
-                _corridor#3,
-                _corridor#2,
-                round (
-                    _corridorPosition distance2D (
-                        (ITW_Objectives#_objectiveIndex)#ITW_OBJ_POS
-                    )
-                )
-            ]] call ITW_CLASH_fnc_Log;
-        };
+        ["reconstitution-handoff",[
+            _requestId,
+            _lineage,
+            _objectiveIndex,
+            _group getVariable ["ITW_CLASH_ReconstitutionSupportBase",-1],
+            _group getVariable ["ITW_CLASH_ReconstitutionSpawnSource",""]
+        ]] call ITW_CLASH_fnc_Log;
     };
 
     [
@@ -320,4 +296,8 @@ if (!isNil "SKL_fnc_CompileFinal") then {
 diag_log format [
     "CLASH BOOT | runtime-patch-ready | version=%1",
     ITW_CLASH_RuntimePatchVersion
+];
+diag_log format [
+    "CLASH BOOT | reconstitution-transit-ready | version=%1",
+    ITW_CLASH_ReconstitutionTransitVersion
 ];
