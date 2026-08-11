@@ -66,3 +66,13 @@ def test_long_corridor_prefers_air_but_walk_is_only_timeout_fallback():
     assert '"air-preferred"' in dispatch
     assert "ITW_AtkReconstitutionTransportWait" in manager
     assert '"reconstitution-transport-fallback-walk"' in manager
+
+
+def test_air_only_corridor_requires_air_transport_and_never_falls_back_to_walk():
+    source = text("ITW_Attack.sqf")
+    dispatch = function_block(source, "ITW_AtkDispatchReconstitutionTransport", "ITW_AtkBeginReconstitutionTransit")
+    manager = source[source.index("ITW_AtkReconstitutionTransitManager = {"):source.index("#define WEAPONLESS_FACTIONS")]
+    assert "private _ordered = if (_airRoute) then" in dispatch
+    assert "+_preferred" in dispatch
+    assert "private _airOnly = _corridor isNotEqualTo []" in manager
+    assert "if (!_airOnly && {" in manager
