@@ -54,12 +54,27 @@ if (!_exists) exitWith {
     call _installFallbacks;
 };
 
+// Probe the raw and both preprocessor paths separately. This is diagnostic
+// only: runtime compilation still requires preprocessFileLineNumbers to pass.
+private _rawSource = loadFile _path;
+private _rawChars = count toArray _rawSource;
+diag_log format ["CLASH BOOT | raw | chars=%1",_rawChars];
+
+private _plainSource = preprocessFile _path;
+private _plainChars = count toArray _plainSource;
+diag_log format ["CLASH BOOT | preprocess | chars=%1",_plainChars];
+
 private _source = preprocessFileLineNumbers _path;
 private _sourceChars = count toArray _source;
-diag_log format ["CLASH BOOT | source | chars=%1",_sourceChars];
+diag_log format ["CLASH BOOT | preprocess-lines | chars=%1",_sourceChars];
 if (_sourceChars <= 0) exitWith {
-    ITW_CLASH_BootstrapFailure = "controller-source-empty";
-    diag_log "CLASH BOOT | FAILED | controller-source-empty";
+    ITW_CLASH_BootstrapFailure = format [
+        "controller-source-empty raw=%1 preprocess=%2 lineNumbers=%3",
+        _rawChars,
+        _plainChars,
+        _sourceChars
+    ];
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
     call _installFallbacks;
 };
 
