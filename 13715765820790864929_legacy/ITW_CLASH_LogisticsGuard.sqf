@@ -19,7 +19,7 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
     sleep 1;
 
     // PR #24's transit dispatcher correctly records the live state on the group,
-    // but the queue entry can remain stale at waiting-transport.  Make the group
+    // but the queue entry can remain stale at waiting-transport. Make the group
     // variable authoritative so one RC request can own at most one live lift.
     if (!isNil "ITW_AtkReconstitutionTransits") then {
         for "_i" from ((count ITW_AtkReconstitutionTransits) - 1) to 0 step -1 do {
@@ -38,7 +38,16 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                 "ITW_CLASH_TransitVehicle",
                 objNull
             ];
-            if (!isNull _liveVehicle && {alive _liveVehicle}) then {
+
+            // Only infer transport from the live vehicle when both cached and
+            // group state are still the stale waiting state. If the transit
+            // manager has already changed the group to walking after an early
+            // dismount, the surviving vehicle must not force it back to transport.
+            if (_cachedState isEqualTo "waiting-transport" && {
+                _liveState isEqualTo "waiting-transport" && {
+                    !isNull _liveVehicle && {alive _liveVehicle}
+                }
+            }) then {
                 _liveState = "transport";
                 _grp setVariable ["ITW_CLASH_TransitState",_liveState];
             };
@@ -60,7 +69,7 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
     };
 
     // Freshly delivered normal Impasse infantry should not be adopted by HAL
-    // on the same frame their transport finishes unloading.  Watch for the
+    // on the same frame their transport finishes unloading. Watch for the
     // physical in-vehicle -> on-foot transition and hold the group in Impasse's
     // existing spawn-transition state for a short settling window.
     if (!isNil "ITW_EnemySide") then {
@@ -116,7 +125,7 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
 
     // Baseline Impasse gives completed land transports an RTB waypoint at their
     // spawn/support point (radius 220), then another MOVE exactly 1 km beyond it
-    // (radius 210).  Prune only that distinctive final pair so KamAZ-style
+    // (radius 210). Prune only that distinctive final pair so KamAZ-style
     // transports terminate at the logistics node instead of wandering into a
     // rear-area town before cleanup.
     {
