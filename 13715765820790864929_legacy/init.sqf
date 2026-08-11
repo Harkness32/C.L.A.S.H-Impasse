@@ -29,6 +29,9 @@ if (isNil "BIS_fnc_arsenal_campos_0") then {
 };
 
 if (isServer) then {
+    if (fileExists "ITW_CLASH_PP_Bisect.sqf") then {
+        call compile preprocessFileLineNumbers "ITW_CLASH_PP_Bisect.sqf";
+    };
     if (fileExists "ITW_CLASH_Bootstrap.sqf") then {
         call compile preprocessFileLineNumbers "ITW_CLASH_Bootstrap.sqf";
     } else {
