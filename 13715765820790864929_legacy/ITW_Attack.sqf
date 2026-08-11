@@ -123,7 +123,11 @@ ITW_AtkDispatchReconstitutionTransport = {
         private _type = _x#ITW_VEH_TYPE;
         if (_preferAir) then {ITW_VEH_IS_AIR(_type)} else {ITW_VEH_IS_LAND(_type)}
     };
-    private _ordered = _preferred + (_candidates - _preferred);
+    private _ordered = if (_airRoute) then {
+        +_preferred
+    } else {
+        _preferred + (_candidates - _preferred)
+    };
     private _dispatched = false;
     scopeName "ITW_CLASH_ReconstitutionDispatch";
 
@@ -356,7 +360,15 @@ ITW_AtkReconstitutionTransitManager = {
                 if (_dispatched) then {
                     _state = "transport";
                 } else {
-                    if (time - _createdAt >= ITW_AtkReconstitutionTransportWait) then {
+                    private _corridor = [
+                        _objectiveIndex
+                    ] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
+                    private _airOnly = _corridor isNotEqualTo [] && {
+                        ((_corridor#2) find "support-corridor-air") == 0
+                    };
+                    if (!_airOnly && {
+                        time - _createdAt >= ITW_AtkReconstitutionTransportWait
+                    }) then {
                         _state = "walking";
                         _group setVariable ["ITW_CLASH_TransitState",_state];
                         [_group,false] spawn ITW_AtkEngageInfantry;
