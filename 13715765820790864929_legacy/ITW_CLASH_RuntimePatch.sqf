@@ -1,14 +1,14 @@
 #include "defines.hpp"
 
-ITW_CLASH_RuntimePatchVersion = 2;
+ITW_CLASH_RuntimePatchVersion = 3;
 
 /*
     V6 runtime integrity correction, applied during the bootstrap finalization
     window before observer/live startup:
     - C.L.A.S.H. owns OPFOR point defense; Impasse garrison writes are suppressed.
     - Mixed combat squads remain eligible when they merely contain embedded support specialists.
-    - Exhausted squads egress to the enemy home AI staging/base.
-    - Reconstituted squads are relocated to the rear staging/base before HAL registration.
+    - Exhausted squads egress through the same Impasse attack-from base that supports their objective.
+    - Reconstituted squads return at that support corridor before HAL registration.
 */
 
 ITW_CLASH_fnc_GetHomeBaseSpawn = {
@@ -37,7 +37,7 @@ ITW_CLASH_fnc_GetHomeBaseSpawn = {
 
     if (_position isEqualTo []) then {
         _position = +(_objective#ITW_OBJ_V_SPAWN);
-        _source = "home-staging";
+        _source = "home-vehicle-spawn";
     };
     if (_position isEqualTo []) then {
         _position = +(_objective#ITW_OBJ_POS);
@@ -47,7 +47,74 @@ ITW_CLASH_fnc_GetHomeBaseSpawn = {
         _position pushBack 0;
     };
 
-    [_position,_homeObjective,_source]
+    [_position,_homeObjective,_source,_baseIndex]
+};
+
+ITW_CLASH_fnc_GetSupportCorridorSpawn = {
+    params [["_objectiveIndex",-1]];
+
+    if (isNil "ITW_Objectives" || {
+        isNil "ITW_Bases" || {
+            _objectiveIndex < 0 || {
+                _objectiveIndex >= count ITW_Objectives
+            }
+        }
+    }) exitWith {
+        private _home = call ITW_CLASH_fnc_GetHomeBaseSpawn;
+        if (_home isEqualTo []) then {[]} else {
+            [_home#0,_objectiveIndex,"support-corridor-" + (_home#2),_home#3]
+        }
+    };
+
+    private _objective = ITW_Objectives#_objectiveIndex;
+    private _attacks = _objective#ITW_OBJ_ATTACKS;
+    private _baseIndex = BASE_INDEX_NONE;
+    private _route = "land";
+
+    if (count _attacks > ITW_ATTACK_LAND_E) then {
+        _baseIndex = _attacks#ITW_ATTACK_LAND_E;
+    };
+    if (_baseIndex == BASE_INDEX_NONE && {
+        count _attacks > ITW_ATTACK_AIR_E
+    }) then {
+        _baseIndex = _attacks#ITW_ATTACK_AIR_E;
+        _route = "air";
+    };
+
+    private _position = [];
+    private _source = format ["support-corridor-%1-ai-spawn",_route];
+    if (_baseIndex >= 0 && {_baseIndex < count ITW_Bases}) then {
+        _position = +(ITW_Bases#_baseIndex#ITW_BASE_A_SPAWN);
+
+        // Impasse objective/base indexes share the same base-map index. If the
+        // dedicated AI spawn is unavailable, use the same vehicle staging
+        // point that can launch loaded vehicles toward this objective.
+        if (_position isEqualTo [] && {
+            _baseIndex < count ITW_Objectives
+        }) then {
+            _position = +(ITW_Objectives#_baseIndex#ITW_OBJ_V_SPAWN);
+            _source = format ["support-corridor-%1-vehicle-spawn",_route];
+        };
+
+        if (_position isEqualTo []) then {
+            _position = +(ITW_Bases#_baseIndex#ITW_BASE_POS);
+            _source = format ["support-corridor-%1-base-position",_route];
+        };
+    };
+
+    if (_position isEqualTo []) then {
+        private _home = call ITW_CLASH_fnc_GetHomeBaseSpawn;
+        if (_home isEqualTo []) exitWith {[]};
+        _position = +(_home#0);
+        _baseIndex = _home#3;
+        _source = "support-corridor-" + (_home#2);
+    };
+
+    if (count _position < 3) then {
+        _position pushBack 0;
+    };
+
+    [_position,_objectiveIndex,_source,_baseIndex]
 };
 
 ITW_CLASH_fnc_ClassifyGroup_V6Base = ITW_CLASH_fnc_ClassifyGroup;
@@ -152,18 +219,15 @@ ITW_CLASH_fnc_GetEgressPoint = {
     params ["_group",["_preferredObjective",-1]];
     if (isNull _group) exitWith {[]};
 
-    private _home = call ITW_CLASH_fnc_GetHomeBaseSpawn;
-    if (_home isEqualTo []) exitWith {[]};
-
-    private _affinityObjective = _preferredObjective;
-    if (_affinityObjective < 0) then {
-        _affinityObjective = _home#1;
-    };
+    private _corridor = [
+        _preferredObjective
+    ] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
+    if (_corridor isEqualTo []) exitWith {[]};
 
     [
-        +(_home#0),
-        _affinityObjective,
-        _home#2
+        +(_corridor#0),
+        _corridor#1,
+        _corridor#2
     ]
 };
 
@@ -181,16 +245,18 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
     ];
 
     if (isServer && {!isNull _group}) then {
-        private _home = call ITW_CLASH_fnc_GetHomeBaseSpawn;
-        if (_home isNotEqualTo []) then {
-            private _homePosition = +(_home#0);
+        private _corridor = [
+            _objectiveIndex
+        ] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
+        if (_corridor isNotEqualTo []) then {
+            private _corridorPosition = +(_corridor#0);
             private _members = units _group;
             private _memberCount = (count _members) max 1;
 
             {
                 private _direction = _forEachIndex * (360 / _memberCount);
                 private _radius = 3 + ((_forEachIndex mod 3) * 2);
-                private _position = _homePosition getPos [
+                private _position = _corridorPosition getPos [
                     _radius,
                     _direction
                 ];
@@ -199,22 +265,22 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
             } forEach _members;
 
             _group setVariable [
-                "ITW_CLASH_ReconstitutionHomeObjective",
-                _home#1
+                "ITW_CLASH_ReconstitutionSupportBase",
+                _corridor#3
             ];
             _group setVariable [
                 "ITW_CLASH_ReconstitutionSpawnSource",
-                _home#2
+                _corridor#2
             ];
 
-            ["reconstitution-relocated-home",[
+            ["reconstitution-relocated-corridor",[
                 _requestId,
                 _lineage,
                 _objectiveIndex,
-                _home#1,
-                _home#2,
+                _corridor#3,
+                _corridor#2,
                 round (
-                    _homePosition distance2D (
+                    _corridorPosition distance2D (
                         (ITW_Objectives#_objectiveIndex)#ITW_OBJ_POS
                     )
                 )
@@ -240,6 +306,7 @@ if (!isNil "SKL_fnc_CompileFinal") then {
         [_x] call SKL_fnc_CompileFinal;
     } forEach [
         "ITW_CLASH_fnc_GetHomeBaseSpawn",
+        "ITW_CLASH_fnc_GetSupportCorridorSpawn",
         "ITW_CLASH_fnc_ClassifyGroup_V6Base",
         "ITW_CLASH_fnc_ClassifyGroup",
         "ITW_CLASH_fnc_ObserveWriter_V6Base",
