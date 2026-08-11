@@ -28,6 +28,10 @@ if (isNil "BIS_fnc_arsenal_campos_0") then {
     BIS_fnc_arsenal_campos_0 = [4,159,16.6,[0,0,0.85]];
 };
 
+if (isServer) then {
+    call compile preprocessFileLineNumbers "ITW_CLASH.sqf";
+};
+
 [] execVM "ITW_Start.sqf";
 
 diag_log "ITW: init complete";
