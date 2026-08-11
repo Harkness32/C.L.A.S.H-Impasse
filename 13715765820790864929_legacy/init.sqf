@@ -76,6 +76,22 @@ if (isServer) then {
     } else {
         diag_log "CLASH BOOT | logistics-guard-missing | continuing without V6 handoff guard";
     };
+
+    if (fileExists "ITW_CLASH_CASEVAC.sqf") then {
+        [] execVM "ITW_CLASH_CASEVAC.sqf";
+        if (fileExists "ITW_CLASH_CASEVAC_AirOpsFix.sqf") then {
+            [] execVM "ITW_CLASH_CASEVAC_AirOpsFix.sqf";
+        } else {
+            diag_log "CLASH BOOT | casevac-air-ops-fix-missing | CASEVAC remains fail-open";
+        };
+        if (fileExists "ITW_CLASH_CASEVAC_HomeRTB.sqf") then {
+            [] execVM "ITW_CLASH_CASEVAC_HomeRTB.sqf";
+        } else {
+            diag_log "CLASH BOOT | casevac-home-rtb-missing | support-corridor cleanup remains active";
+        };
+    } else {
+        diag_log "CLASH BOOT | casevac-missing | walking withdrawal remains active";
+    };
 };
 
 [] execVM "ITW_Start.sqf";
