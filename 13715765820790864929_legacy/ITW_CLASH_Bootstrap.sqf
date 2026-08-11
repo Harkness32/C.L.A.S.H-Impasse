@@ -30,9 +30,14 @@ private _installFallbacks = {
     ITW_CLASH_LiveEnabled = false;
     ITW_CLASH_DeferredFinalizers = [];
 
+    // If a partial controller reached its scheduled self-start, these flags
+    // make both startup entry points return without enabling C.L.A.S.H.
     ITW_CLASH_ObserverStarted = true;
     ITW_CLASH_LiveStarted = true;
 
+    // Preserve baseline Impasse semantics at the only unguarded integration
+    // points. ObserveWriter=false explicitly yields waypoint authority back
+    // to Impasse.
     ITW_CLASH_fnc_ObserveGroup = {false};
     ITW_CLASH_fnc_ObserveWriter = {false};
     ITW_CLASH_fnc_ObserveLifecycle = {false};
@@ -52,6 +57,8 @@ if (!_exists) exitWith {
     call _installFallbacks;
 };
 
+// Probe the raw and both preprocessor paths separately. This is diagnostic
+// only: runtime compilation still requires preprocessFileLineNumbers to pass.
 private _rawSource = loadFile _path;
 private _rawChars = count toArray _rawSource;
 diag_log format ["CLASH BOOT | raw | chars=%1",_rawChars];
@@ -74,9 +81,9 @@ if (_sourceChars <= 0) exitWith {
     call _installFallbacks;
 };
 
-// These six functions are corrected immediately after the canonical controller
-// definition pass. SKL_fnc_CompileFinal sees this list and leaves only these
-// names mutable; every other C.L.A.S.H. function finalizes normally.
+// These six functions are corrected immediately after the canonical
+// controller definition pass. SKL_fnc_CompileFinal sees this list and leaves
+// only these names mutable; every other C.L.A.S.H. function finalizes normally.
 ITW_CLASH_DeferredFinalizers = [
     "ITW_CLASH_fnc_ClassifyGroup",
     "ITW_CLASH_fnc_ObserveWriter",
@@ -90,9 +97,15 @@ diag_log format [
     ITW_CLASH_DeferredFinalizers
 ];
 
+// Sole runtime compile of ITW_CLASH.sqf. Its scheduled startup is retained;
+// because params are already complete, it can start only after this synchronous
+// definition/correction pass returns to the scheduler.
 call compile _source;
 ITW_CLASH_DeferredFinalizers = [];
 
+// Apply the V6 runtime-integrity correction while the selected controller
+// functions are still mutable, then finalize the corrected functions in the
+// patch itself before observer/live startup can run.
 private _patchPath = "ITW_CLASH_RuntimePatch.sqf";
 private _patchExists = fileExists _patchPath;
 private _patchSource = if (_patchExists) then {
@@ -114,7 +127,10 @@ if (!_patchExists || {_patchChars <= 0}) exitWith {
 };
 call compile _patchSource;
 
-private _patchVersion = missionNamespace getVariable ["ITW_CLASH_RuntimePatchVersion",-1];
+private _patchVersion = missionNamespace getVariable [
+    "ITW_CLASH_RuntimePatchVersion",
+    -1
+];
 private _patchRequired = [
     "ITW_CLASH_fnc_GetHomeBaseSpawn",
     "ITW_CLASH_fnc_GetSupportCorridorSpawn",
