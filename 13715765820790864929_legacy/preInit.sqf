@@ -2,6 +2,16 @@
 diag_log "ITW: preInit start";
 if (isNil "SKL_fnc_CompileFinal") then {SKL_fnc_CompileFinal = compileFinal preprocessFileLineNumbers "scripts\SKULL\SKL_CompileFinal.sqf"};
 SKL_CF_DEBUG_ENABLE = false; // set to true to enable function debug (and run arma with -debug)
+
+// C.L.A.S.H. hooks must never be allowed to break baseline Impasse.
+// These no-op shims are replaced by the real controller after the validated
+// server bootstrap runs from init.sqf.
+ITW_CLASH_BootstrapReady = false;
+ITW_CLASH_HookFallbacksActive = true;
+ITW_CLASH_fnc_ObserveGroup = {false};
+ITW_CLASH_fnc_ObserveWriter = {false};
+ITW_CLASH_fnc_ObserveLifecycle = {false};
+diag_log "CLASH BOOT | preInit | fail-open hooks installed; controller deferred to init";
 isNil {call compile preprocessFileLineNumbers "ITW_Airfield.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_Ally.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Attack.sqf";                };
@@ -15,7 +25,6 @@ isNil {call compile preprocessFileLineNumbers "ITW_Garage.sqf";                }
 isNil {call compile preprocessFileLineNumbers "ITW_Garrison.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_SideOps.sqf";               };
 isNil {call compile preprocessFileLineNumbers "ITW_Objectives.sqf";            };
-isNil {call compile preprocessFileLineNumbers "ITW_CLASH.sqf";                 };
 isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";            };
 isNil {call compile preprocessFileLineNumbers "ITW_Radio.sqf";                 };
 isNil {call compile preprocessFileLineNumbers "ITW_Save.sqf";                  };
