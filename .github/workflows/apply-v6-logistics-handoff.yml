@@ -5,7 +5,7 @@ on:
     branches:
       - main
     types:
-      - opened
+      - reopened
 
 permissions:
   contents: write
@@ -48,9 +48,7 @@ jobs:
               raise SystemExit(f'expected one runtime version seam, found {text.count(seam)}')
           text = text.replace(seam, replacement, 1)
 
-          seam = (
-              f'    private _result = [_group] call ITW_CLASH_fnc_ClassifyGroup_V6Base;{nl}'
-          )
+          seam = f'    private _result = [_group] call ITW_CLASH_fnc_ClassifyGroup_V6Base;{nl}'
           replacement = (
               f'    private _settleUntil = if (isNull _group) then {{0}} else {{{nl}'
               f'        _group getVariable ["ITW_CLASH_PostTransportUntil",0]{nl}'
@@ -89,11 +87,73 @@ jobs:
           text = text.replace(ready, ready_repl, 1)
           patch_path.write_bytes(text.encode('utf-8'))
 
-          # --- Impasse transport manager: quarantine unloaded cargo + stop at RTB node ---
+          # --- Impasse transport manager / reconstitution transit integrity ---
           raw = attack_path.read_bytes()
           text = raw.decode('utf-8')
           nl = '\r\n' if b'\r\n' in raw else '\n'
 
+          # Never dispatch another lift while this reconstitution group already owns a live transport.
+          seam = (
+              f'    if (!isServer || {{isNull _group}}) exitWith {{false}};{nl}'
+              f'    if (ITW_AtkReconstitutionTransportContext isEqualTo []) exitWith {{false}};{nl}'
+          )
+          replacement = (
+              f'    if (!isServer || {{isNull _group}}) exitWith {{false}};{nl}'
+              f'    private _existingTransit = _group getVariable [{nl}'
+              f'        "ITW_CLASH_TransitVehicle",objNull{nl}'
+              f'    ];{nl}'
+              f'    if (!isNull _existingTransit && {{alive _existingTransit}}) exitWith {{{nl}'
+              f'        _group setVariable ["ITW_CLASH_TransitState","transport"];{nl}'
+              f'        true{nl}'
+              f'    }};{nl}'
+              f'    if (ITW_AtkReconstitutionTransportContext isEqualTo []) exitWith {{false}};{nl}'
+          )
+          if text.count(seam) != 1:
+              raise SystemExit(f'expected one dispatch guard seam, found {text.count(seam)}')
+          text = text.replace(seam, replacement, 1)
+
+          # Queue entry state was observed remaining waiting-transport while the group variable was transport.
+          # Treat the group variable as the authoritative transit state on every manager cycle.
+          seam = (
+              f'            _objectiveIndex = _group getVariable [{nl}'
+              f'                "ITW_CLASH_TransitObjective",_objectiveIndex{nl}'
+              f'            ];{nl}'
+          )
+          replacement = (
+              f'            _state = _group getVariable [{nl}'
+              f'                "ITW_CLASH_TransitState",_state{nl}'
+              f'            ];{nl}'
+              f'            _objectiveIndex = _group getVariable [{nl}'
+              f'                "ITW_CLASH_TransitObjective",_objectiveIndex{nl}'
+              f'            ];{nl}'
+          )
+          if text.count(seam) != 1:
+              raise SystemExit(f'expected one authoritative-state seam, found {text.count(seam)}')
+          text = text.replace(seam, replacement, 1)
+
+          # Clear stale assignedVehicle state before HAL handoff after a physical dismount.
+          seam = (
+              f'            if (!_inVehicle && {{{nl}'
+              f'                _state in ["transport","walking"] && {{{nl}'
+              f'                    _distance <= _handoffRadius{nl}'
+              f'                }}{nl}'
+              f'            }}) then {{{nl}'
+              f'                _group setVariable ["ITW_CLASH_ReconstitutionTransit",nil];{nl}'
+          )
+          replacement = (
+              f'            if (!_inVehicle && {{{nl}'
+              f'                _state in ["transport","walking"] && {{{nl}'
+              f'                    _distance <= _handoffRadius{nl}'
+              f'                }}{nl}'
+              f'            }}) then {{{nl}'
+              f'                {{unassignVehicle _x}} forEach _aliveUnits;{nl}'
+              f'                _group setVariable ["ITW_CLASH_ReconstitutionTransit",nil];{nl}'
+          )
+          if text.count(seam) != 1:
+              raise SystemExit(f'expected one reconstitution handoff seam, found {text.count(seam)}')
+          text = text.replace(seam, replacement, 1)
+
+          # Normal Impasse unload: quarantine cargo groups before C.L.A.S.H. can register them.
           seam = (
               f'                        [_isFriendly,true] call ITW_AtkTranspSuccess;{nl}'
               f'                        _vehInfo set [VEHINFO_CARGO_GRPS,[]];{nl}'
@@ -123,6 +183,7 @@ jobs:
               raise SystemExit(f'expected one normal unload seam, found {text.count(seam)}')
           text = text.replace(seam, replacement, 1)
 
+          # Early dismount/eject gets the same stabilization window.
           seam = (
               f'                        if !(_grpsNoLongerInVeh isEqualTo []) then {{{nl}'
               f'                            _cargoGroups = _cargoGroups - _grpsNoLongerInVeh;{nl}'
@@ -144,6 +205,7 @@ jobs:
               raise SystemExit(f'expected one early-dismount seam, found {text.count(seam)}')
           text = text.replace(seam, replacement, 1)
 
+          # Completed KamAZ-style land transports stop at their logistics node; no 1 km overshoot.
           overshoot = (
               f'                        private _wp2 = _grp addWaypoint [_fromPos getPos [1000,getPosATL _veh getDir _fromPos],0];{nl}'
               f'                        _wp2 setWaypointType "MOVE";{nl}'
@@ -185,6 +247,19 @@ def test_land_transport_rtb_has_no_one_km_overshoot_waypoint():
     assert '_fromPos getPos [1000,getPosATL _veh getDir _fromPos]' not in source
     assert 'private _wp1 = _grp addWaypoint [_fromPos,0];' in source
     assert '_wp1 setWaypointCompletionRadius 220;' in source
+
+
+def test_reconstitution_transport_cannot_duplicate_live_lift():
+    source = text("ITW_Attack.sqf")
+    assert '"ITW_CLASH_TransitVehicle",objNull' in source
+    assert 'if (!isNull _existingTransit && {alive _existingTransit}) exitWith {' in source
+    assert '"ITW_CLASH_TransitState","transport"' in source
+
+
+def test_transit_manager_uses_group_state_as_authority():
+    source = text("ITW_Attack.sqf")
+    assert '"ITW_CLASH_TransitState",_state' in source
+    assert '{unassignVehicle _x} forEach _aliveUnits;' in source
 
 
 def test_reconstitution_transit_behavior_remains_present():
