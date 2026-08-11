@@ -1,0 +1,55 @@
+name: Apply V6 conscious preprocessor fix
+
+on:
+  push:
+    branches:
+      - agent/v6-fix-conscious-preprocessor
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/v6-fix-conscious-preprocessor
+          fetch-depth: 0
+
+      - name: Apply exact controller fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('13715765820790864929_legacy/ITW_CLASH.sqf')
+          source = path.read_text()
+          old = '''ITW_CLASH_fnc_IsConscious = {
+              params ["_unit"];
+              if (isNull _unit || {!alive _unit}) exitWith {false};
+          #if __has_include("\\z\\ace\\addons\\main\\script_component.hpp")
+              !(_unit getVariable ["ACE_isUnconscious",false])
+          #else
+              lifeState _unit in ["HEALTHY","INJURED"]
+          #endif
+          };'''
+          new = '''ITW_CLASH_fnc_IsConscious = {
+              params ["_unit"];
+              if (isNull _unit || {!alive _unit}) exitWith {false};
+              CONSCIOUS(_unit)
+          };'''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one target block, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+
+          workflow = Path('.github/workflows/apply-v6-conscious-fix.yml')
+          workflow.unlink()
+
+      - name: Commit permanent fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 13715765820790864929_legacy/ITW_CLASH.sqf .github/workflows/apply-v6-conscious-fix.yml
+          git commit -m "Fix V6 conscious preprocessor"
+          git push origin HEAD:agent/v6-fix-conscious-preprocessor
