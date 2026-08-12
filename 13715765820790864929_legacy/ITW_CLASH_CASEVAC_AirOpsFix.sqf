@@ -3,14 +3,14 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_AirOpsFixStarted",false]) exitWith {};
 ITW_CLASH_CASEVAC_AirOpsFixStarted = true;
-ITW_CLASH_CASEVAC_AirOpsFixVersion = 1;
+ITW_CLASH_CASEVAC_AirOpsFixVersion = 2;
 
 // CASEVAC itself is loaded asynchronously. Wait for the function surface before
-// correcting two pre-live issues found during the top-down audit:
-// 1) SpawnHeli used the same local-result + breakOut pattern that caused the
-//    reconstitution dispatcher nil-return bug.
-// 2) the extraction coroutine had landing-distance checks but no explicit
-//    inbound waypoint telling the helicopter to fly to the LZ.
+// correcting the air-operations contract:
+// 1) SpawnHeli must have a stable return value.
+// 2) extraction requires an explicit inbound waypoint to the LZ.
+// 3) emergency CASEVAC may exceed Impasse's normal concurrent vehicle/aircraft
+//    count ceiling, while still consuming tickets and remaining fully accounted.
 waitUntil {
     sleep 0.1;
     !isNil "ITW_CLASH_CASEVAC_fnc_SpawnHeli" && {
@@ -31,13 +31,14 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
     ];
     if (!isNil "ITW_EnemySide" && {_side != ITW_EnemySide}) exitWith {[]};
 
+    // CASEVAC is emergency logistics, not another tactical air package. Select
+    // any configured transport-capable helicopter that can still pay its normal
+    // ticket cost. Do NOT reject a lift because its Impasse vehicle definition
+    // is already at ITW_VEH_MAX; our own CASEVAC concurrency cap remains the
+    // safety ceiling for extraction aircraft.
     private _candidates = (_transport + _dualVeh) select {
         (_x#ITW_VEH_TYPE) == ITW_TYPE_VEH_HELI && {
-            (_x#ITW_VEH_REQD_TICKETS) <= (_x#ITW_VEH_CURR_TICKETS) && {
-                (_x#ITW_VEH_ROLE) == ITW_VEH_ROLE_TRANSPORT || {
-                    (_x#ITW_VEH_COUNT) < (_x#ITW_VEH_MAX)
-                }
-            }
+            (_x#ITW_VEH_REQD_TICKETS) <= (_x#ITW_VEH_CURR_TICKETS)
         }
     };
     if (_candidates isEqualTo []) exitWith {[]};
@@ -53,6 +54,10 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
         if (_result isNotEqualTo []) then {continue};
 
         private _vehDef = _ordered#_candidateIndex;
+        private _countBefore = _vehDef#ITW_VEH_COUNT;
+        private _maxConfigured = _vehDef#ITW_VEH_MAX;
+        private _bypassingCountCap = _countBefore >= _maxConfigured;
+
         private _heli = [
             _vehDef,_crewTypes,_unitTypes,_side,_spawnPos
         ] call ITW_AtkSpawnVeh;
@@ -100,6 +105,12 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
         ALLOW_DAMAGE(_heli,true);
         {ALLOW_DAMAGE(_x,true)} forEach crew _heli;
         {_x addCuratorEditableObjects [[_heli] + units _crewGroup,true]} forEach allCurators;
+
+        if (_bypassingCountCap) then {
+            ["cap-bypass",[
+                typeOf _heli,_countBefore,_maxConfigured,_seatCount
+            ]] call ITW_CLASH_CASEVAC_fnc_Log;
+        };
 
         _result = [_heli,_crewGroup,_vehDef,_baseIndex,_spawnSource,+_spawnPos];
     };
@@ -163,6 +174,6 @@ ITW_CLASH_CASEVAC_fnc_RunExtraction = {
 };
 
 diag_log format [
-    "CLASH BOOT | casevac-air-ops-fix-ready | version=%1 explicitLZ=true",
+    "CLASH BOOT | casevac-air-ops-fix-ready | version=%1 explicitLZ=true capBypass=true tickets=true",
     ITW_CLASH_CASEVAC_AirOpsFixVersion
 ];

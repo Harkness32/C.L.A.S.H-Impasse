@@ -52,3 +52,18 @@ def test_spawn_fix_preserves_impasse_ticket_and_aircraft_accounting():
     assert "ITW_TICKET_REDUCE" in source
     assert '"ITW_VehDef"' in source
     assert "ITW_AtkAddVehicle" not in source
+
+
+def test_casevac_bypasses_impasse_vehicle_count_cap_but_still_requires_tickets():
+    source = text("ITW_CLASH_CASEVAC_AirOpsFix.sqf")
+    candidate_start = source.index("private _candidates = (_transport + _dualVeh) select {")
+    candidate_end = source.index("if (_candidates isEqualTo [])", candidate_start)
+    candidate_filter = source[candidate_start:candidate_end]
+
+    assert "ITW_VEH_REQD_TICKETS" in candidate_filter
+    assert "ITW_VEH_CURR_TICKETS" in candidate_filter
+    assert "ITW_VEH_COUNT" not in candidate_filter
+    assert "ITW_VEH_MAX" not in candidate_filter
+    assert '"cap-bypass"' in source
+    assert "ITW_CLASH_CASEVAC_AirOpsFixVersion = 2;" in source
+    assert "capBypass=true tickets=true" in source

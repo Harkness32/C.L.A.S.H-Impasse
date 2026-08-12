@@ -17,6 +17,7 @@ def test_integrated_build_wires_logistics_casevac_and_anchor_doctrine():
         "ITW_CLASH_CASEVAC.sqf",
         "ITW_CLASH_CASEVAC_AirOpsFix.sqf",
         "ITW_CLASH_CASEVAC_HomeRTB.sqf",
+        "ITW_CLASH_CASEVAC_LZPadFix.sqf",
     ]:
         assert hook in init
 
@@ -33,6 +34,7 @@ def test_integrated_build_preserves_physical_logistics_contracts():
     transit = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
     casevac = text("ITW_CLASH_CASEVAC.sqf")
     air_ops = text("ITW_CLASH_CASEVAC_AirOpsFix.sqf")
+    lz_pad = text("ITW_CLASH_CASEVAC_LZPadFix.sqf")
 
     assert "ITW_CLASH_ReconstitutionHandoffBuffer = 250;" in transit
     assert 'ITW_CLASH_CASEVAC_SmokeClass = "SmokeShell";' in casevac
@@ -41,6 +43,10 @@ def test_integrated_build_preserves_physical_logistics_contracts():
     assert "moveInAny" not in casevac
     assert '"casevac-inbound-route"' in air_ops
     assert '"reconstitution-dispatch-return"' in dispatch
+    assert 'ITW_CLASH_CASEVAC_HelipadClass = "Land_HelipadEmpty_F";' in lz_pad
+    assert "landAt [_pad" in lz_pad
+    assert "ITW_CLASH_CASEVAC_InfantryPadOffset = 30;" in lz_pad
+    assert '"reconstitution-dispatch-state"' in transit
 
 
 def test_integrated_build_has_single_credit_authority():
