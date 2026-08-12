@@ -1,6 +1,6 @@
 #include "defines.hpp"
 
-ITW_CLASH_RuntimePatchVersion = 3;
+ITW_CLASH_RuntimePatchVersion = 4;
 ITW_CLASH_ReconstitutionTransitVersion = 1;
 
 /*
@@ -10,6 +10,7 @@ ITW_CLASH_ReconstitutionTransitVersion = 1;
     - Mixed combat squads remain eligible when they merely contain embedded support specialists.
     - Exhausted squads egress through the same Impasse attack-from base that supports their objective.
     - Reconstituted squads stay in transit and are handed to HAL only after physical return to the AO.
+    - Objective anchors must remain intact at six conscious soldiers or more.
 */
 
 ITW_CLASH_fnc_GetHomeBaseSpawn = {
@@ -274,9 +275,73 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
     ] call ITW_CLASH_fnc_AcknowledgeReconstitution_V6Base
 };
 
-// The four public overrides and their saved base implementations were left
-// mutable only for this synchronous correction window. Finalize them now using
-// the helper's required string-name contract.
+// Preserve canonical strong-candidate scoring, but reject the weak fallback.
+ITW_CLASH_fnc_SelectAnchorGroup_V6Base = ITW_CLASH_fnc_SelectAnchorGroup;
+ITW_CLASH_fnc_SelectAnchorGroup = {
+    private _candidate = _this call ITW_CLASH_fnc_SelectAnchorGroup_V6Base;
+    if (isNull _candidate) exitWith {grpNull};
+
+    private _conscious = [units _candidate] call ITW_CLASH_fnc_CountConscious;
+    if (_conscious < ITW_CLASH_MinAnchorSoldiers) exitWith {
+        ["anchor-weak-candidate-rejected",[
+            [_candidate] call ITW_CLASH_fnc_GroupId,
+            _candidate getVariable ["ITW_CLASH_AssignedObjective",-1],
+            _conscious,
+            ITW_CLASH_MinAnchorSoldiers
+        ]] call ITW_CLASH_fnc_Log;
+        grpNull
+    };
+    _candidate
+};
+
+// Demote an existing anchor as soon as it falls below minimum strength. The
+// canonical audit then sees a true vacancy and maintains refill pressure.
+ITW_CLASH_fnc_AuditAnchors_V6Base = ITW_CLASH_fnc_AuditAnchors;
+ITW_CLASH_fnc_AuditAnchors = {
+    if (isServer && {
+        ITW_CLASH_LiveEnabled && {
+            ITW_CLASH_HALReady && {
+                !ITW_CLASH_Transitioning && {
+                    time >= ITW_CLASH_AnchorAuditReadyAt && {
+                        time >= ITW_CLASH_RegistrationFrozenUntil
+                    }
+                }
+            }
+        }
+    }) then {
+        {
+            private _objectiveIndex = _x#0;
+            private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+            private _entry = ITW_CLASH_AnchorGroups getOrDefault [_key,[]];
+            if (_entry isEqualTo []) then {continue};
+
+            private _group = _entry#0;
+            if (isNull _group) then {continue};
+            private _conscious = [units _group] call ITW_CLASH_fnc_CountConscious;
+            if (_conscious >= ITW_CLASH_MinAnchorSoldiers) then {continue};
+
+            private _id = [_group] call ITW_CLASH_fnc_GroupId;
+            [_objectiveIndex,"below-minimum-strength"] call ITW_CLASH_fnc_ClearAnchorSlot;
+            [
+                _objectiveIndex,
+                "vacant",
+                ITW_CLASH_MinAnchorSoldiers
+            ] call ITW_CLASH_fnc_RequestAnchorRefill;
+            ["anchor-degraded-demoted",[
+                _objectiveIndex,
+                _id,
+                _conscious,
+                ITW_CLASH_MinAnchorSoldiers
+            ]] call ITW_CLASH_fnc_Log;
+        } forEach (call ITW_CLASH_fnc_GetHeldObjectives);
+    };
+
+    call ITW_CLASH_fnc_AuditAnchors_V6Base
+};
+
+// The public overrides and their saved base implementations were left mutable
+// only for this synchronous correction window. Finalize them now using the
+// helper's required string-name contract.
 if (!isNil "SKL_fnc_CompileFinal") then {
     {
         [_x] call SKL_fnc_CompileFinal;
@@ -289,7 +354,11 @@ if (!isNil "SKL_fnc_CompileFinal") then {
         "ITW_CLASH_fnc_ObserveWriter",
         "ITW_CLASH_fnc_GetEgressPoint",
         "ITW_CLASH_fnc_AcknowledgeReconstitution_V6Base",
-        "ITW_CLASH_fnc_AcknowledgeReconstitution"
+        "ITW_CLASH_fnc_AcknowledgeReconstitution",
+        "ITW_CLASH_fnc_SelectAnchorGroup_V6Base",
+        "ITW_CLASH_fnc_SelectAnchorGroup",
+        "ITW_CLASH_fnc_AuditAnchors_V6Base",
+        "ITW_CLASH_fnc_AuditAnchors"
     ];
 };
 
