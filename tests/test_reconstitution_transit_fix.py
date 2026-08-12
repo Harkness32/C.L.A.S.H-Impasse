@@ -24,18 +24,6 @@ def test_transit_fix_uses_tighter_near_ao_handoff_buffer():
     assert "_distance <= _handoffRadius" in source
 
 
-def test_transit_fix_uses_live_state_not_dispatcher_return_value():
-    source = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
-    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 2;" in source
-    assert 'call ITW_AtkDispatchReconstitutionTransport;' in source
-    assert 'private _liveState = _group getVariable ["ITW_CLASH_TransitState",""];' in source
-    assert 'private _liveVehicle = _group getVariable ["ITW_CLASH_TransitVehicle",objNull];' in source
-    assert '_liveState isEqualTo "transport"' in source
-    assert '!isNull _liveVehicle && {alive _liveVehicle}' in source
-    assert '"reconstitution-dispatch-state"' in source
-    assert "private _dispatched =" not in source
-
-
 def test_transit_fix_preserves_physical_transit_and_fallbacks():
     source = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
     assert '"ITW_CLASH_ReconstitutionTransit",nil' in source
@@ -54,4 +42,16 @@ def test_transit_fix_finalizes_before_any_manager_can_start():
     remove_at = source.index('_deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"]')
     finalize_at = source.index('["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;')
     assert remove_at < finalize_at
-    assert "authoritativeState=true" in source
+    assert "reconstitution-transit-fix-ready" in source
+
+
+def test_transit_manager_uses_authoritative_live_dispatch_state():
+    source = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
+    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 2;" in source
+    assert 'private _liveState = _group getVariable ["ITW_CLASH_TransitState",""];' in source
+    assert 'private _liveVehicle = _group getVariable ["ITW_CLASH_TransitVehicle",objNull];' in source
+    assert '_liveState isEqualTo "transport"' in source
+    assert '!isNull _liveVehicle && {alive _liveVehicle}' in source
+    assert '"reconstitution-dispatch-state"' in source
+    assert 'private _dispatched =' not in source
+    assert 'if (_dispatched)' not in source
