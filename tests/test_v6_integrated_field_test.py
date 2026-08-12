@@ -16,6 +16,7 @@ def test_integrated_build_wires_logistics_casevac_and_anchor_doctrine():
         "ITW_CLASH_LogisticsGuard.sqf",
         "ITW_CLASH_CASEVAC.sqf",
         "ITW_CLASH_CASEVAC_AirOpsFix.sqf",
+        "ITW_CLASH_CASEVAC_LZPadFix.sqf",
         "ITW_CLASH_CASEVAC_HomeRTB.sqf",
     ]:
         assert hook in init
@@ -33,13 +34,20 @@ def test_integrated_build_preserves_physical_logistics_contracts():
     transit = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
     casevac = text("ITW_CLASH_CASEVAC.sqf")
     air_ops = text("ITW_CLASH_CASEVAC_AirOpsFix.sqf")
+    lz_pad = text("ITW_CLASH_CASEVAC_LZPadFix.sqf")
 
     assert "ITW_CLASH_ReconstitutionHandoffBuffer = 250;" in transit
+    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 2;" in transit
+    assert '"reconstitution-dispatch-state"' in transit
+    assert "private _dispatched =" not in transit
     assert 'ITW_CLASH_CASEVAC_SmokeClass = "SmokeShell";' in casevac
     assert "assignAsCargo _heli" in casevac
     assert "orderGetIn true" in casevac
     assert "moveInAny" not in casevac
     assert '"casevac-inbound-route"' in air_ops
+    assert '"Land_HelipadEmpty_F"' in lz_pad
+    assert "ITW_CLASH_CASEVAC_InfantryRallyOffset = 30;" in lz_pad
+    assert '_heli landAt [_pad,"GetIn",_wait,true]' in lz_pad
     assert '"reconstitution-dispatch-return"' in dispatch
 
 
