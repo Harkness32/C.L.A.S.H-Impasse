@@ -37,24 +37,20 @@ if (isServer) then {
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
 
-    private _deferredFinalizers = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
+    // The reconstitution dispatcher and transit manager are compileFinal'd
+    // unconditionally at the tail of ITW_Attack.sqf. Install corrected final
+    // implementations synchronously before ITW_Start launches that file. The
+    // later baseline assignments are then rejected, leaving the corrected
+    // implementations as the canonical runtime functions.
     if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
-        _deferredFinalizers pushBackUnique "ITW_AtkDispatchReconstitutionTransport";
+        call compile preprocessFileLineNumbers "ITW_CLASH_ReconstitutionDispatchFix.sqf";
     } else {
-        diag_log "CLASH BOOT | reconstitution-dispatch-fix-missing | baseline finalization retained";
+        diag_log "CLASH BOOT | reconstitution-dispatch-fix-missing | baseline function will load";
     };
     if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
-        _deferredFinalizers pushBackUnique "ITW_AtkReconstitutionTransitManager";
+        call compile preprocessFileLineNumbers "ITW_CLASH_ReconstitutionTransitFix.sqf";
     } else {
-        diag_log "CLASH BOOT | reconstitution-transit-fix-missing | baseline finalization retained";
-    };
-    missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferredFinalizers];
-
-    if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
-        [] execVM "ITW_CLASH_ReconstitutionDispatchFix.sqf";
-    };
-    if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
-        [] execVM "ITW_CLASH_ReconstitutionTransitFix.sqf";
+        diag_log "CLASH BOOT | reconstitution-transit-fix-missing | baseline function will load";
     };
 
     if (fileExists "ITW_CLASH_LogisticsGuard.sqf") then {
