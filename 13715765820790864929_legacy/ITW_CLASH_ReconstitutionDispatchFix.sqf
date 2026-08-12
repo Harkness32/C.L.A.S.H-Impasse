@@ -1,22 +1,21 @@
 #include "defines.hpp"
 
-if (!isServer) exitWith {};
-if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixStarted",false]) exitWith {};
-ITW_CLASH_ReconstitutionDispatchFixStarted = true;
-
-// ITW_Attack.sqf owns transport selection, spawn, loading, ticket charging and
-// vehicle registration. Its V6 dispatcher used a named breakOut that could leave
-// the trailing `_dispatched` expression outside the private variable's live scope,
-// producing a nil return plus `Undefined variable ... _dispatched` after an
-// otherwise successful dispatch. init.sqf defers only this function's finalizer
-// while this source-equivalent correction is installed.
-waitUntil {
-    sleep 0.1;
-    !isNil "ITW_AtkDispatchReconstitutionTransport" && {
-        !isNil "ITW_AtkDeliveryCntChange"
-    }
+if (!isServer) exitWith {false};
+if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixStarted",false]) exitWith {
+    missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixReady",false]
 };
-sleep 0.1;
+ITW_CLASH_ReconstitutionDispatchFixStarted = true;
+ITW_CLASH_ReconstitutionDispatchFixVersion = 3;
+ITW_CLASH_ReconstitutionDispatchFixReady = false;
+
+// This file is compiled synchronously from preInit immediately after
+// ITW_Attack.sqf. preInit defers only this function's SKL finalizer, so the
+// canonical definition exists but is still mutable here. This avoids the
+// post-init "Attempt to override final function" race entirely.
+if (isNil "ITW_AtkDispatchReconstitutionTransport") exitWith {
+    diag_log "CLASH BOOT | FAILED | reconstitution-dispatch-fix-source-missing";
+    false
+};
 
 ITW_AtkDispatchReconstitutionTransport = {
     params ["_group","_requestId","_objectiveIndex","_lineage"];
@@ -158,8 +157,6 @@ ITW_AtkDispatchReconstitutionTransport = {
     _dispatched
 };
 
-// Both Attack repairs wake at roughly the same time. Make shared deferral-list
-// cleanup unscheduled/atomic so their read-modify-write operations cannot race.
 isNil {
     private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
     _deferred = _deferred - ["ITW_AtkDispatchReconstitutionTransport"];
@@ -167,8 +164,13 @@ isNil {
 };
 
 private _finalized = ["ITW_AtkDispatchReconstitutionTransport"] call SKL_fnc_CompileFinal;
+ITW_CLASH_ReconstitutionDispatchFixReady = _finalized;
 if (_finalized) then {
-    diag_log "CLASH BOOT | reconstitution-dispatch-fix-ready | version=2 source-corrected=true";
+    diag_log format [
+        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 source-corrected=true preInit=true",
+        ITW_CLASH_ReconstitutionDispatchFixVersion
+    ];
 } else {
     diag_log "CLASH BOOT | FAILED | reconstitution-dispatch-fix-finalization";
 };
+_finalized
