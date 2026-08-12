@@ -3,21 +3,13 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixStarted",false]) exitWith {};
 ITW_CLASH_ReconstitutionDispatchFixStarted = true;
+ITW_CLASH_ReconstitutionDispatchFixVersion = 3;
 
-// ITW_Attack.sqf owns transport selection, spawn, loading, ticket charging and
-// vehicle registration. Its V6 dispatcher used a named breakOut that could leave
-// the trailing `_dispatched` expression outside the private variable's live scope,
-// producing a nil return plus `Undefined variable ... _dispatched` after an
-// otherwise successful dispatch. init.sqf defers only this function's finalizer
-// while this source-equivalent correction is installed.
-waitUntil {
-    sleep 0.1;
-    !isNil "ITW_AtkDispatchReconstitutionTransport" && {
-        !isNil "ITW_AtkDeliveryCntChange"
-    }
-};
-sleep 0.1;
-
+// ITW_Attack.sqf compileFinals the dispatcher unconditionally at its tail. The
+// prior repair waited for the Attack file tail, which meant the baseline code
+// was already final before this replacement ran. init.sqf now calls this script
+// synchronously before ITW_Start, so this corrected implementation is final first.
+// The later baseline assignment is intentionally rejected by Arma.
 ITW_AtkDispatchReconstitutionTransport = {
     params ["_group","_requestId","_objectiveIndex","_lineage"];
     if (!isServer || {isNull _group}) exitWith {false};
@@ -158,17 +150,12 @@ ITW_AtkDispatchReconstitutionTransport = {
     _dispatched
 };
 
-// Both Attack repairs wake at roughly the same time. Make shared deferral-list
-// cleanup unscheduled/atomic so their read-modify-write operations cannot race.
-isNil {
-    private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
-    _deferred = _deferred - ["ITW_AtkDispatchReconstitutionTransport"];
-    missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
-};
-
 private _finalized = ["ITW_AtkDispatchReconstitutionTransport"] call SKL_fnc_CompileFinal;
 if (_finalized) then {
-    diag_log "CLASH BOOT | reconstitution-dispatch-fix-ready | version=2 source-corrected=true";
+    diag_log format [
+        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 source-corrected=true preemptive-final=true",
+        ITW_CLASH_ReconstitutionDispatchFixVersion
+    ];
 } else {
     diag_log "CLASH BOOT | FAILED | reconstitution-dispatch-fix-finalization";
 };
