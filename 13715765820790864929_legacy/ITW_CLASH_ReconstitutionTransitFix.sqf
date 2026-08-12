@@ -3,13 +3,9 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixStarted",false]) exitWith {};
 ITW_CLASH_ReconstitutionTransitFixStarted = true;
-ITW_CLASH_ReconstitutionTransitFixVersion = 1;
+ITW_CLASH_ReconstitutionTransitFixVersion = 2;
 ITW_CLASH_ReconstitutionHandoffBuffer = 250;
 
-// The V6 transit manager is defined and compileFinal'd in ITW_Attack.sqf.
-// init.sqf defers only this function while the Attack file loads, allowing a
-// source-equivalent replacement with one doctrine change: HAL handoff occurs
-// only when the rebuilt squad is genuinely back near its assigned AO.
 waitUntil {
     sleep 0.1;
     !isNil "ITW_AtkReconstitutionTransitManager" && {
@@ -19,8 +15,6 @@ waitUntil {
 sleep 0.1;
 
 if (missionNamespace getVariable ["ITW_AtkReconstitutionTransitManagerStarted",false]) exitWith {
-    // Too late to replace a coroutine that is already running. Restore normal
-    // finalization rather than leaving a mutable half-patched public function.
     isNil {
         private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
         _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
@@ -114,19 +108,30 @@ ITW_AtkReconstitutionTransitManager = {
 
             if (_state isEqualTo "waiting-transport" && {time - _lastAttempt >= 15}) then {
                 _lastAttempt = time;
-                private _dispatched = [
-                    _group,_requestId,_objectiveIndex,_lineage
-                ] call ITW_AtkDispatchReconstitutionTransport;
-                if (_dispatched) then {
+                [_group,_requestId,_objectiveIndex,_lineage] call ITW_AtkDispatchReconstitutionTransport;
+
+                private _liveState = _group getVariable ["ITW_CLASH_TransitState",""];
+                private _liveVehicle = _group getVariable ["ITW_CLASH_TransitVehicle",objNull];
+                private _dispatchSucceeded = _liveState isEqualTo "transport" && {
+                    !isNull _liveVehicle && {alive _liveVehicle}
+                };
+
+                if (!isNil "ITW_CLASH_fnc_Log") then {
+                    ["reconstitution-dispatch-state",[
+                        _requestId,_lineage,_objectiveIndex,_dispatchSucceeded,
+                        _liveState,
+                        if (isNull _liveVehicle) then {""} else {typeOf _liveVehicle}
+                    ]] call ITW_CLASH_fnc_Log;
+                };
+
+                if (_dispatchSucceeded) then {
                     _state = "transport";
                 } else {
                     private _corridor = [_objectiveIndex] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
                     private _airOnly = _corridor isNotEqualTo [] && {
                         ((_corridor#2) find "support-corridor-air") == 0
                     };
-                    if (!_airOnly && {
-                        time - _createdAt >= ITW_AtkReconstitutionTransportWait
-                    }) then {
+                    if (!_airOnly && {time - _createdAt >= ITW_AtkReconstitutionTransportWait}) then {
                         _state = "walking";
                         _group setVariable ["ITW_CLASH_TransitState",_state];
                         [_group,false] spawn ITW_AtkEngageInfantry;
@@ -149,8 +154,6 @@ ITW_AtkReconstitutionTransitManager = {
     ITW_AtkReconstitutionTransitManagerStarted = false;
 };
 
-// This script and the dispatcher repair can wake together after ITW_Attack.sqf.
-// Keep the shared deferral-list read/modify/write unscheduled and atomic.
 isNil {
     private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
     _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
@@ -160,7 +163,7 @@ isNil {
 private _finalized = ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2",
+        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true",
         ITW_CLASH_ReconstitutionTransitFixVersion,
         ITW_CLASH_ReconstitutionHandoffBuffer
     ];
