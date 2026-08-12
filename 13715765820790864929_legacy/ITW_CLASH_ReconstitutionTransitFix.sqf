@@ -1,35 +1,26 @@
 #include "defines.hpp"
 
-if (!isServer) exitWith {};
-if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixStarted",false]) exitWith {};
+if (!isServer) exitWith {false};
+if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixStarted",false]) exitWith {
+    missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixReady",false]
+};
 ITW_CLASH_ReconstitutionTransitFixStarted = true;
-ITW_CLASH_ReconstitutionTransitFixVersion = 2;
+ITW_CLASH_ReconstitutionTransitFixVersion = 3;
+ITW_CLASH_ReconstitutionTransitFixReady = false;
 ITW_CLASH_ReconstitutionHandoffBuffer = 250;
 
-// The V6 transit manager is defined and compileFinal'd in ITW_Attack.sqf.
-// init.sqf defers only this function while the Attack file loads, allowing a
-// source-equivalent replacement with two doctrine/integrity changes:
-// - HAL handoff occurs only when the rebuilt squad is genuinely back near its AO.
-// - dispatch success is derived from authoritative live transit state rather
-//   than trusting a dispatcher return value that may be nil in older V6 code.
-waitUntil {
-    sleep 0.1;
-    !isNil "ITW_AtkReconstitutionTransitManager" && {
-        !isNil "ITW_AtkDeliveryCntChange"
-    }
+// This file is compiled synchronously from preInit immediately after
+// ITW_Attack.sqf. preInit defers this one finalizer so the canonical function is
+// still mutable. The corrected manager is therefore the function that becomes
+// final before gameplay starts, instead of racing a final function from init.
+if (isNil "ITW_AtkReconstitutionTransitManager") exitWith {
+    diag_log "CLASH BOOT | FAILED | reconstitution-transit-fix-source-missing";
+    false
 };
-sleep 0.1;
 
 if (missionNamespace getVariable ["ITW_AtkReconstitutionTransitManagerStarted",false]) exitWith {
-    // Too late to replace a coroutine that is already running. Restore normal
-    // finalization rather than leaving a mutable half-patched public function.
-    isNil {
-        private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
-        _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
-        missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
-    };
-    ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;
-    diag_log "CLASH BOOT | FAILED | reconstitution-transit-fix-manager-already-running | baseline manager finalized";
+    diag_log "CLASH BOOT | FAILED | reconstitution-transit-fix-manager-already-running";
+    false
 };
 
 ITW_AtkReconstitutionTransitManager = {
@@ -117,9 +108,8 @@ ITW_AtkReconstitutionTransitManager = {
             if (_state isEqualTo "waiting-transport" && {time - _lastAttempt >= 15}) then {
                 _lastAttempt = time;
 
-                // Call the dispatcher for its side effects, then derive success
-                // from the live group state. This remains correct even if an
-                // older/finalized dispatcher returns nil after a successful lift.
+                // Dispatcher side effects are authoritative. Derive success from
+                // live state instead of trusting any legacy return path.
                 [
                     _group,_requestId,_objectiveIndex,_lineage
                 ] call ITW_AtkDispatchReconstitutionTransport;
@@ -170,8 +160,6 @@ ITW_AtkReconstitutionTransitManager = {
     ITW_AtkReconstitutionTransitManagerStarted = false;
 };
 
-// This script and the dispatcher repair can wake together after ITW_Attack.sqf.
-// Keep the shared deferral-list read/modify/write unscheduled and atomic.
 isNil {
     private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
     _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
@@ -179,12 +167,14 @@ isNil {
 };
 
 private _finalized = ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;
+ITW_CLASH_ReconstitutionTransitFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true",
+        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true preInit=true",
         ITW_CLASH_ReconstitutionTransitFixVersion,
         ITW_CLASH_ReconstitutionHandoffBuffer
     ];
 } else {
     diag_log "CLASH BOOT | FAILED | reconstitution-transit-fix-finalization";
 };
+_finalized

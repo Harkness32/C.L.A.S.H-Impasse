@@ -8,11 +8,12 @@ def text(name: str) -> str:
     return (MISSION / name).read_text(encoding="utf-8")
 
 
-def test_transit_manager_finalizer_is_deferred_before_attack_startup():
-    init = text("init.sqf")
-    assert 'pushBackUnique "ITW_AtkReconstitutionTransitManager"' in init
-    assert 'execVM "ITW_CLASH_ReconstitutionTransitFix.sqf"' in init
-    assert init.index('pushBackUnique "ITW_AtkReconstitutionTransitManager"') < init.index('execVM "ITW_Start.sqf"')
+def test_transit_finalizer_is_deferred_during_preinit_before_attack_compile():
+    pre = text("preInit.sqf")
+    defer_at = pre.index('"ITW_AtkReconstitutionTransitManager"')
+    attack_at = pre.index('preprocessFileLineNumbers "ITW_Attack.sqf"')
+    fix_at = pre.index('preprocessFileLineNumbers "ITW_CLASH_ReconstitutionTransitFix.sqf"')
+    assert defer_at < attack_at < fix_at
 
 
 def test_transit_fix_uses_tighter_near_ao_handoff_buffer():
@@ -35,19 +36,20 @@ def test_transit_fix_preserves_physical_transit_and_fallbacks():
     assert '"reconstitution-transport-fallback-walk"' in source
 
 
-def test_transit_fix_finalizes_before_any_manager_can_start():
+def test_transit_fix_is_synchronous_and_final_before_gameplay():
     source = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
+    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 3;" in source
     assert '"ITW_AtkReconstitutionTransitManagerStarted",false' in source
-    assert "reconstitution-transit-fix-manager-already-running" in source
     remove_at = source.index('_deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"]')
     finalize_at = source.index('["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;')
     assert remove_at < finalize_at
-    assert "reconstitution-transit-fix-ready" in source
+    assert "waitUntil" not in source
+    assert "sleep 0.1" not in source
+    assert "preInit=true" in source
 
 
 def test_transit_manager_uses_authoritative_live_dispatch_state():
     source = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
-    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 2;" in source
     assert 'private _liveState = _group getVariable ["ITW_CLASH_TransitState",""];' in source
     assert 'private _liveVehicle = _group getVariable ["ITW_CLASH_TransitVehicle",objNull];' in source
     assert '_liveState isEqualTo "transport"' in source
@@ -55,3 +57,9 @@ def test_transit_manager_uses_authoritative_live_dispatch_state():
     assert '"reconstitution-dispatch-state"' in source
     assert 'private _dispatched =' not in source
     assert 'if (_dispatched)' not in source
+
+
+def test_init_never_attempts_late_transit_override():
+    init = text("init.sqf")
+    assert 'execVM "ITW_CLASH_ReconstitutionTransitFix.sqf"' not in init
+    assert "reconstitution-preinit-authority-confirmed" in init

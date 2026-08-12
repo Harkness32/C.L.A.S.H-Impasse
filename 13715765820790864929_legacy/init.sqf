@@ -37,24 +37,18 @@ if (isServer) then {
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
 
-    private _deferredFinalizers = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
-    if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
-        _deferredFinalizers pushBackUnique "ITW_AtkDispatchReconstitutionTransport";
+    // Reconstitution corrections now belong to preInit, where ITW_Attack.sqf
+    // is actually compiled. Never retry them here after those functions are
+    // final; a late retry was the source of the observed override race.
+    if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionPreInitReady",false]) then {
+        diag_log "CLASH BOOT | reconstitution-preinit-authority-confirmed | late-overrides-skipped";
     } else {
-        diag_log "CLASH BOOT | reconstitution-dispatch-fix-missing | baseline finalization retained";
+        diag_log "CLASH BOOT | WARNING | reconstitution-preinit-authority-missing | baseline/fail-open functions retained";
     };
-    if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
-        _deferredFinalizers pushBackUnique "ITW_AtkReconstitutionTransitManager";
+    if (missionNamespace getVariable ["ITW_CLASH_SpawnArchetypeAuthorityReady",false]) then {
+        diag_log "CLASH BOOT | spawn-archetype-authority-confirmed | native enemy callback active";
     } else {
-        diag_log "CLASH BOOT | reconstitution-transit-fix-missing | baseline finalization retained";
-    };
-    missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferredFinalizers];
-
-    if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
-        [] execVM "ITW_CLASH_ReconstitutionDispatchFix.sqf";
-    };
-    if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
-        [] execVM "ITW_CLASH_ReconstitutionTransitFix.sqf";
+        diag_log "CLASH BOOT | WARNING | spawn-archetype-authority-missing | GetArchetype fallback remains active";
     };
 
     if (fileExists "ITW_CLASH_LogisticsGuard.sqf") then {
@@ -79,6 +73,11 @@ if (isServer) then {
             [] execVM "ITW_CLASH_CASEVAC_HomeRTB.sqf";
         } else {
             diag_log "CLASH BOOT | casevac-home-rtb-missing | support-corridor cleanup remains active";
+        };
+        if (fileExists "ITW_CLASH_GroundMEDEVAC.sqf") then {
+            [] execVM "ITW_CLASH_GroundMEDEVAC.sqf";
+        } else {
+            diag_log "CLASH BOOT | ground-medevac-missing | CASEVAC/walking remain active";
         };
     } else {
         diag_log "CLASH BOOT | casevac-missing | walking withdrawal remains active";
