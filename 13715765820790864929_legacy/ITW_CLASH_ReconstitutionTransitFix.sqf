@@ -6,6 +6,12 @@ ITW_CLASH_ReconstitutionTransitFixStarted = true;
 ITW_CLASH_ReconstitutionTransitFixVersion = 2;
 ITW_CLASH_ReconstitutionHandoffBuffer = 250;
 
+// The V6 transit manager is defined and compileFinal'd in ITW_Attack.sqf.
+// init.sqf defers only this function while the Attack file loads, allowing a
+// source-equivalent replacement with two doctrine/integrity changes:
+// - HAL handoff occurs only when the rebuilt squad is genuinely back near its AO.
+// - dispatch success is derived from authoritative live transit state rather
+//   than trusting a dispatcher return value that may be nil in older V6 code.
 waitUntil {
     sleep 0.1;
     !isNil "ITW_AtkReconstitutionTransitManager" && {
@@ -15,6 +21,8 @@ waitUntil {
 sleep 0.1;
 
 if (missionNamespace getVariable ["ITW_AtkReconstitutionTransitManagerStarted",false]) exitWith {
+    // Too late to replace a coroutine that is already running. Restore normal
+    // finalization rather than leaving a mutable half-patched public function.
     isNil {
         private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
         _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
@@ -108,7 +116,13 @@ ITW_AtkReconstitutionTransitManager = {
 
             if (_state isEqualTo "waiting-transport" && {time - _lastAttempt >= 15}) then {
                 _lastAttempt = time;
-                [_group,_requestId,_objectiveIndex,_lineage] call ITW_AtkDispatchReconstitutionTransport;
+
+                // Call the dispatcher for its side effects, then derive success
+                // from the live group state. This remains correct even if an
+                // older/finalized dispatcher returns nil after a successful lift.
+                [
+                    _group,_requestId,_objectiveIndex,_lineage
+                ] call ITW_AtkDispatchReconstitutionTransport;
 
                 private _liveState = _group getVariable ["ITW_CLASH_TransitState",""];
                 private _liveVehicle = _group getVariable ["ITW_CLASH_TransitVehicle",objNull];
@@ -131,7 +145,9 @@ ITW_AtkReconstitutionTransitManager = {
                     private _airOnly = _corridor isNotEqualTo [] && {
                         ((_corridor#2) find "support-corridor-air") == 0
                     };
-                    if (!_airOnly && {time - _createdAt >= ITW_AtkReconstitutionTransportWait}) then {
+                    if (!_airOnly && {
+                        time - _createdAt >= ITW_AtkReconstitutionTransportWait
+                    }) then {
                         _state = "walking";
                         _group setVariable ["ITW_CLASH_TransitState",_state];
                         [_group,false] spawn ITW_AtkEngageInfantry;
@@ -154,6 +170,8 @@ ITW_AtkReconstitutionTransitManager = {
     ITW_AtkReconstitutionTransitManagerStarted = false;
 };
 
+// This script and the dispatcher repair can wake together after ITW_Attack.sqf.
+// Keep the shared deferral-list read/modify/write unscheduled and atomic.
 isNil {
     private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
     _deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"];
