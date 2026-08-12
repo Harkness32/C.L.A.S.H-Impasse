@@ -84,6 +84,11 @@ if (isServer) then {
         } else {
             diag_log "CLASH BOOT | casevac-air-ops-fix-missing | CASEVAC remains fail-open";
         };
+        if (fileExists "ITW_CLASH_CASEVAC_LZPadFix.sqf") then {
+            [] execVM "ITW_CLASH_CASEVAC_LZPadFix.sqf";
+        } else {
+            diag_log "CLASH BOOT | casevac-lz-pad-fix-missing | coordinate landing remains active";
+        };
         if (fileExists "ITW_CLASH_CASEVAC_HomeRTB.sqf") then {
             [] execVM "ITW_CLASH_CASEVAC_HomeRTB.sqf";
         } else {
