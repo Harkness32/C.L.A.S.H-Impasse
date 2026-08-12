@@ -17,13 +17,12 @@ if (hasInterface && {ITW_ParamStamina < 2}) then {
     player enableStamina (ITW_ParamStamina == 1);
 };
 
-execVM "scripts\SKULL\SKL_RatingMinimum.sqf"; // Reset player rating if it gets too low
+execVM "scripts\SKULL\SKL_RatingMinimum.sqf";
 
 waitUntil {! isNil "ITW_ParamHeadlessClient"};
 HeadlessClients = []; 
-if (isServer && ITW_ParamHeadlessClient == 1) then {execVM "scripts\SKULL\SKL_HeadlessClient.sqf"}; // setup the HC handler
+if (isServer && ITW_ParamHeadlessClient == 1) then {execVM "scripts\SKULL\SKL_HeadlessClient.sqf"};
 
-// Change arsenal to view the character from behind by default
 if (isNil "BIS_fnc_arsenal_campos_0") then {
     BIS_fnc_arsenal_campos_0 = [4,159,16.6,[0,0,0.85]];
 };
@@ -40,15 +39,7 @@ if (isServer) then {
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
 
-    // #24's reconstitution transport functions live in ITW_Attack.sqf and are
-    // normally compileFinal'd at the end of that file. Defer only the functions
-    // whose repair payloads are actually present, so missing optional patches
-    // leave baseline finalization intact.
-    private _deferredFinalizers = missionNamespace getVariable [
-        "ITW_CLASH_DeferredFinalizers",
-        []
-    ];
-
+    private _deferredFinalizers = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
     if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
         _deferredFinalizers pushBackUnique "ITW_AtkDispatchReconstitutionTransport";
     } else {
@@ -59,10 +50,7 @@ if (isServer) then {
     } else {
         diag_log "CLASH BOOT | reconstitution-transit-fix-missing | baseline finalization retained";
     };
-    missionNamespace setVariable [
-        "ITW_CLASH_DeferredFinalizers",
-        _deferredFinalizers
-    ];
+    missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferredFinalizers];
 
     if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
         [] execVM "ITW_CLASH_ReconstitutionDispatchFix.sqf";
@@ -83,6 +71,11 @@ if (isServer) then {
             [] execVM "ITW_CLASH_CASEVAC_AirOpsFix.sqf";
         } else {
             diag_log "CLASH BOOT | casevac-air-ops-fix-missing | CASEVAC remains fail-open";
+        };
+        if (fileExists "ITW_CLASH_CASEVAC_LZPadFix.sqf") then {
+            [] execVM "ITW_CLASH_CASEVAC_LZPadFix.sqf";
+        } else {
+            diag_log "CLASH BOOT | casevac-lz-pad-fix-missing | coordinate landing remains active";
         };
         if (fileExists "ITW_CLASH_CASEVAC_HomeRTB.sqf") then {
             [] execVM "ITW_CLASH_CASEVAC_HomeRTB.sqf";
