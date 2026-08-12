@@ -39,6 +39,59 @@ if (isServer) then {
         ITW_CLASH_fnc_ObserveLifecycle = {false};
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
+
+    // #24's reconstitution transport functions live in ITW_Attack.sqf and are
+    // normally compileFinal'd at the end of that file. Defer only the functions
+    // whose repair payloads are actually present, so missing optional patches
+    // leave baseline finalization intact.
+    private _deferredFinalizers = missionNamespace getVariable [
+        "ITW_CLASH_DeferredFinalizers",
+        []
+    ];
+
+    if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
+        _deferredFinalizers pushBackUnique "ITW_AtkDispatchReconstitutionTransport";
+    } else {
+        diag_log "CLASH BOOT | reconstitution-dispatch-fix-missing | baseline finalization retained";
+    };
+    if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
+        _deferredFinalizers pushBackUnique "ITW_AtkReconstitutionTransitManager";
+    } else {
+        diag_log "CLASH BOOT | reconstitution-transit-fix-missing | baseline finalization retained";
+    };
+    missionNamespace setVariable [
+        "ITW_CLASH_DeferredFinalizers",
+        _deferredFinalizers
+    ];
+
+    if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
+        [] execVM "ITW_CLASH_ReconstitutionDispatchFix.sqf";
+    };
+    if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
+        [] execVM "ITW_CLASH_ReconstitutionTransitFix.sqf";
+    };
+
+    if (fileExists "ITW_CLASH_LogisticsGuard.sqf") then {
+        [] execVM "ITW_CLASH_LogisticsGuard.sqf";
+    } else {
+        diag_log "CLASH BOOT | logistics-guard-missing | continuing without V6 handoff guard";
+    };
+
+    if (fileExists "ITW_CLASH_CASEVAC.sqf") then {
+        [] execVM "ITW_CLASH_CASEVAC.sqf";
+        if (fileExists "ITW_CLASH_CASEVAC_AirOpsFix.sqf") then {
+            [] execVM "ITW_CLASH_CASEVAC_AirOpsFix.sqf";
+        } else {
+            diag_log "CLASH BOOT | casevac-air-ops-fix-missing | CASEVAC remains fail-open";
+        };
+        if (fileExists "ITW_CLASH_CASEVAC_HomeRTB.sqf") then {
+            [] execVM "ITW_CLASH_CASEVAC_HomeRTB.sqf";
+        } else {
+            diag_log "CLASH BOOT | casevac-home-rtb-missing | support-corridor cleanup remains active";
+        };
+    } else {
+        diag_log "CLASH BOOT | casevac-missing | walking withdrawal remains active";
+    };
 };
 
 [] execVM "ITW_Start.sqf";
