@@ -81,14 +81,16 @@ if (_sourceChars <= 0) exitWith {
     call _installFallbacks;
 };
 
-// These four functions are corrected immediately after the canonical
+// These six functions are corrected immediately after the canonical
 // controller definition pass. SKL_fnc_CompileFinal sees this list and leaves
 // only these names mutable; every other C.L.A.S.H. function finalizes normally.
 ITW_CLASH_DeferredFinalizers = [
     "ITW_CLASH_fnc_ClassifyGroup",
     "ITW_CLASH_fnc_ObserveWriter",
     "ITW_CLASH_fnc_GetEgressPoint",
-    "ITW_CLASH_fnc_AcknowledgeReconstitution"
+    "ITW_CLASH_fnc_AcknowledgeReconstitution",
+    "ITW_CLASH_fnc_SelectAnchorGroup",
+    "ITW_CLASH_fnc_AuditAnchors"
 ];
 diag_log format [
     "CLASH BOOT | finalization-window | deferred=%1",
@@ -101,7 +103,7 @@ diag_log format [
 call compile _source;
 ITW_CLASH_DeferredFinalizers = [];
 
-// Apply the V6 runtime-integrity correction while the four selected controller
+// Apply the V6 runtime-integrity correction while the selected controller
 // functions are still mutable, then finalize the corrected functions in the
 // patch itself before observer/live startup can run.
 private _patchPath = "ITW_CLASH_RuntimePatch.sqf";
@@ -135,10 +137,12 @@ private _patchRequired = [
     "ITW_CLASH_fnc_ClassifyGroup",
     "ITW_CLASH_fnc_ObserveWriter",
     "ITW_CLASH_fnc_GetEgressPoint",
-    "ITW_CLASH_fnc_AcknowledgeReconstitution"
+    "ITW_CLASH_fnc_AcknowledgeReconstitution",
+    "ITW_CLASH_fnc_SelectAnchorGroup",
+    "ITW_CLASH_fnc_AuditAnchors"
 ];
 private _patchMissing = _patchRequired select {isNil _x};
-if (_patchVersion != 3 || {_patchMissing isNotEqualTo []}) exitWith {
+if (_patchVersion != 4 || {_patchMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "runtime-patch-validation-failed version=%1 missing=%2",
         _patchVersion,
