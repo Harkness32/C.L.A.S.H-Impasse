@@ -85,6 +85,15 @@ def test_ground_pickup_is_physical_not_teleported():
     assert "setPosATL" not in source
 
 
+def test_ground_vehicle_order_replaces_pickup_driver_stop_with_explicit_move():
+    source = text("ITW_CLASH_GroundMEDEVAC.sqf")
+    order_at = source.index("ITW_CLASH_GroundMEDEVAC_fnc_OrderVehicle")
+    order_block = source[order_at:source.index("ITW_CLASH_GroundMEDEVAC_fnc_OrderRally")]
+    assert "private _driver = driver _veh;" in order_block
+    assert "_driver doMove _position;" in order_block
+    assert "group waypoint alone" in order_block
+
+
 def test_ground_medevac_never_owns_reconstitution_credit():
     source = ground_text()
     assert "ITW_AtkQueueReconstitution" not in source
