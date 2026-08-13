@@ -38,7 +38,7 @@ def test_transit_fix_preserves_physical_transit_and_fallbacks():
 
 def test_transit_fix_is_synchronous_and_final_before_gameplay():
     source = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
-    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 3;" in source
+    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 4;" in source
     assert '"ITW_AtkReconstitutionTransitManagerStarted",false' in source
     remove_at = source.index('_deferred = _deferred - ["ITW_AtkReconstitutionTransitManager"]')
     finalize_at = source.index('["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;')
@@ -46,6 +46,7 @@ def test_transit_fix_is_synchronous_and_final_before_gameplay():
     assert "waitUntil" not in source
     assert "sleep 0.1" not in source
     assert "preInit=true" in source
+    assert "vehicleOwnershipGate=true" in source
 
 
 def test_transit_manager_uses_authoritative_live_dispatch_state():
@@ -57,6 +58,20 @@ def test_transit_manager_uses_authoritative_live_dispatch_state():
     assert '"reconstitution-dispatch-state"' in source
     assert 'private _dispatched =' not in source
     assert 'if (_dispatched)' not in source
+
+
+def test_handoff_waits_for_impasse_vehicle_manager_and_arma_assignment_cleanup():
+    source = text("ITW_CLASH_ReconstitutionTransitFix.sqf")
+    wait_at = source.index('"reconstitution-handoff-wait"')
+    acknowledge_at = source.index("ITW_CLASH_fnc_AcknowledgeReconstitution")
+    assert "assignedVehicles _group" in source
+    assert "{unassignVehicle _x} forEach _aliveUnits;" in source
+    assert "ITW_ManagedVehs findIf" in source
+    assert "VEHINFO_CARGO_GRPS" in source
+    assert "VEHINFO_CREW_GRP" in source
+    assert "private _handoffBlocked" in source
+    assert "VAR_SET_OBJ_IDX(_group,_objectiveIndex);" in source
+    assert wait_at < acknowledge_at
 
 
 def test_init_never_attempts_late_transit_override():
