@@ -28,18 +28,36 @@ def test_recon_phase0_semantic_sof_families_are_explicit():
         assert f'"{token}"' in source
     assert "itw_clash_reconsofmanual" in source
     assert "itw_clash_reconsofexactclasses" in source
-    assert "floor ((count _alive) / 2) + 1" in source
+    assert "floor ((count _alive) / 2) + 1" not in source
     assert "ceil ((count _alive) * 0.5)" not in source
 
 
-def test_recon_phase0_requires_strict_sof_majority():
-    source = recon().lower()
-    # This fixes the live G20 edge case: one Viper + one conventional soldier
-    # must not become a dedicated SOF recon group.  The same threshold applies
-    # to exact-class and semantic/prefix classification paths.
-    assert source.count("floor ((count _alive) / 2) + 1") == 2
-    assert "strict-majority classification" in source
-    assert "lone surviving sof operator still qualifies 1/1" in source
+def test_recon_phase0_sof_is_presence_based_and_latched():
+    source = recon()
+    lower = source.lower()
+
+    # Any recognized SOF presence is enough: hunter-killer teams, sniper/spotter
+    # pairs, attachments, mixed SOF/conventional elements, and casualty remnants
+    # are all allowed to remain dedicated recon assets.
+    assert "private _isSOF = _bestCount > 0;" in source
+    assert '[true,"exact-class",count _exactMatched,count _alive,_classes]' in source
+    assert "presence, not percentage" in lower
+    assert '"mixed-sof"' in source
+
+    # Positive identity persists for the group's lifetime. Manual policy is
+    # evaluated before the latch so an explicit deny remains authoritative.
+    assert '"ITW_CLASH_ReconSOFLatched"' in source
+    assert '"ITW_CLASH_ReconSOFLatchedFamily"' in source
+    manual_pos = source.index('ITW_CLASH_ReconSOFManual')
+    latch_check_pos = source.index('ITW_CLASH_ReconSOFLatched",false')
+    assert manual_pos < latch_check_pos
+
+
+def test_recon_phase0_new_sof_presence_is_removed_from_native_norecon_filter():
+    source = recon()
+    assert "private _sofManaged = [];" in source
+    assert "_sofManaged pushBack _group;" in source
+    assert "_noRecon = _noRecon - _sofManaged;" in source
 
 
 def test_recon_phase0_recognizes_vanilla_csats_viper_class_family():
@@ -110,10 +128,12 @@ def test_recon_phase0_emits_assignment_contact_intel_and_outcome_telemetry():
     assert '"RydHQ_KnEnemies"' in source
 
 
-def test_recon_phase0_boot_banner_describes_authority_boundary():
+def test_recon_phase0_boot_banner_describes_authority_boundary_and_sof_policy():
     source = recon()
     assert "recon-phase0-ready" in source
     assert "sofOnly=true" in source
     assert "nativeHAL=true" in source
     assert "spawning=false" in source
     assert "requisition=false" in source
+    assert "presenceBased=true" in source
+    assert "latched=true" in source
