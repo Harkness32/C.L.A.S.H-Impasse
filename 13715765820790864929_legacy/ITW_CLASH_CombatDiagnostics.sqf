@@ -265,7 +265,7 @@ ITW_CLASH_Diag_fnc_ContactSide = {
         _leader findNearestEnemy _leader
     };
     private _otherVehicle = vehicle _otherUnit;
-    private _targets = targets _group;
+    private _targets = _group targets [];
     private _busyName = "Busy" + str _group;
 
     [
@@ -297,15 +297,15 @@ ITW_CLASH_Diag_fnc_ContactSide = {
         },
         [_unit,_otherUnit] call ITW_CLASH_Diag_fnc_Unit,
         [
-            [ _hq,"RydHQ_AttackAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_CombatAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_ReconAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_SpecForG",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_NoRecon",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_NoAttack",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_DefSpot",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_RecDefSpot",_group] call ITW_CLASH_Diag_fnc_InHQList,
-            [ _hq,"RydHQ_Exhausted",_group] call ITW_CLASH_Diag_fnc_InHQList
+            [_hq,"RydHQ_AttackAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_CombatAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_ReconAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_SpecForG",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_NoRecon",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_NoAttack",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_DefSpot",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_RecDefSpot",_group] call ITW_CLASH_Diag_fnc_InHQList,
+            [_hq,"RydHQ_Exhausted",_group] call ITW_CLASH_Diag_fnc_InHQList
         ]
     ]
 };
@@ -388,9 +388,6 @@ ITW_CLASH_Diag_fnc_DumpAll = {
             ["hq-state",call ITW_CLASH_Diag_fnc_HQSnapshot] call ITW_CLASH_Diag_fnc_Log;
         };
 
-        // Change-driven group telemetry. This is intentionally broader than the
-        // managed pool so friendly defenders and temporarily released groups can
-        // still be correlated with a pass-through incident.
         private _groups = allGroups select {
             !isNull _x && {{alive _x} count units _x > 0} && {side _x != civilian}
         };
@@ -406,8 +403,6 @@ ITW_CLASH_Diag_fnc_DumpAll = {
             };
         } forEach _groups;
 
-        // Detection-independent hostile proximity pairs. A pair is selected from
-        // physical distance only; Arma knowledge is measured afterward.
         private _countGroups = count _groups;
         for "_i" from 0 to (_countGroups - 2) do {
             private _a = _groups#_i;
