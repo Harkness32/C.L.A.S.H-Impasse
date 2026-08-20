@@ -62,6 +62,12 @@ if (isServer) then {
         diag_log "CLASH BOOT | logistics-guard-missing | continuing without V6 handoff guard";
     };
 
+    if (fileExists "ITW_CLASH_ReconObserver.sqf") then {
+        [] execVM "ITW_CLASH_ReconObserver.sqf";
+    } else {
+        diag_log "CLASH BOOT | recon-phase0-missing | native HAL recon retained";
+    };
+
     if (fileExists "ITW_CLASH_CASEVAC.sqf") then {
         [] execVM "ITW_CLASH_CASEVAC.sqf";
         if (fileExists "ITW_CLASH_CASEVAC_AirOpsFix.sqf") then {
