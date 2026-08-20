@@ -42,11 +42,8 @@ params [["_var","",[""]], ["_skipDebug",false,[false]],["_ns",missionNamespace,[
 private _code = _ns getVariable [_var, 0];
 if (typeName _code != typeName {}) exitWith {false};
 
-// C.L.A.S.H. uses two narrowly-scoped finalization windows:
-// 1) ITW_CLASH_DeferredFinalizers is the existing bootstrap/runtime-patch window.
-// 2) ITW_CLASH_PersistentDeferredFinalizers survives the runtime patch long enough
-//    for the synchronous GTFO bridge to replace its small public authority surface.
-// Both lists are cleared before normal scheduled mission startup begins.
+// C.L.A.S.H. uses narrowly-scoped finalization windows during synchronous
+// bootstrap only. All lists are cleared before scheduled mission startup.
 private _deferredFinalizers = missionNamespace getVariable [
     "ITW_CLASH_DeferredFinalizers",
     []
@@ -55,7 +52,15 @@ private _persistentDeferredFinalizers = missionNamespace getVariable [
     "ITW_CLASH_PersistentDeferredFinalizers",
     []
 ];
-if (_var in (_deferredFinalizers + _persistentDeferredFinalizers)) exitWith {
+private _lateDoctrineFinalizers = missionNamespace getVariable [
+    "ITW_CLASH_LateDoctrineFinalizers",
+    []
+];
+if (_var in (
+    _deferredFinalizers +
+    _persistentDeferredFinalizers +
+    _lateDoctrineFinalizers
+)) exitWith {
     diag_log format ["CLASH BOOT | finalization-deferred | %1",_var];
     true
 };
