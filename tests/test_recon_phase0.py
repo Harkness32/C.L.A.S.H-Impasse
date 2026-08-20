@@ -28,7 +28,18 @@ def test_recon_phase0_semantic_sof_families_are_explicit():
         assert f'"{token}"' in source
     assert "itw_clash_reconsofmanual" in source
     assert "itw_clash_reconsofexactclasses" in source
-    assert "ceil ((count _alive) * 0.5)" in source
+    assert "floor ((count _alive) / 2) + 1" in source
+    assert "ceil ((count _alive) * 0.5)" not in source
+
+
+def test_recon_phase0_requires_strict_sof_majority():
+    source = recon().lower()
+    # This fixes the live G20 edge case: one Viper + one conventional soldier
+    # must not become a dedicated SOF recon group.  The same threshold applies
+    # to exact-class and semantic/prefix classification paths.
+    assert source.count("floor ((count _alive) / 2) + 1") == 2
+    assert "strict-majority classification" in source
+    assert "lone surviving sof operator still qualifies 1/1" in source
 
 
 def test_recon_phase0_recognizes_vanilla_csats_viper_class_family():
