@@ -222,6 +222,51 @@ if (_gtfoVersion != 1 || {_gtfoMissing isNotEqualTo []}) exitWith {
     call _installFallbacks;
 };
 
+// Retire only stale pre-GTFO HAL task bookkeeping. This must load while
+// StartWithdrawal is still mutable so it can wrap the bridge transition and
+// clear Defending/defensive-list state before the same reconciliation pass runs
+// C.L.A.S.H.'s allocation audit. It never writes movement or combat behavior.
+private _gtfoBookkeepingPath = "ITW_CLASH_GTFO_Bookkeeping.sqf";
+private _gtfoBookkeepingExists = fileExists _gtfoBookkeepingPath;
+private _gtfoBookkeepingSource = if (_gtfoBookkeepingExists) then {
+    preprocessFileLineNumbers _gtfoBookkeepingPath
+} else {
+    ""
+};
+private _gtfoBookkeepingChars = count toArray _gtfoBookkeepingSource;
+diag_log format [
+    "CLASH BOOT | gtfo-bookkeeping | exists=%1 chars=%2 path=%3",
+    _gtfoBookkeepingExists,
+    _gtfoBookkeepingChars,
+    _gtfoBookkeepingPath
+];
+if (!_gtfoBookkeepingExists || {_gtfoBookkeepingChars <= 0}) exitWith {
+    ITW_CLASH_BootstrapFailure = "gtfo-bookkeeping-missing-or-empty";
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+call compile _gtfoBookkeepingSource;
+
+private _gtfoBookkeepingVersion = missionNamespace getVariable [
+    "ITW_CLASH_GTFOBookkeepingVersion",
+    -1
+];
+private _gtfoBookkeepingRequired = [
+    "ITW_CLASH_GTFO_fnc_RetirePreviousTaskState",
+    "ITW_CLASH_fnc_StartWithdrawal_GTFOStateBase",
+    "ITW_CLASH_fnc_StartWithdrawal"
+];
+private _gtfoBookkeepingMissing = _gtfoBookkeepingRequired select {isNil _x};
+if (_gtfoBookkeepingVersion != 1 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
+    ITW_CLASH_BootstrapFailure = format [
+        "gtfo-bookkeeping-validation-failed version=%1 missing=%2",
+        _gtfoBookkeepingVersion,
+        _gtfoBookkeepingMissing
+    ];
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+
 // Close the persistent mutation window immediately. Finalize both bridge-facing
 // public functions and their saved base implementations before any scheduled
 // C.L.A.S.H./HAL startup can execute.
@@ -235,10 +280,12 @@ if (!isNil "SKL_fnc_CompileFinal") then {
         "ITW_CLASH_GTFO_fnc_ApplyConstraints",
         "ITW_CLASH_GTFO_fnc_ResumeHAL",
         "ITW_CLASH_GTFO_fnc_RecoveryOwned",
+        "ITW_CLASH_GTFO_fnc_RetirePreviousTaskState",
         "ITW_CLASH_fnc_ClassifyGroup_GTFOBase",
         "ITW_CLASH_fnc_ApplyObjectiveDoctrine_GTFOBase",
         "ITW_CLASH_fnc_GetEgressPoint_GTFOBase",
         "ITW_CLASH_fnc_CancelWithdrawals_GTFOBase",
+        "ITW_CLASH_fnc_StartWithdrawal_GTFOStateBase",
         "ITW_CLASH_fnc_ClassifyGroup",
         "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
         "ITW_CLASH_fnc_GetEgressPoint",
@@ -248,8 +295,9 @@ if (!isNil "SKL_fnc_CompileFinal") then {
     ];
 };
 diag_log format [
-    "CLASH BOOT | gtfo-bridge-loaded | version=%1 functions=%2",
+    "CLASH BOOT | gtfo-bridge-loaded | version=%1 bookkeeping=%2 functions=%3",
     _gtfoVersion,
+    _gtfoBookkeepingVersion,
     count _gtfoRequired
 ];
 
@@ -325,11 +373,12 @@ if (_version != 6 || {_missing isNotEqualTo []}) exitWith {
 ITW_CLASH_HookFallbacksActive = false;
 ITW_CLASH_BootstrapReady = true;
 diag_log format [
-    "CLASH BOOT | READY | version=%1 sourceChars=%2 functions=%3 patch=%4 gtfo=%5",
+    "CLASH BOOT | READY | version=%1 sourceChars=%2 functions=%3 patch=%4 gtfo=%5 bookkeeping=%6",
     _version,
     _sourceChars,
     count _required,
     _patchVersion,
-    _gtfoVersion
+    _gtfoVersion,
+    _gtfoBookkeepingVersion
 ];
 true
