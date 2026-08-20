@@ -15,6 +15,7 @@ def test_preinit_defers_and_installs_physical_movement_patch():
     assert 'ITW_CLASH_PhysicalMovementPreInit.sqf' in preinit
     assert 'ITW_CLASH_PhysicalMovementPreInitReady = _physicalMovementFixed;' in preinit
     assert 'physical-movement-fallback' in preinit
+    assert 'private _physicalMovementFixed = false;' in preinit
 
 
 def test_live_safe_move_is_physical_and_baseline_remains_fail_open():
@@ -27,6 +28,16 @@ def test_live_safe_move_is_physical_and_baseline_remains_fail_open():
     live_block = source[source.index('ITW_AtkSafeMove = {'):source.index('ITW_AtkAddVehicle = {')]
     assert 'setPosATL' not in live_block
     assert 'setPosASL' not in live_block
+
+
+def test_headless_owned_groups_use_physical_helper_not_remote_baseline_safemove():
+    source = text("ITW_CLASH_PhysicalMovementPreInit.sqf")
+    assert 'ITW_CLASH_PhysicalMovementPreInitVersion = 2;' in source
+    assert 'ITW_CLASH_fnc_PhysicalMoveLocal = {' in source
+    assert '["ITW_CLASH_fnc_PhysicalMoveLocal"] call SKL_fnc_CompileFinal;' in source
+    assert '[[ _group,_destination],"ITW_AtkSafeMove"' not in source
+    assert '"ITW_CLASH_fnc_PhysicalMoveLocal",_group] call ITW_FncRemoteLocalGroup' in source
+    assert 'hcSafe=true' in source
 
 
 def test_live_vehicle_add_disables_initial_relocation():
