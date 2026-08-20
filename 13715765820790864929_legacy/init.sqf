@@ -81,6 +81,11 @@ if (isServer) then {
         };
         if (fileExists "ITW_CLASH_GroundMEDEVAC.sqf") then {
             [] execVM "ITW_CLASH_GroundMEDEVAC.sqf";
+            if (fileExists "ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf") then {
+                [] execVM "ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf";
+            } else {
+                diag_log "CLASH BOOT | ground-medevac-vehicle-policy-missing | baseline vehicle ordering retained";
+            };
         } else {
             diag_log "CLASH BOOT | ground-medevac-missing | CASEVAC/walking remain active";
         };
