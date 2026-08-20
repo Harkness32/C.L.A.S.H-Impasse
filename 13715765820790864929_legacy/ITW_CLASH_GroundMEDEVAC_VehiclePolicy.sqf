@@ -212,7 +212,7 @@ ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle = {
     private _selectedMeta = [];
 
     {
-        if (_result isNotEqualTo []) exitWith {};
+        if (_result isNotEqualTo []) then {continue};
         _x params [
             "_score","_vehDef","_variant","_class","_estimatedCapacity",
             "_medical","_profile","_maxSpeed","_manualAdjustment"
