@@ -11,6 +11,7 @@ def text(name: str) -> str:
 def ground_text() -> str:
     return "\n".join([
         text("ITW_CLASH_GroundMEDEVAC.sqf"),
+        text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf"),
         text("ITW_CLASH_GroundMEDEVAC_Extraction.sqf"),
         text("ITW_CLASH_GroundMEDEVAC_Manager.sqf"),
     ])
@@ -22,7 +23,9 @@ def test_ground_medevac_is_wired_after_casevac_stack():
     assert 'execVM "ITW_CLASH_CASEVAC_AirOpsFix.sqf"' in init
     assert 'execVM "ITW_CLASH_CASEVAC_LZPadFix.sqf"' in init
     assert 'execVM "ITW_CLASH_GroundMEDEVAC.sqf"' in init
+    assert 'execVM "ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf"' in init
     assert init.index('execVM "ITW_CLASH_CASEVAC.sqf"') < init.index('execVM "ITW_CLASH_GroundMEDEVAC.sqf"')
+    assert init.index('execVM "ITW_CLASH_GroundMEDEVAC.sqf"') < init.index('execVM "ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf"')
     main = text("ITW_CLASH_GroundMEDEVAC.sqf")
     assert 'ITW_CLASH_GroundMEDEVAC_Extraction.sqf' in main
     assert 'ITW_CLASH_GroundMEDEVAC_Manager.sqf' in main
@@ -55,8 +58,9 @@ def test_ground_medevac_requires_local_land_corridor_and_roadside_pickup():
     assert "forceFollowRoad true" in source
 
 
-def test_ground_medevac_only_uses_car_or_apc_transport_context_and_bypasses_count_cap():
+def test_ground_medevac_only_uses_active_faction_car_or_apc_pool_and_bypasses_count_cap():
     source = ground_text()
+    assert "ITW_AtkReconstitutionTransportContext" in source
     assert "(_transport + _dualVeh) select" in source
     assert "[ITW_TYPE_VEH_CAR,ITW_TYPE_VEH_APC]" in source
     assert "ITW_VEH_REQD_TICKETS" in source
@@ -68,12 +72,71 @@ def test_ground_medevac_only_uses_car_or_apc_transport_context_and_bypasses_coun
     assert '"cap-bypass"' in source
 
 
-def test_ground_medevac_prefers_medical_then_soft_transport_then_apc():
-    source = ground_text()
-    assert 'find "ambulance"' in source
-    assert 'find "medical"' in source
-    assert 'find "medevac"' in source
-    assert "_medical + _pureCars + _pureAPCs + _dualCars + _dualAPCs" in source
+def test_ground_medevac_vehicle_policy_routes_by_survivor_requirement_not_faction_classnames():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert "ITW_CLASH_GroundMEDEVAC_LightMaxSurvivors = 3;" in policy
+    assert "ITW_CLASH_GroundMEDEVAC_MediumMaxSurvivors = 6;" in policy
+    assert 'exitWith {"light"}' in policy
+    assert 'exitWith {"medium"}' in policy
+    assert '"heavy"' in policy
+    assert 'getNumber (_cfg >> "transportSoldier")' in policy
+    assert "private _excessSeats" in policy
+    assert "_excessSeats * 20" in policy
+    assert 'getNumber (_cfg >> "maxSpeed")' in policy
+    assert "ITW_TYPE_VEH_APC" in policy
+    assert "ITW_VEH_ROLE_TRANSPORT" in policy
+    for hardcoded in ["O_LSV_02_unarmed_F", "O_Truck_03_medical_F", "B_LSV", "rhs_"]:
+        assert hardcoded not in policy
+
+
+def test_ground_medevac_policy_keeps_medical_as_soft_preference_not_absolute_first_choice():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert 'find "ambulance"' in policy
+    assert 'find "medical"' in policy
+    assert 'find "medevac"' in policy
+    assert "if (_medical) then {_score = _score - 12};" in policy
+    assert "_medical + _pureCars" not in policy
+    assert "ITW_CLASH_GroundMEDEVAC_MedicalClassOverrides" in policy
+
+
+def test_ground_medevac_policy_has_future_faction_metadata_hooks_without_bypassing_requirements():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert "ITW_CLASH_GroundMEDEVAC_ClassScoreAdjustments" in policy
+    assert "ITW_CLASH_GroundMEDEVAC_MedicalClassOverrides" in policy
+    assert "_manualAdjustment" in policy
+    assert "_score = _score + _manualAdjustment" in policy
+    # Explicit faction hints never replace the live Impasse ticket/capacity gates.
+    assert "(_x#ITW_VEH_REQD_TICKETS) <= (_x#ITW_VEH_CURR_TICKETS)" in policy
+    assert '_veh emptyPositions "cargo"' in policy
+    assert "if (_actualCapacity < _seatCount)" in policy
+
+
+def test_ground_medevac_policy_spawns_exact_ranked_variant_but_accounts_original_definition():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert "private _spawnDef = +_vehDef;" in policy
+    assert "_spawnDef set [ITW_VEH_CLASSES,[_variant]];" in policy
+    assert "_spawnDef,_crewTypes,_unitTypes,_side,_spawnPos" in policy
+    assert "ITW_VEH_COUNT_INCR(_vehDef);" in policy
+    assert 'ITW_TICKET_REDUCE(_vehDef);' in policy
+    assert '_veh setVariable ["ITW_VehDef",_vehDef];' in policy
+
+
+def test_ground_medevac_policy_is_fail_open_to_baseline_selector():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert "ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle_Base" in policy
+    assert '"vehicle-policy-fallback"' in policy
+    assert '"no-ranked-variant"' in policy
+    assert '"ranked-spawns-failed"' in policy
+
+
+def test_ground_medevac_vehicle_selection_telemetry_exposes_requirement_and_fit():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert '"vehicle-selected"' in policy
+    assert '"spawn-selected"' in policy
+    assert "_profile,_seatCount,_actualCapacity,_estimatedCapacity" in policy
+    assert "_vehDef#ITW_VEH_TYPE,_vehDef#ITW_VEH_ROLE" in policy
+    assert "routing=capability-score" in policy
+    assert "factionPool=true" in policy
 
 
 def test_ground_pickup_is_physical_not_teleported():
