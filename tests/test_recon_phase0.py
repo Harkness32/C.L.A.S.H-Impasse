@@ -24,11 +24,22 @@ def test_recon_phase0_is_server_wired_and_fail_open():
 
 def test_recon_phase0_semantic_sof_families_are_explicit():
     source = recon().lower()
-    for token in ["ranger", "seal", "fsb", "oss"]:
+    for token in ["ranger", "seal", "fsb", "oss", "viper"]:
         assert f'"{token}"' in source
     assert "itw_clash_reconsofmanual" in source
     assert "itw_clash_reconsofexactclasses" in source
     assert "ceil ((count _alive) * 0.5)" in source
+
+
+def test_recon_phase0_recognizes_vanilla_csats_viper_class_family():
+    source = recon().lower()
+    assert "itw_clash_reconsofclassprefixes" in source
+    assert '["viper",["o_v_"]]' in source
+    assert "(_class find _x) == 0" in source
+    # Keep Viper recognition family-based rather than enumerating individual
+    # TL/JTAC/medic/etc. classes so both hex and ghex vanilla variants resolve.
+    assert "o_v_soldier_tl_hex_f" not in source
+    assert "o_v_soldier_jtac_ghex_f" not in source
 
 
 def test_recon_phase0_wraps_native_hal_recon_instead_of_reimplementing_it():
