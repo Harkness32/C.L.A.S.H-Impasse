@@ -26,15 +26,25 @@ if (isNil "BIS_fnc_arsenal_campos_0") then {
 };
 
 if (isServer) then {
-    if (fileExists "ITW_CLASH_Bootstrap.sqf") then {
-        call compile preprocessFileLineNumbers "ITW_CLASH_Bootstrap.sqf";
+    // The SOF wrapper opens a two-function finalization window, runs the normal
+    // corrected C.L.A.S.H./GTFO bootstrap, installs SOF hard anchor exclusion,
+    // then closes/finalizes that window synchronously before HAL can schedule.
+    if (fileExists "ITW_CLASH_SOFDoctrineBootstrap.sqf" && {
+        fileExists "ITW_CLASH_Bootstrap.sqf"
+    }) then {
+        call compile preprocessFileLineNumbers "ITW_CLASH_SOFDoctrineBootstrap.sqf";
     } else {
-        ITW_CLASH_BootstrapReady = false;
-        ITW_CLASH_HookFallbacksActive = true;
-        ITW_CLASH_fnc_ObserveGroup = {false};
-        ITW_CLASH_fnc_ObserveWriter = {false};
-        ITW_CLASH_fnc_ObserveLifecycle = {false};
-        diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
+        if (fileExists "ITW_CLASH_Bootstrap.sqf") then {
+            call compile preprocessFileLineNumbers "ITW_CLASH_Bootstrap.sqf";
+            diag_log "CLASH BOOT | WARNING | sof-doctrine-bootstrap-missing | canonical anchor behavior retained";
+        } else {
+            ITW_CLASH_BootstrapReady = false;
+            ITW_CLASH_HookFallbacksActive = true;
+            ITW_CLASH_fnc_ObserveGroup = {false};
+            ITW_CLASH_fnc_ObserveWriter = {false};
+            ITW_CLASH_fnc_ObserveLifecycle = {false};
+            diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
+        };
     };
 
     // Temporary hosted-test comms are intentionally observer-only and load
@@ -95,6 +105,17 @@ if (isServer) then {
         };
     } else {
         diag_log "CLASH BOOT | recon-phase0-missing | native HAL recon retained";
+    };
+
+    // Planning bridge does not assign reconnaissance. It temporarily exposes
+    // recognized SOF to HAL's untouched native recon pools and restores SpecFor
+    // identity immediately after each HQ planning call.
+    if (missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]) then {
+        if (fileExists "ITW_CLASH_ReconPlanningBridge.sqf") then {
+            [] execVM "ITW_CLASH_ReconPlanningBridge.sqf";
+        } else {
+            diag_log "CLASH BOOT | recon-planning-bridge-missing | native SpecFor recon exclusion retained";
+        };
     };
 
     if (fileExists "ITW_CLASH_CASEVAC.sqf") then {
