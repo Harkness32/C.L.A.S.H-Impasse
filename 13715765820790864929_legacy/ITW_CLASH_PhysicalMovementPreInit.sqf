@@ -1,10 +1,10 @@
 #include "defines.hpp"
 
-ITW_CLASH_PhysicalMovementPreInitVersion = 2;
+ITW_CLASH_PhysicalMovementPreInitVersion = 3;
 
 // Every machine receives this helper before gameplay. The server-side
 // ITW_AtkSafeMove override uses it when a group is owned by a headless client,
-// so Live mode never falls through to that machine's finalized baseline
+// so C.L.A.S.H. mode never falls through to that machine's finalized baseline
 // setPos-based SafeMove implementation.
 ITW_CLASH_fnc_PhysicalMoveLocal = {
     params ["_group","_destination"];
@@ -31,12 +31,22 @@ if (isNil "ITW_AtkSafeMove" || {isNil "ITW_AtkAddVehicle"}) exitWith {
 ITW_CLASH_AtkSafeMove_Baseline = ITW_AtkSafeMove;
 ITW_CLASH_AtkAddVehicle_Baseline = ITW_AtkAddVehicle;
 
+ITW_CLASH_fnc_PhysicalMovementActive = {
+    (missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false]) || {
+        (missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]) && {
+            (missionNamespace getVariable ["ITW_ParamCLASHObserver",0]) == 2
+        }
+    }
+};
+["ITW_CLASH_fnc_PhysicalMovementActive"] call SKL_fnc_CompileFinal;
+
 ITW_AtkSafeMove = {
     params ["_group","_pos"];
 
-    // Outside C.L.A.S.H. Live mode preserve exact baseline Impasse semantics,
-    // including its startup/population relocation behavior.
-    if !(missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false]) exitWith {
+    // Preserve exact baseline Impasse semantics when C.L.A.S.H. is disabled or
+    // its bootstrap failed. Once a validated mode-2 bootstrap exists, suppress
+    // strategic teleportation even before the scheduled HAL live loop starts.
+    if !(call ITW_CLASH_fnc_PhysicalMovementActive) exitWith {
         _this call ITW_CLASH_AtkSafeMove_Baseline
     };
     if (isNull _group || {_pos isEqualTo []}) exitWith {};
@@ -60,9 +70,9 @@ ITW_AtkSafeMove = {
         };
     };
 
-    // Never remote-execute ITW_AtkSafeMove itself in Live mode: a headless
-    // client owns a finalized baseline copy. Execute the dedicated physical
-    // helper on whichever machine owns the group instead.
+    // Never remote-execute ITW_AtkSafeMove itself in C.L.A.S.H. mode: a
+    // headless client owns a finalized baseline copy. Execute the dedicated
+    // physical helper on whichever machine owns the group instead.
     if (local _group) then {
         [_group,_destination] call ITW_CLASH_fnc_PhysicalMoveLocal;
     } else {
@@ -82,7 +92,7 @@ ITW_AtkAddVehicle = {
     private _args = +_this;
     private _requestedTeleport = if (count _args > 2) then {_args#2} else {true};
 
-    if (missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false]) then {
+    if (call ITW_CLASH_fnc_PhysicalMovementActive) then {
         if (count _args > 2) then {
             _args set [2,false];
         } else {
@@ -115,7 +125,7 @@ private _addVehicleFinal = ["ITW_AtkAddVehicle"] call SKL_fnc_CompileFinal;
 ITW_CLASH_PhysicalMovementPreInitReady = _safeMoveFinal && _addVehicleFinal;
 
 diag_log format [
-    "CLASH BOOT | physical-movement-ready | version=%1 safeMove=%2 addVehicle=%3 strategicTeleport=false hcSafe=true",
+    "CLASH BOOT | physical-movement-ready | version=%1 safeMove=%2 addVehicle=%3 strategicTeleport=false hcSafe=true failOpen=true",
     ITW_CLASH_PhysicalMovementPreInitVersion,
     _safeMoveFinal,
     _addVehicleFinal
