@@ -37,6 +37,18 @@ if (isServer) then {
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
 
+    // Temporary hosted-test comms are intentionally observer-only and load
+    // synchronously so recovery/recon state transitions can be mirrored without
+    // wrapping any C.L.A.S.H. or HAL authority function.
+    if (fileExists "ITW_CLASH_TestComms.sqf") then {
+        private _testCommsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_TestComms.sqf";
+        if !(_testCommsLoaded isEqualTo true) then {
+            diag_log "CLASH BOOT | test-comms-failed | continuing silently";
+        };
+    } else {
+        diag_log "CLASH BOOT | test-comms-missing | continuing silently";
+    };
+
     // Reconstitution and physical-movement corrections belong to preInit,
     // where ITW_Attack.sqf is actually compiled. Never retry them here after
     // those functions are final.
