@@ -16,8 +16,29 @@ def test_logistics_guard_is_started_by_server_init():
 
 def test_egress_completion_radius_is_150m():
     guard = text("ITW_CLASH_LogisticsGuard.sqf")
+    assert "ITW_CLASH_LogisticsHandoffVersion = 2;" in guard
     assert "ITW_CLASH_WithdrawalArrivalRadius = 150;" in guard
     assert "logistics-guard-ready" in guard
+
+
+def test_foot_withdrawal_waypoint_is_tighter_than_absorption_envelope():
+    guard = text("ITW_CLASH_LogisticsGuard.sqf")
+    assert "ITW_CLASH_WithdrawalWaypointRadius = 100;" in guard
+    assert '"ITW_CLASH_CASEVAC_State"' in guard
+    assert '"ITW_CLASH_GroundMEDEVAC_State"' in guard
+    assert "_wp setWaypointPosition [_destination,0];" in guard
+    assert "_wp setWaypointCompletionRadius ITW_CLASH_WithdrawalWaypointRadius;" in guard
+    assert '"withdrawal-egress-waypoint-hardened"' in guard
+
+
+def test_ground_medevac_rtb_driver_is_reissued_only_when_stuck():
+    guard = text("ITW_CLASH_LogisticsGuard.sqf")
+    assert "ITW_CLASH_GroundMEDEVAC_Active" in guard
+    assert 'isNotEqualTo "rtb"' in guard
+    assert "abs speed _veh >= 2" in guard
+    assert "_veh distance2D _target <= 100" in guard
+    assert "_driver doMove _target;" in guard
+    assert '"medevac-rtb-driver-unstick"' in guard
 
 
 def test_reconstitution_queue_tracks_live_group_state():

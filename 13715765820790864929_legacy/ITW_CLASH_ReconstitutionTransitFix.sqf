@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixStarted",fa
     missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixReady",false]
 };
 ITW_CLASH_ReconstitutionTransitFixStarted = true;
-ITW_CLASH_ReconstitutionTransitFixVersion = 3;
+ITW_CLASH_ReconstitutionTransitFixVersion = 4;
 ITW_CLASH_ReconstitutionTransitFixReady = false;
 ITW_CLASH_ReconstitutionHandoffBuffer = 250;
 
@@ -61,16 +61,60 @@ ITW_AtkReconstitutionTransitManager = {
                 ITW_CLASH_ReconstitutionHandoffBuffer
             );
             private _distance = leader _group distance2D _objPos;
-
-            if (!_inVehicle && {
+            private _nearHandoff = !_inVehicle && {
                 _state in ["transport","walking"] && {
                     _distance <= _handoffRadius
                 }
-            }) then {
+            };
+
+            // Physical dismount alone is not enough for HAL handoff. Impasse's
+            // vehicle manager can retain this group as cargo for another manager
+            // tick, and Arma can retain assignedVehicles even after every soldier
+            // is physically on foot. Preserve the original objective affinity and
+            // wait until both ownership layers are clear before registration.
+            private _assigned = assignedVehicles _group;
+            if (_nearHandoff && {_assigned isNotEqualTo []}) then {
+                {unassignVehicle _x} forEach _aliveUnits;
+                _assigned = assignedVehicles _group;
+            };
+
+            private _managedVehicleIndex = -1;
+            if (!isNil "ITW_ManagedVehs") then {
+                _managedVehicleIndex = ITW_ManagedVehs findIf {
+                    count _x > VEHINFO_CARGO_GRPS && {
+                        (_x#VEHINFO_CREW_GRP) isEqualTo _group || {
+                            _group in (_x#VEHINFO_CARGO_GRPS)
+                        }
+                    }
+                };
+            };
+            private _handoffBlocked = _managedVehicleIndex >= 0 || {
+                _assigned isNotEqualTo []
+            };
+
+            if (_nearHandoff && {_handoffBlocked}) then {
+                VAR_SET_OBJ_IDX(_group,_objectiveIndex);
+                private _nextWaitLog = _group getVariable [
+                    "ITW_CLASH_ReconstitutionHandoffWaitLogAt",0
+                ];
+                if (time >= _nextWaitLog && {!isNil "ITW_CLASH_fnc_Log"}) then {
+                    _group setVariable [
+                        "ITW_CLASH_ReconstitutionHandoffWaitLogAt",time + 30
+                    ];
+                    ["reconstitution-handoff-wait",[
+                        _requestId,_lineage,_objectiveIndex,_managedVehicleIndex,
+                        count _assigned,round _distance
+                    ]] call ITW_CLASH_fnc_Log;
+                };
+                continue;
+            };
+
+            if (_nearHandoff) then {
                 _group setVariable ["ITW_CLASH_ReconstitutionTransit",nil];
                 _group setVariable ["ITW_CLASH_TransitState",nil];
                 _group setVariable ["ITW_CLASH_TransitVehicle",nil];
                 _group setVariable ["ITW_CLASH_TransitObjective",nil];
+                _group setVariable ["ITW_CLASH_ReconstitutionHandoffWaitLogAt",nil];
                 _group setVariable ["itwInitGrp",nil,true];
                 VAR_SET_OBJ_IDX(_group,_objectiveIndex);
 
@@ -170,7 +214,7 @@ private _finalized = ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_Compil
 ITW_CLASH_ReconstitutionTransitFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true preInit=true",
+        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true preInit=true vehicleOwnershipGate=true",
         ITW_CLASH_ReconstitutionTransitFixVersion,
         ITW_CLASH_ReconstitutionHandoffBuffer
     ];

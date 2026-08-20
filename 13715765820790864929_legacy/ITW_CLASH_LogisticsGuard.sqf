@@ -4,14 +4,16 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_LogisticsGuardStarted",false]) exitWith {};
 
 ITW_CLASH_LogisticsGuardStarted = true;
-ITW_CLASH_LogisticsHandoffVersion = 1;
+ITW_CLASH_LogisticsHandoffVersion = 2;
 ITW_CLASH_WithdrawalArrivalRadius = 150;
+ITW_CLASH_WithdrawalWaypointRadius = 100;
 ITW_CLASH_PostTransportSettle = 30;
 
 diag_log format [
-    "CLASH BOOT | logistics-guard-ready | version=%1 egress=%2 settle=%3",
+    "CLASH BOOT | logistics-guard-ready | version=%1 egress=%2 waypoint=%3 settle=%4",
     ITW_CLASH_LogisticsHandoffVersion,
     ITW_CLASH_WithdrawalArrivalRadius,
+    ITW_CLASH_WithdrawalWaypointRadius,
     ITW_CLASH_PostTransportSettle
 ];
 
@@ -93,6 +95,84 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                 };
             };
         };
+    };
+
+    // Keep the physical foot-withdrawal waypoint stricter than the canonical
+    // 150 m rear-absorption envelope. The canonical order creates a waypoint
+    // within a 35 m placement radius; pinning it back to the exact egress point
+    // with a 100 m completion radius prevents Arma from declaring the waypoint
+    // complete just outside the economic absorption boundary.
+    if (!isNil "ITW_CLASH_Withdrawals") then {
+        {
+            private _id = _x;
+            private _entry = ITW_CLASH_Withdrawals getOrDefault [_id,[]];
+            if (_entry isEqualTo [] || {count _entry < 9}) then {continue};
+
+            private _grp = _entry#0;
+            private _destination = _entry#5;
+            if (isNull _grp || {_destination isEqualTo []}) then {continue};
+            if ((_grp getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") then {continue};
+            if ((_grp getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "") then {continue};
+
+            private _wps = waypoints _grp;
+            if (_wps isEqualTo []) then {continue};
+            private _wp = _wps#-1;
+            private _wpPos = waypointPosition _wp;
+            private _wpRadius = waypointCompletionRadius _wp;
+            if (_wpPos distance2D _destination > 1 || {
+                abs (_wpRadius - ITW_CLASH_WithdrawalWaypointRadius) > 1
+            }) then {
+                _wp setWaypointPosition [_destination,0];
+                _wp setWaypointCompletionRadius ITW_CLASH_WithdrawalWaypointRadius;
+                if !(_grp getVariable ["ITW_CLASH_WithdrawalWaypointHardened",false]) then {
+                    _grp setVariable ["ITW_CLASH_WithdrawalWaypointHardened",true];
+                    if (!isNil "ITW_CLASH_fnc_Log") then {
+                        ["withdrawal-egress-waypoint-hardened",[
+                            _id,
+                            _grp getVariable ["ITW_CLASH_Lineage",_id],
+                            ITW_CLASH_WithdrawalWaypointRadius,
+                            ITW_CLASH_WithdrawalArrivalRadius
+                        ]] call ITW_CLASH_fnc_Log;
+                    };
+                };
+            };
+        } forEach +(keys ITW_CLASH_Withdrawals);
+    };
+
+    // Ground MEDEVAC intentionally doStops the driver at pickup so infantry can
+    // board safely. Hosted field tests showed that the individual stop order can
+    // survive the subsequent RTB group waypoint. If an RTB vehicle is still
+    // essentially stationary away from its current route target, reissue the
+    // driver's physical move order without teleporting or changing the route.
+    if (!isNil "ITW_CLASH_GroundMEDEVAC_Active") then {
+        {
+            private _id = _x;
+            private _active = ITW_CLASH_GroundMEDEVAC_Active getOrDefault [_id,[]];
+            if (_active isEqualTo [] || {count _active < 7}) then {continue};
+            _active params ["_grp","_veh","_crewGroup"];
+            if (isNull _grp || {isNull _veh} || {!alive _veh} || {isNull _crewGroup}) then {continue};
+            if ((_grp getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "rtb") then {continue};
+
+            private _driver = driver _veh;
+            if (isNull _driver) then {continue};
+            private _wps = waypoints _crewGroup;
+            if (_wps isEqualTo []) then {continue};
+            private _target = waypointPosition (_wps#-1);
+            if (_veh distance2D _target <= 100 || {abs speed _veh >= 2}) then {continue};
+
+            private _nextUnstick = _veh getVariable ["ITW_CLASH_GroundMEDEVAC_UnstickAt",0];
+            if (time < _nextUnstick) then {continue};
+            _veh setVariable ["ITW_CLASH_GroundMEDEVAC_UnstickAt",time + 10];
+            _driver doMove _target;
+            if (!isNil "ITW_CLASH_fnc_Log") then {
+                ["medevac-rtb-driver-unstick",[
+                    _id,
+                    _grp getVariable ["ITW_CLASH_Lineage",_id],
+                    typeOf _veh,
+                    round (_veh distance2D _target)
+                ]] call ITW_CLASH_fnc_Log;
+            };
+        } forEach +(keys ITW_CLASH_GroundMEDEVAC_Active);
     };
 
     // Freshly delivered normal Impasse infantry should not be adopted by HAL

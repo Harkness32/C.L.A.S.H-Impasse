@@ -282,6 +282,14 @@ ITW_CLASH_GroundMEDEVAC_fnc_OrderVehicle = {
     _wp setWaypointBehaviour "CARELESS";
     _wp setWaypointCombatMode "BLUE";
     _wp setWaypointCompletionRadius _completion;
+
+    // Pickup uses doStop on the driver while survivors board. A new vehicle leg
+    // must explicitly replace that individual stop order; a group waypoint alone
+    // does not reliably release it in hosted Arma sessions.
+    private _driver = driver _veh;
+    if (!isNull _driver) then {
+        _driver doMove _position;
+    };
     true
 };
 
