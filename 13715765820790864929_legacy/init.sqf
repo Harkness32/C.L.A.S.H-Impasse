@@ -49,6 +49,14 @@ if (isServer) then {
         diag_log "CLASH BOOT | test-comms-missing | continuing silently";
     };
 
+    // Temporary forensic observer for HAL/Arma combat-state regressions. It is
+    // behavior-neutral and waits for HAL readiness internally before sampling.
+    if (fileExists "ITW_CLASH_CombatDiagnostics.sqf") then {
+        [] execVM "ITW_CLASH_CombatDiagnostics.sqf";
+    } else {
+        diag_log "CLASH BOOT | combat-diagnostics-missing | continuing without forensic observer";
+    };
+
     // Reconstitution and physical-movement corrections belong to preInit,
     // where ITW_Attack.sqf is actually compiled. Never retry them here after
     // those functions are final.
