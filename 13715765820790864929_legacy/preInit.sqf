@@ -14,13 +14,13 @@ diag_log "CLASH BOOT | preInit | fail-open hooks installed; controller deferred 
 
 // Attack and enemy source are compiled during preInit, before init.sqf can run.
 // Keep only the functions that C.L.A.S.H. must replace mutable on the server.
-// SKL_fnc_CompileFinal honors this list; clients retain baseline finals.
+// Initial SafeMove/vehicle staging remains baseline Impasse; only the explicit
+// mid-battle infantry catch-up relocation is replaced.
 if (isServer) then {
     ITW_CLASH_DeferredFinalizers = [
         "ITW_AtkDispatchReconstitutionTransport",
         "ITW_AtkReconstitutionTransitManager",
-        "ITW_AtkSafeMove",
-        "ITW_AtkAddVehicle",
+        "ITW_AtkInfantryMoveUp",
         "ITW_EnemyGroupCallback"
     ];
     diag_log format [
@@ -35,9 +35,9 @@ isNil {call compile preprocessFileLineNumbers "ITW_Airfield.sqf";              }
 isNil {call compile preprocessFileLineNumbers "ITW_Ally.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Attack.sqf";                };
 
-// Load the physical-movement shim on every machine. Clients/HCs only install
-// the new locality helper; the server also replaces/finalizes SafeMove and
-// AddVehicle while its explicit finalization window is still open.
+// Load the narrow physical-movement shim on every machine. Clients/HCs only
+// install the locality helper; the server replaces/finalizes InfantryMoveUp
+// while its explicit finalization window is still open.
 private _physicalMovementFixed = false;
 if (fileExists "ITW_CLASH_PhysicalMovementPreInit.sqf") then {
     _physicalMovementFixed = call compile preprocessFileLineNumbers "ITW_CLASH_PhysicalMovementPreInit.sqf";
@@ -67,10 +67,9 @@ if (isServer) then {
         diag_log "CLASH BOOT | preinit-reconstitution-transit-fallback | baseline finalized";
     };
     if (!_physicalMovementFixed) then {
-        ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkSafeMove","ITW_AtkAddVehicle"];
-        ["ITW_AtkSafeMove"] call SKL_fnc_CompileFinal;
-        ["ITW_AtkAddVehicle"] call SKL_fnc_CompileFinal;
-        diag_log "CLASH BOOT | physical-movement-fallback | baseline teleport behavior finalized";
+        ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkInfantryMoveUp"];
+        ["ITW_AtkInfantryMoveUp"] call SKL_fnc_CompileFinal;
+        diag_log "CLASH BOOT | physical-movement-fallback | baseline move-up teleport finalized";
     };
 
     ITW_CLASH_ReconstitutionPreInitReady = _dispatchFixed && _transitFixed;
