@@ -3,10 +3,11 @@ if (!isServer) exitWith {false};
 /*
     Narrow bootstrap wrapper for post-V6 doctrine.
 
-    The canonical V6 runtime + GTFO corrections must land first, but four public
+    The canonical V6 runtime + GTFO corrections must land first, but six public
     authority surfaces remain mutable for one additional synchronous pass:
       - SOF anchor policy wraps SelectAnchorGroup/AuditAnchors.
       - persistent HAL infantry ownership wraps ClassifyGroup/ApplyObjectiveDoctrine.
+      - persistent tactical authority wraps ObserveWriter/ObserveLifecycle.
 
     The window closes before scheduled C.L.A.S.H./HAL startup receives execution.
 */
@@ -15,7 +16,9 @@ ITW_CLASH_LateDoctrineFinalizers = [
     "ITW_CLASH_fnc_SelectAnchorGroup",
     "ITW_CLASH_fnc_AuditAnchors",
     "ITW_CLASH_fnc_ClassifyGroup",
-    "ITW_CLASH_fnc_ApplyObjectiveDoctrine"
+    "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
+    "ITW_CLASH_fnc_ObserveWriter",
+    "ITW_CLASH_fnc_ObserveLifecycle"
 ];
 
 diag_log format [
@@ -61,20 +64,30 @@ private _infPath = "ITW_CLASH_InfantryAuthority.sqf";
 private _infExists = fileExists _infPath;
 private _infSource = if (_infExists) then {preprocessFileLineNumbers _infPath} else {""};
 private _infChars = count toArray _infSource;
+private _infPreInitReady = missionNamespace getVariable [
+    "ITW_CLASH_InfantryAuthorityPreInitReady",
+    false
+];
 diag_log format [
-    "CLASH BOOT | infantry-authority | exists=%1 chars=%2 path=%3",
-    _infExists,_infChars,_infPath
+    "CLASH BOOT | infantry-authority | exists=%1 chars=%2 preInit=%3 path=%4",
+    _infExists,_infChars,_infPreInitReady,_infPath
 ];
 
 private _infLoaded = false;
-if (_infExists && {_infChars > 0}) then {
+if (_infPreInitReady && {_infExists && {_infChars > 0}}) then {
     private _result = call compile _infSource;
     _infLoaded = _result isEqualTo true && {
-        (missionNamespace getVariable ["ITW_CLASH_InfantryAuthorityVersion",-1]) == 1 && {
+        (missionNamespace getVariable ["ITW_CLASH_InfantryAuthorityVersion",-1]) == 2 && {
             !isNil "ITW_CLASH_InfantryAuthority_fnc_IsHardHandoff" && {
-                !isNil "ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints" && {
-                    !isNil "ITW_CLASH_fnc_ClassifyGroup_InfantryAuthorityBase" && {
-                        !isNil "ITW_CLASH_fnc_ApplyObjectiveDoctrine_InfantryAuthorityBase"
+                !isNil "ITW_CLASH_InfantryAuthority_fnc_IsManagedFielded" && {
+                    !isNil "ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints" && {
+                        !isNil "ITW_CLASH_fnc_ClassifyGroup_InfantryAuthorityBase" && {
+                            !isNil "ITW_CLASH_fnc_ApplyObjectiveDoctrine_InfantryAuthorityBase" && {
+                                !isNil "ITW_CLASH_fnc_ObserveWriter_InfantryAuthorityBase" && {
+                                    !isNil "ITW_CLASH_fnc_ObserveLifecycle_InfantryAuthorityBase"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -99,16 +112,21 @@ if (!isNil "SKL_fnc_CompileFinal") then {
         _finalizers append [
             "ITW_CLASH_InfantryAuthority_fnc_Log",
             "ITW_CLASH_InfantryAuthority_fnc_IsHardHandoff",
+            "ITW_CLASH_InfantryAuthority_fnc_IsManagedFielded",
             "ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints",
             "ITW_CLASH_fnc_ClassifyGroup_InfantryAuthorityBase",
-            "ITW_CLASH_fnc_ApplyObjectiveDoctrine_InfantryAuthorityBase"
+            "ITW_CLASH_fnc_ApplyObjectiveDoctrine_InfantryAuthorityBase",
+            "ITW_CLASH_fnc_ObserveWriter_InfantryAuthorityBase",
+            "ITW_CLASH_fnc_ObserveLifecycle_InfantryAuthorityBase"
         ];
     };
     _finalizers append [
         "ITW_CLASH_fnc_SelectAnchorGroup",
         "ITW_CLASH_fnc_AuditAnchors",
         "ITW_CLASH_fnc_ClassifyGroup",
-        "ITW_CLASH_fnc_ApplyObjectiveDoctrine"
+        "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
+        "ITW_CLASH_fnc_ObserveWriter",
+        "ITW_CLASH_fnc_ObserveLifecycle"
     ];
     {[_x] call SKL_fnc_CompileFinal} forEach _finalizers;
 };
@@ -119,9 +137,23 @@ if (!_sofLoaded) then {
     diag_log "CLASH BOOT | sof-doctrine-loaded | version=1 anchorsSOF=false";
 };
 if (!_infLoaded) then {
-    diag_log "CLASH BOOT | WARNING | infantry-authority-load-failed | previous pilot admission policy retained";
+    diag_log format [
+        "CLASH BOOT | WARNING | infantry-authority-load-failed | preInit=%1 source=%2 previous pilot admission policy retained",
+        _infPreInitReady,
+        _infExists && {_infChars > 0}
+    ];
 } else {
-    diag_log "CLASH BOOT | infantry-authority-loaded | version=1 allFieldedInfantry=true";
+    diag_log "CLASH BOOT | infantry-authority-loaded | version=2 allFieldedInfantry=true persistentTacticalAuthority=true";
+};
+
+// Native HAL SF correction is independent of C.L.A.S.H. tactical ownership. It
+// waits for NR6 VarInit to bind the real HAL globals, verifies the exact audited
+// source signatures, then recompiles only those two corrected functions.
+if (fileExists "ITW_CLASH_HALNativeSFFix.sqf") then {
+    [] execVM "ITW_CLASH_HALNativeSFFix.sqf";
+    diag_log "CLASH BOOT | native-sf-fix-scheduled";
+} else {
+    diag_log "CLASH BOOT | WARNING | native-sf-fix-missing | upstream HAL SF defects remain";
 };
 
 _sofLoaded && _infLoaded

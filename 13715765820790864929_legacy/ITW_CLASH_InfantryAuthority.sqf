@@ -1,7 +1,7 @@
 #include "defines.hpp"
 
 if (!isServer) exitWith {false};
-ITW_CLASH_InfantryAuthorityVersion = 1;
+ITW_CLASH_InfantryAuthorityVersion = 2;
 
 /*
     Persistent infantry authority doctrine
@@ -34,6 +34,8 @@ ITW_CLASH_AllocationDriftCooldown = 0;
 
 ITW_CLASH_fnc_ClassifyGroup_InfantryAuthorityBase = ITW_CLASH_fnc_ClassifyGroup;
 ITW_CLASH_fnc_ApplyObjectiveDoctrine_InfantryAuthorityBase = ITW_CLASH_fnc_ApplyObjectiveDoctrine;
+ITW_CLASH_fnc_ObserveWriter_InfantryAuthorityBase = ITW_CLASH_fnc_ObserveWriter;
+ITW_CLASH_fnc_ObserveLifecycle_InfantryAuthorityBase = ITW_CLASH_fnc_ObserveLifecycle;
 
 ITW_CLASH_InfantryAuthority_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -92,6 +94,13 @@ ITW_CLASH_InfantryAuthority_fnc_IsHardHandoff = {
     ]]
 };
 
+ITW_CLASH_InfantryAuthority_fnc_IsManagedFielded = {
+    params ["_group"];
+    if (isNull _group || {!(_group getVariable ["ITW_CLASH_Managed",false])}) exitWith {false};
+    private _handoff = [_group] call ITW_CLASH_InfantryAuthority_fnc_IsHardHandoff;
+    !(_handoff#0)
+};
+
 ITW_CLASH_fnc_ClassifyGroup = {
     params ["_group"];
 
@@ -131,6 +140,74 @@ ITW_CLASH_fnc_ClassifyGroup = {
         groupOwner _group,
         _group getVariable ["ITW_Garrison",false]
     ]]
+};
+
+ITW_CLASH_fnc_ObserveWriter = {
+    params ["_writer","_group"];
+
+    // These are tactical Impasse writers. Once a formation is physically fielded
+    // and HAL-managed, they must back off rather than release HAL ownership merely
+    // to replace movement or garrison orders. The small-group merge path is left
+    // to the baseline observer because that source group immediately ceases to exist.
+    private _tacticalWriters = [
+        "engage-infantry",
+        "stuck-handler",
+        "infantry-manager-garrison",
+        "infantry-manager-waypoints",
+        "infantry-manager-move-up",
+        "infantry-move-up"
+    ];
+
+    if (_writer in _tacticalWriters && {
+        [_group] call ITW_CLASH_InfantryAuthority_fnc_IsManagedFielded
+    }) exitWith {
+        private _id = [_group] call ITW_CLASH_fnc_GroupId;
+        private _shouldLog = true;
+        if (!isNil "ITW_CLASH_ObserverWriterLast") then {
+            private _key = format ["%1|persistent-authority|%2",_id,_writer];
+            private _last = ITW_CLASH_ObserverWriterLast getOrDefault [_key,-1000];
+            _shouldLog = time - _last >= 10;
+            if (_shouldLog) then {ITW_CLASH_ObserverWriterLast set [_key,time]};
+        };
+        if (_shouldLog) then {
+            ["writer-suppressed",[
+                _id,
+                _writer,
+                _group getVariable ["ITW_CLASH_AssignedObjective",-1],
+                VAR_GET_OBJ_IDX(_group),
+                {alive _x} count units _group
+            ]] call ITW_CLASH_InfantryAuthority_fnc_Log;
+        };
+        true
+    };
+
+    [_writer,_group] call ITW_CLASH_fnc_ObserveWriter_InfantryAuthorityBase
+};
+
+ITW_CLASH_fnc_ObserveLifecycle = {
+    params ["_event",["_details",[]]];
+
+    // Defend phase is a campaign phase change, not a temporary tactical ownership
+    // handoff. Preserve anchor reset and observer diagnostics, but do not ReleaseAll
+    // and do not freeze registration. The preInit manager filter simultaneously
+    // prevents ITW_AtkDefendStart/Done from directly rewriting HAL infantry.
+    if (_event in ["defend-start","defend-done"] && {
+        isServer && {ITW_CLASH_ObserverEnabled}
+    }) exitWith {
+        if (ITW_CLASH_LiveEnabled) then {
+            [_event] call ITW_CLASH_fnc_ResetAnchors;
+        };
+        [_event] call ITW_CLASH_fnc_WouldReleaseAll;
+        ["lifecycle",[_event,_details]] call ITW_CLASH_fnc_Log;
+        ["defend-phase-persistent",[
+            _event,
+            count (ITW_CLASH_ManagedGroups select {!isNull _x}),
+            ITW_CLASH_RegistrationFrozenUntil
+        ]] call ITW_CLASH_InfantryAuthority_fnc_Log;
+        true
+    };
+
+    [_event,_details] call ITW_CLASH_fnc_ObserveLifecycle_InfantryAuthorityBase
 };
 
 ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints = {
@@ -201,7 +278,7 @@ ITW_CLASH_fnc_ApplyObjectiveDoctrine = {
 };
 
 diag_log format [
-    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true garrisonConstraintsSelfCleaning=true supportSpecialistsHAL=true transportHandoff=true",
+    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true garrisonConstraintsSelfCleaning=true supportSpecialistsHAL=true transportHandoff=true impasseTacticalWritersSuppressed=true defendPhasePersistent=true",
     ITW_CLASH_InfantryAuthorityVersion
 ];
 
