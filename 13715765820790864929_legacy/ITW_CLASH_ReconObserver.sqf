@@ -72,7 +72,7 @@ ITW_CLASH_Recon_fnc_ClassifySOFGroup = {
         (toLowerANSI typeOf _x) in (ITW_CLASH_ReconSOFExactClasses apply {toLowerANSI _x})
     };
     if (_exactMatched isNotEqualTo []) exitWith {
-        private _needed = ceil ((count _alive) * 0.5);
+        private _needed = floor ((count _alive) / 2) + 1;
         private _count = count _exactMatched;
         [_count >= _needed,"exact-class",_count,count _alive,_classes]
     };
@@ -124,9 +124,10 @@ ITW_CLASH_Recon_fnc_ClassifySOFGroup = {
         };
     } forEach ITW_CLASH_ReconSOFTokenFamilies;
 
-    // Majority classification prevents one embedded SOF/specialist unit from
-    // turning an otherwise conventional squad into a dedicated recon asset.
-    private _required = ceil ((count _alive) * 0.5);
+    // Strict-majority classification prevents one embedded SOF/specialist unit
+    // from turning a tiny mixed or otherwise conventional squad into a dedicated
+    // recon asset. A lone surviving SOF operator still qualifies 1/1.
+    private _required = floor ((count _alive) / 2) + 1;
     private _isSOF = _bestCount >= _required;
     [
         _isSOF,
