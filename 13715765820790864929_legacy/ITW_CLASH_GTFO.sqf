@@ -261,15 +261,15 @@ ITW_CLASH_fnc_GetEgressPoint = {
         [_group,_preferredObjective] call ITW_CLASH_fnc_GetEgressPoint_GTFOBase
     };
 
-    if (_group getVariable ["ITW_CLASH_GTFO",false]) then {
-        private _destination = _group getVariable ["ITW_CLASH_GTFO_Destination",[]];
-        if (_destination isNotEqualTo []) exitWith {
-            [
-                +_destination,
-                _group getVariable ["ITW_CLASH_GTFO_EgressObjective",-1],
-                _group getVariable ["ITW_CLASH_GTFO_Source","gtfo-support-corridor"]
-            ]
-        };
+    private _gtfoDestination = _group getVariable ["ITW_CLASH_GTFO_Destination",[]];
+    if (_group getVariable ["ITW_CLASH_GTFO",false] && {
+        _gtfoDestination isNotEqualTo []
+    }) exitWith {
+        [
+            +_gtfoDestination,
+            _group getVariable ["ITW_CLASH_GTFO_EgressObjective",-1],
+            _group getVariable ["ITW_CLASH_GTFO_Source","gtfo-support-corridor"]
+        ]
     };
 
     [_group,_preferredObjective] call ITW_CLASH_fnc_GetEgressPoint_GTFOBase
