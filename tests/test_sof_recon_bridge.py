@@ -106,6 +106,17 @@ def test_recon_bridge_wraps_native_hal_planners_instead_of_assigning_missions_it
     assert "halChooses=true" in source
 
 
+def test_recon_planning_bridge_arms_only_after_phase0_sof_gate_exists():
+    source = bridge()
+    assert 'isNil "ITW_CLASH_Recon_fnc_NativeGoRecon"' in source
+    assert 'isNil "ITW_CLASH_Recon_fnc_NativeGoDefRecon"' in source
+    wait_pos = source.index('!isNil "ITW_CLASH_Recon_fnc_NativeGoRecon"')
+    wrap_pos = source.index("ITW_CLASH_ReconPlanning_fnc_NativeHQOrders = HAL_HQOrders;", wait_pos)
+    assert wait_pos < wrap_pos
+    assert "Phase 0 gate unavailable" in source
+    assert "phase0Gate=true" in source
+
+
 def test_offensive_recon_window_preserves_specfor_identity_and_uses_native_recon_demand():
     source = bridge()
     assert 'private _specFor0 = +(_hq getVariable ["RydHQ_SpecForG",[]]);' in source
@@ -113,7 +124,6 @@ def test_offensive_recon_window_preserves_specfor_identity_and_uses_native_recon
     assert 'private _noRecon0 = +(_hq getVariable ["RydHQ_NoRecon",[]]);' in source
     assert "private _specForWindow = _specFor0 - _eligible;" in source
     assert "_reconWindow pushBackUnique _x" in source
-    assert '!( _hq getVariable ["RydHQ_ReconDone",false])' not in source  # spacing contract below
     assert '!(_hq getVariable ["RydHQ_ReconDone",false])' in source
     assert '"RydHQ_SpecForG",+_specFor0' in source
     assert '"RydHQ_ReconG",+_recon0' in source
