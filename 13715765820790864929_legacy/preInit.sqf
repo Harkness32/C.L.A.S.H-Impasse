@@ -35,21 +35,25 @@ isNil {call compile preprocessFileLineNumbers "ITW_Airfield.sqf";              }
 isNil {call compile preprocessFileLineNumbers "ITW_Ally.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Attack.sqf";                };
 
+// Load the physical-movement shim on every machine. Clients/HCs only install
+// the new locality helper; the server also replaces/finalizes SafeMove and
+// AddVehicle while its explicit finalization window is still open.
+private _physicalMovementFixed = false;
+if (fileExists "ITW_CLASH_PhysicalMovementPreInit.sqf") then {
+    _physicalMovementFixed = call compile preprocessFileLineNumbers "ITW_CLASH_PhysicalMovementPreInit.sqf";
+};
+
 // The canonical Attack definitions now exist and the selected finalizers were
 // skipped. Install/finalize the corrected functions synchronously while we are
 // still in preInit, before any gameplay coroutine can start.
 if (isServer) then {
     private _dispatchFixed = false;
     private _transitFixed = false;
-    private _physicalMovementFixed = false;
     if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
         _dispatchFixed = call compile preprocessFileLineNumbers "ITW_CLASH_ReconstitutionDispatchFix.sqf";
     };
     if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
         _transitFixed = call compile preprocessFileLineNumbers "ITW_CLASH_ReconstitutionTransitFix.sqf";
-    };
-    if (fileExists "ITW_CLASH_PhysicalMovementPreInit.sqf") then {
-        _physicalMovementFixed = call compile preprocessFileLineNumbers "ITW_CLASH_PhysicalMovementPreInit.sqf";
     };
 
     if (!_dispatchFixed) then {
