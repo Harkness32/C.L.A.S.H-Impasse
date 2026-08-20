@@ -160,12 +160,41 @@ if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
             }
         ) then {
             call ITW_CLASH_GTFO_fnc_ApplyConstraints;
+
+            // One-shot field proof that HAL's native GoRest owns the formation.
+            // Wait for both Resting=true and a real waypoint so the record captures
+            // the actual native order rather than the brief setup frame before it.
+            {
+                private _group = _x;
+                if (isNull _group || {
+                    !(_group getVariable ["ITW_CLASH_GTFO",false]) || {
+                        _group getVariable ["ITW_CLASH_GTFO_NativeRestLogged",false]
+                    }
+                }) then {continue};
+                if !(_group getVariable ["Resting" + str _group,false]) then {continue};
+
+                private _waypoints = waypoints _group;
+                if (_waypoints isEqualTo []) then {continue};
+                private _wpIndex = currentWaypoint _group;
+                if (_wpIndex < 0 || {_wpIndex >= count _waypoints}) then {continue};
+
+                _group setVariable ["ITW_CLASH_GTFO_NativeRestLogged",true];
+                ["native-rest-active",[
+                    [_group] call ITW_CLASH_fnc_GroupId,
+                    waypointType [_group,_wpIndex],
+                    waypointPosition [_group,_wpIndex],
+                    attackEnabled _group,
+                    combatMode _group,
+                    behaviour leader _group,
+                    _group getVariable ["ITW_CLASH_GTFO_Destination",[]]
+                ]] call ITW_CLASH_GTFO_fnc_Log;
+            } forEach +ITW_CLASH_ManagedGroups;
         };
     };
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true constraintPoll=2 arrivalRadius=%2",
+    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true constraintPoll=2 arrivalRadius=%2 nativeRestTelemetry=true",
     ITW_CLASH_GTFORuntimeVersion,
     ITW_CLASH_GTFO_ArrivalRadius
 ];
