@@ -37,13 +37,18 @@ if (isServer) then {
         diag_log "CLASH BOOT | FAILED | bootstrap-file-missing | baseline Impasse remains active";
     };
 
-    // Reconstitution corrections now belong to preInit, where ITW_Attack.sqf
-    // is actually compiled. Never retry them here after those functions are
-    // final; a late retry was the source of the observed override race.
+    // Reconstitution and physical-movement corrections belong to preInit,
+    // where ITW_Attack.sqf is actually compiled. Never retry them here after
+    // those functions are final.
     if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionPreInitReady",false]) then {
         diag_log "CLASH BOOT | reconstitution-preinit-authority-confirmed | late-overrides-skipped";
     } else {
         diag_log "CLASH BOOT | WARNING | reconstitution-preinit-authority-missing | baseline/fail-open functions retained";
+    };
+    if (missionNamespace getVariable ["ITW_CLASH_PhysicalMovementPreInitReady",false]) then {
+        diag_log "CLASH BOOT | physical-movement-preinit-authority-confirmed | strategicTeleport=false";
+    } else {
+        diag_log "CLASH BOOT | WARNING | physical-movement-preinit-authority-missing | baseline movement behavior retained";
     };
     if (missionNamespace getVariable ["ITW_CLASH_SpawnArchetypeAuthorityReady",false]) then {
         diag_log "CLASH BOOT | spawn-archetype-authority-confirmed | native enemy callback active";
@@ -78,6 +83,11 @@ if (isServer) then {
             [] execVM "ITW_CLASH_GroundMEDEVAC.sqf";
         } else {
             diag_log "CLASH BOOT | ground-medevac-missing | CASEVAC/walking remain active";
+        };
+        if (fileExists "ITW_CLASH_EvacBoardingFix.sqf") then {
+            [] execVM "ITW_CLASH_EvacBoardingFix.sqf";
+        } else {
+            diag_log "CLASH BOOT | evac-boarding-fix-missing | baseline physical boarding remains active";
         };
     } else {
         diag_log "CLASH BOOT | casevac-missing | walking withdrawal remains active";
