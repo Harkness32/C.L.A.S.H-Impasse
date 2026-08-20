@@ -63,7 +63,16 @@ if (isServer) then {
     };
 
     if (fileExists "ITW_CLASH_ReconObserver.sqf") then {
-        [] execVM "ITW_CLASH_ReconObserver.sqf";
+        [] spawn {
+            waitUntil {
+                sleep 0.25;
+                missionNamespace getVariable ["ITW_CLASH_HALReady",false]
+                || {missionNamespace getVariable ["ITW_GameOver",false]}
+            };
+            if (missionNamespace getVariable ["ITW_CLASH_HALReady",false]) then {
+                [] execVM "ITW_CLASH_ReconObserver.sqf";
+            };
+        };
     } else {
         diag_log "CLASH BOOT | recon-phase0-missing | native HAL recon retained";
     };
