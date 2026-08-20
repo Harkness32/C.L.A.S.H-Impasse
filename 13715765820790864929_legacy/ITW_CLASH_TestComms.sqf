@@ -4,6 +4,7 @@ ITW_CLASH_TestCommsStarted = true;
 ITW_CLASH_TestCommsVersion = 1;
 ITW_CLASH_TestCommsEnabled = true;
 ITW_CLASH_TestCommsRecoveryRequestCooldown = 90;
+ITW_CLASH_TestCommsPollInterval = 0.5;
 
 /*
     Temporary testing comms surface.
@@ -13,8 +14,9 @@ ITW_CLASH_TestCommsRecoveryRequestCooldown = 90;
     to GLOBAL so a BLUFOR tester can hear what an OPFOR HAL formation is doing.
 
     Audio reuses NR6 HAL's own CfgRadio recordings. No sound assets are copied or
-    redefined here. Remove/disable this module when the observer testing phase is
-    complete.
+    redefined here. The observer below only reads existing C.L.A.S.H./HAL states;
+    it does not wrap or replace any recovery, withdrawal, recon, or HAL function.
+    Remove/disable this module when the observer testing phase is complete.
 */
 
 ITW_CLASH_TestComms_fnc_RadioPool = {
@@ -142,9 +144,12 @@ ITW_CLASH_TestComms_fnc_ReconTasking = {
     private _distance = if (_destination isEqualTo []) then {-1} else {
         round (_scout distance2D _destination)
     };
+    private _distanceText = if (_distance < 0) then {""} else {
+        format [" | %1m",_distance]
+    };
     private _text = format [
-        "[C.L.A.S.H TEST] HAL: RECON TASKING | %1 (%2) | %3 | %4m",
-        _id,toUpperANSI _family,toUpperANSI _mode,_distance
+        "[C.L.A.S.H TEST] HAL: RECON TASKING | %1 (%2) | %3%4",
+        _id,toUpperANSI _family,toUpperANSI _mode,_distanceText
     ];
     private _pool = ["recon-tasking"] call ITW_CLASH_TestComms_fnc_RadioPool;
 
@@ -153,9 +158,80 @@ ITW_CLASH_TestComms_fnc_ReconTasking = {
     ] call ITW_CLASH_TestComms_fnc_Broadcast
 };
 
+// Observer-only transition mirror. Recovery chatter is keyed to an actual
+// inbound state, so the audible request means a recovery asset has genuinely
+// committed. Recon chatter is keyed to Recon Phase 0's active-mission registry.
+[] spawn {
+    scriptName "ITW_CLASH_TestCommsObserver";
+
+    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
+        sleep ITW_CLASH_TestCommsPollInterval;
+        if (!ITW_CLASH_TestCommsEnabled) then {continue};
+
+        if (!isNil "ITW_CLASH_Withdrawals") then {
+            {
+                private _id = _x;
+                private _entry = ITW_CLASH_Withdrawals getOrDefault [_id,[]];
+                if (_entry isEqualTo [] || {count _entry < 9}) then {continue};
+                private _group = _entry#0;
+                if (isNull _group || {{alive _x} count units _group == 0}) then {continue};
+
+                private _groundState = _group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""];
+                private _casevacState = _group getVariable ["ITW_CLASH_CASEVAC_State",""];
+                private _mode = "";
+                if (_groundState isEqualTo "inbound" || {_casevacState isEqualTo "ground-inbound"}) then {
+                    _mode = "ground";
+                } else {
+                    if (_casevacState isEqualTo "inbound") then {_mode = "air"};
+                };
+
+                private _stateToken = if (_mode isEqualTo "") then {""} else {
+                    format ["%1-inbound",_mode]
+                };
+                private _lastState = _group getVariable ["ITW_CLASH_TestComms_LastRecoveryState",""];
+                if !(_stateToken isEqualTo _lastState) then {
+                    _group setVariable ["ITW_CLASH_TestComms_LastRecoveryState",_stateToken];
+                    if (_stateToken isNotEqualTo "") then {
+                        private _survivors = {alive _x} count units _group;
+                        private _rearDistance = if ((_entry#5) isEqualTo []) then {-1} else {
+                            leader _group distance2D (_entry#5)
+                        };
+                        [
+                            _group,_id,_mode,_survivors,_rearDistance
+                        ] call ITW_CLASH_TestComms_fnc_RecoveryRequest;
+                    };
+                };
+            } forEach +(keys ITW_CLASH_Withdrawals);
+        };
+
+        if (!isNil "ITW_CLASH_ReconActiveGroups") then {
+            {
+                private _entry = ITW_CLASH_ReconActiveGroups getOrDefault [_x,[]];
+                if (_entry isEqualTo [] || {count _entry < 3}) then {continue};
+                _entry params ["_group","_mode","_startedAt"];
+                if (isNull _group || {{alive _x} count units _group == 0}) then {continue};
+
+                private _announcedAt = _group getVariable ["ITW_CLASH_TestComms_ReconAnnouncedAt",-1];
+                if (_announcedAt isEqualTo _startedAt) then {continue};
+                _group setVariable ["ITW_CLASH_TestComms_ReconAnnouncedAt",_startedAt];
+
+                private _family = _group getVariable ["ITW_CLASH_ReconSOFFamily","sof"];
+                private _hq = if (!isNil "ITW_CLASH_HALHQ") then {ITW_CLASH_HALHQ} else {grpNull};
+                [
+                    _group,_hq,_mode,_family,[]
+                ] call ITW_CLASH_TestComms_fnc_ReconTasking;
+            } forEach +(keys ITW_CLASH_ReconActiveGroups);
+        };
+    };
+
+    ITW_CLASH_TestCommsStarted = false;
+    diag_log "CLASH BOOT | test-comms-stopped";
+};
+
 diag_log format [
-    "CLASH BOOT | test-comms-ready | version=%1 global=true halRadio=true recoveryCooldown=%2 events=recovery-request,recon-tasking",
+    "CLASH BOOT | test-comms-ready | version=%1 global=true halRadio=true observerOnly=true poll=%2 recoveryCooldown=%3 events=recovery-request,recon-tasking",
     ITW_CLASH_TestCommsVersion,
+    ITW_CLASH_TestCommsPollInterval,
     ITW_CLASH_TestCommsRecoveryRequestCooldown
 ];
 true
