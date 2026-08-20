@@ -13,7 +13,7 @@ ITW_CLASH_ReconPhase0Version = 1;
     - Ordinary combat groups may still discover/report enemies naturally.
     - HAL still decides whether/when reconnaissance is required.
     - Impasse/C.L.A.S.H. does not spawn, purchase, replace, or requisition SOF here.
-    - Phase 0 does not force SOF into recon-only duty; Rangers/SEALs/FSB/OSS remain
+    - Phase 0 does not force SOF into recon-only duty; Rangers/SEALs/FSB/OSS/Viper remain
       available for their other HAL tasks unless HAL itself selects them for recon.
 
     This module uses HAL's native GoRecon / GoDefRecon implementations. It adds
@@ -24,7 +24,14 @@ ITW_CLASH_ReconSOFTokenFamilies = [
     ["ranger",["ranger","rangers"]],
     ["seal",["seal","seals"]],
     ["fsb",["fsb"]],
-    ["oss",["oss"]]
+    ["oss",["oss"]],
+    ["viper",["viper"]]
+];
+// Prefix families provide a deterministic fallback for vanilla/mod class sets
+// whose displayName/editor metadata may be localized or incomplete. Vanilla
+// Apex CSAT Viper infantry consistently use the O_V_* unit-class family.
+ITW_CLASH_ReconSOFClassPrefixes = [
+    ["viper",["o_v_"]]
 ];
 ITW_CLASH_ReconSOFExactClasses = [];
 ITW_CLASH_ReconPollInterval = 5;
@@ -72,6 +79,28 @@ ITW_CLASH_Recon_fnc_ClassifySOFGroup = {
 
     private _bestFamily = "";
     private _bestCount = 0;
+
+    // Deterministic class-family pass. This is intentionally prefix-based rather
+    // than an exact class list so all vanilla hex/ghex Viper role variants are
+    // recognized without hardcoding every TL/JTAC/marksman/medic classname.
+    {
+        _x params ["_family","_prefixes"];
+        private _matched = 0;
+        {
+            private _class = toLowerANSI typeOf _x;
+            if ((_prefixes findIf {(_class find _x) == 0}) >= 0) then {
+                _matched = _matched + 1;
+            };
+        } forEach _alive;
+        if (_matched > _bestCount) then {
+            _bestCount = _matched;
+            _bestFamily = _family;
+        };
+    } forEach ITW_CLASH_ReconSOFClassPrefixes;
+
+    // Semantic identity pass remains the portable path for faction/mod sets that
+    // expose their SOF identity in display names, faction/subcategory metadata,
+    // or class tokens rather than a stable class prefix.
     {
         _x params ["_family","_aliases"];
         private _matched = 0;
@@ -378,5 +407,3 @@ ITW_CLASH_Recon_fnc_EndMission = {
     ITW_CLASH_ReconPhase0Started = false;
     diag_log "CLASH BOOT | recon-phase0-stopped";
 };
-
-true
