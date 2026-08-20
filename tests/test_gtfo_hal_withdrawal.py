@@ -13,6 +13,10 @@ def gtfo() -> str:
     return text(MISSION / "ITW_CLASH_GTFO.sqf")
 
 
+def bookkeeping() -> str:
+    return text(MISSION / "ITW_CLASH_GTFO_Bookkeeping.sqf")
+
+
 def runtime() -> str:
     return text(MISSION / "ITW_CLASH_GTFO_Runtime.sqf")
 
@@ -75,6 +79,27 @@ def test_gtfo_start_keeps_group_hal_managed_and_never_uses_old_release_preemptio
     assert 'setVariable ["RydHQ_MIA",true]' not in start_fn
 
 
+def test_gtfo_bookkeeping_retires_only_stale_defense_state_after_successful_transition():
+    source = bookkeeping()
+    assert "ITW_CLASH_fnc_StartWithdrawal_GTFOStateBase = ITW_CLASH_fnc_StartWithdrawal" in source
+    base_call = source.index("private _result = _this call ITW_CLASH_fnc_StartWithdrawal_GTFOStateBase;")
+    retire_call = source.index("ITW_CLASH_GTFO_fnc_RetirePreviousTaskState", base_call)
+    assert base_call < retire_call
+    assert 'setVariable ["Defending",false]' in source
+    for token in ["RydHQ_DefSpot", "RydHQ_Def", "RydHQ_DefRes", "RydHQ_RecDefSpot"]:
+        assert token in source
+    for forbidden in [
+        "addWaypoint",
+        "setWaypoint",
+        'setCombatMode "BLUE"',
+        "enableAttack false",
+        "setBehaviourStrong",
+        "setSpeedMode",
+        'setVariable ["Break",true]',
+    ]:
+        assert forbidden not in source
+
+
 def test_gtfo_support_corridor_is_captured_per_group_and_immutable_during_foot_withdrawal():
     source = gtfo()
     assert '"ITW_CLASH_GTFO_Destination"' in source
@@ -117,6 +142,15 @@ def test_gtfo_runtime_hard_blocks_recon_without_reimplementing_recon():
     assert "_this call ITW_CLASH_GTFO_fnc_DefReconBase" in source
 
 
+def test_gtfo_arrival_radius_covers_native_restdecoy_jitter_and_logs_native_rest_owner():
+    source = runtime()
+    assert "ITW_CLASH_GTFO_ArrivalRadius = 160;" in source
+    assert "ITW_CLASH_WithdrawalArrivalRadius max ITW_CLASH_GTFO_ArrivalRadius" in source
+    assert '"native-rest-active"' in source
+    assert '"Resting" + str _group' in source
+    assert "waypointPosition [_group,_wpIndex]" in source
+
+
 def test_bootstrap_keeps_only_gtfo_authority_surface_mutable_until_bridge_install():
     source = bootstrap()
     assert "ITW_CLASH_PersistentDeferredFinalizers" in source
@@ -130,7 +164,9 @@ def test_bootstrap_keeps_only_gtfo_authority_surface_mutable_until_bridge_instal
     ]:
         assert token in source
     assert 'private _gtfoPath = "ITW_CLASH_GTFO.sqf";' in source
+    assert 'private _gtfoBookkeepingPath = "ITW_CLASH_GTFO_Bookkeeping.sqf";' in source
     assert "ITW_CLASH_PersistentDeferredFinalizers = [];" in source
+    assert '"ITW_CLASH_fnc_StartWithdrawal_GTFOStateBase"' in source
     assert '"CLASH BOOT | gtfo-bridge-loaded' in source
 
 
