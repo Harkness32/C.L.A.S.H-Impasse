@@ -19,10 +19,12 @@ if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
     Late-bound GTFO adapters.
 
     The synchronous GTFO controller bridge loads before Recon Phase 0 and the
-    shared evacuation boarding helper exist. These adapters wait for those
-    modules and then enforce only authority boundaries:
+    recovery modules exist. These adapters wait for those modules and enforce
+    only cross-system authority boundaries:
       - GTFO groups cannot be assigned recon.
       - Recovery becomes exclusive only after physical boarding completes.
+      - A pre-boarding recovery abort restarts HAL's native withdrawal after the
+        legacy recovery rendezvous waypoint has been abandoned.
       - Ongoing GTFO constraints are reasserted without writing tactical waypoints.
 */
 
@@ -149,6 +151,71 @@ if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
 };
 
 [] spawn {
+    scriptName "ITW_CLASH_GTFO_RecoveryFailureHandback";
+    private _deadline = time + 180;
+    waitUntil {
+        sleep 0.25;
+        (
+            !isNil "ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal" &&
+            {!isNil "ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal"}
+        ) || {time > _deadline}
+    };
+
+    if (time > _deadline || {
+        isNil "ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal" || {
+            isNil "ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal"
+        }
+    }) exitWith {
+        diag_log "CLASH BOOT | gtfo-recovery-failure-handback-deferred | recovery resume surface unavailable";
+    };
+
+    ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
+        params ["_mode","_group","_reason"];
+        if (isNull _group || {
+            !(_group getVariable ["ITW_CLASH_GTFO",false]) || {
+                !(_group getVariable ["ITW_CLASH_Managed",false])
+            }
+        }) exitWith {false};
+
+        // Before boarding, recovery has not taken HAL registration ownership,
+        // but its rendezvous helper has replaced the active GoRest waypoint.
+        // Break is HAL's native cancellation mechanism; GoRest/RYD_Wait consumes
+        // and clears it, while the GTFO constraint watchdog reasserts Exhausted
+        // so HAL starts a clean withdrawal on the next command cycle.
+        if (_group getVariable ["Resting" + str _group,false]) then {
+            _group setVariable ["Break",true];
+            ["recovery-handback-restart",[
+                [_group] call ITW_CLASH_fnc_GroupId,
+                _mode,
+                _reason,
+                _group getVariable ["ITW_CLASH_GTFO_State",""]
+            ]] call ITW_CLASH_GTFO_fnc_Log;
+            true
+        } else {
+            false
+        }
+    };
+
+    ITW_CLASH_GTFO_fnc_CASEVACResumeBase = ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal;
+    ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal = {
+        private _group = _this param [1,grpNull];
+        private _reason = _this param [2,"unknown"];
+        ["air",_group,_reason] call ITW_CLASH_GTFO_fnc_RequestNativeRestRestart;
+        _this call ITW_CLASH_GTFO_fnc_CASEVACResumeBase
+    };
+
+    ITW_CLASH_GTFO_fnc_GroundResumeBase = ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal;
+    ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal = {
+        private _group = _this param [1,grpNull];
+        private _reason = _this param [2,"unknown"];
+        ["ground",_group,_reason] call ITW_CLASH_GTFO_fnc_RequestNativeRestRestart;
+        _this call ITW_CLASH_GTFO_fnc_GroundResumeBase
+    };
+
+    diag_log "CLASH BOOT | gtfo-recovery-failure-handback-ready | version=1 nativeRestRestart=true";
+};
+
+[] spawn {
     scriptName "ITW_CLASH_GTFO_ConstraintWatch";
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep 2;
@@ -194,7 +261,7 @@ if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true constraintPoll=2 arrivalRadius=%2 nativeRestTelemetry=true",
+    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true recoveryFailureRestRestart=true constraintPoll=2 arrivalRadius=%2 nativeRestTelemetry=true",
     ITW_CLASH_GTFORuntimeVersion,
     ITW_CLASH_GTFO_ArrivalRadius
 ];
