@@ -4,6 +4,16 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GTFORuntimeStarted",false]) exitWith {};
 ITW_CLASH_GTFORuntimeStarted = true;
 ITW_CLASH_GTFORuntimeVersion = 1;
+ITW_CLASH_GTFO_ArrivalRadius = 160;
+
+// Native GoRest deliberately randomizes a RestDecoy rally by up to +/-100 m on
+// each horizontal axis. Its farthest valid rally is therefore ~141 m from the
+// Impasse corridor center. Keep rear absorption outside that entire native HAL
+// jitter envelope so a successful HAL withdrawal cannot stop 10-20 m short of
+// the old 125 m C.L.A.S.H. bubble and wait forever.
+if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
+    ITW_CLASH_WithdrawalArrivalRadius = ITW_CLASH_WithdrawalArrivalRadius max ITW_CLASH_GTFO_ArrivalRadius;
+};
 
 /*
     Late-bound GTFO adapters.
@@ -155,6 +165,7 @@ ITW_CLASH_GTFORuntimeVersion = 1;
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true constraintPoll=2",
-    ITW_CLASH_GTFORuntimeVersion
+    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true constraintPoll=2 arrivalRadius=%2",
+    ITW_CLASH_GTFORuntimeVersion,
+    ITW_CLASH_GTFO_ArrivalRadius
 ];
