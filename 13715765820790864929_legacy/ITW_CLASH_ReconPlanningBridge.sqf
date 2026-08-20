@@ -4,6 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPlanningBridgeStarted",false]) exitWith {};
 ITW_CLASH_ReconPlanningBridgeStarted = true;
 ITW_CLASH_ReconPlanningBridgeVersion = 1;
+ITW_CLASH_ReconPlanningRecoveryTimeout = 5;
 
 /*
     HAL recon planning bridge
@@ -28,6 +29,10 @@ ITW_CLASH_ReconPlanningBridgeVersion = 1;
       - NoDef/NoRecon are opened only inside the planning call
 
     After the native planner returns every modified HAL list is restored exactly.
+    A watchdog also owns a copy of the pre-window snapshot. If the native planner
+    script faults before normal restoration, the watchdog closes the temporary
+    semantic window instead of leaving HAL permanently reclassified.
+
     SOF therefore remains SpecFor for normal HAL direct-action behavior.
 */
 
@@ -69,6 +74,47 @@ ITW_CLASH_ReconPlanning_fnc_EligibleSOF = {
     }
 };
 
+ITW_CLASH_ReconPlanning_fnc_RestoreSnapshot = {
+    params ["_hq",["_source","normal"]];
+    if (isNull _hq) exitWith {false};
+
+    private _snapshot = _hq getVariable ["ITW_CLASH_ReconPlanningSnapshot",[]];
+    if (_snapshot isEqualTo [] || {count _snapshot < 7}) exitWith {
+        _hq setVariable ["ITW_CLASH_ReconPlanningDepth",0];
+        false
+    };
+
+    _snapshot params [
+        "_openedAt",
+        "_mode",
+        "_specFor0",
+        "_recon0",
+        "_noRecon0",
+        "_friends0",
+        "_noDef0"
+    ];
+
+    _hq setVariable ["RydHQ_SpecForG",+_specFor0];
+    _hq setVariable ["RydHQ_ReconG",+_recon0];
+    _hq setVariable ["RydHQ_NoRecon",+_noRecon0];
+    _hq setVariable ["RydHQ_Friends",+_friends0];
+    _hq setVariable ["RydHQ_NoDef",+_noDef0];
+    _hq setVariable ["ITW_CLASH_ReconPlanningDepth",0];
+    _hq setVariable ["ITW_CLASH_ReconPlanningSnapshot",nil];
+
+    if !(_source isEqualTo "normal") then {
+        ["window-recovered",[
+            _source,
+            _mode,
+            round ((diag_tickTime - _openedAt) * 100) / 100,
+            count _specFor0,
+            count _recon0,
+            count _friends0
+        ]] call ITW_CLASH_ReconPlanning_fnc_Log;
+    };
+    true
+};
+
 ITW_CLASH_ReconPlanning_fnc_CallNative = {
     params ["_mode","_args","_native"];
     private _hq = _args param [0,grpNull];
@@ -97,9 +143,20 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
 
     private _specForWindow = _specFor0 - _eligible;
     private _reconWindow = +_recon0;
-    { _reconWindow pushBackUnique _x } forEach _eligible;
+    {_reconWindow pushBackUnique _x} forEach _eligible;
     private _noReconWindow = _noRecon0 - _eligible;
 
+    // Store a non-local dead-man copy before mutating HAL. Normal completion
+    // clears it; the watchdog can recover it if execution faults in native code.
+    _hq setVariable ["ITW_CLASH_ReconPlanningSnapshot",[
+        diag_tickTime,
+        _mode,
+        +_specFor0,
+        +_recon0,
+        +_noRecon0,
+        +_friends0,
+        +_noDef0
+    ]];
     _hq setVariable ["ITW_CLASH_ReconPlanningDepth",1];
     _hq setVariable ["RydHQ_SpecForG",_specForWindow];
     _hq setVariable ["RydHQ_ReconG",_reconWindow];
@@ -130,12 +187,7 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
 
     // Restore HAL semantic identity immediately. Nothing about this bridge is a
     // persistent reclassification of SOF.
-    _hq setVariable ["RydHQ_SpecForG",_specFor0];
-    _hq setVariable ["RydHQ_ReconG",_recon0];
-    _hq setVariable ["RydHQ_NoRecon",_noRecon0];
-    _hq setVariable ["RydHQ_Friends",_friends0];
-    _hq setVariable ["RydHQ_NoDef",_noDef0];
-    _hq setVariable ["ITW_CLASH_ReconPlanningDepth",0];
+    [_hq,"normal"] call ITW_CLASH_ReconPlanning_fnc_RestoreSnapshot;
 
     ["window-close",[
         _mode,
@@ -212,8 +264,32 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
         ] call ITW_CLASH_ReconPlanning_fnc_CallNative
     };
 
+    // Dead-man restoration for a script error/abnormal escape inside a native
+    // planner call. In the normal synchronous path Depth returns to zero before
+    // this watcher gets another scheduler turn.
+    [] spawn {
+        scriptName "ITW_CLASH_ReconPlanningRecoveryWatch";
+        while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
+            sleep 1;
+            private _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+            if (isNull _hq) then {continue};
+            if ((_hq getVariable ["ITW_CLASH_ReconPlanningDepth",0]) <= 0) then {continue};
+
+            private _snapshot = _hq getVariable ["ITW_CLASH_ReconPlanningSnapshot",[]];
+            if (_snapshot isEqualTo [] || {count _snapshot < 1}) then {
+                _hq setVariable ["ITW_CLASH_ReconPlanningDepth",0];
+                continue;
+            };
+            private _openedAt = _snapshot#0;
+            if (diag_tickTime - _openedAt >= ITW_CLASH_ReconPlanningRecoveryTimeout) then {
+                [_hq,"watchdog-timeout"] call ITW_CLASH_ReconPlanning_fnc_RestoreSnapshot;
+            };
+        };
+    };
+
     diag_log format [
-        "CLASH BOOT | recon-planning-bridge-ready | version=%1 halChooses=true specForPersistent=true planningWindow=true anchorsSeparate=true",
-        ITW_CLASH_ReconPlanningBridgeVersion
+        "CLASH BOOT | recon-planning-bridge-ready | version=%1 halChooses=true specForPersistent=true planningWindow=true anchorsSeparate=true recoveryWatch=%2",
+        ITW_CLASH_ReconPlanningBridgeVersion,
+        ITW_CLASH_ReconPlanningRecoveryTimeout
     ];
 };
