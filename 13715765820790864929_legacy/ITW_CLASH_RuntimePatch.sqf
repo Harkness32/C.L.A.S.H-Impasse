@@ -9,6 +9,7 @@ ITW_CLASH_ReconstitutionTransitVersion = 1;
     - C.L.A.S.H. owns OPFOR point defense; Impasse garrison writes are suppressed.
     - Mixed combat squads remain eligible when they merely contain embedded support specialists.
     - Exhausted squads egress through the same Impasse attack-from base that supports their objective.
+    - Recovery-owned withdrawals retain their committed rear egress until absorption or explicit recovery failure.
     - Reconstituted squads stay in transit and are handed to HAL only after physical return to the AO.
     - Objective anchors must remain intact at six conscious soldiers or more.
 */
@@ -230,6 +231,58 @@ ITW_CLASH_fnc_GetEgressPoint = {
     params ["_group",["_preferredObjective",-1]];
     if (isNull _group) exitWith {[]};
 
+    // Once CASEVAC or Ground MEDEVAC owns a withdrawing squad, freeze the
+    // canonical rear destination to the withdrawal entry that the recovery
+    // asset committed to. The generic withdrawal auditor still measures that
+    // destination and may absorb the squad inside the rear envelope, but it
+    // must not retarget the egress, reset _lastOrder, or issue a competing
+    // foot MOVE while passengers are under recovery ownership.
+    private _casevacState = _group getVariable ["ITW_CLASH_CASEVAC_State",""];
+    private _groundState = _group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""];
+    private _recoveryState = if (_groundState isNotEqualTo "") then {
+        _groundState
+    } else {
+        _casevacState
+    };
+    private _lockedEgress = [];
+    if (_recoveryState isNotEqualTo "" && {
+        !isNil "ITW_CLASH_Withdrawals"
+    }) then {
+        private _id = [_group] call ITW_CLASH_fnc_GroupId;
+        private _withdrawal = ITW_CLASH_Withdrawals getOrDefault [_id,[]];
+        if (count _withdrawal >= 8 && {
+            (_withdrawal#5) isNotEqualTo []
+        }) then {
+            _lockedEgress = [
+                +(_withdrawal#5),
+                _withdrawal#6,
+                _withdrawal#7
+            ];
+
+            private _nextLog = _group getVariable [
+                "ITW_CLASH_RecoveryEgressLockLogAt",
+                0
+            ];
+            if (time >= _nextLog) then {
+                _group setVariable [
+                    "ITW_CLASH_RecoveryEgressLockLogAt",
+                    time + 60
+                ];
+                private _leader = leader _group;
+                ["recovery-egress-locked",[
+                    _id,
+                    _recoveryState,
+                    _withdrawal#6,
+                    _withdrawal#7,
+                    if (isNull _leader) then {-1} else {
+                        round (_leader distance2D (_withdrawal#5))
+                    }
+                ]] call ITW_CLASH_fnc_Log;
+            };
+        };
+    };
+    if (_lockedEgress isNotEqualTo []) exitWith {_lockedEgress};
+
     private _corridor = [
         _preferredObjective
     ] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
@@ -363,7 +416,7 @@ if (!isNil "SKL_fnc_CompileFinal") then {
 };
 
 diag_log format [
-    "CLASH BOOT | runtime-patch-ready | version=%1",
+    "CLASH BOOT | runtime-patch-ready | version=%1 recoveryEgressLock=true",
     ITW_CLASH_RuntimePatchVersion
 ];
 diag_log format [
