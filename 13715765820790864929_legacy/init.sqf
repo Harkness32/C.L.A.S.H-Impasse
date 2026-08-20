@@ -132,6 +132,17 @@ if (isServer) then {
     } else {
         diag_log "CLASH BOOT | casevac-missing | walking withdrawal remains active";
     };
+
+    // GTFO's synchronous bridge is installed by the bootstrap. Its runtime
+    // adapter waits for Recon Phase 0 and the shared boarding helper so it can
+    // enforce only cross-system authority boundaries once those surfaces exist.
+    if (missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]) then {
+        if (fileExists "ITW_CLASH_GTFO_Runtime.sqf") then {
+            [] execVM "ITW_CLASH_GTFO_Runtime.sqf";
+        } else {
+            diag_log "CLASH BOOT | gtfo-runtime-missing | core HAL withdrawal bridge remains active without late guards";
+        };
+    };
 };
 
 [] execVM "ITW_Start.sqf";
