@@ -33,6 +33,10 @@ ITW_CLASH_ReconPlanningRecoveryTimeout = 5;
     script faults before normal restoration, the watchdog closes the temporary
     semantic window instead of leaving HAL permanently reclassified.
 
+    The bridge arms only after Recon Phase 0 has published its saved native
+    GoRecon/GoDefRecon handles. That guarantees the SOF-only execution gate is
+    already installed before C.L.A.S.H. exposes additional recon candidates.
+
     SOF therefore remains SpecFor for normal HAL direct-action behavior.
 */
 
@@ -234,16 +238,29 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
             missionNamespace getVariable ["ITW_CLASH_HALReady",false] &&
             {!isNil "ITW_CLASH_SOF_fnc_Classify"} &&
             {!isNil "HAL_HQOrders"} &&
-            {!isNil "HAL_HQOrdersDef"}
+            {!isNil "HAL_HQOrdersDef"} &&
+            {!isNil "ITW_CLASH_Recon_fnc_NativeGoRecon"} &&
+            {!isNil "ITW_CLASH_Recon_fnc_NativeGoDefRecon"}
         ) || {time > _deadline}
     };
 
     if (time > _deadline || {
-        isNil "HAL_HQOrders" || {isNil "HAL_HQOrdersDef"}
+        isNil "HAL_HQOrders" || {
+            isNil "HAL_HQOrdersDef" || {
+                isNil "ITW_CLASH_Recon_fnc_NativeGoRecon" || {
+                    isNil "ITW_CLASH_Recon_fnc_NativeGoDefRecon"
+                }
+            }
+        }
     }) exitWith {
         ITW_CLASH_ReconPlanningBridgeStarted = false;
-        diag_log "CLASH BOOT | recon-planning-bridge-deferred | native HAL planner surface unavailable";
+        diag_log "CLASH BOOT | recon-planning-bridge-deferred | HAL planner or Recon Phase 0 gate unavailable";
     };
+
+    // Recon Phase 0 sets its saved native handles immediately before replacing
+    // HAL_GoRecon/HAL_GoDefRecon. Yield once so those public gate assignments and
+    // the phase boot record finish before a planning window can ever open.
+    sleep 0.25;
 
     ITW_CLASH_ReconPlanning_fnc_NativeHQOrders = HAL_HQOrders;
     ITW_CLASH_ReconPlanning_fnc_NativeHQOrdersDef = HAL_HQOrdersDef;
@@ -288,7 +305,7 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-planning-bridge-ready | version=%1 halChooses=true specForPersistent=true planningWindow=true anchorsSeparate=true recoveryWatch=%2",
+        "CLASH BOOT | recon-planning-bridge-ready | version=%1 halChooses=true specForPersistent=true planningWindow=true phase0Gate=true anchorsSeparate=true recoveryWatch=%2",
         ITW_CLASH_ReconPlanningBridgeVersion,
         ITW_CLASH_ReconPlanningRecoveryTimeout
     ];
