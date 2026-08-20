@@ -78,7 +78,8 @@ def test_diagnostics_capture_attack_and_ai_feature_state():
     assert "combatBehaviour _unit" in source
     assert "captive _unit" in source
     assert "targetKnowledge _other" in source
-    assert "targets _group" in source
+    assert "_group targets []" in source
+    assert "targets _group" not in source
 
 
 def test_diagnostics_capture_hal_recon_and_defensive_bookkeeping():
