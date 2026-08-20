@@ -46,7 +46,7 @@ if (isServer) then {
         diag_log "CLASH BOOT | WARNING | reconstitution-preinit-authority-missing | baseline/fail-open functions retained";
     };
     if (missionNamespace getVariable ["ITW_CLASH_PhysicalMovementPreInitReady",false]) then {
-        diag_log "CLASH BOOT | physical-movement-preinit-authority-confirmed | strategicTeleport=false";
+        diag_log "CLASH BOOT | physical-movement-preinit-authority-confirmed | midBattleMoveUpTeleport=false initialStaging=true";
     } else {
         diag_log "CLASH BOOT | WARNING | physical-movement-preinit-authority-missing | baseline movement behavior retained";
     };
