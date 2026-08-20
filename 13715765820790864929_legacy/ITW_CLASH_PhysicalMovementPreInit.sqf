@@ -1,11 +1,26 @@
 #include "defines.hpp"
 
-if (!isServer) exitWith {false};
+ITW_CLASH_PhysicalMovementPreInitVersion = 2;
+
+// Every machine receives this helper before gameplay. The server-side
+// ITW_AtkSafeMove override uses it when a group is owned by a headless client,
+// so Live mode never falls through to that machine's finalized baseline
+// setPos-based SafeMove implementation.
+ITW_CLASH_fnc_PhysicalMoveLocal = {
+    params ["_group","_destination"];
+    if (isNull _group || {!local _group} || {_destination isEqualTo []}) exitWith {false};
+    if (surfaceIsWater _destination) exitWith {false};
+    _group setSpeedMode "FULL";
+    _group move _destination;
+    true
+};
+["ITW_CLASH_fnc_PhysicalMoveLocal"] call SKL_fnc_CompileFinal;
+
+if (!isServer) exitWith {true};
 if (missionNamespace getVariable ["ITW_CLASH_PhysicalMovementPreInitStarted",false]) exitWith {
     missionNamespace getVariable ["ITW_CLASH_PhysicalMovementPreInitReady",false]
 };
 ITW_CLASH_PhysicalMovementPreInitStarted = true;
-ITW_CLASH_PhysicalMovementPreInitVersion = 1;
 ITW_CLASH_PhysicalMovementPreInitReady = false;
 
 if (isNil "ITW_AtkSafeMove" || {isNil "ITW_AtkAddVehicle"}) exitWith {
@@ -19,6 +34,8 @@ ITW_CLASH_AtkAddVehicle_Baseline = ITW_AtkAddVehicle;
 ITW_AtkSafeMove = {
     params ["_group","_pos"];
 
+    // Outside C.L.A.S.H. Live mode preserve exact baseline Impasse semantics,
+    // including its startup/population relocation behavior.
     if !(missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false]) exitWith {
         _this call ITW_CLASH_AtkSafeMove_Baseline
     };
@@ -28,33 +45,35 @@ ITW_AtkSafeMove = {
     if (count _destination < 3) then {_destination pushBack 0};
     _destination set [2,0];
 
-    if (!local _group) exitWith {
-        [[_group,_destination],"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup;
-    };
-
     private _leader = leader _group;
     private _from = if (isNull _leader) then {[0,0,0]} else {getPosATL _leader};
     private _distance = if (isNull _leader) then {-1} else {round (_leader distance2D _destination)};
+    private _id = if (isNil "ITW_CLASH_fnc_GroupId") then {str _group} else {
+        [_group] call ITW_CLASH_fnc_GroupId
+    };
 
     if (surfaceIsWater _destination) exitWith {
         if (!isNil "ITW_CLASH_fnc_Log") then {
             ["physical-move-rejected-water",[
-                if (isNil "ITW_CLASH_fnc_GroupId") then {str _group} else {[_group] call ITW_CLASH_fnc_GroupId},
-                _from,_destination,_distance
+                _id,_from,_destination,_distance
             ]] call ITW_CLASH_fnc_Log;
         };
     };
 
-    // C.L.A.S.H. Live mode forbids strategic setPos relocation of an existing
-    // formation. Preserve the caller's intent as a physical move order instead.
-    _group setSpeedMode "FULL";
-    _group move _destination;
+    // Never remote-execute ITW_AtkSafeMove itself in Live mode: a headless
+    // client owns a finalized baseline copy. Execute the dedicated physical
+    // helper on whichever machine owns the group instead.
+    if (local _group) then {
+        [_group,_destination] call ITW_CLASH_fnc_PhysicalMoveLocal;
+    } else {
+        [[_group,_destination],"ITW_CLASH_fnc_PhysicalMoveLocal",_group] call ITW_FncRemoteLocalGroup;
+    };
 
     if (!isNil "ITW_CLASH_fnc_Log") then {
         ["strategic-teleport-suppressed",[
-            if (isNil "ITW_CLASH_fnc_GroupId") then {str _group} else {[_group] call ITW_CLASH_fnc_GroupId},
-            _from,_destination,_distance,
-            _group getVariable ["ITW_CLASH_AssignedObjective",VAR_GET_OBJ_IDX(_group)]
+            _id,_from,_destination,_distance,
+            _group getVariable ["ITW_CLASH_AssignedObjective",VAR_GET_OBJ_IDX(_group)],
+            groupOwner _group
         ]] call ITW_CLASH_fnc_Log;
     };
 };
@@ -96,7 +115,7 @@ private _addVehicleFinal = ["ITW_AtkAddVehicle"] call SKL_fnc_CompileFinal;
 ITW_CLASH_PhysicalMovementPreInitReady = _safeMoveFinal && _addVehicleFinal;
 
 diag_log format [
-    "CLASH BOOT | physical-movement-ready | version=%1 safeMove=%2 addVehicle=%3 strategicTeleport=false",
+    "CLASH BOOT | physical-movement-ready | version=%1 safeMove=%2 addVehicle=%3 strategicTeleport=false hcSafe=true",
     ITW_CLASH_PhysicalMovementPreInitVersion,
     _safeMoveFinal,
     _addVehicleFinal
