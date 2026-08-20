@@ -20,10 +20,14 @@ def test_preinit_defers_and_installs_physical_movement_patch():
 
 def test_live_safe_move_is_physical_and_baseline_remains_fail_open():
     source = text("ITW_CLASH_PhysicalMovementPreInit.sqf")
+    assert 'ITW_CLASH_fnc_PhysicalMovementActive = {' in source
     assert 'missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false]' in source
+    assert 'missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]' in source
+    assert 'missionNamespace getVariable ["ITW_ParamCLASHObserver",0]) == 2' in source
     assert '_this call ITW_CLASH_AtkSafeMove_Baseline' in source
     assert '_group move _destination;' in source
     assert '"strategic-teleport-suppressed"' in source
+    assert 'failOpen=true' in source
 
     live_block = source[source.index('ITW_AtkSafeMove = {'):source.index('ITW_AtkAddVehicle = {')]
     assert 'setPosATL' not in live_block
@@ -32,24 +36,26 @@ def test_live_safe_move_is_physical_and_baseline_remains_fail_open():
 
 def test_headless_owned_groups_use_physical_helper_not_remote_baseline_safemove():
     source = text("ITW_CLASH_PhysicalMovementPreInit.sqf")
-    assert 'ITW_CLASH_PhysicalMovementPreInitVersion = 2;' in source
+    assert 'ITW_CLASH_PhysicalMovementPreInitVersion = 3;' in source
     assert 'ITW_CLASH_fnc_PhysicalMoveLocal = {' in source
     assert '["ITW_CLASH_fnc_PhysicalMoveLocal"] call SKL_fnc_CompileFinal;' in source
-    assert '[[ _group,_destination],"ITW_AtkSafeMove"' not in source
-    assert '"ITW_CLASH_fnc_PhysicalMoveLocal",_group] call ITW_FncRemoteLocalGroup' in source
+    live_block = source[source.index('ITW_AtkSafeMove = {'):source.index('ITW_AtkAddVehicle = {')]
+    assert '"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup' not in live_block
+    assert '"ITW_CLASH_fnc_PhysicalMoveLocal",_group] call ITW_FncRemoteLocalGroup' in live_block
     assert 'hcSafe=true' in source
 
 
 def test_live_vehicle_add_disables_initial_relocation():
     source = text("ITW_CLASH_PhysicalMovementPreInit.sqf")
     add_block = source[source.index('ITW_AtkAddVehicle = {'):source.index('isNil {', source.index('ITW_AtkAddVehicle = {'))]
+    assert 'call ITW_CLASH_fnc_PhysicalMovementActive' in add_block
     assert '_args set [2,false];' in add_block
     assert '_args pushBack false;' in add_block
     assert '"vehicle-teleport-suppressed"' in add_block
     assert '_args call ITW_CLASH_AtkAddVehicle_Baseline' in add_block
 
 
-def test_physical_movement_patch_finalizes_only_its_deferred_surface():
+def test_physical_movement_patch_finalizes_only_its_deferred_attack_surface():
     source = text("ITW_CLASH_PhysicalMovementPreInit.sqf")
     assert 'ITW_CLASH_DeferredFinalizers' in source
     assert '["ITW_AtkSafeMove","ITW_AtkAddVehicle"]' in source
