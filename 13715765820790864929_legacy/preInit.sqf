@@ -13,12 +13,14 @@ ITW_CLASH_fnc_ObserveLifecycle = {false};
 diag_log "CLASH BOOT | preInit | fail-open hooks installed; controller deferred to init";
 
 // Attack and enemy source are compiled during preInit, before init.sqf can run.
-// Keep only the three functions that C.L.A.S.H. must replace mutable on the
-// server. SKL_fnc_CompileFinal honors this list; clients retain baseline finals.
+// Keep only the functions that C.L.A.S.H. must replace mutable on the server.
+// SKL_fnc_CompileFinal honors this list; clients retain baseline finals.
 if (isServer) then {
     ITW_CLASH_DeferredFinalizers = [
         "ITW_AtkDispatchReconstitutionTransport",
         "ITW_AtkReconstitutionTransitManager",
+        "ITW_AtkSafeMove",
+        "ITW_AtkAddVehicle",
         "ITW_EnemyGroupCallback"
     ];
     diag_log format [
@@ -33,17 +35,21 @@ isNil {call compile preprocessFileLineNumbers "ITW_Airfield.sqf";              }
 isNil {call compile preprocessFileLineNumbers "ITW_Ally.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Attack.sqf";                };
 
-// The canonical Attack definitions now exist and their two selected finalizers
-// were skipped. Install/finalize the corrected functions synchronously while we
-// are still in preInit, before any gameplay coroutine can start.
+// The canonical Attack definitions now exist and the selected finalizers were
+// skipped. Install/finalize the corrected functions synchronously while we are
+// still in preInit, before any gameplay coroutine can start.
 if (isServer) then {
     private _dispatchFixed = false;
     private _transitFixed = false;
+    private _physicalMovementFixed = false;
     if (fileExists "ITW_CLASH_ReconstitutionDispatchFix.sqf") then {
         _dispatchFixed = call compile preprocessFileLineNumbers "ITW_CLASH_ReconstitutionDispatchFix.sqf";
     };
     if (fileExists "ITW_CLASH_ReconstitutionTransitFix.sqf") then {
         _transitFixed = call compile preprocessFileLineNumbers "ITW_CLASH_ReconstitutionTransitFix.sqf";
+    };
+    if (fileExists "ITW_CLASH_PhysicalMovementPreInit.sqf") then {
+        _physicalMovementFixed = call compile preprocessFileLineNumbers "ITW_CLASH_PhysicalMovementPreInit.sqf";
     };
 
     if (!_dispatchFixed) then {
@@ -56,13 +62,24 @@ if (isServer) then {
         ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;
         diag_log "CLASH BOOT | preinit-reconstitution-transit-fallback | baseline finalized";
     };
+    if (!_physicalMovementFixed) then {
+        ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkSafeMove","ITW_AtkAddVehicle"];
+        ["ITW_AtkSafeMove"] call SKL_fnc_CompileFinal;
+        ["ITW_AtkAddVehicle"] call SKL_fnc_CompileFinal;
+        diag_log "CLASH BOOT | physical-movement-fallback | baseline teleport behavior finalized";
+    };
 
     ITW_CLASH_ReconstitutionPreInitReady = _dispatchFixed && _transitFixed;
+    ITW_CLASH_PhysicalMovementPreInitReady = _physicalMovementFixed;
     diag_log format [
         "CLASH BOOT | reconstitution-preinit-authority | ready=%1 dispatch=%2 transit=%3",
         ITW_CLASH_ReconstitutionPreInitReady,
         _dispatchFixed,
         _transitFixed
+    ];
+    diag_log format [
+        "CLASH BOOT | physical-movement-preinit-authority | ready=%1",
+        ITW_CLASH_PhysicalMovementPreInitReady
     ];
 };
 
