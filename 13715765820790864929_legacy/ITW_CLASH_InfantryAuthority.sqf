@@ -136,8 +136,17 @@ ITW_CLASH_fnc_ClassifyGroup = {
 ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints = {
     if (isNull ITW_CLASH_HALHQ) exitWith {false};
 
+    // Remove only the compatibility constraints this layer wrote on the previous
+    // pass. Anchors, GTFO and any native/manual NoAttack/NoRecon entries survive.
+    private _previousGarrisons = missionNamespace getVariable [
+        "ITW_CLASH_InfantryAuthorityGarrisons",
+        []
+    ];
     private _noAttack = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoAttack",[]]);
     private _noRecon = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoRecon",[]]);
+    _noAttack = _noAttack - _previousGarrisons;
+    _noRecon = _noRecon - _previousGarrisons;
+
     private _garrisons = [];
     private _sofGarrisonsIgnored = [];
 
@@ -162,6 +171,10 @@ ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints = {
         _noRecon pushBackUnique _group;
     } forEach +ITW_CLASH_ManagedGroups;
 
+    missionNamespace setVariable [
+        "ITW_CLASH_InfantryAuthorityGarrisons",
+        +_garrisons
+    ];
     ITW_CLASH_HALHQ setVariable ["RydHQ_NoAttack",_noAttack];
     ITW_CLASH_HALHQ setVariable ["RydHQ_NoRecon",_noRecon];
     RydHQ_NoAttack = +_noAttack;
@@ -188,7 +201,7 @@ ITW_CLASH_fnc_ApplyObjectiveDoctrine = {
 };
 
 diag_log format [
-    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true supportSpecialistsHAL=true transportHandoff=true",
+    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true garrisonConstraintsSelfCleaning=true supportSpecialistsHAL=true transportHandoff=true",
     ITW_CLASH_InfantryAuthorityVersion
 ];
 
