@@ -18,15 +18,21 @@ ITW_CLASH_ReconPlanningRecoveryTimeout = 5;
     Offensive planning:
       - eligible SOF temporarily leaves SpecForG
       - eligible SOF temporarily enters ReconG
-      - NoRecon is opened for those groups
-      - ReconG already keeps them out of native ordinary AttackAv
+      - all other managed groups are temporarily in NoRecon
+      - ReconG already keeps exposed SOF out of native ordinary AttackAv
       - this window opens only while RydHQ_ReconDone is false
+
+    The NoRecon planning view matters for HAL bookkeeping: HQOrders increments
+    ReconStage/ReconStage2 before spawning GoRecon. Filtering conventional groups
+    before native selection prevents a rejected non-SOF candidate from consuming
+    a false recon stage; Phase 0's execution wrapper remains the last-line gate.
 
     Defensive planning:
       - eligible SOF temporarily leaves SpecForG and enters ReconG
       - eligible SOF is temporarily removed from Friends so it cannot enter
         ordinary _LMCU defense while remaining explicitly available in _recDef
       - NoDef/NoRecon are opened only inside the planning call
+      - Phase 0 remains authoritative against any non-SOF defensive candidate
 
     After the native planner returns every modified HAL list is restored exactly.
     A watchdog also owns a copy of the pre-window snapshot. If the native planner
@@ -148,7 +154,15 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
     private _specForWindow = _specFor0 - _eligible;
     private _reconWindow = +_recon0;
     {_reconWindow pushBackUnique _x} forEach _eligible;
-    private _noReconWindow = _noRecon0 - _eligible;
+
+    // Dedicated recon is SOF-only. Prevent every other currently managed group
+    // from reaching HAL's offensive recon dispatch loop at all; this avoids the
+    // native pre-spawn recon-stage increment that the Phase 0 reject wrapper
+    // cannot safely rewind asynchronously.
+    private _blockedManaged = ITW_CLASH_ManagedGroups - _eligible;
+    private _noReconWindow = +_noRecon0;
+    {_noReconWindow pushBackUnique _x} forEach _blockedManaged;
+    _noReconWindow = _noReconWindow - _eligible;
 
     // Store a non-local dead-man copy before mutating HAL. Normal completion
     // clears it; the watchdog can recover it if execution faults in native code.
@@ -180,6 +194,7 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
             [_x] call ITW_CLASH_fnc_GroupId,
             _x getVariable ["ITW_CLASH_ReconSOFFamily","sof"]
         ]},
+        count _blockedManaged,
         count _specFor0,
         count _recon0,
         _hq getVariable ["RydHQ_ReconStage",-1],
@@ -305,7 +320,7 @@ ITW_CLASH_ReconPlanning_fnc_CallNative = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-planning-bridge-ready | version=%1 halChooses=true specForPersistent=true planningWindow=true phase0Gate=true anchorsSeparate=true recoveryWatch=%2",
+        "CLASH BOOT | recon-planning-bridge-ready | version=%1 halChooses=true specForPersistent=true planningWindow=true phase0Gate=true conventionalStageGuard=true anchorsSeparate=true recoveryWatch=%2",
         ITW_CLASH_ReconPlanningBridgeVersion,
         ITW_CLASH_ReconPlanningRecoveryTimeout
     ];
