@@ -15,6 +15,10 @@ ITW_CLASH_ReconPhase0Version = 1;
     - Impasse/C.L.A.S.H. does not spawn, purchase, replace, or requisition SOF here.
     - Phase 0 does not force SOF into recon-only duty; Rangers/SEALs/FSB/OSS/Viper remain
       available for their other HAL tasks unless HAL itself selects them for recon.
+    - SOF capability is presence-based: one positively identified SOF operator is enough
+      to make the formation SOF-capable for dedicated recon.
+    - Once positively identified, SOF identity is latched for that group's lifetime unless
+      an explicit ITW_CLASH_ReconSOFManual=false override is applied.
 
     This module uses HAL's native GoRecon / GoDefRecon implementations. It adds
     a mission-side eligibility gate and telemetry without repacking NR6.
@@ -59,6 +63,8 @@ ITW_CLASH_Recon_fnc_ClassifySOFGroup = {
     params ["_group"];
     if (isNull _group) exitWith {[false,"null-group",0,0,[]]};
 
+    // Explicit operator policy always wins, including over a previously latched
+    // identity. Clearing the manual variable returns the group to its latched state.
     private _manual = _group getVariable ["ITW_CLASH_ReconSOFManual",nil];
     if (!isNil "_manual" && {_manual isEqualType true}) exitWith {
         [_manual,if (_manual) then {"manual-allow"} else {"manual-deny"},0,{alive _x} count units _group,(units _group) apply {typeOf _x}]
@@ -66,19 +72,30 @@ ITW_CLASH_Recon_fnc_ClassifySOFGroup = {
 
     private _alive = (units _group) select {alive _x};
     if (_alive isEqualTo []) exitWith {[false,"no-alive-units",0,0,[]]};
-
     private _classes = _alive apply {typeOf _x};
+
+    // Once a formation has positively presented SOF identity, casualties,
+    // replacements, or attachments must not make it oscillate back to conventional.
+    if (_group getVariable ["ITW_CLASH_ReconSOFLatched",false]) exitWith {
+        [
+            true,
+            _group getVariable ["ITW_CLASH_ReconSOFLatchedFamily","sof"],
+            0,
+            count _alive,
+            _classes
+        ]
+    };
+
     private _exactMatched = _alive select {
         (toLowerANSI typeOf _x) in (ITW_CLASH_ReconSOFExactClasses apply {toLowerANSI _x})
     };
     if (_exactMatched isNotEqualTo []) exitWith {
-        private _needed = floor ((count _alive) / 2) + 1;
-        private _count = count _exactMatched;
-        [_count >= _needed,"exact-class",_count,count _alive,_classes]
+        [true,"exact-class",count _exactMatched,count _alive,_classes]
     };
 
     private _bestFamily = "";
     private _bestCount = 0;
+    private _familiesPresent = [];
 
     // Deterministic class-family pass. This is intentionally prefix-based rather
     // than an exact class list so all vanilla hex/ghex Viper role variants are
@@ -92,6 +109,7 @@ ITW_CLASH_Recon_fnc_ClassifySOFGroup = {
                 _matched = _matched + 1;
             };
         } forEach _alive;
+        if (_matched > 0) then {_familiesPresent pushBackUnique _family};
         if (_matched > _bestCount) then {
             _bestCount = _matched;
             _bestFamily = _family;
@@ -118,20 +136,23 @@ ITW_CLASH_Recon_fnc_ClassifySOFGroup = {
                 _matched = _matched + 1;
             };
         } forEach _alive;
+        if (_matched > 0) then {_familiesPresent pushBackUnique _family};
         if (_matched > _bestCount) then {
             _bestCount = _matched;
             _bestFamily = _family;
         };
     } forEach ITW_CLASH_ReconSOFTokenFamilies;
 
-    // Strict-majority classification prevents one embedded SOF/specialist unit
-    // from turning a tiny mixed or otherwise conventional squad into a dedicated
-    // recon asset. A lone surviving SOF operator still qualifies 1/1.
-    private _required = floor ((count _alive) / 2) + 1;
-    private _isSOF = _bestCount >= _required;
+    // Presence, not percentage, defines SOF capability. This deliberately allows
+    // mixed SOF/conventional hunter-killer teams, sniper/spotter pairs, attachments,
+    // and battered formations to remain valid HAL recon assets.
+    private _isSOF = _bestCount > 0;
+    private _family = if (!_isSOF) then {"non-sof"} else {
+        if ((count _familiesPresent) > 1) then {"mixed-sof"} else {_bestFamily}
+    };
     [
         _isSOF,
-        if (_isSOF) then {_bestFamily} else {"non-sof"},
+        _family,
         _bestCount,
         count _alive,
         _classes
@@ -143,6 +164,13 @@ ITW_CLASH_Recon_fnc_MarkSOF = {
     if (isNull _group) exitWith {};
     _group setVariable ["ITW_CLASH_ReconSOF",_classification#0];
     _group setVariable ["ITW_CLASH_ReconSOFFamily",_classification#1];
+
+    if ((_classification#0) && {
+        !(_group getVariable ["ITW_CLASH_ReconSOFLatched",false])
+    }) then {
+        _group setVariable ["ITW_CLASH_ReconSOFLatched",true];
+        _group setVariable ["ITW_CLASH_ReconSOFLatchedFamily",_classification#1];
+    };
 
     if ((_classification#0) && {!(_group in ITW_CLASH_ReconDetectedLogged)}) then {
         ITW_CLASH_ReconDetectedLogged pushBack _group;
@@ -353,7 +381,7 @@ ITW_CLASH_Recon_fnc_EndMission = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-phase0-ready | version=%1 sofOnly=true nativeHAL=true spawning=false requisition=false",
+        "CLASH BOOT | recon-phase0-ready | version=%1 sofOnly=true nativeHAL=true spawning=false requisition=false presenceBased=true latched=true",
         ITW_CLASH_ReconPhase0Version
     ];
 
@@ -370,12 +398,14 @@ ITW_CLASH_Recon_fnc_EndMission = {
 
         private _managed = +ITW_CLASH_ManagedGroups;
         private _nonSOF = [];
+        private _sofManaged = [];
         {
             private _group = _x;
             if (isNull _group || {{alive _x} count units _group == 0}) then {continue};
             private _classification = [_group] call ITW_CLASH_Recon_fnc_ClassifySOFGroup;
             [_group,_classification] call ITW_CLASH_Recon_fnc_MarkSOF;
             if (_classification#0) then {
+                _sofManaged pushBack _group;
                 if (_group in (ITW_CLASH_HALHQ getVariable ["RydHQ_SpecForG",[]]) && {
                     !(_group in ITW_CLASH_ReconSpecForWarned)
                 }) then {
@@ -391,7 +421,10 @@ ITW_CLASH_Recon_fnc_EndMission = {
             };
         } forEach _managed;
 
+        // A group that newly presents SOF identity must be released from the
+        // first-line NoRecon filter immediately; the wrapper remains the final gate.
         private _noRecon = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoRecon",[]]);
+        _noRecon = _noRecon - _sofManaged;
         {
             _noRecon pushBackUnique _x;
         } forEach _nonSOF;
