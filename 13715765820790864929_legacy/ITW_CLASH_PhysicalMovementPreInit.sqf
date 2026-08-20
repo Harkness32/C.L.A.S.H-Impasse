@@ -1,0 +1,105 @@
+#include "defines.hpp"
+
+if (!isServer) exitWith {false};
+if (missionNamespace getVariable ["ITW_CLASH_PhysicalMovementPreInitStarted",false]) exitWith {
+    missionNamespace getVariable ["ITW_CLASH_PhysicalMovementPreInitReady",false]
+};
+ITW_CLASH_PhysicalMovementPreInitStarted = true;
+ITW_CLASH_PhysicalMovementPreInitVersion = 1;
+ITW_CLASH_PhysicalMovementPreInitReady = false;
+
+if (isNil "ITW_AtkSafeMove" || {isNil "ITW_AtkAddVehicle"}) exitWith {
+    diag_log "CLASH BOOT | FAILED | physical-movement-source-missing";
+    false
+};
+
+ITW_CLASH_AtkSafeMove_Baseline = ITW_AtkSafeMove;
+ITW_CLASH_AtkAddVehicle_Baseline = ITW_AtkAddVehicle;
+
+ITW_AtkSafeMove = {
+    params ["_group","_pos"];
+
+    if !(missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false]) exitWith {
+        _this call ITW_CLASH_AtkSafeMove_Baseline
+    };
+    if (isNull _group || {_pos isEqualTo []}) exitWith {};
+
+    private _destination = +_pos;
+    if (count _destination < 3) then {_destination pushBack 0};
+    _destination set [2,0];
+
+    if (!local _group) exitWith {
+        [[_group,_destination],"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup;
+    };
+
+    private _leader = leader _group;
+    private _from = if (isNull _leader) then {[0,0,0]} else {getPosATL _leader};
+    private _distance = if (isNull _leader) then {-1} else {round (_leader distance2D _destination)};
+
+    if (surfaceIsWater _destination) exitWith {
+        if (!isNil "ITW_CLASH_fnc_Log") then {
+            ["physical-move-rejected-water",[
+                if (isNil "ITW_CLASH_fnc_GroupId") then {str _group} else {[_group] call ITW_CLASH_fnc_GroupId},
+                _from,_destination,_distance
+            ]] call ITW_CLASH_fnc_Log;
+        };
+    };
+
+    // C.L.A.S.H. Live mode forbids strategic setPos relocation of an existing
+    // formation. Preserve the caller's intent as a physical move order instead.
+    _group setSpeedMode "FULL";
+    _group move _destination;
+
+    if (!isNil "ITW_CLASH_fnc_Log") then {
+        ["strategic-teleport-suppressed",[
+            if (isNil "ITW_CLASH_fnc_GroupId") then {str _group} else {[_group] call ITW_CLASH_fnc_GroupId},
+            _from,_destination,_distance,
+            _group getVariable ["ITW_CLASH_AssignedObjective",VAR_GET_OBJ_IDX(_group)]
+        ]] call ITW_CLASH_fnc_Log;
+    };
+};
+
+ITW_AtkAddVehicle = {
+    private _args = +_this;
+    private _requestedTeleport = if (count _args > 2) then {_args#2} else {true};
+
+    if (missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false]) then {
+        if (count _args > 2) then {
+            _args set [2,false];
+        } else {
+            _args pushBack false;
+        };
+
+        if (_requestedTeleport && {!isNil "ITW_CLASH_fnc_Log"}) then {
+            private _vehInfo = if (_args isEqualTo []) then {[]} else {_args#0};
+            private _veh = if (count _vehInfo > VEHINFO_VEH) then {_vehInfo#VEHINFO_VEH} else {objNull};
+            private _crew = if (count _vehInfo > VEHINFO_CREW_GRP) then {_vehInfo#VEHINFO_CREW_GRP} else {grpNull};
+            ["vehicle-teleport-suppressed",[
+                if (isNull _veh) then {""} else {typeOf _veh},
+                if (isNull _crew) then {"<null>"} else {str _crew},
+                if (isNull _veh) then {[0,0,0]} else {getPosATL _veh}
+            ]] call ITW_CLASH_fnc_Log;
+        };
+    };
+
+    _args call ITW_CLASH_AtkAddVehicle_Baseline
+};
+
+isNil {
+    private _deferred = missionNamespace getVariable ["ITW_CLASH_DeferredFinalizers",[]];
+    _deferred = _deferred - ["ITW_AtkSafeMove","ITW_AtkAddVehicle"];
+    missionNamespace setVariable ["ITW_CLASH_DeferredFinalizers",_deferred];
+};
+
+private _safeMoveFinal = ["ITW_AtkSafeMove"] call SKL_fnc_CompileFinal;
+private _addVehicleFinal = ["ITW_AtkAddVehicle"] call SKL_fnc_CompileFinal;
+ITW_CLASH_PhysicalMovementPreInitReady = _safeMoveFinal && _addVehicleFinal;
+
+diag_log format [
+    "CLASH BOOT | physical-movement-ready | version=%1 safeMove=%2 addVehicle=%3 strategicTeleport=false",
+    ITW_CLASH_PhysicalMovementPreInitVersion,
+    _safeMoveFinal,
+    _addVehicleFinal
+];
+
+ITW_CLASH_PhysicalMovementPreInitReady
