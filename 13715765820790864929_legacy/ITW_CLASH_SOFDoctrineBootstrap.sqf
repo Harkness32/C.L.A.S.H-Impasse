@@ -3,11 +3,13 @@ if (!isServer) exitWith {false};
 /*
     Narrow bootstrap wrapper for post-V6 doctrine.
 
-    The canonical V6 runtime + GTFO corrections must land first, but six public
+    The canonical V6 runtime + GTFO corrections must land first, but seven public
     authority surfaces remain mutable for one additional synchronous pass:
       - SOF anchor policy wraps SelectAnchorGroup/AuditAnchors.
       - persistent HAL infantry ownership wraps ClassifyGroup/ApplyObjectiveDoctrine.
       - persistent tactical authority wraps ObserveWriter/ObserveLifecycle.
+      - allocation audit is replaced with affinity-only reconciliation; it never
+        releases fielded HAL infantry for waypoint drift.
 
     The window closes before scheduled C.L.A.S.H./HAL startup receives execution.
 */
@@ -18,7 +20,8 @@ ITW_CLASH_LateDoctrineFinalizers = [
     "ITW_CLASH_fnc_ClassifyGroup",
     "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
     "ITW_CLASH_fnc_ObserveWriter",
-    "ITW_CLASH_fnc_ObserveLifecycle"
+    "ITW_CLASH_fnc_ObserveLifecycle",
+    "ITW_CLASH_fnc_AuditAllocations"
 ];
 
 diag_log format [
@@ -95,6 +98,40 @@ if (_infPreInitReady && {_infExists && {_infChars > 0}}) then {
     };
 };
 
+private _allocationFixLoaded = false;
+if (_infLoaded) then {
+    private _allocationPath = "ITW_CLASH_InfantryAuthorityAllocationFix.sqf";
+    private _allocationExists = fileExists _allocationPath;
+    private _allocationSource = if (_allocationExists) then {
+        preprocessFileLineNumbers _allocationPath
+    } else {
+        ""
+    };
+    private _allocationChars = count toArray _allocationSource;
+    diag_log format [
+        "CLASH BOOT | infantry-allocation-authority | exists=%1 chars=%2 path=%3",
+        _allocationExists,_allocationChars,_allocationPath
+    ];
+
+    if (_allocationExists && {_allocationChars > 0}) then {
+        private _result = call compile _allocationSource;
+        _allocationFixLoaded = _result isEqualTo true && {
+            (missionNamespace getVariable [
+                "ITW_CLASH_InfantryAuthorityAllocationFixVersion",
+                -1
+            ]) == 1 && {
+                !isNil "ITW_CLASH_InfantryAuthorityAllocationFix_fnc_SetAffinity"
+            }
+        };
+    };
+};
+
+// Keep the core authority status separate from the allocation hardening gate.
+// If the allocation replacement fails, finalize the already-loaded authority
+// surfaces but report the build incomplete rather than pretending the old drift
+// release path is acceptable.
+private _fullInfantryAuthorityReady = _infLoaded && _allocationFixLoaded;
+
 // Always close the window. A failed doctrine component leaves the corrected
 // lower layer in place and finalizes that surface unchanged (fail-open).
 ITW_CLASH_LateDoctrineFinalizers = [];
@@ -120,13 +157,17 @@ if (!isNil "SKL_fnc_CompileFinal") then {
             "ITW_CLASH_fnc_ObserveLifecycle_InfantryAuthorityBase"
         ];
     };
+    if (_allocationFixLoaded) then {
+        _finalizers pushBack "ITW_CLASH_InfantryAuthorityAllocationFix_fnc_SetAffinity";
+    };
     _finalizers append [
         "ITW_CLASH_fnc_SelectAnchorGroup",
         "ITW_CLASH_fnc_AuditAnchors",
         "ITW_CLASH_fnc_ClassifyGroup",
         "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
         "ITW_CLASH_fnc_ObserveWriter",
-        "ITW_CLASH_fnc_ObserveLifecycle"
+        "ITW_CLASH_fnc_ObserveLifecycle",
+        "ITW_CLASH_fnc_AuditAllocations"
     ];
     {[_x] call SKL_fnc_CompileFinal} forEach _finalizers;
 };
@@ -143,7 +184,11 @@ if (!_infLoaded) then {
         _infExists && {_infChars > 0}
     ];
 } else {
-    diag_log "CLASH BOOT | infantry-authority-loaded | version=2 allFieldedInfantry=true persistentTacticalAuthority=true";
+    if (!_allocationFixLoaded) then {
+        diag_log "CLASH BOOT | WARNING | infantry-allocation-authority-load-failed | persistent HAL authority loaded but legacy allocation drift release remains";
+    } else {
+        diag_log "CLASH BOOT | infantry-authority-loaded | version=2 allFieldedInfantry=true persistentTacticalAuthority=true allocationDriftReleases=false";
+    };
 };
 
 // Native HAL SF correction is independent of C.L.A.S.H. tactical ownership. It
@@ -156,4 +201,15 @@ if (fileExists "ITW_CLASH_HALNativeSFFix.sqf") then {
     diag_log "CLASH BOOT | WARNING | native-sf-fix-missing | upstream HAL SF defects remain";
 };
 
-_sofLoaded && _infLoaded
+// Field hardening is intentionally post-finalization and runtime-scoped. It does
+// not replace HAL movement doctrine: it fixes failed recovery cleanup, repairs
+// stale reconstitution vehicle assignments, filters ACE-invalid contact pairs,
+// guards nil-returning HAL recon handles, and observes stalled HAL withdrawals.
+if (fileExists "ITW_CLASH_FieldHardening.sqf") then {
+    [] execVM "ITW_CLASH_FieldHardening.sqf";
+    diag_log "CLASH BOOT | field-hardening-scheduled";
+} else {
+    diag_log "CLASH BOOT | WARNING | field-hardening-missing";
+};
+
+_sofLoaded && _fullInfantryAuthorityReady
