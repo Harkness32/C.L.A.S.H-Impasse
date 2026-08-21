@@ -4,19 +4,19 @@ ROOT = Path(__file__).resolve().parents[1]
 MISSION = ROOT / "13715765820790864929_legacy"
 
 
-def test_conventional_groups_are_filtered_before_native_offensive_recon_dispatch():
+def test_semantic_sof_is_protected_before_native_hal_planning_without_recon_stage_hacks():
     source = (MISSION / "ITW_CLASH_ReconPlanningBridge.sqf").read_text(encoding="utf-8")
 
-    # Native HQOrders increments ReconStage/ReconStage2 before spawning GoRecon.
-    # The bridge must therefore prevent non-SOF managed groups from entering the
-    # native candidate pool rather than trying to decrement counters afterward.
-    assert "private _blockedManaged = ITW_CLASH_ManagedGroups - _eligible;" in source
-    assert "{_noReconWindow pushBackUnique _x} forEach _blockedManaged;" in source
-    assert "_noReconWindow = _noReconWindow - _eligible;" in source
-    assert '"RydHQ_NoRecon",_noReconWindow' in source
-    assert "conventionalStageGuard=true" in source
+    # The only pre-planning compatibility mutation is SpecFor identity. Native
+    # HAL then excludes those groups from ordinary recon/conventional task pools.
+    assert '[_hq,"offensive"] call ITW_CLASH_ReconPlanning_fnc_SyncSpecFor;' in source
+    assert '[_hq,"defensive"] call ITW_CLASH_ReconPlanning_fnc_SyncSpecFor;' in source
+    assert 'setVariable ["RydHQ_SpecForG",_specFor]' in source
 
-    # No asynchronous counter rewind is permitted; objective-local ReconStage2
-    # can already have been reset by the time a spawned rejection runs.
-    assert 'setVariable ["RydHQ_ReconStage",(_hq getVariable' not in source.lower()
-    assert 'setVariable ["RydHQ_ReconStage2",(_hq getVariable' not in source.lower()
+    # Broad native reconnaissance remains untouched: no conventional NoRecon
+    # filter and no asynchronous native stage rewind are allowed.
+    assert 'setVariable ["RydHQ_NoRecon"' not in source
+    assert "private _blockedManaged" not in source
+    lower = source.lower()
+    assert 'setvariable ["rydhq_reconstage"' not in lower
+    assert 'setvariable ["rydhq_reconstage2"' not in lower
