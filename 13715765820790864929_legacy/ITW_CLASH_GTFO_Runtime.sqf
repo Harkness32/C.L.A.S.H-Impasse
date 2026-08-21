@@ -1,0 +1,267 @@
+#include "defines.hpp"
+
+if (!isServer) exitWith {};
+if (missionNamespace getVariable ["ITW_CLASH_GTFORuntimeStarted",false]) exitWith {};
+ITW_CLASH_GTFORuntimeStarted = true;
+ITW_CLASH_GTFORuntimeVersion = 1;
+ITW_CLASH_GTFO_ArrivalRadius = 160;
+
+// Native GoRest deliberately randomizes a RestDecoy rally by up to +/-100 m on
+// each horizontal axis. Its farthest valid rally is therefore ~141 m from the
+// Impasse corridor center. Keep rear absorption outside that entire native HAL
+// jitter envelope so a successful HAL withdrawal cannot stop 10-20 m short of
+// the old 125 m C.L.A.S.H. bubble and wait forever.
+if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
+    ITW_CLASH_WithdrawalArrivalRadius = ITW_CLASH_WithdrawalArrivalRadius max ITW_CLASH_GTFO_ArrivalRadius;
+};
+
+/*
+    Late-bound GTFO adapters.
+
+    The synchronous GTFO controller bridge loads before Recon Phase 0 and the
+    recovery modules exist. These adapters wait for those modules and enforce
+    only cross-system authority boundaries:
+      - GTFO groups cannot be assigned recon.
+      - Recovery becomes exclusive only after physical boarding completes.
+      - A pre-boarding recovery abort restarts HAL's native withdrawal after the
+        legacy recovery rendezvous waypoint has been abandoned.
+      - Ongoing GTFO constraints are reasserted without writing tactical waypoints.
+*/
+
+[] spawn {
+    scriptName "ITW_CLASH_GTFO_ReconGuard";
+    private _deadline = time + 180;
+    waitUntil {
+        sleep 0.25;
+        (
+            !isNil "ITW_CLASH_Recon_fnc_NativeGoRecon" &&
+            {!isNil "ITW_CLASH_Recon_fnc_NativeGoDefRecon"} &&
+            {!isNil "HAL_GoRecon"} &&
+            {!isNil "HAL_GoDefRecon"}
+        ) || {time > _deadline}
+    };
+
+    if (time > _deadline || {
+        isNil "HAL_GoRecon" || {isNil "HAL_GoDefRecon"}
+    }) exitWith {
+        diag_log "CLASH BOOT | gtfo-recon-guard-deferred | recon surface unavailable";
+    };
+
+    // Let Recon Phase 0 finish assigning its own wrappers in the same scheduler
+    // turn, then wrap that public surface rather than the vendored native code.
+    sleep 0.25;
+    ITW_CLASH_GTFO_fnc_ReconBase = HAL_GoRecon;
+    ITW_CLASH_GTFO_fnc_DefReconBase = HAL_GoDefRecon;
+
+    ITW_CLASH_GTFO_fnc_BlockRecon = {
+        params ["_mode","_group","_hq"];
+        if (!isNull _group) then {
+            _group setVariable ["Busy" + str _group,false];
+            _group setVariable ["ITW_CLASH_ReconPhase0Active",nil];
+            _group setVariable ["ITW_CLASH_ReconPhase0Mode",nil];
+        };
+
+        if (!isNull _hq && {_mode isEqualTo "defensive"}) then {
+            [_group,_hq] spawn {
+                params ["_group","_hq"];
+                sleep 0.25;
+                if (!isNull _hq) then {
+                    _hq setVariable [
+                        "RydHQ_RecDefSpot",
+                        (_hq getVariable ["RydHQ_RecDefSpot",[]]) - [_group]
+                    ];
+                };
+            };
+        };
+
+        if (!isNil "ITW_CLASH_fnc_Log") then {
+            ["recon-blocked-gtfo",[
+                if (isNull _group) then {"<null>"} else {
+                    [_group] call ITW_CLASH_fnc_GroupId
+                },
+                _mode,
+                if (isNull _group) then {""} else {
+                    _group getVariable ["ITW_CLASH_GTFO_State",""]
+                }
+            ]] call ITW_CLASH_fnc_Log;
+        };
+        false
+    };
+
+    HAL_GoRecon = {
+        private _group = _this param [0,grpNull];
+        private _hq = _this param [3,grpNull];
+        if (!isNull _group && {
+            _group getVariable ["ITW_CLASH_GTFO",false]
+        }) exitWith {
+            ["offensive",_group,_hq] call ITW_CLASH_GTFO_fnc_BlockRecon
+        };
+        _this call ITW_CLASH_GTFO_fnc_ReconBase
+    };
+
+    HAL_GoDefRecon = {
+        private _group = _this param [0,grpNull];
+        private _hq = _this param [3,grpNull];
+        if (!isNull _group && {
+            _group getVariable ["ITW_CLASH_GTFO",false]
+        }) exitWith {
+            ["defensive",_group,_hq] call ITW_CLASH_GTFO_fnc_BlockRecon
+        };
+        _this call ITW_CLASH_GTFO_fnc_DefReconBase
+    };
+
+    diag_log "CLASH BOOT | gtfo-recon-guard-ready | version=1 bridgeOnly=true";
+};
+
+[] spawn {
+    scriptName "ITW_CLASH_GTFO_RecoveryHandoff";
+    private _deadline = time + 180;
+    waitUntil {
+        sleep 0.25;
+        !isNil "ITW_CLASH_EvacBoarding_fnc_Board" || {time > _deadline}
+    };
+
+    if (time > _deadline || {isNil "ITW_CLASH_EvacBoarding_fnc_Board"}) exitWith {
+        diag_log "CLASH BOOT | gtfo-recovery-handoff-deferred | boarding surface unavailable";
+    };
+
+    ITW_CLASH_GTFO_fnc_BoardBase = ITW_CLASH_EvacBoarding_fnc_Board;
+    ITW_CLASH_EvacBoarding_fnc_Board = {
+        private _mode = _this param [0,"recovery"];
+        private _group = _this param [3,grpNull];
+        private _result = _this call ITW_CLASH_GTFO_fnc_BoardBase;
+
+        if (
+            _result isEqualType [] && {
+                count _result > 0 && {
+                    _result#0 && {
+                        !isNull _group && {
+                            _group getVariable ["ITW_CLASH_GTFO",false]
+                        }
+                    }
+                }
+            }
+        ) then {
+            [_group,_mode] call ITW_CLASH_GTFO_fnc_RecoveryOwned;
+        };
+        _result
+    };
+
+    diag_log "CLASH BOOT | gtfo-recovery-handoff-ready | version=1 ownership=postBoarding";
+};
+
+[] spawn {
+    scriptName "ITW_CLASH_GTFO_RecoveryFailureHandback";
+    private _deadline = time + 180;
+    waitUntil {
+        sleep 0.25;
+        (
+            !isNil "ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal" &&
+            {!isNil "ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal"}
+        ) || {time > _deadline}
+    };
+
+    if (time > _deadline || {
+        isNil "ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal" || {
+            isNil "ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal"
+        }
+    }) exitWith {
+        diag_log "CLASH BOOT | gtfo-recovery-failure-handback-deferred | recovery resume surface unavailable";
+    };
+
+    ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
+        params ["_mode","_group","_reason"];
+        if (isNull _group || {
+            !(_group getVariable ["ITW_CLASH_GTFO",false]) || {
+                !(_group getVariable ["ITW_CLASH_Managed",false])
+            }
+        }) exitWith {false};
+
+        // Before boarding, recovery has not taken HAL registration ownership,
+        // but its rendezvous helper has replaced the active GoRest waypoint.
+        // Break is HAL's native cancellation mechanism; GoRest/RYD_Wait consumes
+        // and clears it, while the GTFO constraint watchdog reasserts Exhausted
+        // so HAL starts a clean withdrawal on the next command cycle.
+        if (_group getVariable ["Resting" + str _group,false]) then {
+            _group setVariable ["Break",true];
+            ["recovery-handback-restart",[
+                [_group] call ITW_CLASH_fnc_GroupId,
+                _mode,
+                _reason,
+                _group getVariable ["ITW_CLASH_GTFO_State",""]
+            ]] call ITW_CLASH_GTFO_fnc_Log;
+            true
+        } else {
+            false
+        }
+    };
+
+    ITW_CLASH_GTFO_fnc_CASEVACResumeBase = ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal;
+    ITW_CLASH_CASEVAC_fnc_ResumeWithdrawal = {
+        private _group = _this param [1,grpNull];
+        private _reason = _this param [2,"unknown"];
+        ["air",_group,_reason] call ITW_CLASH_GTFO_fnc_RequestNativeRestRestart;
+        _this call ITW_CLASH_GTFO_fnc_CASEVACResumeBase
+    };
+
+    ITW_CLASH_GTFO_fnc_GroundResumeBase = ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal;
+    ITW_CLASH_GroundMEDEVAC_fnc_ResumeWithdrawal = {
+        private _group = _this param [1,grpNull];
+        private _reason = _this param [2,"unknown"];
+        ["ground",_group,_reason] call ITW_CLASH_GTFO_fnc_RequestNativeRestRestart;
+        _this call ITW_CLASH_GTFO_fnc_GroundResumeBase
+    };
+
+    diag_log "CLASH BOOT | gtfo-recovery-failure-handback-ready | version=1 nativeRestRestart=true";
+};
+
+[] spawn {
+    scriptName "ITW_CLASH_GTFO_ConstraintWatch";
+    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
+        sleep 2;
+        if (
+            missionNamespace getVariable ["ITW_CLASH_LiveEnabled",false] && {
+                missionNamespace getVariable ["ITW_CLASH_HALReady",false] && {
+                    !isNil "ITW_CLASH_GTFO_fnc_ApplyConstraints"
+                }
+            }
+        ) then {
+            call ITW_CLASH_GTFO_fnc_ApplyConstraints;
+
+            // One-shot field proof that HAL's native GoRest owns the formation.
+            // Wait for both Resting=true and a real waypoint so the record captures
+            // the actual native order rather than the brief setup frame before it.
+            {
+                private _group = _x;
+                if (isNull _group || {
+                    !(_group getVariable ["ITW_CLASH_GTFO",false]) || {
+                        _group getVariable ["ITW_CLASH_GTFO_NativeRestLogged",false]
+                    }
+                }) then {continue};
+                if !(_group getVariable ["Resting" + str _group,false]) then {continue};
+
+                private _waypoints = waypoints _group;
+                if (_waypoints isEqualTo []) then {continue};
+                private _wpIndex = currentWaypoint _group;
+                if (_wpIndex < 0 || {_wpIndex >= count _waypoints}) then {continue};
+
+                _group setVariable ["ITW_CLASH_GTFO_NativeRestLogged",true];
+                ["native-rest-active",[
+                    [_group] call ITW_CLASH_fnc_GroupId,
+                    waypointType [_group,_wpIndex],
+                    waypointPosition [_group,_wpIndex],
+                    attackEnabled _group,
+                    combatMode _group,
+                    behaviour leader _group,
+                    _group getVariable ["ITW_CLASH_GTFO_Destination",[]]
+                ]] call ITW_CLASH_GTFO_fnc_Log;
+            } forEach +ITW_CLASH_ManagedGroups;
+        };
+    };
+};
+
+diag_log format [
+    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true recoveryFailureRestRestart=true constraintPoll=2 arrivalRadius=%2 nativeRestTelemetry=true",
+    ITW_CLASH_GTFORuntimeVersion,
+    ITW_CLASH_GTFO_ArrivalRadius
+];

@@ -15,12 +15,15 @@ diag_log "CLASH BOOT | preInit | fail-open hooks installed; controller deferred 
 // Attack and enemy source are compiled during preInit, before init.sqf can run.
 // Keep only the functions that C.L.A.S.H. must replace mutable on the server.
 // Initial SafeMove/vehicle staging remains baseline Impasse; only the explicit
-// mid-battle infantry catch-up relocation is replaced.
+// mid-battle infantry catch-up relocation is replaced. The infantry-group query
+// is also deferred so persistent HAL formations can be filtered from Impasse's
+// tactical infantry manager without copying that manager implementation.
 if (isServer) then {
     ITW_CLASH_DeferredFinalizers = [
         "ITW_AtkDispatchReconstitutionTransport",
         "ITW_AtkReconstitutionTransitManager",
         "ITW_AtkInfantryMoveUp",
+        "ITW_AtkGetInfantryGroups",
         "ITW_EnemyGroupCallback"
     ];
     diag_log format [
@@ -34,6 +37,14 @@ if (isServer) then {
 isNil {call compile preprocessFileLineNumbers "ITW_Airfield.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_Ally.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Attack.sqf";                };
+
+// Server-only persistent infantry authority filter. Baseline groups remain
+// visible until C.L.A.S.H. is live; afterward only HAL-managed OPFOR infantry is
+// removed from Impasse's infantry-manager/defend-phase query surface.
+private _infantryAuthorityPreInitFixed = false;
+if (isServer && {fileExists "ITW_CLASH_InfantryAuthorityPreInit.sqf"}) then {
+    _infantryAuthorityPreInitFixed = call compile preprocessFileLineNumbers "ITW_CLASH_InfantryAuthorityPreInit.sqf";
+};
 
 // Load the narrow physical-movement shim on every machine. Clients/HCs only
 // install the locality helper; the server replaces/finalizes InfantryMoveUp
@@ -71,9 +82,15 @@ if (isServer) then {
         ["ITW_AtkInfantryMoveUp"] call SKL_fnc_CompileFinal;
         diag_log "CLASH BOOT | physical-movement-fallback | baseline move-up teleport finalized";
     };
+    if (!_infantryAuthorityPreInitFixed) then {
+        ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkGetInfantryGroups"];
+        ["ITW_AtkGetInfantryGroups"] call SKL_fnc_CompileFinal;
+        diag_log "CLASH BOOT | infantry-authority-preinit-fallback | baseline infantry manager query finalized";
+    };
 
     ITW_CLASH_ReconstitutionPreInitReady = _dispatchFixed && _transitFixed;
     ITW_CLASH_PhysicalMovementPreInitReady = _physicalMovementFixed;
+    ITW_CLASH_InfantryAuthorityPreInitReady = _infantryAuthorityPreInitFixed;
     diag_log format [
         "CLASH BOOT | reconstitution-preinit-authority | ready=%1 dispatch=%2 transit=%3",
         ITW_CLASH_ReconstitutionPreInitReady,
@@ -83,6 +100,11 @@ if (isServer) then {
     diag_log format [
         "CLASH BOOT | physical-movement-preinit-authority | ready=%1",
         ITW_CLASH_PhysicalMovementPreInitReady
+    ];
+    diag_log format [
+        "CLASH BOOT | infantry-authority-preinit | ready=%1 managerFilter=%2",
+        ITW_CLASH_InfantryAuthorityPreInitReady,
+        _infantryAuthorityPreInitFixed
     ];
 };
 

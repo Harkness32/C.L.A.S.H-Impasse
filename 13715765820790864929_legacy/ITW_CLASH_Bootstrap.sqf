@@ -4,8 +4,9 @@
     The controller is deliberately not loaded from preInit. This wrapper runs
     after mission parameters are ready, compiles ITW_CLASH.sqf exactly once,
     defers finalization for the small V6 runtime-integrity correction surface,
-    applies that correction synchronously, validates the complete V6 function
-    surface, and leaves baseline Impasse fail-open if anything is missing.
+    applies that correction synchronously, installs the GTFO HAL/Impasse bridge,
+    validates the complete V6 function surface, and leaves baseline Impasse
+    fail-open if anything is missing.
 */
 
 if (!isServer) exitWith {false};
@@ -21,6 +22,7 @@ diag_log "CLASH BOOT | begin | init-server";
 ITW_CLASH_BootstrapReady = false;
 ITW_CLASH_BootstrapFailure = "";
 ITW_CLASH_DeferredFinalizers = [];
+ITW_CLASH_PersistentDeferredFinalizers = [];
 
 private _path = "ITW_CLASH.sqf";
 private _installFallbacks = {
@@ -29,6 +31,7 @@ private _installFallbacks = {
     ITW_CLASH_ObserverEnabled = false;
     ITW_CLASH_LiveEnabled = false;
     ITW_CLASH_DeferredFinalizers = [];
+    ITW_CLASH_PersistentDeferredFinalizers = [];
 
     // If a partial controller reached its scheduled self-start, these flags
     // make both startup entry points return without enabling C.L.A.S.H.
@@ -83,7 +86,7 @@ if (_sourceChars <= 0) exitWith {
 
 // These six functions are corrected immediately after the canonical
 // controller definition pass. SKL_fnc_CompileFinal sees this list and leaves
-// only these names mutable; every other C.L.A.S.H. function finalizes normally.
+// only these names mutable for the V6 runtime patch.
 ITW_CLASH_DeferredFinalizers = [
     "ITW_CLASH_fnc_ClassifyGroup",
     "ITW_CLASH_fnc_ObserveWriter",
@@ -92,9 +95,22 @@ ITW_CLASH_DeferredFinalizers = [
     "ITW_CLASH_fnc_SelectAnchorGroup",
     "ITW_CLASH_fnc_AuditAnchors"
 ];
+
+// GTFO sits above the corrected V6 surface, so these public authority functions
+// remain mutable through the runtime-patch finalization pass and are finalized
+// only after ITW_CLASH_GTFO.sqf has installed its bridge wrappers/replacements.
+ITW_CLASH_PersistentDeferredFinalizers = [
+    "ITW_CLASH_fnc_ClassifyGroup",
+    "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
+    "ITW_CLASH_fnc_GetEgressPoint",
+    "ITW_CLASH_fnc_OrderWithdrawal",
+    "ITW_CLASH_fnc_StartWithdrawal",
+    "ITW_CLASH_fnc_CancelWithdrawals"
+];
 diag_log format [
-    "CLASH BOOT | finalization-window | deferred=%1",
-    ITW_CLASH_DeferredFinalizers
+    "CLASH BOOT | finalization-window | deferred=%1 persistent=%2",
+    ITW_CLASH_DeferredFinalizers,
+    ITW_CLASH_PersistentDeferredFinalizers
 ];
 
 // Sole runtime compile of ITW_CLASH.sqf. Its scheduled startup is retained;
@@ -104,8 +120,8 @@ call compile _source;
 ITW_CLASH_DeferredFinalizers = [];
 
 // Apply the V6 runtime-integrity correction while the selected controller
-// functions are still mutable, then finalize the corrected functions in the
-// patch itself before observer/live startup can run.
+// functions are still mutable. The persistent GTFO surface remains deliberately
+// unfinalized until the bridge is installed below.
 private _patchPath = "ITW_CLASH_RuntimePatch.sqf";
 private _patchExists = fileExists _patchPath;
 private _patchSource = if (_patchExists) then {
@@ -155,6 +171,134 @@ diag_log format [
     "CLASH BOOT | runtime-patch-loaded | version=%1 functions=%2",
     _patchVersion,
     count _patchRequired
+];
+
+// Install GTFO synchronously before observer/live startup. This is the bridge
+// layer that delegates tactical withdrawal to HAL's native GoRest while keeping
+// Impasse as strategic rear/recovery/reconstitution authority.
+private _gtfoPath = "ITW_CLASH_GTFO.sqf";
+private _gtfoExists = fileExists _gtfoPath;
+private _gtfoSource = if (_gtfoExists) then {
+    preprocessFileLineNumbers _gtfoPath
+} else {
+    ""
+};
+private _gtfoChars = count toArray _gtfoSource;
+diag_log format [
+    "CLASH BOOT | gtfo-bridge | exists=%1 chars=%2 path=%3",
+    _gtfoExists,
+    _gtfoChars,
+    _gtfoPath
+];
+if (!_gtfoExists || {_gtfoChars <= 0}) exitWith {
+    ITW_CLASH_BootstrapFailure = "gtfo-bridge-missing-or-empty";
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+call compile _gtfoSource;
+
+private _gtfoVersion = missionNamespace getVariable ["ITW_CLASH_GTFOVersion",-1];
+private _gtfoRequired = [
+    "ITW_CLASH_GTFO_fnc_Log",
+    "ITW_CLASH_GTFO_fnc_RefreshCorridor",
+    "ITW_CLASH_GTFO_fnc_ApplyConstraints",
+    "ITW_CLASH_GTFO_fnc_ResumeHAL",
+    "ITW_CLASH_GTFO_fnc_RecoveryOwned",
+    "ITW_CLASH_fnc_ClassifyGroup",
+    "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
+    "ITW_CLASH_fnc_GetEgressPoint",
+    "ITW_CLASH_fnc_OrderWithdrawal",
+    "ITW_CLASH_fnc_StartWithdrawal",
+    "ITW_CLASH_fnc_CancelWithdrawals"
+];
+private _gtfoMissing = _gtfoRequired select {isNil _x};
+if (_gtfoVersion != 1 || {_gtfoMissing isNotEqualTo []}) exitWith {
+    ITW_CLASH_BootstrapFailure = format [
+        "gtfo-bridge-validation-failed version=%1 missing=%2",
+        _gtfoVersion,
+        _gtfoMissing
+    ];
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+
+// Retire only stale pre-GTFO HAL task bookkeeping. This must load while
+// StartWithdrawal is still mutable so it can wrap the bridge transition and
+// clear Defending/defensive-list state before the same reconciliation pass runs
+// C.L.A.S.H.'s allocation audit. It never writes movement or combat behavior.
+private _gtfoBookkeepingPath = "ITW_CLASH_GTFO_Bookkeeping.sqf";
+private _gtfoBookkeepingExists = fileExists _gtfoBookkeepingPath;
+private _gtfoBookkeepingSource = if (_gtfoBookkeepingExists) then {
+    preprocessFileLineNumbers _gtfoBookkeepingPath
+} else {
+    ""
+};
+private _gtfoBookkeepingChars = count toArray _gtfoBookkeepingSource;
+diag_log format [
+    "CLASH BOOT | gtfo-bookkeeping | exists=%1 chars=%2 path=%3",
+    _gtfoBookkeepingExists,
+    _gtfoBookkeepingChars,
+    _gtfoBookkeepingPath
+];
+if (!_gtfoBookkeepingExists || {_gtfoBookkeepingChars <= 0}) exitWith {
+    ITW_CLASH_BootstrapFailure = "gtfo-bookkeeping-missing-or-empty";
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+call compile _gtfoBookkeepingSource;
+
+private _gtfoBookkeepingVersion = missionNamespace getVariable [
+    "ITW_CLASH_GTFOBookkeepingVersion",
+    -1
+];
+private _gtfoBookkeepingRequired = [
+    "ITW_CLASH_GTFO_fnc_RetirePreviousTaskState",
+    "ITW_CLASH_fnc_StartWithdrawal_GTFOStateBase",
+    "ITW_CLASH_fnc_StartWithdrawal"
+];
+private _gtfoBookkeepingMissing = _gtfoBookkeepingRequired select {isNil _x};
+if (_gtfoBookkeepingVersion != 1 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
+    ITW_CLASH_BootstrapFailure = format [
+        "gtfo-bookkeeping-validation-failed version=%1 missing=%2",
+        _gtfoBookkeepingVersion,
+        _gtfoBookkeepingMissing
+    ];
+    diag_log format ["CLASH BOOT | FAILED | %1",ITW_CLASH_BootstrapFailure];
+    call _installFallbacks;
+};
+
+// Close the persistent mutation window immediately. Finalize both bridge-facing
+// public functions and their saved base implementations before any scheduled
+// C.L.A.S.H./HAL startup can execute.
+ITW_CLASH_PersistentDeferredFinalizers = [];
+if (!isNil "SKL_fnc_CompileFinal") then {
+    {
+        [_x] call SKL_fnc_CompileFinal;
+    } forEach [
+        "ITW_CLASH_GTFO_fnc_Log",
+        "ITW_CLASH_GTFO_fnc_RefreshCorridor",
+        "ITW_CLASH_GTFO_fnc_ApplyConstraints",
+        "ITW_CLASH_GTFO_fnc_ResumeHAL",
+        "ITW_CLASH_GTFO_fnc_RecoveryOwned",
+        "ITW_CLASH_GTFO_fnc_RetirePreviousTaskState",
+        "ITW_CLASH_fnc_ClassifyGroup_GTFOBase",
+        "ITW_CLASH_fnc_ApplyObjectiveDoctrine_GTFOBase",
+        "ITW_CLASH_fnc_GetEgressPoint_GTFOBase",
+        "ITW_CLASH_fnc_CancelWithdrawals_GTFOBase",
+        "ITW_CLASH_fnc_StartWithdrawal_GTFOStateBase",
+        "ITW_CLASH_fnc_ClassifyGroup",
+        "ITW_CLASH_fnc_ApplyObjectiveDoctrine",
+        "ITW_CLASH_fnc_GetEgressPoint",
+        "ITW_CLASH_fnc_OrderWithdrawal",
+        "ITW_CLASH_fnc_StartWithdrawal",
+        "ITW_CLASH_fnc_CancelWithdrawals"
+    ];
+};
+diag_log format [
+    "CLASH BOOT | gtfo-bridge-loaded | version=%1 bookkeeping=%2 functions=%3",
+    _gtfoVersion,
+    _gtfoBookkeepingVersion,
+    count _gtfoRequired
 ];
 
 private _required = [
@@ -229,10 +373,12 @@ if (_version != 6 || {_missing isNotEqualTo []}) exitWith {
 ITW_CLASH_HookFallbacksActive = false;
 ITW_CLASH_BootstrapReady = true;
 diag_log format [
-    "CLASH BOOT | READY | version=%1 sourceChars=%2 functions=%3 patch=%4",
+    "CLASH BOOT | READY | version=%1 sourceChars=%2 functions=%3 patch=%4 gtfo=%5 bookkeeping=%6",
     _version,
     _sourceChars,
     count _required,
-    _patchVersion
+    _patchVersion,
+    _gtfoVersion,
+    _gtfoBookkeepingVersion
 ];
 true
