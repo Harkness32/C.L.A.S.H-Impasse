@@ -3,47 +3,22 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPlanningBridgeStarted",false]) exitWith {};
 ITW_CLASH_ReconPlanningBridgeStarted = true;
-ITW_CLASH_ReconPlanningBridgeVersion = 1;
-ITW_CLASH_ReconPlanningRecoveryTimeout = 5;
+ITW_CLASH_ReconPlanningBridgeVersion = 2;
 
 /*
-    HAL recon planning bridge
+    C.L.A.S.H. 1.0 HAL planning bridge
 
-    HAL's native planner paradoxically subtracts RydHQ_SpecForG from both
-    offensive and defensive reconnaissance candidate pools. C.L.A.S.H. does not
-    assign a recon mission here. It opens a synchronous planning-only view in
-    which recognized SOF can be considered by HAL's untouched HQOrders logic,
-    then restores HAL's original semantic lists before returning.
+    Native HAL already has the doctrine we want: ReconAv is a broad capability
+    pool and RydHQ_SpecForG is explicitly subtracted from ordinary reconnaissance
+    and conventional tasking. C.L.A.S.H. therefore no longer opens a temporary
+    SOF-only recon window, touches ReconG, blocks conventional scouts, or rewrites
+    Friends/NoRecon/NoDef around each planning call.
 
-    Offensive planning:
-      - eligible SOF temporarily leaves SpecForG
-      - eligible SOF temporarily enters ReconG
-      - all other managed groups are temporarily in NoRecon
-      - ReconG already keeps exposed SOF out of native ordinary AttackAv
-      - this window opens only while RydHQ_ReconDone is false
-
-    The NoRecon planning view matters for HAL bookkeeping: HQOrders increments
-    ReconStage/ReconStage2 before spawning GoRecon. Filtering conventional groups
-    before native selection prevents a rejected non-SOF candidate from consuming
-    a false recon stage; Phase 0's execution wrapper remains the last-line gate.
-
-    Defensive planning:
-      - eligible SOF temporarily leaves SpecForG and enters ReconG
-      - eligible SOF is temporarily removed from Friends so it cannot enter
-        ordinary _LMCU defense while remaining explicitly available in _recDef
-      - NoDef/NoRecon are opened only inside the planning call
-      - Phase 0 remains authoritative against any non-SOF defensive candidate
-
-    After the native planner returns every modified HAL list is restored exactly.
-    A watchdog also owns a copy of the pre-window snapshot. If the native planner
-    script faults before normal restoration, the watchdog closes the temporary
-    semantic window instead of leaving HAL permanently reclassified.
-
-    The bridge arms only after Recon Phase 0 has published its saved native
-    GoRecon/GoDefRecon handles. That guarantees the SOF-only execution gate is
-    already installed before C.L.A.S.H. exposes additional recon candidates.
-
-    SOF therefore remains SpecFor for normal HAL direct-action behavior.
+    The only compatibility work retained here is semantic SOF identity. Impasse
+    faction classes are not guaranteed to appear in HAL's stock SpecFor class
+    table, so immediately before native HQOrders/HQOrdersDef runs we add every
+    C.L.A.S.H.-recognized SOF formation to that HQ's RydHQ_SpecForG. HAL then
+    performs all normal selection using its own native exclusions and routines.
 */
 
 ITW_CLASH_ReconPlanning_fnc_Log = {
@@ -53,275 +28,92 @@ ITW_CLASH_ReconPlanning_fnc_Log = {
     };
 };
 
-ITW_CLASH_ReconPlanning_fnc_EligibleSOF = {
-    params ["_hq"];
+ITW_CLASH_ReconPlanning_fnc_SyncSpecFor = {
+    params [["_hq",grpNull],["_mode","planning"]];
     if (isNull _hq || {isNil "ITW_CLASH_SOF_fnc_Classify"}) exitWith {[]};
 
-    private _exhausted = _hq getVariable ["RydHQ_Exhausted",[]];
-    ITW_CLASH_ManagedGroups select {
+    private _specFor = +(_hq getVariable ["RydHQ_SpecForG",[]]);
+    private _semanticSOF = [];
+
+    {
         private _group = _x;
-        !isNull _group && {
-            {alive _x} count units _group > 0 && {
-                _group getVariable ["ITW_CLASH_Managed",false] && {
-                    !(_group getVariable ["ITW_CLASH_Releasing",false]) && {
-                        !(_group getVariable ["ITW_CLASH_GTFO",false]) && {
-                            !(_group getVariable ["ITW_CLASH_Withdrawing",false]) && {
-                                (_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isEqualTo "" && {
-                                    (_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isEqualTo "" && {
-                                        !(_group in _exhausted) && {
-                                            !(_group getVariable ["Busy" + str _group,false]) && {
-                                                ([_group] call ITW_CLASH_SOF_fnc_Classify)#0
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-};
+        if (isNull _group || {{alive _x} count units _group == 0}) then {continue};
+        if !(_group getVariable ["ITW_CLASH_Managed",false]) then {continue};
 
-ITW_CLASH_ReconPlanning_fnc_RestoreSnapshot = {
-    params ["_hq",["_source","normal"]];
-    if (isNull _hq) exitWith {false};
+        private _classification = [_group] call ITW_CLASH_SOF_fnc_Classify;
+        if !(_classification#0) then {continue};
 
-    private _snapshot = _hq getVariable ["ITW_CLASH_ReconPlanningSnapshot",[]];
-    if (_snapshot isEqualTo [] || {count _snapshot < 7}) exitWith {
-        _hq setVariable ["ITW_CLASH_ReconPlanningDepth",0];
-        false
-    };
+        _semanticSOF pushBackUnique _group;
+        _specFor pushBackUnique _group;
+        _group setVariable ["ITW_CLASH_SOFNativeProtected",true];
+    } forEach +ITW_CLASH_ManagedGroups;
 
-    _snapshot params [
-        "_openedAt",
-        "_mode",
-        "_specFor0",
-        "_recon0",
-        "_noRecon0",
-        "_friends0",
-        "_noDef0"
-    ];
+    _hq setVariable ["RydHQ_SpecForG",_specFor];
 
-    _hq setVariable ["RydHQ_SpecForG",+_specFor0];
-    _hq setVariable ["RydHQ_ReconG",+_recon0];
-    _hq setVariable ["RydHQ_NoRecon",+_noRecon0];
-    _hq setVariable ["RydHQ_Friends",+_friends0];
-    _hq setVariable ["RydHQ_NoDef",+_noDef0];
-    _hq setVariable ["ITW_CLASH_ReconPlanningDepth",0];
-    _hq setVariable ["ITW_CLASH_ReconPlanningSnapshot",nil];
-
-    if !(_source isEqualTo "normal") then {
-        ["window-recovered",[
-            _source,
-            _mode,
-            round ((diag_tickTime - _openedAt) * 100) / 100,
-            count _specFor0,
-            count _recon0,
-            count _friends0
-        ]] call ITW_CLASH_ReconPlanning_fnc_Log;
-    };
-    true
-};
-
-ITW_CLASH_ReconPlanning_fnc_CallNative = {
-    params ["_mode","_args","_native"];
-    private _hq = _args param [0,grpNull];
-    if (isNull _hq) exitWith {_args call _native};
-
-    // Guard accidental nested planning calls. The outer window already exposes
-    // the intended temporary HAL view.
-    private _depth = _hq getVariable ["ITW_CLASH_ReconPlanningDepth",0];
-    if (_depth > 0) exitWith {_args call _native};
-
-    private _eligible = [_hq] call ITW_CLASH_ReconPlanning_fnc_EligibleSOF;
-    if (_eligible isEqualTo []) exitWith {_args call _native};
-
-    private _reconDemand = if (_mode isEqualTo "offensive") then {
-        !(_hq getVariable ["RydHQ_ReconDone",false])
-    } else {
-        true
-    };
-    if (!_reconDemand) exitWith {_args call _native};
-
-    private _specFor0 = +(_hq getVariable ["RydHQ_SpecForG",[]]);
-    private _recon0 = +(_hq getVariable ["RydHQ_ReconG",[]]);
-    private _noRecon0 = +(_hq getVariable ["RydHQ_NoRecon",[]]);
-    private _friends0 = +(_hq getVariable ["RydHQ_Friends",[]]);
-    private _noDef0 = +(_hq getVariable ["RydHQ_NoDef",[]]);
-
-    private _specForWindow = _specFor0 - _eligible;
-    private _reconWindow = +_recon0;
-    {_reconWindow pushBackUnique _x} forEach _eligible;
-
-    // Dedicated recon is SOF-only. Prevent every other currently managed group
-    // from reaching HAL's offensive recon dispatch loop at all; this avoids the
-    // native pre-spawn recon-stage increment that the Phase 0 reject wrapper
-    // cannot safely rewind asynchronously.
-    private _blockedManaged = ITW_CLASH_ManagedGroups - _eligible;
-    private _noReconWindow = +_noRecon0;
-    {_noReconWindow pushBackUnique _x} forEach _blockedManaged;
-    _noReconWindow = _noReconWindow - _eligible;
-
-    // Store a non-local dead-man copy before mutating HAL. Normal completion
-    // clears it; the watchdog can recover it if execution faults in native code.
-    _hq setVariable ["ITW_CLASH_ReconPlanningSnapshot",[
-        diag_tickTime,
-        _mode,
-        +_specFor0,
-        +_recon0,
-        +_noRecon0,
-        +_friends0,
-        +_noDef0
-    ]];
-    _hq setVariable ["ITW_CLASH_ReconPlanningDepth",1];
-    _hq setVariable ["RydHQ_SpecForG",_specForWindow];
-    _hq setVariable ["RydHQ_ReconG",_reconWindow];
-    _hq setVariable ["RydHQ_NoRecon",_noReconWindow];
-
-    if (_mode isEqualTo "defensive") then {
-        // _recDef comes from ReconG and does not require Friends membership.
-        // Removing SOF from Friends keeps it out of ordinary _LMCU defense while
-        // opening NoDef allows the same group to remain in native _recDef.
-        _hq setVariable ["RydHQ_Friends",_friends0 - _eligible];
-        _hq setVariable ["RydHQ_NoDef",_noDef0 - _eligible];
-    };
-
-    ["window-open",[
-        _mode,
-        _eligible apply {[
+    private _signature = str (_semanticSOF apply {
+        [
             [_x] call ITW_CLASH_fnc_GroupId,
             _x getVariable ["ITW_CLASH_ReconSOFFamily","sof"]
-        ]},
-        count _blockedManaged,
-        count _specFor0,
-        count _recon0,
-        _hq getVariable ["RydHQ_ReconStage",-1],
-        _hq getVariable ["RydHQ_ReconStage2",-1],
-        _hq getVariable ["RydHQ_ReconDone",false]
-    ]] call ITW_CLASH_ReconPlanning_fnc_Log;
-
-    private _result = _args call _native;
-
-    // Restore HAL semantic identity immediately. Nothing about this bridge is a
-    // persistent reclassification of SOF.
-    [_hq,"normal"] call ITW_CLASH_ReconPlanning_fnc_RestoreSnapshot;
-
-    ["window-close",[
-        _mode,
-        _eligible apply {[
-            [_x] call ITW_CLASH_fnc_GroupId,
-            _x getVariable ["Busy" + str _x,false],
-            _x getVariable ["ITW_CLASH_ReconPhase0Active",false],
-            _x getVariable ["ITW_CLASH_ReconPhase0Mode",""]
-        ]},
-        (_hq getVariable ["RydHQ_ReconAv",[]]) apply {[_x] call ITW_CLASH_fnc_GroupId},
-        _hq getVariable ["RydHQ_ReconStage",-1],
-        _hq getVariable ["RydHQ_ReconStage2",-1],
-        _hq getVariable ["RydHQ_ReconDone",false]
-    ]] call ITW_CLASH_ReconPlanning_fnc_Log;
-
-    // The native recon function is usually spawned. Give its wrapper one
-    // scheduler turn to report whether HAL actually selected one of the exposed
-    // SOF candidates; this is telemetry only.
-    [_mode,_eligible] spawn {
-        params ["_mode","_eligible"];
-        sleep 0.5;
-        private _assigned = _eligible select {
-            !isNull _x && {_x getVariable ["ITW_CLASH_ReconPhase0Active",false]}
-        };
-        ["result",[
+        ]
+    });
+    if (_signature != missionNamespace getVariable ["ITW_CLASH_ReconPlanningSpecForSignature",""]) then {
+        ITW_CLASH_ReconPlanningSpecForSignature = _signature;
+        ["specfor-sync",[
             _mode,
-            _assigned apply {[
+            count _semanticSOF,
+            count _specFor,
+            _semanticSOF apply {[
                 [_x] call ITW_CLASH_fnc_GroupId,
-                _x getVariable ["ITW_CLASH_ReconPhase0Mode",""]
-            ]},
-            count _eligible
+                _x getVariable ["ITW_CLASH_ReconSOFFamily","sof"]
+            ]}
         ]] call ITW_CLASH_ReconPlanning_fnc_Log;
     };
 
-    _result
+    _semanticSOF
 };
 
 [] spawn {
     scriptName "ITW_CLASH_ReconPlanningBridge";
-    private _deadline = time + 180;
+
+    private _deadline = time + 120;
     waitUntil {
-        sleep 0.25;
+        sleep 0.1;
         (
-            missionNamespace getVariable ["ITW_CLASH_HALReady",false] &&
-            {!isNil "ITW_CLASH_SOF_fnc_Classify"} &&
-            {!isNil "HAL_HQOrders"} &&
-            {!isNil "HAL_HQOrdersDef"} &&
-            {!isNil "ITW_CLASH_Recon_fnc_NativeGoRecon"} &&
-            {!isNil "ITW_CLASH_Recon_fnc_NativeGoDefRecon"}
+            missionNamespace getVariable ["ITW_CLASH_HALReady",false]
+            && {!isNil "HAL_HQOrders"}
+            && {!isNil "HAL_HQOrdersDef"}
+            && {!isNil "ITW_CLASH_SOF_fnc_Classify"}
+            && {!isNil "ITW_CLASH_Recon_fnc_NativeGoRecon"}
+            && {!isNil "ITW_CLASH_Recon_fnc_NativeGoDefRecon"}
         ) || {time > _deadline}
     };
 
-    if (time > _deadline || {
-        isNil "HAL_HQOrders" || {
-            isNil "HAL_HQOrdersDef" || {
-                isNil "ITW_CLASH_Recon_fnc_NativeGoRecon" || {
-                    isNil "ITW_CLASH_Recon_fnc_NativeGoDefRecon"
-                }
-            }
-        }
-    }) exitWith {
+    if (isNil "HAL_HQOrders" || {isNil "HAL_HQOrdersDef"}) exitWith {
         ITW_CLASH_ReconPlanningBridgeStarted = false;
-        diag_log "CLASH BOOT | recon-planning-bridge-deferred | HAL planner or Recon Phase 0 gate unavailable";
+        diag_log "CLASH BOOT | recon-planning-bridge-fail-open | native HAL planners unavailable";
     };
-
-    // Recon Phase 0 sets its saved native handles immediately before replacing
-    // HAL_GoRecon/HAL_GoDefRecon. Yield once so those public gate assignments and
-    // the phase boot record finish before a planning window can ever open.
-    sleep 0.25;
+    if (isNil "ITW_CLASH_SOF_fnc_Classify") exitWith {
+        ITW_CLASH_ReconPlanningBridgeStarted = false;
+        diag_log "CLASH BOOT | recon-planning-bridge-fail-open | shared SOF doctrine unavailable";
+    };
 
     ITW_CLASH_ReconPlanning_fnc_NativeHQOrders = HAL_HQOrders;
     ITW_CLASH_ReconPlanning_fnc_NativeHQOrdersDef = HAL_HQOrdersDef;
 
     HAL_HQOrders = {
-        [
-            "offensive",
-            _this,
-            ITW_CLASH_ReconPlanning_fnc_NativeHQOrders
-        ] call ITW_CLASH_ReconPlanning_fnc_CallNative
+        private _hq = _this param [0,grpNull];
+        [_hq,"offensive"] call ITW_CLASH_ReconPlanning_fnc_SyncSpecFor;
+        _this call ITW_CLASH_ReconPlanning_fnc_NativeHQOrders
     };
 
     HAL_HQOrdersDef = {
-        [
-            "defensive",
-            _this,
-            ITW_CLASH_ReconPlanning_fnc_NativeHQOrdersDef
-        ] call ITW_CLASH_ReconPlanning_fnc_CallNative
-    };
-
-    // Dead-man restoration for a script error/abnormal escape inside a native
-    // planner call. In the normal synchronous path Depth returns to zero before
-    // this watcher gets another scheduler turn.
-    [] spawn {
-        scriptName "ITW_CLASH_ReconPlanningRecoveryWatch";
-        while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
-            sleep 1;
-            private _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
-            if (isNull _hq) then {continue};
-            if ((_hq getVariable ["ITW_CLASH_ReconPlanningDepth",0]) <= 0) then {continue};
-
-            private _snapshot = _hq getVariable ["ITW_CLASH_ReconPlanningSnapshot",[]];
-            if (_snapshot isEqualTo [] || {count _snapshot < 1}) then {
-                _hq setVariable ["ITW_CLASH_ReconPlanningDepth",0];
-                continue;
-            };
-            private _openedAt = _snapshot#0;
-            if (diag_tickTime - _openedAt >= ITW_CLASH_ReconPlanningRecoveryTimeout) then {
-                [_hq,"watchdog-timeout"] call ITW_CLASH_ReconPlanning_fnc_RestoreSnapshot;
-            };
-        };
+        private _hq = _this param [0,grpNull];
+        [_hq,"defensive"] call ITW_CLASH_ReconPlanning_fnc_SyncSpecFor;
+        _this call ITW_CLASH_ReconPlanning_fnc_NativeHQOrdersDef
     };
 
     diag_log format [
-        "CLASH BOOT | recon-planning-bridge-ready | version=%1 halChooses=true specForPersistent=true planningWindow=true phase0Gate=true conventionalStageGuard=true anchorsSeparate=true recoveryWatch=%2",
-        ITW_CLASH_ReconPlanningBridgeVersion,
-        ITW_CLASH_ReconPlanningRecoveryTimeout
+        "CLASH BOOT | recon-planning-bridge-ready | version=%1 nativeBroadRecon=true semanticSpecForBridge=true reconPoolMutation=false noReconMutation=false friendsMutation=false halChooses=true",
+        ITW_CLASH_ReconPlanningBridgeVersion
     ];
 };
