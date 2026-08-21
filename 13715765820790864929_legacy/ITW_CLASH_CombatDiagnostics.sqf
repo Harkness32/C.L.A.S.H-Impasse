@@ -2,7 +2,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_CombatDiagnosticsStarted",false]) exitWith {true};
 
 ITW_CLASH_CombatDiagnosticsStarted = true;
-ITW_CLASH_CombatDiagnosticsVersion = 1;
+ITW_CLASH_CombatDiagnosticsVersion = 2;
 ITW_CLASH_CombatDiagnosticsEnabled = true;
 ITW_CLASH_CombatDiagnosticsPollInterval = 1.5;
 ITW_CLASH_CombatDiagnosticsContactRadius = 200;
@@ -27,6 +27,7 @@ ITW_CLASH_CombatDiagnosticsPairLastLog = createHashMap;
       - TARGET / AUTOTARGET / MOVE / FSM AI features
       - behaviour / combat behaviour / unit combat mode
       - knowsAbout / targetKnowledge / targets / findNearestEnemy
+      - exact HAL HQ contact knowledge for the opposing unit/vehicle/group
       - HAL list membership and recon counters
       - Defending / Busy / Unable
       - C.L.A.S.H. withdrawal, recovery, anchor, and Recon Phase 0 state
@@ -65,6 +66,39 @@ ITW_CLASH_Diag_fnc_InHQList = {
 ITW_CLASH_Diag_fnc_GroupIds = {
     params [["_groups",[]]];
     (_groups select {!isNull _x}) apply {[_x] call ITW_CLASH_Diag_fnc_GroupId}
+};
+
+ITW_CLASH_Diag_fnc_HALContactKnowledge = {
+    params ["_otherUnit"];
+
+    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    if (isNull _hq || {isNull _otherUnit}) exitWith {
+        [["valid",false]]
+    };
+
+    private _otherVehicle = vehicle _otherUnit;
+    private _otherGroup = group _otherUnit;
+    private _hqLeader = leader _hq;
+    private _knEnemies = _hq getVariable ["RydHQ_KnEnemies",[]];
+    private _knEnemyGroups = _hq getVariable ["RydHQ_KnEnemiesG",[]];
+    private _alwaysKnown = _hq getVariable ["RydHQ_AlwaysKnownU",[]];
+    private _alwaysUnknown = _hq getVariable ["RydHQ_AlwaysUnKnownU",[]];
+
+    [
+        ["valid",true],
+        ["targetGroup",if (isNull _otherGroup) then {"<no-group>"} else {[_otherGroup] call ITW_CLASH_Diag_fnc_GroupId}],
+        ["targetVehicle",typeOf _otherVehicle],
+        ["knEnemyUnit",_otherUnit in _knEnemies],
+        ["knEnemyVehicle",_otherVehicle in _knEnemies],
+        ["knEnemyGroup",!isNull _otherGroup && {_otherGroup in _knEnemyGroups}],
+        ["hqLeaderKnowsAbout",if (isNull _hqLeader) then {-1} else {_hqLeader knowsAbout _otherUnit}],
+        ["alwaysKnownUnit",_otherUnit in _alwaysKnown],
+        ["alwaysKnownVehicle",_otherVehicle in _alwaysKnown],
+        ["alwaysUnknownUnit",_otherUnit in _alwaysUnknown],
+        ["alwaysUnknownVehicle",_otherVehicle in _alwaysUnknown],
+        ["knEnemiesCount",count _knEnemies],
+        ["knEnemyGroupsCount",count _knEnemyGroups]
+    ]
 };
 
 ITW_CLASH_Diag_fnc_Waypoint = {
@@ -296,6 +330,7 @@ ITW_CLASH_Diag_fnc_ContactSide = {
             ]
         },
         [_unit,_otherUnit] call ITW_CLASH_Diag_fnc_Unit,
+        [_otherUnit] call ITW_CLASH_Diag_fnc_HALContactKnowledge,
         [
             [_hq,"RydHQ_AttackAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
             [_hq,"RydHQ_CombatAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
@@ -324,15 +359,35 @@ ITW_CLASH_Diag_fnc_ContactReasons = {
     if ((combatMode _group) isEqualTo "BLUE") then {_reasons pushBack "combatmode-blue"};
 
     private _knowledge = _unit knowsAbout _otherUnit;
+    private _groupKnowledge = _group knowsAbout _otherUnit;
     if (_distance <= 75 && {_knowledge < 0.05}) then {
         _reasons pushBack "close-but-no-unit-knowledge";
     };
-    if (_distance <= 75 && {(_group knowsAbout _otherUnit) < 0.05}) then {
+    if (_distance <= 75 && {_groupKnowledge < 0.05}) then {
         _reasons pushBack "close-but-no-group-knowledge";
     };
     if (_distance <= 75 && {isNull (_unit findNearestEnemy _unit)}) then {
         _reasons pushBack "close-but-findnearestenemy-null";
     };
+
+    if (_distance <= 75 && {_groupKnowledge < 0.05}) then {
+        private _hq = call ITW_CLASH_Diag_fnc_HQ;
+        if (!isNull _hq) then {
+            private _otherVehicle = vehicle _otherUnit;
+            private _otherGroup = group _otherUnit;
+            private _knEnemies = _hq getVariable ["RydHQ_KnEnemies",[]];
+            private _knEnemyGroups = _hq getVariable ["RydHQ_KnEnemiesG",[]];
+            private _halKnows = (_otherUnit in _knEnemies)
+                || {_otherVehicle in _knEnemies}
+                || {!isNull _otherGroup && {_otherGroup in _knEnemyGroups}};
+            if (_halKnows) then {
+                _reasons pushBack "hal-hq-knows-but-group-does-not";
+            } else {
+                _reasons pushBack "hal-hq-also-unaware";
+            };
+        };
+    };
+
     if (captive _unit) then {_reasons pushBack "unit-captive"};
     if (captive _otherUnit) then {_reasons pushBack "enemy-captive"};
     _reasons
@@ -357,7 +412,6 @@ ITW_CLASH_Diag_fnc_DumpAll = {
 
 [] spawn {
     scriptName "ITW_CLASH_CombatDiagnostics";
-
     private _lastHQ = -1e10;
     waitUntil {
         sleep 0.25;
@@ -371,7 +425,7 @@ ITW_CLASH_Diag_fnc_DumpAll = {
     };
 
     diag_log format [
-        "CLASH BOOT | combat-diagnostics-ready | version=%1 observerOnly=true poll=%2 contactRadius=%3 pairCooldown=%4 hqInterval=%5 detectionIndependent=true",
+        "CLASH BOOT | combat-diagnostics-ready | version=%1 observerOnly=true poll=%2 contactRadius=%3 pairCooldown=%4 hqInterval=%5 detectionIndependent=true halContactCorrelation=true",
         ITW_CLASH_CombatDiagnosticsVersion,
         ITW_CLASH_CombatDiagnosticsPollInterval,
         ITW_CLASH_CombatDiagnosticsContactRadius,
