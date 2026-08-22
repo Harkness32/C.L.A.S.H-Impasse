@@ -41,11 +41,13 @@ def test_dual_hal_runtime_loads_synchronously_before_impasse_start():
 
     core = 'call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbook.sqf"'
     hardened = 'call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbookHardening.sqf"'
+    api = 'call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf"'
     start = '[] execVM "ITW_Start.sqf"'
 
     assert core in init
     assert hardened in init
-    assert init.index(core) < init.index(hardened) < init.index(start)
+    assert api in init
+    assert init.index(core) < init.index(hardened) < init.index(api) < init.index(start)
     assert "runtime candidate blocked" in init
 
     # OneZero hardening has one owner: ReconPlanningBridge. Do not create a
@@ -153,6 +155,23 @@ def test_checkbook_serializes_transport_purchases_and_throttles_retries():
     assert "time + (if (isNull _result) then {20} else {60})" in hardening
 
 
+def test_generic_checkbook_api_is_thin_and_transport_is_v1_provider():
+    api = mission("ITW_CLASH_CheckbookAPI.sqf")
+
+    assert "ITW_CLASH_CheckbookAPIVersion = 1;" in api
+    assert "ITW_CLASH_fnc_RequestCapability =" in api
+    assert 'case "TRANSPORT"' in api
+    assert "ITW_CLASH_Checkbook_fnc_RequestTransport" in api
+    assert '"provider-not-implemented"' in api
+    assert '"CASEVAC"' in api
+    assert '"ARTILLERY"' in api
+    assert '"SEAD"' in api
+    assert "createVehicle" not in api
+    assert "addWaypoint" not in api
+    assert "RydHQ_AAthreat" not in api
+    assert "RydHQ_Airthreat" not in api
+
+
 def test_native_hal_cargo_owns_tactical_air_safety_not_impasse():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
     cargo = hal("HAL/SCargo.sqf")
@@ -169,6 +188,7 @@ def test_native_hal_cargo_owns_tactical_air_safety_not_impasse():
     # unusable air capacity, but it never creates an Impasse air-corridor state.
     assert "AIR_CORRIDOR" not in dual.upper()
     assert "AIR_CORRIDOR" not in mission("ITW_CLASH_DualHALCheckbookHardening.sqf").upper()
+    assert "AIR_CORRIDOR" not in mission("ITW_CLASH_CheckbookAPI.sqf").upper()
 
 
 def test_recon_sof_bridge_is_scoped_to_the_exact_hal_commander_side():
