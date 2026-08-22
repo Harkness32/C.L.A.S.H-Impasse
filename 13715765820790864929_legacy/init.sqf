@@ -47,9 +47,12 @@ if (isServer) then {
         };
     };
 
-    // Dual-HAL / Checkbook must load synchronously after the canonical
-    // controller is validated but before its scheduled HAL startup can execute.
-    // The preInit wrappers remain fail-open unless this runtime reports ready.
+    // Dual-HAL / Checkbook loads synchronously after the canonical controller
+    // is validated. Commander B must be prepared here, at the C.L.A.S.H.-owned
+    // launch boundary, before ITW_Start can eventually launch native HAL core.
+    // Do not rely on wrapping NR6_fnc_HALcore: RydHQInit/VarInit legitimately
+    // rebind native HAL functions during initialization. Native RydHQInit reads
+    // leaderHQB after VarInit and registers it as Commander B.
     if (
         missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]
         && {missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitReady",false]}
@@ -65,12 +68,30 @@ if (isServer) then {
             if (_dualHALHardened isEqualTo true && {fileExists "ITW_CLASH_CheckbookAPI.sqf"}) then {
                 _checkbookAPIReady = call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf";
             };
-            if (_dualHALHardened isEqualTo true && {_checkbookAPIReady isEqualTo true}) then {
-                diag_log "CLASH BOOT | dual-hal-checkbook-scheduled | synchronous-core-wrapper=true hardening=true capabilityAPI=true";
+
+            private _dualHALPrepared = false;
+            if (
+                _dualHALHardened isEqualTo true
+                && {_checkbookAPIReady isEqualTo true}
+                && {!isNil "ITW_CLASH_DualHAL_fnc_Prepare"}
+            ) then {
+                _dualHALPrepared = call ITW_CLASH_DualHAL_fnc_Prepare;
+            };
+
+            if (
+                _dualHALHardened isEqualTo true
+                && {_checkbookAPIReady isEqualTo true}
+                && {_dualHALPrepared isEqualTo true}
+            ) then {
+                diag_log format [
+                    "CLASH BOOT | dual-hal-checkbook-prepared | commanderB=%1 leaderHQB=%2 hardening=true capabilityAPI=true nativeCoreLaunchPending=true",
+                    !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull]),
+                    !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORLeader",objNull])
+                ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 runtime candidate blocked",
-                    _dualHALHardened,_checkbookAPIReady
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 prepared=%3 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady,_dualHALPrepared
                 ];
             };
         } else {
