@@ -93,6 +93,15 @@ if (isServer) then {
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
                 _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";
             };
+            private _playerArtilleryLoaded = false;
+            if (
+                _playerTasksLoaded isEqualTo true
+                && {_playerGarageLoaded isEqualTo true}
+                && {fileExists "ITW_CLASH_PlayerArtilleryTasks.sqf"}
+            ) then {
+                _playerArtilleryLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_PlayerArtilleryTasks.sqf";
+            };
             if (missionNamespace getVariable ["ITW_CLASH_CertificationMode",false] && {
                 fileExists "ITW_CLASH_ArtilleryCertification.sqf"
             }) then {
@@ -107,15 +116,16 @@ if (isServer) then {
                 && {_playerTransportLoaded isEqualTo true}
                 && {_playerTasksLoaded isEqualTo true}
                 && {_playerGarageLoaded isEqualTo true}
+                && {_playerArtilleryLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 sideBinderOwnsCommanderB=true nativeCoreLaunchPending=true",
-                    _forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunchPending=true",
+                    _forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded
                 ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 runtime candidate blocked",
-                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded
                 ];
             };
         } else {

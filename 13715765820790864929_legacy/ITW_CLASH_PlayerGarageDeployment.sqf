@@ -36,9 +36,13 @@ ITW_CLASH_PlayerGarage_fnc_ClientResult = {
     _veh setDir _direction;
     _veh setPosATL _position;
     _veh setVectorUp surfaceNormal getPosASL _veh;
-    _veh setVariable ["ITW_CLASH_PlayerArtyPending",false];
-    _veh setVariable ["ITW_CLASH_PlayerArtyDeployRequestSent",false];
-    _veh setVariable ["ITW_CLASH_PlayerArtyDeploymentState","DEPLOYED"];
+    _veh setVariable ["ITW_CLASH_PlayerArtyPending",false,true];
+    _veh setVariable ["ITW_CLASH_PlayerArtyDeployRequestSent",false,true];
+    _veh setVariable ["ITW_CLASH_PlayerArtyDeploymentState","DEPLOYED",true];
+    _veh setVariable ["ITW_CLASH_PlayerGarageAsset",true,true];
+    _veh setVariable [
+        "ITW_CLASH_PlayerGarageOwnerUID",getPlayerUID player,true
+    ];
     systemChat "C.L.A.S.H. artillery deployed between the rear and forward generation nodes.";
     true
 };
