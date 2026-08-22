@@ -42,14 +42,22 @@ def test_dual_hal_runtime_loads_synchronously_before_impasse_start():
     core = 'call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbook.sqf"'
     hardened = 'call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbookHardening.sqf"'
     api = 'call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf"'
-    prepare = 'call ITW_CLASH_DualHAL_fnc_Prepare;'
+    force_generation = 'call compile preprocessFileLineNumbers "ITW_CLASH_ForceGeneration.sqf"'
+    logistics = 'call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf"'
+    garage = 'call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf"'
     start = '[] execVM "ITW_Start.sqf"'
 
     assert core in init
     assert hardened in init
     assert api in init
-    assert prepare in init
-    assert init.index(core) < init.index(hardened) < init.index(api) < init.index(prepare) < init.index(start)
+    assert force_generation in init
+    assert logistics in init
+    assert garage in init
+    assert 'call ITW_CLASH_DualHAL_fnc_Prepare;' not in init
+    assert init.index(core) < init.index(hardened) < init.index(api) < init.index(force_generation) < init.index(start)
+    assert init.index(force_generation) < init.index(logistics) < init.index(start)
+    assert init.index(force_generation) < init.index(garage) < init.index(start)
+    assert "dual-hal-checkbook-deferred-ready" in init
     assert "runtime candidate blocked" in init
 
     # OneZero hardening has one owner: ReconPlanningBridge. Do not create a
@@ -60,20 +68,22 @@ def test_dual_hal_runtime_loads_synchronously_before_impasse_start():
 def test_commander_b_prepare_is_explicit_and_not_dependent_on_halcore_wrapper_survival():
     init = mission("init.sqf")
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
+    api = mission("ITW_CLASH_CheckbookAPI.sqf")
     ryd_init = hal("RydHQInit.sqf")
 
-    prepare = 'call ITW_CLASH_DualHAL_fnc_Prepare;'
     start = '[] execVM "ITW_Start.sqf"'
 
-    # Burn-in smoke 2026-08-21 proved the early NR6_fnc_HALcore wrapper can be
-    # rebound by native HAL initialization. Commander B therefore has an
-    # explicit C.L.A.S.H.-owned prepare point before Impasse can launch HAL.
-    assert prepare in init
-    assert init.index(prepare) < init.index(start)
-    assert "dual-hal-checkbook-prepared" in init
+    # Burn-in smoke 2026-08-21 proved both that the early NR6_fnc_HALcore wrapper
+    # is rebound and that mission init precedes Impasse side identity. API V2's
+    # binder waits for those sides and prepares B before native HAL launches.
+    assert 'call ITW_CLASH_DualHAL_fnc_Prepare;' not in init
+    assert "ITW_CLASH_DualHALSideBinderStarted" in api
+    assert '!isNil "ITW_PlayerSide"' in api
+    assert 'call ITW_CLASH_DualHAL_fnc_PrepareCommanderB' in api
+    assert "dual-hal-checkbook-deferred-ready" in init
     assert "nativeCoreLaunchPending=true" in init
-    assert 'missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull]' in init
-    assert 'missionNamespace getVariable ["ITW_CLASH_BLUFORLeader",objNull]' in init
+    assert "dual-hal-core-wrapper-skipped" in dual
+    assert "NR6_fnc_HALcore =" not in dual
 
     # Prepare creates leaderHQB; untouched native RydHQInit consumes it after
     # VarInit and registers that group as Commander B.
@@ -127,7 +137,7 @@ def test_blufor_objectives_use_private_mirrors_and_full_hal_taken_contract():
     assert "ITW_CLASH_BLUFORObjectiveMirrors" in dual
     assert '_mirror setVariable ["SetTakenA",_friendlyOwned,true];' in dual
 
-    assert "ITW_CLASH_DualHALCheckbookHardeningVersion = 4;" in hardening
+    assert "ITW_CLASH_DualHALCheckbookHardeningVersion = 5;" in hardening
     assert "RydHQB_Taken = +_taken;" in hardening
     assert 'setVariable ["RydHQ_Taken",+_taken]' in hardening
     assert "ITW_CLASH_DualHALHardeningLastBZone" in hardening
@@ -177,26 +187,30 @@ def test_impasse_remains_vehicle_count_authority_after_checkbook_purchase():
     assert 'getVariable ["ITW_VehDef",[]]' in attack
 
 
-def test_checkbook_serializes_transport_purchases_and_throttles_retries():
+def test_checkbook_serializes_by_side_and_capability_without_global_cross_side_lock():
     hardening = mission("ITW_CLASH_DualHALCheckbookHardening.sqf")
-
-    assert "ITW_CLASH_CheckbookTransportBusyUntil" in hardening
-    assert "ITW_CLASH_CheckbookTransportRetryAt" in hardening
-    assert "time + 15" in hardening
-    assert "time + (if (isNull _result) then {20} else {60})" in hardening
-
-
-def test_generic_checkbook_api_is_thin_and_transport_is_v1_provider():
     api = mission("ITW_CLASH_CheckbookAPI.sqf")
 
-    assert "ITW_CLASH_CheckbookAPIVersion = 1;" in api
+    assert "ITW_CLASH_CheckbookTransportBusyUntil" not in hardening
+    assert "ITW_CLASH_CheckbookTransportRetryAt" not in hardening
+    assert "ITW_CLASH_CheckbookLeases = createHashMap;" in api
+    assert "ITW_CLASH_Checkbook_fnc_LeaseKey" in api
+    assert "ITW_CLASH_Checkbook_fnc_TryLease" in api
+    assert "ITW_CLASH_Checkbook_fnc_ReleaseLease" in api
+
+
+def test_generic_checkbook_api_v2_has_typed_contract_and_provider_registry():
+    api = mission("ITW_CLASH_CheckbookAPI.sqf")
+
+    assert "ITW_CLASH_CheckbookAPIVersion = 2;" in api
+    assert "ITW_CLASH_CHECKBOOK_REQUEST_V2" in api
+    assert "ITW_CLASH_CHECKBOOK_RESULT_V2" in api
     assert "ITW_CLASH_fnc_RequestCapability =" in api
-    assert 'case "TRANSPORT"' in api
+    assert "ITW_CLASH_CheckbookProviders = createHashMap;" in api
+    assert "ITW_CLASH_Checkbook_fnc_RegisterProvider" in api
+    assert '["TRANSPORT",ITW_CLASH_Checkbook_fnc_TransportProvider]' in api
     assert "ITW_CLASH_Checkbook_fnc_RequestTransport" in api
     assert '"provider-not-implemented"' in api
-    assert "CASEVAC" in api
-    assert "ARTILLERY" in api
-    assert "SEAD" in api
     assert "createVehicle" not in api
     assert "addWaypoint" not in api
     assert "RydHQ_AAthreat" not in api

@@ -47,12 +47,10 @@ if (isServer) then {
         };
     };
 
-    // Dual-HAL / Checkbook loads synchronously after the canonical controller
-    // is validated. Commander B must be prepared here, at the C.L.A.S.H.-owned
-    // launch boundary, before ITW_Start can eventually launch native HAL core.
-    // Do not rely on wrapping NR6_fnc_HALcore: RydHQInit/VarInit legitimately
-    // rebind native HAL functions during initialization. Native RydHQInit reads
-    // leaderHQB after VarInit and registers it as Commander B.
+    // Dual-HAL / Checkbook loads synchronously after the canonical controller.
+    // Impasse does not establish side identity until ITW_Start, so Commander B
+    // preparation is intentionally deferred to Checkbook API V2's side binder.
+    // Native RydHQInit later consumes leaderHQB without any HAL-core override.
     if (
         missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]
         && {missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitReady",false]}
@@ -69,29 +67,39 @@ if (isServer) then {
                 _checkbookAPIReady = call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf";
             };
 
-            private _dualHALPrepared = false;
-            if (
-                _dualHALHardened isEqualTo true
-                && {_checkbookAPIReady isEqualTo true}
-                && {!isNil "ITW_CLASH_DualHAL_fnc_Prepare"}
-            ) then {
-                _dualHALPrepared = call ITW_CLASH_DualHAL_fnc_Prepare;
+            private _forceGenerationReady = false;
+            if (_checkbookAPIReady isEqualTo true && {fileExists "ITW_CLASH_ForceGeneration.sqf"}) then {
+                _forceGenerationReady = call compile preprocessFileLineNumbers "ITW_CLASH_ForceGeneration.sqf";
+            };
+            private _halLogisticsLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
+                _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
+            };
+            private _playerGarageLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
+                _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";
+            };
+            if (missionNamespace getVariable ["ITW_CLASH_CertificationMode",false] && {
+                fileExists "ITW_CLASH_ArtilleryCertification.sqf"
+            }) then {
+                [] execVM "ITW_CLASH_ArtilleryCertification.sqf";
             };
 
             if (
                 _dualHALHardened isEqualTo true
                 && {_checkbookAPIReady isEqualTo true}
-                && {_dualHALPrepared isEqualTo true}
+                && {_forceGenerationReady isEqualTo true}
+                && {_halLogisticsLoaded isEqualTo true}
+                && {_playerGarageLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-prepared | commanderB=%1 leaderHQB=%2 hardening=true capabilityAPI=true nativeCoreLaunchPending=true",
-                    !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull]),
-                    !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORLeader",objNull])
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerGarage=%3 sideBinderOwnsCommanderB=true nativeCoreLaunchPending=true",
+                    _forceGenerationReady,_halLogisticsLoaded,_playerGarageLoaded
                 ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 prepared=%3 runtime candidate blocked",
-                    _dualHALHardened,_checkbookAPIReady,_dualHALPrepared
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerGarage=%5 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerGarageLoaded
                 ];
             };
         } else {

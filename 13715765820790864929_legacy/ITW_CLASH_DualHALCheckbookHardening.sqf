@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookHardeningStarted",false]) exitWith {true};
 ITW_CLASH_DualHALCheckbookHardeningStarted = true;
-ITW_CLASH_DualHALCheckbookHardeningVersion = 4;
+ITW_CLASH_DualHALCheckbookHardeningVersion = 5;
 ITW_CLASH_DualHALHardeningLastBZone = -1;
 
 if (
@@ -143,37 +143,12 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
 };
 
 /*
-    HAL planning scripts are scheduled independently, so two cargo orders can
-    discover the same last ticket/cap slot before either one pays for it. Serialize
-    the actual purchase seam and throttle one requester's retries. The lease has
-    a timeout so even an upstream script error cannot permanently lock Checkbook.
+    V5 deliberately does not wrap RequestTransport. The RPT showed that the
+    legacy base function's breakOut escaped the wrapper assignment and left
+    `_result` undefined. V2 uses typed local control flow and the generic API's
+    side/capability lease, so transport, artillery and logistics share one
+    serialization contract without a global cross-side lock.
 */
-ITW_CLASH_DualHALHardening_fnc_RequestTransportBase = ITW_CLASH_Checkbook_fnc_RequestTransport;
-ITW_CLASH_Checkbook_fnc_RequestTransport = {
-    params ["_requester","_hq","_destination","_mode",["_seatCount",1]];
-    if (isNull _requester) exitWith {objNull};
-
-    private _retryAt = _requester getVariable ["ITW_CLASH_CheckbookTransportRetryAt",0];
-    if (time < _retryAt) exitWith {objNull};
-
-    private _busyUntil = missionNamespace getVariable ["ITW_CLASH_CheckbookTransportBusyUntil",0];
-    if (time < _busyUntil) exitWith {
-        _requester setVariable ["ITW_CLASH_CheckbookTransportRetryAt",time + 5];
-        objNull
-    };
-
-    missionNamespace setVariable ["ITW_CLASH_CheckbookTransportBusyUntil",time + 15];
-    _requester setVariable ["ITW_CLASH_CheckbookTransportRetryAt",time + 15];
-
-    private _result = _this call ITW_CLASH_DualHALHardening_fnc_RequestTransportBase;
-
-    missionNamespace setVariable ["ITW_CLASH_CheckbookTransportBusyUntil",0];
-    _requester setVariable [
-        "ITW_CLASH_CheckbookTransportRetryAt",
-        time + (if (isNull _result) then {20} else {60})
-    ];
-    _result
-};
 
 /*
     Match Commander A's mature simple-objective contract. SetTakenA is stored on
@@ -248,7 +223,7 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
 };
 
 diag_log format [
-    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true purchaseSerialized=true takenSync=true zoneReset=true base0Bind=true",
+    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true purchaseLease=api-v2 takenSync=true zoneReset=true base0Bind=true",
     ITW_CLASH_DualHALCheckbookHardeningVersion
 ];
 
