@@ -3,13 +3,14 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookHardeningStarted",false]) exitWith {true};
 ITW_CLASH_DualHALCheckbookHardeningStarted = true;
-ITW_CLASH_DualHALCheckbookHardeningVersion = 1;
+ITW_CLASH_DualHALCheckbookHardeningVersion = 2;
 
 if (
     isNil "ITW_CLASH_DualHAL_fnc_PrepareCommanderB" ||
     {isNil "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved"} ||
     {isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle"} ||
-    {isNil "ITW_CLASH_DualHAL_fnc_TrackAsset"}
+    {isNil "ITW_CLASH_DualHAL_fnc_TrackAsset"} ||
+    {isNil "ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives"}
 ) exitWith {
     diag_log "CLASH BOOT | WARNING | dual-hal-checkbook-hardening-source-missing";
     false
@@ -140,6 +141,27 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
 };
 
 /*
+    Match Commander A's mature simple-objective contract. SetTakenA is stored on
+    B's private mirror object, while RydHQ_Taken is the planner-level list that
+    Orders.sqf subtracts from objectives before selecting reconnaissance/attack
+    targets. Because mirrors are private to B there is no A/B state collision.
+*/
+ITW_CLASH_DualHALHardening_fnc_RefreshBLUFORObjectivesBase = ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives;
+ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
+    private _mirrors = [] call ITW_CLASH_DualHALHardening_fnc_RefreshBLUFORObjectivesBase;
+    private _taken = _mirrors select {
+        _x getVariable ["ITW_CLASH_BLUFOROwned",false]
+    };
+
+    RydHQB_Taken = +_taken;
+    if (!isNull ITW_CLASH_BLUFORHQ) then {
+        ITW_CLASH_BLUFORHQ setVariable ["RydHQ_Taken",+_taken];
+        ITW_CLASH_BLUFORHQ setVariable ["RydHQ_Objectives",+_mirrors];
+    };
+    _mirrors
+};
+
+/*
     Commander B may be created before Impasse has finalized Base 0. Bind its
     hidden physical leader to the real strategic rear base once the campaign is
     ready. This happens once and does not become a tactical relocation system.
@@ -176,7 +198,7 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
 };
 
 diag_log format [
-    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true base0Bind=true",
+    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true takenSync=true base0Bind=true",
     ITW_CLASH_DualHALCheckbookHardeningVersion
 ];
 
