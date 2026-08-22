@@ -18,22 +18,27 @@ def test_lz_pad_fix_is_started_after_air_ops():
 def test_casevac_uses_invisible_helipad_and_30m_infantry_rally():
     source = text("ITW_CLASH_CASEVAC_LZPadFix.sqf")
     assert '"Land_HelipadEmpty_F"' in source
+    assert "ITW_CLASH_CASEVAC_LZPadFixVersion = 2;" in source
     assert "ITW_CLASH_CASEVAC_InfantryRallyOffset = 30;" in source
     assert '_rally = _lz getPos [ITW_CLASH_CASEVAC_InfantryRallyOffset,_rallyBearing];' in source
     assert '_group addWaypoint [_rally,8]' in source
     assert '"lz-pad-created"' in source
 
 
-def test_helicopter_is_pinned_to_pad_with_landat_until_boarding_finishes():
+def test_helicopter_is_pinned_to_pad_through_inbound_and_boarding():
     source = text("ITW_CLASH_CASEVAC_LZPadFix.sqf")
     assert '_heli landAt [_pad,"GetIn",_wait,true]' in source
-    assert '_state isEqualTo "inbound"' in source
+    assert 'if !(_state in ["inbound","boarding"]) exitWith {};' in source
     assert '_heli distance2D _pad <= 650' in source
     assert '"lz-pad-locked"' in source
+    assert "pinStates=inbound+boarding" in source
+    assert 'if !(_state isEqualTo "inbound") exitWith {};' not in source
 
 
-def test_pad_is_cleaned_after_extraction_state_changes():
+def test_pad_is_cleaned_only_after_extraction_leaves_pickup_states():
     source = text("ITW_CLASH_CASEVAC_LZPadFix.sqf")
-    assert 'deleteVehicle _pad' in source
+    state_guard = source.index('if !(_state in ["inbound","boarding"]) exitWith {};')
+    cleanup = source.index('if (!isNull _pad) then {deleteVehicle _pad};', state_guard)
+    assert state_guard < cleanup
     assert '"ITW_CLASH_CASEVAC_LZPad",nil' in source
     assert '"ITW_CLASH_CASEVAC_Rally",nil' in source

@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_LZPadFixStarted",false]) exitWith {};
 ITW_CLASH_CASEVAC_LZPadFixStarted = true;
-ITW_CLASH_CASEVAC_LZPadFixVersion = 1;
+ITW_CLASH_CASEVAC_LZPadFixVersion = 2;
 ITW_CLASH_CASEVAC_InfantryRallyOffset = 30;
 
 waitUntil {
@@ -86,7 +86,11 @@ ITW_CLASH_CASEVAC_fnc_OrderHeliLZ = {
                 private _group = _heli getVariable ["ITW_CLASH_CASEVAC_Group",grpNull];
                 if (isNull _group) exitWith {};
                 private _state = _group getVariable ["ITW_CLASH_CASEVAC_State",""];
-                if !(_state isEqualTo "inbound") exitWith {};
+
+                // Keep Arma's landing target alive throughout physical boarding.
+                // V1 deleted the pad as soon as state changed from inbound to
+                // boarding, even though survivors were still walking/getting in.
+                if !(_state in ["inbound","boarding"]) exitWith {};
 
                 if (_heli distance2D _pad <= 650) then {
                     private _wait = ITW_CLASH_CASEVAC_BoardingTimeout + 30;
@@ -123,7 +127,7 @@ ITW_CLASH_CASEVAC_fnc_OrderHeliLZ = {
 };
 
 diag_log format [
-    "CLASH BOOT | casevac-lz-pad-fix-ready | version=%1 infantryOffset=%2",
+    "CLASH BOOT | casevac-lz-pad-fix-ready | version=%1 infantryOffset=%2 pinStates=inbound+boarding",
     ITW_CLASH_CASEVAC_LZPadFixVersion,
     ITW_CLASH_CASEVAC_InfantryRallyOffset
 ];
