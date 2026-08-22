@@ -8,7 +8,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALNativeSFFixStarted",false]) exit
 ITW_CLASH_HALNativeSFFixStarted = true;
 ITW_CLASH_HALNativeSFFixReady = false;
 ITW_CLASH_HALNativeSFFixFinished = false;
-ITW_CLASH_HALNativeSFFixVersion = 2;
+ITW_CLASH_HALNativeSFFixVersion = 3;
 ITW_CLASH_SFStandbyMinRadius = 90;
 ITW_CLASH_SFStandbyMaxRadius = 220;
 scriptName "ITW_CLASH_HALNativeSFFix";
@@ -121,14 +121,171 @@ _results pushBack (_step#2);
 if !(_step#0) exitWith {[_step#2,_results] call _finishFailure};
 _attackSource = _step#1;
 
-// Preserve native direct-action behavior, including HAL target selection,
-// infiltration geometry, transport use, STEALTH approach and DESTROY execution.
-HAL_GoSFAttack = compile _attackSource;
+// Compile the minimally repaired native executor once, then wrap it with
+// observer-only telemetry. The wrapper never issues movement, mutates HAL
+// Busy/Resting state, chooses a target, or changes the native return path.
+ITW_CLASH_HALNativeSF_fnc_GoSFAttackPatched = compile _attackSource;
+HAL_GoSFAttack = {
+    private _team = _this param [0,grpNull];
+    private _target = _this param [1,objNull];
+    private _targetGroup = _this param [2,grpNull];
+    private _hq = _this param [3,grpNull];
+    private _startedAt = time;
+
+    private _targetCategory = "OTHER";
+    if (!isNull _hq && {!isNull _targetGroup}) then {
+        if (_targetGroup in (_hq getVariable ["RydHQ_EnArtG",[]])) then {
+            _targetCategory = "ARTILLERY";
+        } else {
+            if (_targetGroup in (_hq getVariable ["RydHQ_EnStaticG",[]])) then {
+                _targetCategory = "STATIC";
+            } else {
+                private _targetLeader = leader _targetGroup;
+                if (!isNull _targetLeader && {
+                    _targetLeader in (missionNamespace getVariable ["RydxHQ_AllLeaders",[]])
+                }) then {
+                    _targetCategory = "HQ";
+                };
+            };
+        };
+    };
+
+    private _teamId = if (isNull _team || {isNil "ITW_CLASH_fnc_GroupId"}) then {
+        "<null>"
+    } else {
+        [_team] call ITW_CLASH_fnc_GroupId
+    };
+    private _targetGroupId = if (isNull _targetGroup || {isNil "ITW_CLASH_fnc_GroupId"}) then {
+        "<null>"
+    } else {
+        [_targetGroup] call ITW_CLASH_fnc_GroupId
+    };
+    private _distance = -1;
+    if (!isNull _team && {!isNull (leader _team) && {!isNull _target}}) then {
+        _distance = round ((leader _team) distance2D _target);
+    };
+
+    if (!isNil "ITW_CLASH_fnc_Log") then {
+        ["sof-direct-action-dispatched",[
+            _teamId,
+            if (isNull _team) then {"UNKNOWN"} else {str (side _team)},
+            if (isNull _hq) then {"<null>"} else {str _hq},
+            _targetGroupId,
+            _targetCategory,
+            if (isNull _target) then {""} else {typeOf _target},
+            _distance,
+            if (isNull _targetGroup) then {0} else {{alive _x} count units _targetGroup}
+        ]] call ITW_CLASH_fnc_Log;
+    };
+
+    private _result = _this call ITW_CLASH_HALNativeSF_fnc_GoSFAttackPatched;
+
+    if (!isNil "ITW_CLASH_fnc_Log") then {
+        ["sof-direct-action-returned",[
+            _teamId,
+            _targetGroupId,
+            _targetCategory,
+            round (time - _startedAt),
+            if (isNull _team) then {0} else {{alive _x} count units _team},
+            if (isNull _target) then {false} else {alive _target},
+            if (isNull _targetGroup) then {0} else {{alive _x} count units _targetGroup},
+            if (isNull _team) then {false} else {
+                _team getVariable ["Busy" + str _team,false]
+            },
+            if (isNull _team) then {false} else {
+                _team getVariable ["Resting" + str _team,false]
+            }
+        ]] call ITW_CLASH_fnc_Log;
+    };
+    _result
+};
+
+// The generic C.L.A.S.H. support-corridor resolver is intentionally enemy-side
+// because GTFO/reconstitution use the enemy attack-from route. SOF standby may
+// be called for any HAL side, so resolve this idle staging path independently
+// from the HQ's actual side instead of reusing the enemy-only recovery helper.
+ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn = {
+    params [["_objectiveIndex",-1],["_hq",grpNull]];
+
+    if (isNull _hq || {
+        isNil "ITW_PlayerSide" || {
+            isNil "ITW_EnemySide" || {
+                isNil "ITW_Objectives" || {
+                    isNil "ITW_Bases" || {
+                        _objectiveIndex < 0 || {
+                            _objectiveIndex >= count ITW_Objectives
+                        }
+                    }
+                }
+            }
+        }
+    }) exitWith {[]};
+
+    private _hqSide = side _hq;
+    private _sideLabel = "";
+    private _landSlot = -1;
+    private _airSlot = -1;
+
+    if (_hqSide isEqualTo ITW_EnemySide) then {
+        _sideLabel = "enemy";
+        _landSlot = ITW_ATTACK_LAND_E;
+        _airSlot = ITW_ATTACK_AIR_E;
+    } else {
+        if (_hqSide isEqualTo ITW_PlayerSide) then {
+            _sideLabel = "friendly";
+            _landSlot = ITW_ATTACK_LAND_F;
+            _airSlot = ITW_ATTACK_AIR_F;
+        };
+    };
+    if (_landSlot < 0 || {_airSlot < 0}) exitWith {[]};
+
+    private _objective = ITW_Objectives#_objectiveIndex;
+    private _attacks = _objective#ITW_OBJ_ATTACKS;
+    private _baseIndex = BASE_INDEX_NONE;
+    private _route = "land";
+
+    if (count _attacks > _landSlot) then {
+        _baseIndex = _attacks#_landSlot;
+    };
+    if (_baseIndex == BASE_INDEX_NONE && {count _attacks > _airSlot}) then {
+        _baseIndex = _attacks#_airSlot;
+        _route = "air";
+    };
+    if (_baseIndex < 0 || {_baseIndex >= count ITW_Bases}) exitWith {[]};
+
+    private _position = +(ITW_Bases#_baseIndex#ITW_BASE_A_SPAWN);
+    private _source = format [
+        "sf-support-corridor-%1-%2-ai-spawn",
+        _sideLabel,
+        _route
+    ];
+
+    if (_position isEqualTo [] && {_baseIndex < count ITW_Objectives}) then {
+        _position = +(ITW_Objectives#_baseIndex#ITW_OBJ_V_SPAWN);
+        _source = format [
+            "sf-support-corridor-%1-%2-vehicle-spawn",
+            _sideLabel,
+            _route
+        ];
+    };
+    if (_position isEqualTo []) then {
+        _position = +(ITW_Bases#_baseIndex#ITW_BASE_POS);
+        _source = format [
+            "sf-support-corridor-%1-%2-base-position",
+            _sideLabel,
+            _route
+        ];
+    };
+    if (_position isEqualTo []) exitWith {[]};
+    if (count _position < 3) then {_position pushBack 0};
+
+    [_position,_objectiveIndex,_source,_baseIndex,_hqSide]
+};
 
 // Native HAL parks idle SpecFor around the commander with a "Guard HQ" task.
 // C.L.A.S.H. keeps the same lightweight idle HOLD model but resolves the staging
-// center from Impasse's support corridor. This keeps SOF in the rear-security
-// network without making them conventional point-defense troops.
+// center from the side-correct Impasse support corridor. This keeps SOF in the
+// rear-security network without making them conventional point-defense troops.
 HAL_SFIdleOrd = {
     private _hq = _this param [0,grpNull];
     if (isNull _hq) exitWith {};
@@ -156,8 +313,11 @@ HAL_SFIdleOrd = {
         private _center = [];
         private _source = "support-corridor-unresolved";
         private _baseIndex = -1;
-        if (!isNil "ITW_CLASH_fnc_GetSupportCorridorSpawn" && {_objectiveIndex >= 0}) then {
-            private _corridor = [_objectiveIndex] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
+        if (_objectiveIndex >= 0) then {
+            private _corridor = [
+                _objectiveIndex,
+                _hq
+            ] call ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn;
             if (_corridor isNotEqualTo []) then {
                 _center = +(_corridor#0);
                 _source = _corridor#2;
@@ -165,18 +325,9 @@ HAL_SFIdleOrd = {
             };
         };
 
-        if (_center isEqualTo [] && {!isNil "ITW_CLASH_fnc_GetHomeBaseSpawn"}) then {
-            private _home = call ITW_CLASH_fnc_GetHomeBaseSpawn;
-            if (_home isNotEqualTo []) then {
-                _center = +(_home#0);
-                _source = "sf-standby-" + (_home#2);
-                _baseIndex = _home#3;
-            };
-        };
-
-        // Last-resort fail-open location if the Impasse base graph is not ready.
-        // Do not create the native commander-guard task; simply stage rearward
-        // around the HQ until a real support corridor becomes resolvable.
+        // If the correct side has no valid attack-from corridor, fail open to
+        // the HQ's current rear position. Do not reuse the enemy-only home-base
+        // helper for a friendly HAL and accidentally cross the battlefield.
         if (_center isEqualTo []) then {
             _center = getPosATL (vehicle leader _hq);
             _source = "sf-standby-hq-fallback";
@@ -237,7 +388,8 @@ HAL_SFIdleOrd = {
                     _baseIndex,
                     _source,
                     _standby,
-                    round (_standby distance2D _center)
+                    round (_standby distance2D _center),
+                    str (side _hq)
                 ]] call ITW_CLASH_fnc_Log;
             };
         };
@@ -247,7 +399,7 @@ HAL_SFIdleOrd = {
 ITW_CLASH_HALNativeSFFixReady = true;
 ITW_CLASH_HALNativeSFFixFinished = true;
 diag_log format [
-    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false goSFAttack=native-patched attackChars=%3",
+    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false sideAwareStandby=true goSFAttack=native-patched-observed nativeExecutorPreserved=true attackChars=%3",
     ITW_CLASH_HALNativeSFFixVersion,
     _results,
     count _attackSource
