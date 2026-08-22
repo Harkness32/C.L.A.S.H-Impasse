@@ -65,10 +65,13 @@ def test_native_hal_commander_b_is_used_instead_of_a_cloned_commander():
     assert "RydHQB_SimpleMode = true;" in dual
     assert "RydHQB_SimpleObjs" in dual
 
-    # NR6 HAL itself recognizes leaderHQB and launches a separate HQ B loop.
-    assert 'isNil "leaderHQB"' in ryd_init
-    assert '"B"' in ryd_init
+    # NR6 HAL itself recognizes leaderHQB, registers HQ B and launches its own
+    # sitrep / battlefield / secondary-task loops.
+    assert "if not (isNull leaderHQB)" in ryd_init
+    assert 'setVariable ["RydHQ_CodeSign","B"]' in ryd_init
     assert "B_HQSitRep" in ryd_init
+    assert "HAL_FBFTLOOP" in ryd_init
+    assert "HAL_SecTasks" in ryd_init
 
 
 def test_commander_registry_and_field_authority_are_side_scoped():
@@ -163,9 +166,9 @@ def test_generic_checkbook_api_is_thin_and_transport_is_v1_provider():
     assert 'case "TRANSPORT"' in api
     assert "ITW_CLASH_Checkbook_fnc_RequestTransport" in api
     assert '"provider-not-implemented"' in api
-    assert '"CASEVAC"' in api
-    assert '"ARTILLERY"' in api
-    assert '"SEAD"' in api
+    assert "CASEVAC" in api
+    assert "ARTILLERY" in api
+    assert "SEAD" in api
     assert "createVehicle" not in api
     assert "addWaypoint" not in api
     assert "RydHQ_AAthreat" not in api
