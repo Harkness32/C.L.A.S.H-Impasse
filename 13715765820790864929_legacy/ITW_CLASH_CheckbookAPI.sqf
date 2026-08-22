@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_CheckbookAPIReady",false]) exitWith {true};
 
-ITW_CLASH_CheckbookAPIVersion = 2;
+ITW_CLASH_CheckbookAPIVersion = 1;
 
 ITW_CLASH_Checkbook_fnc_Response = {
     params [
