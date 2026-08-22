@@ -90,3 +90,47 @@ def test_burnin_hardening_is_scheduled_by_required_recon_bridge():
 
     assert 'fileExists "ITW_CLASH_OneZeroHardening.sqf"' in bridge
     assert 'execVM "ITW_CLASH_OneZeroHardening.sqf"' in bridge
+
+
+def test_sof_standby_uses_hq_side_attack_slots_without_changing_shared_corridor():
+    sf = mission("ITW_CLASH_HALNativeSFFix.sqf")
+
+    assert "ITW_CLASH_HALNativeSFFixVersion = 3;" in sf
+    assert "ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn" in sf
+    assert "ITW_ATTACK_LAND_F" in sf
+    assert "ITW_ATTACK_AIR_F" in sf
+    assert "ITW_ATTACK_LAND_E" in sf
+    assert "ITW_ATTACK_AIR_E" in sf
+    assert "ITW_PlayerSide" in sf
+    assert "ITW_EnemySide" in sf
+    assert '] call ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn;' in sf
+    assert 'call ITW_CLASH_fnc_GetSupportCorridorSpawn' not in sf
+    assert 'call ITW_CLASH_fnc_GetHomeBaseSpawn' not in sf
+    assert "sideAwareStandby=true" in sf
+
+
+def test_sof_direct_action_wrapper_is_observer_only_and_preserves_native_executor():
+    sf = mission("ITW_CLASH_HALNativeSFFix.sqf")
+
+    assert "ITW_CLASH_HALNativeSF_fnc_GoSFAttackPatched = compile _attackSource;" in sf
+    assert '"sof-direct-action-dispatched"' in sf
+    assert '"sof-direct-action-returned"' in sf
+    assert "_this call ITW_CLASH_HALNativeSF_fnc_GoSFAttackPatched" in sf
+    assert "RydHQ_EnArtG" in sf
+    assert "RydHQ_EnStaticG" in sf
+    assert "RydxHQ_AllLeaders" in sf
+    assert "nativeExecutorPreserved=true" in sf
+
+    wrapper_start = sf.index("HAL_GoSFAttack = {")
+    wrapper_end = sf.index(
+        "ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn = {",
+        wrapper_start,
+    )
+    wrapper = sf[wrapper_start:wrapper_end]
+
+    # This layer is telemetry only. Native HAL remains solely responsible for
+    # direct-action movement and its Busy/Resting lifecycle.
+    assert "addWaypoint" not in wrapper
+    assert "RYD_WPadd" not in wrapper
+    assert 'setVariable ["Busy"' not in wrapper
+    assert 'setVariable ["Resting"' not in wrapper
