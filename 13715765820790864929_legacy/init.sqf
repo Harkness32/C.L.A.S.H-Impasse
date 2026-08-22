@@ -57,7 +57,15 @@ if (isServer) then {
     ) then {
         private _dualHALLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbook.sqf";
         if (_dualHALLoaded isEqualTo true) then {
-            diag_log "CLASH BOOT | dual-hal-checkbook-scheduled | synchronous-core-wrapper=true";
+            private _dualHALHardened = false;
+            if (fileExists "ITW_CLASH_DualHALCheckbookHardening.sqf") then {
+                _dualHALHardened = call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbookHardening.sqf";
+            };
+            if (_dualHALHardened isEqualTo true) then {
+                diag_log "CLASH BOOT | dual-hal-checkbook-scheduled | synchronous-core-wrapper=true hardening=true";
+            } else {
+                diag_log "CLASH BOOT | WARNING | dual-hal-checkbook-hardening-failed | core loaded but runtime candidate blocked";
+            };
         } else {
             diag_log "CLASH BOOT | WARNING | dual-hal-checkbook-load-failed | preInit wrappers remain fail-open";
         };
