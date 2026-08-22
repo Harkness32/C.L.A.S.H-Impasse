@@ -90,10 +90,11 @@ def test_planning_bridge_leaves_native_hal_in_charge_of_offense_and_defense():
 
 
 def test_native_hal_orders_explicitly_protect_specfor_from_ordinary_recon():
-    orders = text(HAL / "Orders.sqf")
+    orders = text(HAL / "HQOrders.sqf")
     assert 'RydHQ_SpecForG' in orders
     assert '_ReconAv' in orders
     assert 'HAL_GoRecon' in orders
+    assert 'not (_x in (_ReconAv + (_HQ getVariable ["RydHQ_SpecForG",[]])))' in orders
 
 
 def test_idle_sof_stages_at_support_corridor_instead_of_guarding_commander():
