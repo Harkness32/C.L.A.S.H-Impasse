@@ -42,17 +42,45 @@ def test_dual_hal_runtime_loads_synchronously_before_impasse_start():
     core = 'call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbook.sqf"'
     hardened = 'call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbookHardening.sqf"'
     api = 'call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf"'
+    prepare = 'call ITW_CLASH_DualHAL_fnc_Prepare;'
     start = '[] execVM "ITW_Start.sqf"'
 
     assert core in init
     assert hardened in init
     assert api in init
-    assert init.index(core) < init.index(hardened) < init.index(api) < init.index(start)
+    assert prepare in init
+    assert init.index(core) < init.index(hardened) < init.index(api) < init.index(prepare) < init.index(start)
     assert "runtime candidate blocked" in init
 
     # OneZero hardening has one owner: ReconPlanningBridge. Do not create a
     # second competing scheduler in init.sqf.
     assert 'execVM "ITW_CLASH_OneZeroHardening.sqf"' not in init
+
+
+def test_commander_b_prepare_is_explicit_and_not_dependent_on_halcore_wrapper_survival():
+    init = mission("init.sqf")
+    dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
+    ryd_init = hal("RydHQInit.sqf")
+
+    prepare = 'call ITW_CLASH_DualHAL_fnc_Prepare;'
+    start = '[] execVM "ITW_Start.sqf"'
+
+    # Burn-in smoke 2026-08-21 proved the early NR6_fnc_HALcore wrapper can be
+    # rebound by native HAL initialization. Commander B therefore has an
+    # explicit C.L.A.S.H.-owned prepare point before Impasse can launch HAL.
+    assert prepare in init
+    assert init.index(prepare) < init.index(start)
+    assert "dual-hal-checkbook-prepared" in init
+    assert "nativeCoreLaunchPending=true" in init
+    assert 'missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull]' in init
+    assert 'missionNamespace getVariable ["ITW_CLASH_BLUFORLeader",objNull]' in init
+
+    # Prepare creates leaderHQB; untouched native RydHQInit consumes it after
+    # VarInit and registers that group as Commander B.
+    assert "ITW_CLASH_DualHAL_fnc_PrepareCommanderB" in dual
+    assert "leaderHQB = _leader;" in dual
+    assert 'if not (isNull leaderHQB)' in ryd_init
+    assert 'setVariable ["RydHQ_CodeSign","B"]' in ryd_init
 
 
 def test_native_hal_commander_b_is_used_instead_of_a_cloned_commander():
