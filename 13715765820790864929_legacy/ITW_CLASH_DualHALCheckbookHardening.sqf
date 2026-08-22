@@ -3,14 +3,15 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookHardeningStarted",false]) exitWith {true};
 ITW_CLASH_DualHALCheckbookHardeningStarted = true;
-ITW_CLASH_DualHALCheckbookHardeningVersion = 2;
+ITW_CLASH_DualHALCheckbookHardeningVersion = 3;
 
 if (
     isNil "ITW_CLASH_DualHAL_fnc_PrepareCommanderB" ||
     {isNil "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved"} ||
     {isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle"} ||
     {isNil "ITW_CLASH_DualHAL_fnc_TrackAsset"} ||
-    {isNil "ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives"}
+    {isNil "ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives"} ||
+    {isNil "ITW_CLASH_Checkbook_fnc_RequestTransport"}
 ) exitWith {
     diag_log "CLASH BOOT | WARNING | dual-hal-checkbook-hardening-source-missing";
     false
@@ -141,6 +142,39 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
 };
 
 /*
+    HAL planning scripts are scheduled independently, so two cargo orders can
+    discover the same last ticket/cap slot before either one pays for it. Serialize
+    the actual purchase seam and throttle one requester's retries. The lease has
+    a timeout so even an upstream script error cannot permanently lock Checkbook.
+*/
+ITW_CLASH_DualHALHardening_fnc_RequestTransportBase = ITW_CLASH_Checkbook_fnc_RequestTransport;
+ITW_CLASH_Checkbook_fnc_RequestTransport = {
+    params ["_requester","_hq","_destination","_mode",["_seatCount",1]];
+    if (isNull _requester) exitWith {objNull};
+
+    private _retryAt = _requester getVariable ["ITW_CLASH_CheckbookTransportRetryAt",0];
+    if (time < _retryAt) exitWith {objNull};
+
+    private _busyUntil = missionNamespace getVariable ["ITW_CLASH_CheckbookTransportBusyUntil",0];
+    if (time < _busyUntil) exitWith {
+        _requester setVariable ["ITW_CLASH_CheckbookTransportRetryAt",time + 5];
+        objNull
+    };
+
+    missionNamespace setVariable ["ITW_CLASH_CheckbookTransportBusyUntil",time + 15];
+    _requester setVariable ["ITW_CLASH_CheckbookTransportRetryAt",time + 15];
+
+    private _result = _this call ITW_CLASH_DualHALHardening_fnc_RequestTransportBase;
+
+    missionNamespace setVariable ["ITW_CLASH_CheckbookTransportBusyUntil",0];
+    _requester setVariable [
+        "ITW_CLASH_CheckbookTransportRetryAt",
+        time + (if (isNull _result) then {20} else {60})
+    ];
+    _result
+};
+
+/*
     Match Commander A's mature simple-objective contract. SetTakenA is stored on
     B's private mirror object, while RydHQ_Taken is the planner-level list that
     Orders.sqf subtracts from objectives before selecting reconnaissance/attack
@@ -198,7 +232,7 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
 };
 
 diag_log format [
-    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true takenSync=true base0Bind=true",
+    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true purchaseSerialized=true takenSync=true base0Bind=true",
     ITW_CLASH_DualHALCheckbookHardeningVersion
 ];
 
