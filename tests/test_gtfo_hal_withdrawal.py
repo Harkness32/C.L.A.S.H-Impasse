@@ -34,8 +34,6 @@ def test_gtfo_is_a_bridge_to_native_hal_withdrawal_rally_point():
     assert '"Land_HelipadEmpty_F"' in source
     assert "HAL_GoRest = {" not in source
 
-    # Native HAL remains the tactical implementation and already owns the
-    # withdrawal order/chatter and break-contact smoke behavior.
     assert '"HQ_ord_withdraw"' in native
     assert "RYD_Smoke" in native
     assert "enableAttack false" in native
@@ -149,6 +147,45 @@ def test_gtfo_arrival_radius_covers_native_restdecoy_jitter_and_logs_native_rest
     assert '"native-rest-active"' in source
     assert '"Resting" + str _group' in source
     assert "waypointPosition [_group,_wpIndex]" in source
+
+
+def test_gtfo_runtime_removes_stale_hal_defensive_memberships_while_withdrawing():
+    source = runtime()
+    assert "ITW_CLASH_GTFORuntimeVersion = 2;" in source
+    assert "ITW_CLASH_GTFO_fnc_ClearStaleHALRoles" in source
+    for token in [
+        '"RydHQ_Garrison"',
+        '"RydHQ_DefSpot"',
+        '"RydHQ_Def"',
+        '"RydHQ_DefRes"',
+        '"RydHQ_RecDefSpot"',
+    ]:
+        assert token in source
+    assert '"hal-role-cleanup"' in source
+
+
+def test_gtfo_restart_uses_native_break_and_gorest_without_blind_busy_clear():
+    source = runtime()
+    restart_start = source.index("ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {")
+    recon_start = source.index('[] spawn {\n    scriptName "ITW_CLASH_GTFO_ReconGuard";', restart_start)
+    restart = source[restart_start:recon_start]
+
+    assert 'setVariable ["Break",true]' in restart
+    assert "HAL_GoRest" in restart
+    assert "RYD_Spawn" in restart
+    assert '"rest-restart-dispatched"' in restart
+    assert 'setVariable ["Busy" + str _group,false]' not in restart
+    assert "ITW_CLASH_GTFO_RestRestartBreakWait = 45;" in source
+
+
+def test_gtfo_stall_sampler_persists_first_sample_before_timing_a_stall():
+    source = runtime()
+    assert "ITW_CLASH_GTFORuntimeProgress = createHashMap;" in source
+    assert 'private _sample = ITW_CLASH_GTFORuntimeProgress getOrDefault [_id,[]];' in source
+    assert 'if (_sample isEqualTo []) then {' in source
+    assert 'ITW_CLASH_GTFORuntimeProgress set [_id,[time,_distance]];' in source
+    assert "ITW_CLASH_GTFO_RestRestartGrace = 90;" in source
+    assert "ITW_CLASH_GTFO_RestRestartProgress = 25;" in source
 
 
 def test_bootstrap_keeps_only_gtfo_authority_surface_mutable_until_bridge_install():
