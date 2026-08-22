@@ -200,15 +200,6 @@ if (isServer) then {
             diag_log "CLASH BOOT | gtfo-runtime-missing | core HAL withdrawal bridge remains active without late guards";
         };
     };
-
-    // Burn-in corrections from PR #42 are a runtime hardening layer, not dead
-    // source. They wait internally for GTFO/HAL readiness and therefore may be
-    // scheduled immediately after the GTFO runtime adapter.
-    if (fileExists "ITW_CLASH_OneZeroHardening.sqf") then {
-        [] execVM "ITW_CLASH_OneZeroHardening.sqf";
-    } else {
-        diag_log "CLASH BOOT | one-zero-hardening-missing | continuing without burn-in repairs";
-    };
 };
 
 [] execVM "ITW_Start.sqf";
