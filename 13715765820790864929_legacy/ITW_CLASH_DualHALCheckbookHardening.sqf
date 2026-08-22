@@ -3,7 +3,8 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookHardeningStarted",false]) exitWith {true};
 ITW_CLASH_DualHALCheckbookHardeningStarted = true;
-ITW_CLASH_DualHALCheckbookHardeningVersion = 3;
+ITW_CLASH_DualHALCheckbookHardeningVersion = 4;
+ITW_CLASH_DualHALHardeningLastBZone = -1;
 
 if (
     isNil "ITW_CLASH_DualHAL_fnc_PrepareCommanderB" ||
@@ -179,6 +180,9 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     B's private mirror object, while RydHQ_Taken is the planner-level list that
     Orders.sqf subtracts from objectives before selecting reconnaissance/attack
     targets. Because mirrors are private to B there is no A/B state collision.
+
+    HAL's objective cursor is stateful. When Impasse advances to another zone,
+    reset B to objective stage 1 exactly as Commander A's canonical mirror does.
 */
 ITW_CLASH_DualHALHardening_fnc_RefreshBLUFORObjectivesBase = ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives;
 ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
@@ -191,6 +195,18 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
     if (!isNull ITW_CLASH_BLUFORHQ) then {
         ITW_CLASH_BLUFORHQ setVariable ["RydHQ_Taken",+_taken];
         ITW_CLASH_BLUFORHQ setVariable ["RydHQ_Objectives",+_mirrors];
+    };
+
+    private _zone = missionNamespace getVariable ["ITW_ZoneIndex",-1];
+    if (_zone != ITW_CLASH_DualHALHardeningLastBZone) then {
+        RydHQB_NObj = 1;
+        if (!isNull ITW_CLASH_BLUFORHQ) then {
+            ITW_CLASH_BLUFORHQ setVariable ["RydHQ_NObj",1];
+        };
+        ["commander-b-objective-zone-reset",[
+            ITW_CLASH_DualHALHardeningLastBZone,_zone,count _mirrors,count _taken
+        ]] call ITW_CLASH_DualHALHardening_fnc_Log;
+        ITW_CLASH_DualHALHardeningLastBZone = _zone;
     };
     _mirrors
 };
@@ -232,7 +248,7 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
 };
 
 diag_log format [
-    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true purchaseSerialized=true takenSync=true base0Bind=true",
+    "CLASH BOOT | dual-hal-checkbook-hardening-ready | version=%1 commanderProtected=true lifecycleCargoBypass=true impasseOwnsVehicleCount=true purchaseSerialized=true takenSync=true zoneReset=true base0Bind=true",
     ITW_CLASH_DualHALCheckbookHardeningVersion
 ];
 
