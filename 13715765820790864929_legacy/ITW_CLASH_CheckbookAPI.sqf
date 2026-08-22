@@ -111,9 +111,51 @@ ITW_CLASH_fnc_RequestCapability = {
     }
 };
 
+/*
+    Impasse establishes ITW_PlayerSide / ITW_EnemySide inside ITW_Start.sqf,
+    after mission init has already loaded the compatibility layer. Native HAL is
+    launched much later by C.L.A.S.H. once the campaign is ready. Bind Commander B
+    in that safe window: wait only for side identity, create leaderHQB, then let
+    native RydHQInit consume both leaderHQ and leaderHQB normally.
+
+    Deliberately call PrepareCommanderB rather than the full Prepare function.
+    HAL_SCargo is compiled by native HAL during RydHQInit/VarInit, so cargo hooking
+    remains owned by the existing post-core runtime path.
+*/
+if !(missionNamespace getVariable ["ITW_CLASH_DualHALSideBinderStarted",false]) then {
+    ITW_CLASH_DualHALSideBinderStarted = true;
+    [] spawn {
+        scriptName "ITW_CLASH_DualHAL_SideBinder";
+        private _deadline = diag_tickTime + 300;
+        waitUntil {
+            sleep 0.1;
+            diag_tickTime >= _deadline || {
+                !isNil "ITW_PlayerSide" && {!isNil "ITW_EnemySide"}
+            }
+        };
+
+        if (diag_tickTime >= _deadline) exitWith {
+            diag_log "CLASH BOOT | WARNING | dual-hal-side-bind-timeout | Impasse sides unavailable";
+        };
+        if (isNil "ITW_CLASH_DualHAL_fnc_PrepareCommanderB") exitWith {
+            diag_log "CLASH BOOT | WARNING | dual-hal-side-bind-missing | PrepareCommanderB unavailable";
+        };
+
+        private _prepared = [] call ITW_CLASH_DualHAL_fnc_PrepareCommanderB;
+        diag_log format [
+            "CLASH BOOT | dual-hal-side-bound | playerSide=%1 enemySide=%2 prepared=%3 commanderB=%4 leaderHQB=%5",
+            ITW_PlayerSide,
+            ITW_EnemySide,
+            _prepared,
+            !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull]),
+            !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORLeader",objNull])
+        ];
+    };
+};
+
 ITW_CLASH_CheckbookAPIReady = true;
 diag_log format [
-    "CLASH BOOT | checkbook-api-ready | version=%1 transport=true futureProviders=true impasseTacticalState=false",
+    "CLASH BOOT | checkbook-api-ready | version=%1 transport=true futureProviders=true impasseTacticalState=false sideBind=deferred-until-impasse-sides",
     ITW_CLASH_CheckbookAPIVersion
 ];
 true
