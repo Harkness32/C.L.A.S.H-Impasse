@@ -103,6 +103,7 @@ def test_sof_standby_uses_hq_side_attack_slots_without_changing_shared_corridor(
     assert "ITW_ATTACK_AIR_E" in sf
     assert "ITW_PlayerSide" in sf
     assert "ITW_EnemySide" in sf
+    assert 'if (_baseIndex < 0 && {count _attacks > _airSlot}) then {' in sf
     assert '] call ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn;' in sf
     assert 'call ITW_CLASH_fnc_GetSupportCorridorSpawn' not in sf
     assert 'call ITW_CLASH_fnc_GetHomeBaseSpawn' not in sf
