@@ -23,18 +23,24 @@ def test_sof_classifier_uses_spawn_archetype_and_strict_majority():
     assert "private _isSOF = _bestCount > 0;" not in sof
 
 
-def test_recon_bridge_removes_only_prior_semantic_specfor_memberships():
+def test_recon_bridge_removes_only_prior_semantic_specfor_memberships_per_commander():
     bridge = mission("ITW_CLASH_ReconPlanningBridge.sqf")
 
-    assert "ITW_CLASH_ReconPlanningBridgeVersion = 3;" in bridge
+    assert "ITW_CLASH_ReconPlanningBridgeVersion = 4;" in bridge
+    assert "ITW_CLASH_ReconPlanning_fnc_GetCommanderCandidates" in bridge
+    assert "ITW_CLASH_DualHALBLUFORGroups" in bridge
+    assert "ITW_CLASH_DualHALOPFORExtraGroups" in bridge
+    assert "side _group == _hqSide" in bridge
     assert '"ITW_CLASH_ReconPlanningSemanticSpecFor"' in bridge
     assert '_specFor = _specFor - _previousSemantic;' in bridge
     assert 'getVariable ["ITW_CLASH_SOFNativeProtected",false]' in bridge
     assert '_hq setVariable ["RydHQ_SpecForG",_specFor];' in bridge
+    assert '_hq setVariable ["ITW_CLASH_ReconPlanningSpecForSignature",_signature];' in bridge
     assert "staleSemanticRemoval=true" in bridge
+    assert "commanderScoped=true" in bridge
 
     # Native HAL SpecFor is the base; C.L.A.S.H. removes only its own previous
-    # injections before recalculating semantic identity.
+    # injections before recalculating semantic identity for that exact HQ side.
     assert 'private _specFor = +(_hq getVariable ["RydHQ_SpecForG",[]]);' in bridge
 
 
