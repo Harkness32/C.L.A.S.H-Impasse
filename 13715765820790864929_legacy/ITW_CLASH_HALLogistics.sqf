@@ -72,12 +72,19 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
                 +(_hq getVariable ["RydHQ_AmmoDrop",[]])
             ] call ITW_CLASH_HALLogistics_fnc_UsableGroups;
             private _groundAmmo = _allAmmo - _airAmmo;
+            private _ammoBoxes = +(_hq getVariable ["RydHQ_AmmoBoxes",[]]);
+            _ammoBoxes = _ammoBoxes select {!isNull _x && {alive _x}};
+            _hq setVariable ["RydHQ_AmmoBoxes",_ammoBoxes];
 
             if (_groundAmmo isEqualTo []) then {
                 [_hq,"LOGISTICS_AMMO","GROUND"] call ITW_CLASH_HALLogistics_fnc_Request;
             };
             if (_airAmmo isEqualTo []) then {
                 [_hq,"LOGISTICS_AMMO","AIR"] call ITW_CLASH_HALLogistics_fnc_Request;
+            };
+            if (_ammoBoxes isEqualTo []) then {
+                [_hq,"LOGISTICS_PACKAGE_AMMO","AIR"] call
+                    ITW_CLASH_HALLogistics_fnc_Request;
             };
             true
         };
@@ -147,7 +154,7 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
 
     ITW_CLASH_HALLogisticsReady = true;
     diag_log format [
-        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true",
+        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true",
         ITW_CLASH_HALLogisticsVersion
     ];
 };

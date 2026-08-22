@@ -151,7 +151,9 @@ ITW_AllyGroupCallback = {
     
     ITW_AllyGroups pushBack _group; // add to groups able to revive players
     ["ally-group-callback",_group] call ITW_CLASH_fnc_ObserveGroup;
-    {_x hcSetGroup [_group]} forEach ITW_HcCmdr;
+    if !(missionNamespace getVariable ["ITW_CLASH_DisableNativeHC",false]) then {
+        {_x hcSetGroup [_group]} forEach ITW_HcCmdr;
+    };
     
     // we want to make ITW_AllyGroups public, but it only needs to be updated slowly to keep from pushing lots
     // of changes over the network
@@ -778,6 +780,10 @@ ITW_AllyLoadIntoVehManager = {
                     _emptySeats = _emptySeats - _grpSize;
                     _groupsToLoad pushBack _grp;
                     VAR_SET_OBJ_IDX(_grp,_closestObj#ITW_OBJ_INDEX);
+                    if (!isNil "ITW_CLASH_PlayerTransport_fnc_Acquire") then {
+                        [_grp,_veh,"player-ferry-boarding"] call
+                            ITW_CLASH_PlayerTransport_fnc_Acquire;
+                    };
                     _grp setVariable ["ITW_getInState",0];
                     ITW_DELETE_WAYPOINTS(_grp);
                 };
@@ -928,6 +934,10 @@ ITW_AllyLoadGrpIntoVeh = {
                         _success = false;
                         _grp leaveVehicle _veh;
                         _grp setVariable ["ITW_getInState",-1];
+                        if (!isNil "ITW_CLASH_PlayerTransport_fnc_Release") then {
+                            [_grp,"player-ferry-boarding-failed"] call
+                                ITW_CLASH_PlayerTransport_fnc_Release;
+                        };
                         _leader doMove getPosATL _leader;
                         private _unitsNotFollowing = [];
                         {
@@ -991,6 +1001,9 @@ ITW_AllyLoadGrpIntoVeh = {
                         [_units,_leader] remoteExec ["doFollow",_leader];
                     };
                     // SPAWN -----------------------------------------------------------------------------------------
+                    _grp setVariable [
+                        "ITW_CLASH_TransportPhysicalUnloadPending",true
+                    ];
                     [_grp,_veh,_reportProgress] spawn {
                         scriptName "ITW_LoadGroupIntoVeh_GetOut";
                         params ["_grp","_veh","_reportProgress"];
@@ -1040,6 +1053,13 @@ ITW_AllyLoadGrpIntoVeh = {
                         // move the units away from the vehicle
                         private _toPos = _veh getPos [200,_veh getDir (([getPosATL _veh] call ITW_ObjGetNearest)#ITW_OBJ_POS)];
                         {_x doMove _toPos} forEach units _grp;
+                        _grp setVariable [
+                            "ITW_CLASH_TransportPhysicalUnloadPending",nil
+                        ];
+                        if (!isNil "ITW_CLASH_PlayerTransport_fnc_Release") then {
+                            [_grp,"player-ferry-delivered"] call
+                                ITW_CLASH_PlayerTransport_fnc_Release;
+                        };
                     };
                     // END -----------------------------------------------------------------------------------------
                     _grp setVariable ["ITW_getInState",2];
@@ -1065,6 +1085,10 @@ ITW_AllyLoadGrpIntoVeh = {
     private _closestObj = [getPosATL _veh, ITW_OWNER_CONTESTED, ITW_OWNER_ENEMY] call ITW_ObjGetNearest;
     {
         _x setVariable ["ITW_getInState",-1];
+        if (!isNil "ITW_CLASH_PlayerTransport_fnc_Release") then {
+            [_x,"player-ferry-cleanup"] call
+                ITW_CLASH_PlayerTransport_fnc_Release;
+        };
         VAR_SET_OBJ_IDX(_x,_closestObj#ITW_OBJ_INDEX);
     } count _groupsToLoad;
 };
@@ -1402,6 +1426,12 @@ ITW_AllyChooseLandRoutes = {
 
 ITW_AllyDelivery = {
     params ["_grp"];
+    if (!isNil "ITW_CLASH_PlayerTransport_fnc_ReserveDelivery") then {
+        [_grp,"itw-delivery-route"] call
+            ITW_CLASH_PlayerTransport_fnc_ReserveDelivery;
+    } else {
+        _grp setVariable ["itwDelivery",true];
+    };
     ITW_DELETE_WAYPOINTS(_grp);
     private _pos = ([getPosATL leader _grp] call ITW_BaseNearest)#ITW_BASE_POS;
     _grp setVariable ["itwDelivery",true];

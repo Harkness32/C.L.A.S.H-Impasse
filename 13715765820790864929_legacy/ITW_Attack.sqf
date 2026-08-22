@@ -751,7 +751,11 @@ ITW_AtkManager = {
                     };
                     _group deleteGroupWhenEmpty true;
                     [_group,[],false] call ITW_AtkAddInfantryGroup;
-                    if (_side == ITW_PlayerSide) then {{_x hcSetGroup [_group]} forEach ITW_HcCmdr};
+                    if (_side == ITW_PlayerSide && {
+                        !(missionNamespace getVariable ["ITW_CLASH_DisableNativeHC",false])
+                    }) then {
+                        {_x hcSetGroup [_group]} forEach ITW_HcCmdr
+                    };
                     YIELD_CPU;
                 } forEach _statics;
                 if !(_units isEqualTo []) then { { _x addCuratorEditableObjects [_units, true]; } forEach allCurators };
@@ -998,6 +1002,12 @@ ITW_AtkManager = {
                         private _grp = createGroup [_side,false]; 
                         _units joinSilent _grp;
                         _grp deleteGroupWhenEmpty true;
+                        if (!isNil "ITW_CLASH_PlayerTransport_fnc_ReserveDelivery") then {
+                            [_grp,"itw-standing-delivery"] call
+                                ITW_CLASH_PlayerTransport_fnc_ReserveDelivery;
+                        } else {
+                            _grp setVariable ["itwDelivery",true];
+                        };
                         [_grp] call ITW_AtkAddInfantryGroup;
                         [_grp] call _fnGroupsCallback;
                         [_grp] call ITW_AllyDelivery;

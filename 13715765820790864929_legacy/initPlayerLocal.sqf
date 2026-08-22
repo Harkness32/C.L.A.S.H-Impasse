@@ -4,6 +4,10 @@ if (!isDedicated) then {waitUntil {player == player};};
 if ((!isServer) && (player != player)) then {waitUntil {player == player};};
 waitUntil {! isNil "ITW_PreInitComplete"}; // wait for the server to catch up
 
+if (fileExists "ITW_CLASH_PlayerTaskClient.sqf") then {
+    [] execVM "ITW_CLASH_PlayerTaskClient.sqf";
+};
+
 if (fileExists "ITW_CLASH_PlayerGarageDeployment.sqf") then {
     [] execVM "ITW_CLASH_PlayerGarageDeployment.sqf";
 };
