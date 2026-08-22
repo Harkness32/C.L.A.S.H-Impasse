@@ -67,10 +67,11 @@ def test_recon_observer_is_intelligence_telemetry_only():
 
 
 def test_native_hal_source_excludes_specfor_from_ordinary_recon_pool():
-    orders = text(HAL / "Orders.sqf")
+    orders = text(HAL / "HQOrders.sqf")
     assert 'RydHQ_SpecForG' in orders
     assert '_ReconAv' in orders
     assert 'HAL_GoRecon' in orders
+    assert 'not (_x in (_ReconAv + (_HQ getVariable ["RydHQ_SpecForG",[]])))' in orders
 
 
 def test_native_hal_statusquo_has_real_specfor_classification_surface():
