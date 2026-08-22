@@ -1,6 +1,6 @@
 #include "defines.hpp"
 
-ITW_CLASH_PhysicalMovementPreInitVersion = 4;
+ITW_CLASH_PhysicalMovementPreInitVersion = 5;
 
 // Baseline Impasse deliberately uses SafeMove/vehicle repositioning during
 // initial force staging. Preserve that deployment abstraction. C.L.A.S.H. only
@@ -67,12 +67,14 @@ ITW_AtkInfantryMoveUp = {
     };
     if (isNull _group || {_toPos isEqualTo []}) exitWith {false};
 
-    // These lifecycle states should already be excluded by the infantry
-    // manager. Keep the guard explicit so recovery/transit never inherits a
-    // surprise objective-order rewrite from this compatibility shim.
+    // HAL-owned field formations and explicit recovery/transit states are not
+    // candidates for an Impasse tactical move-up. This applies symmetrically to
+    // legacy OPFOR ownership and the new dual-HAL BLUFOR lane.
     if (_group getVariable ["ITW_CLASH_Managed",false] || {
-        _group getVariable ["ITW_CLASH_Withdrawing",false] || {
-            _group getVariable ["ITW_CLASH_ReconstitutionTransit",false]
+        _group getVariable ["ITW_CLASH_DualHALManaged",false] || {
+            _group getVariable ["ITW_CLASH_Withdrawing",false] || {
+                _group getVariable ["ITW_CLASH_ReconstitutionTransit",false]
+            }
         }
     }) exitWith {false};
 
@@ -113,7 +115,7 @@ private _moveUpFinal = ["ITW_AtkInfantryMoveUp"] call SKL_fnc_CompileFinal;
 ITW_CLASH_PhysicalMovementPreInitReady = _moveUpFinal;
 
 diag_log format [
-    "CLASH BOOT | physical-movement-ready | version=%1 moveUp=%2 midBattleMoveUpTeleport=false initialStaging=true safeMoveBaseline=true addVehicleBaseline=true failOpen=true",
+    "CLASH BOOT | physical-movement-ready | version=%1 moveUp=%2 midBattleMoveUpTeleport=false initialStaging=true safeMoveBaseline=true dualHALProtected=true failOpen=true",
     ITW_CLASH_PhysicalMovementPreInitVersion,
     _moveUpFinal
 ];

@@ -15,15 +15,18 @@ diag_log "CLASH BOOT | preInit | fail-open hooks installed; controller deferred 
 // Attack and enemy source are compiled during preInit, before init.sqf can run.
 // Keep only the functions that C.L.A.S.H. must replace mutable on the server.
 // Initial SafeMove/vehicle staging remains baseline Impasse; only the explicit
-// mid-battle infantry catch-up relocation is replaced. The infantry-group query
-// is also deferred so persistent HAL formations can be filtered from Impasse's
-// tactical infantry manager without copying that manager implementation.
+// mid-battle infantry catch-up relocation is replaced. The dual-HAL/checkbook
+// bridge also needs the three field handoff writers mutable so it can suppress
+// Impasse tactical ownership only after the runtime commander layer is ready.
 if (isServer) then {
     ITW_CLASH_DeferredFinalizers = [
         "ITW_AtkDispatchReconstitutionTransport",
         "ITW_AtkReconstitutionTransitManager",
         "ITW_AtkInfantryMoveUp",
         "ITW_AtkGetInfantryGroups",
+        "ITW_AtkAddVehicle",
+        "ITW_AtkEngageInfantry",
+        "ITW_AtkEngageVehicle",
         "ITW_EnemyGroupCallback"
     ];
     diag_log format [
@@ -38,9 +41,18 @@ isNil {call compile preprocessFileLineNumbers "ITW_Airfield.sqf";              }
 isNil {call compile preprocessFileLineNumbers "ITW_Ally.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Attack.sqf";                };
 
+// Install the fail-open field handoff wrappers while the attack writers are
+// still mutable. Before the runtime dual-HAL layer is ready they delegate to
+// baseline Impasse exactly; afterward they become the compatibility boundary.
+private _dualHALCheckbookPreInitFixed = false;
+if (isServer && {fileExists "ITW_CLASH_DualHALCheckbookPreInit.sqf"}) then {
+    _dualHALCheckbookPreInitFixed = call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbookPreInit.sqf";
+};
+
 // Server-only persistent infantry authority filter. Baseline groups remain
-// visible until C.L.A.S.H. is live; afterward only HAL-managed OPFOR infantry is
-// removed from Impasse's infantry-manager/defend-phase query surface.
+// visible until C.L.A.S.H. is live; afterward HAL-managed field infantry on
+// either supported side is removed from Impasse's tactical infantry-manager /
+// defend-phase query surface.
 private _infantryAuthorityPreInitFixed = false;
 if (isServer && {fileExists "ITW_CLASH_InfantryAuthorityPreInit.sqf"}) then {
     _infantryAuthorityPreInitFixed = call compile preprocessFileLineNumbers "ITW_CLASH_InfantryAuthorityPreInit.sqf";
@@ -77,6 +89,17 @@ if (isServer) then {
         ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_CompileFinal;
         diag_log "CLASH BOOT | preinit-reconstitution-transit-fallback | baseline finalized";
     };
+    if (!_dualHALCheckbookPreInitFixed) then {
+        {
+            ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - [_x];
+            [_x] call SKL_fnc_CompileFinal;
+        } forEach [
+            "ITW_AtkAddVehicle",
+            "ITW_AtkEngageInfantry",
+            "ITW_AtkEngageVehicle"
+        ];
+        diag_log "CLASH BOOT | dual-hal-checkbook-preinit-fallback | baseline field writers finalized";
+    };
     if (!_physicalMovementFixed) then {
         ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkInfantryMoveUp"];
         ["ITW_AtkInfantryMoveUp"] call SKL_fnc_CompileFinal;
@@ -89,6 +112,7 @@ if (isServer) then {
     };
 
     ITW_CLASH_ReconstitutionPreInitReady = _dispatchFixed && _transitFixed;
+    ITW_CLASH_DualHALCheckbookPreInitReady = _dualHALCheckbookPreInitFixed;
     ITW_CLASH_PhysicalMovementPreInitReady = _physicalMovementFixed;
     ITW_CLASH_InfantryAuthorityPreInitReady = _infantryAuthorityPreInitFixed;
     diag_log format [
@@ -96,6 +120,11 @@ if (isServer) then {
         ITW_CLASH_ReconstitutionPreInitReady,
         _dispatchFixed,
         _transitFixed
+    ];
+    diag_log format [
+        "CLASH BOOT | dual-hal-checkbook-preinit-authority | ready=%1 fieldHandoff=%2",
+        ITW_CLASH_DualHALCheckbookPreInitReady,
+        _dualHALCheckbookPreInitFixed
     ];
     diag_log format [
         "CLASH BOOT | physical-movement-preinit-authority | ready=%1",
@@ -133,15 +162,15 @@ isNil {call compile preprocessFileLineNumbers "ITW_Functions.sqf";              
 isNil {call compile preprocessFileLineNumbers "ITW_Garage.sqf";                 };
 isNil {call compile preprocessFileLineNumbers "ITW_Garrison.sqf";               };
 isNil {call compile preprocessFileLineNumbers "ITW_SideOps.sqf";                };
-isNil {call compile preprocessFileLineNumbers "ITW_Objectives.sqf";              };
-isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";              };
-isNil {call compile preprocessFileLineNumbers "ITW_Radio.sqf";                   };
-isNil {call compile preprocessFileLineNumbers "ITW_Save.sqf";                    };
-isNil {call compile preprocessFileLineNumbers "ITW_Targets.sqf";                 };
-isNil {call compile preprocessFileLineNumbers "ITW_Teammates.sqf";               };
-isNil {call compile preprocessFileLineNumbers "ITW_Vehicles.sqf";                };
-isNil {call compile preprocessFileLineNumbers "ITW_VehRepair.sqf";               };
-isNil {call compile preprocessFileLineNumbers "ITW_Warship.sqf";                 };
+isNil {call compile preprocessFileLineNumbers "ITW_Objectives.sqf";             };
+isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";             };
+isNil {call compile preprocessFileLineNumbers "ITW_Radio.sqf";                  };
+isNil {call compile preprocessFileLineNumbers "ITW_Save.sqf";                   };
+isNil {call compile preprocessFileLineNumbers "ITW_Targets.sqf";                };
+isNil {call compile preprocessFileLineNumbers "ITW_Teammates.sqf";              };
+isNil {call compile preprocessFileLineNumbers "ITW_Vehicles.sqf";               };
+isNil {call compile preprocessFileLineNumbers "ITW_VehRepair.sqf";              };
+isNil {call compile preprocessFileLineNumbers "ITW_Warship.sqf";                };
 isNil {call compile preprocessFileLineNumbers "CustomArsenal\CustomArsenal.sqf";};
 isNil {call compile preprocessFileLineNumbers "scripts\Factions\Factions.sqf";  };
 isNil {call compile preprocessFileLineNumbers "scripts\Dlcs\DlcSelect.sqf";     };

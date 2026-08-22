@@ -47,6 +47,44 @@ if (isServer) then {
         };
     };
 
+    // Dual-HAL / Checkbook must load synchronously after the canonical
+    // controller is validated but before its scheduled HAL startup can execute.
+    // The preInit wrappers remain fail-open unless this runtime reports ready.
+    if (
+        missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]
+        && {missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitReady",false]}
+        && {fileExists "ITW_CLASH_DualHALCheckbook.sqf"}
+    ) then {
+        private _dualHALLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbook.sqf";
+        if (_dualHALLoaded isEqualTo true) then {
+            private _dualHALHardened = false;
+            if (fileExists "ITW_CLASH_DualHALCheckbookHardening.sqf") then {
+                _dualHALHardened = call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbookHardening.sqf";
+            };
+            private _checkbookAPIReady = false;
+            if (_dualHALHardened isEqualTo true && {fileExists "ITW_CLASH_CheckbookAPI.sqf"}) then {
+                _checkbookAPIReady = call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf";
+            };
+            if (_dualHALHardened isEqualTo true && {_checkbookAPIReady isEqualTo true}) then {
+                diag_log "CLASH BOOT | dual-hal-checkbook-scheduled | synchronous-core-wrapper=true hardening=true capabilityAPI=true";
+            } else {
+                diag_log format [
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady
+                ];
+            };
+        } else {
+            diag_log "CLASH BOOT | WARNING | dual-hal-checkbook-load-failed | preInit wrappers remain fail-open";
+        };
+    } else {
+        diag_log format [
+            "CLASH BOOT | WARNING | dual-hal-checkbook-skipped | bootstrap=%1 preInit=%2 file=%3",
+            missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false],
+            missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitReady",false],
+            fileExists "ITW_CLASH_DualHALCheckbook.sqf"
+        ];
+    };
+
     // Temporary hosted-test comms are intentionally observer-only and load
     // synchronously so recovery/recon state transitions can be mirrored without
     // wrapping any C.L.A.S.H. or HAL authority function.
@@ -74,6 +112,11 @@ if (isServer) then {
         diag_log "CLASH BOOT | reconstitution-preinit-authority-confirmed | late-overrides-skipped";
     } else {
         diag_log "CLASH BOOT | WARNING | reconstitution-preinit-authority-missing | baseline/fail-open functions retained";
+    };
+    if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitReady",false]) then {
+        diag_log "CLASH BOOT | dual-hal-checkbook-preinit-authority-confirmed | field handoff writers guarded";
+    } else {
+        diag_log "CLASH BOOT | WARNING | dual-hal-checkbook-preinit-authority-missing | Impasse field writers remain baseline";
     };
     if (missionNamespace getVariable ["ITW_CLASH_PhysicalMovementPreInitReady",false]) then {
         diag_log "CLASH BOOT | physical-movement-preinit-authority-confirmed | midBattleMoveUpTeleport=false initialStaging=true";

@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPlanningBridgeStarted",false]) exitWith {};
 ITW_CLASH_ReconPlanningBridgeStarted = true;
-ITW_CLASH_ReconPlanningBridgeVersion = 3;
+ITW_CLASH_ReconPlanningBridgeVersion = 4;
 
 /*
     C.L.A.S.H. 1.0 HAL planning bridge
@@ -15,13 +15,12 @@ ITW_CLASH_ReconPlanningBridgeVersion = 3;
 
     Impasse faction classes are not guaranteed to appear in HAL's stock SpecFor
     class table. Immediately before native HQOrders/HQOrdersDef, this bridge adds
-    only C.L.A.S.H.-recognized SOF formations to RydHQ_SpecForG.
+    only C.L.A.S.H.-recognized SOF formations belonging to that exact HAL HQ.
 
-    Version 3 also remembers exactly which SpecFor memberships C.L.A.S.H. added.
-    Before each new planning cycle it removes those semantic additions and
-    reclassifies them. Native HAL memberships are preserved. This lets classifier
-    corrections (or explicit manual deny) remove a stale semantic SOF identity
-    instead of latching a false positive forever.
+    Version 4 is commander-scoped for Dual-HAL. Commander A and Commander B have
+    separate semantic SpecFor snapshots/signatures and can never import a group
+    from the opposite side. Native HAL memberships remain the base and are never
+    removed unless C.L.A.S.H. itself injected them on an earlier planning pass.
 */
 
 ITW_CLASH_ReconPlanning_fnc_Log = {
@@ -29,6 +28,35 @@ ITW_CLASH_ReconPlanning_fnc_Log = {
     if (!isNil "ITW_CLASH_fnc_Log") then {
         ["recon-bridge-" + _event,_payload] call ITW_CLASH_fnc_Log;
     };
+};
+
+ITW_CLASH_ReconPlanning_fnc_GetCommanderCandidates = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {[]};
+
+    private _candidates = [];
+    if (!isNil "ITW_CLASH_ManagedGroups") then {
+        _candidates append ITW_CLASH_ManagedGroups;
+    };
+    if (!isNil "ITW_CLASH_DualHALBLUFORGroups") then {
+        _candidates append ITW_CLASH_DualHALBLUFORGroups;
+    };
+    if (!isNil "ITW_CLASH_DualHALOPFORExtraGroups") then {
+        _candidates append ITW_CLASH_DualHALOPFORExtraGroups;
+    };
+    _candidates = _candidates arrayIntersect _candidates;
+
+    private _hqSide = side _hq;
+    _candidates select {
+        private _group = _x;
+        !isNull _group && {
+            side _group == _hqSide && {
+                _group getVariable ["ITW_CLASH_Managed",false] || {
+                    _group getVariable ["ITW_CLASH_DualHALManaged",false]
+                }
+            }
+        }
+    }
 };
 
 ITW_CLASH_ReconPlanning_fnc_SyncSpecFor = {
@@ -42,11 +70,15 @@ ITW_CLASH_ReconPlanning_fnc_SyncSpecFor = {
     ]);
     _previousSemantic = _previousSemantic select {!isNull _x};
 
-    // v2 tagged every membership it injected. On the first v3 planning pass,
-    // recover those tags as well so a mission/save upgraded from v2 can shed a
-    // false semantic SpecFor assignment without touching native HAL SpecFor.
+    // Recover v2/v3 semantic tags only when the tagged group actually belongs
+    // to this HQ's side. This prevents a global HAL planner wrapper from leaking
+    // Commander A semantic identity into Commander B or vice versa.
     {
-        if (_x getVariable ["ITW_CLASH_SOFNativeProtected",false]) then {
+        if (
+            side _x == side _hq && {
+                _x getVariable ["ITW_CLASH_SOFNativeProtected",false]
+            }
+        ) then {
             _previousSemantic pushBackUnique _x;
         };
     } forEach _specFor;
@@ -56,11 +88,11 @@ ITW_CLASH_ReconPlanning_fnc_SyncSpecFor = {
     _specFor = _specFor - _previousSemantic;
 
     private _semanticSOF = [];
+    private _candidates = [_hq] call ITW_CLASH_ReconPlanning_fnc_GetCommanderCandidates;
 
     {
         private _group = _x;
         if (isNull _group || {{alive _x} count units _group == 0}) then {continue};
-        if !(_group getVariable ["ITW_CLASH_Managed",false]) then {continue};
 
         private _classification = [_group] call ITW_CLASH_SOF_fnc_Classify;
         if !(_classification#0) then {continue};
@@ -68,7 +100,7 @@ ITW_CLASH_ReconPlanning_fnc_SyncSpecFor = {
         _semanticSOF pushBackUnique _group;
         _specFor pushBackUnique _group;
         _group setVariable ["ITW_CLASH_SOFNativeProtected",true];
-    } forEach +ITW_CLASH_ManagedGroups;
+    } forEach _candidates;
 
     {
         if !(_x in _semanticSOF) then {
@@ -85,10 +117,16 @@ ITW_CLASH_ReconPlanning_fnc_SyncSpecFor = {
             _x getVariable ["ITW_CLASH_ReconSOFFamily","sof"]
         ]
     });
-    if (_signature != missionNamespace getVariable ["ITW_CLASH_ReconPlanningSpecForSignature",""]) then {
-        ITW_CLASH_ReconPlanningSpecForSignature = _signature;
+    private _previousSignature = _hq getVariable [
+        "ITW_CLASH_ReconPlanningSpecForSignature",
+        ""
+    ];
+    if (_signature != _previousSignature) then {
+        _hq setVariable ["ITW_CLASH_ReconPlanningSpecForSignature",_signature];
         ["specfor-sync",[
             _mode,
+            _hq getVariable ["RydHQ_CodeSign","?"],
+            side _hq,
             count _semanticSOF,
             count _specFor,
             _semanticSOF apply {[
@@ -145,7 +183,7 @@ ITW_CLASH_ReconPlanning_fnc_SyncSpecFor = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-planning-bridge-ready | version=%1 nativeBroadRecon=true semanticSpecForBridge=true staleSemanticRemoval=true reconPoolMutation=false noReconMutation=false friendsMutation=false halChooses=true",
+        "CLASH BOOT | recon-planning-bridge-ready | version=%1 nativeBroadRecon=true semanticSpecForBridge=true commanderScoped=true staleSemanticRemoval=true reconPoolMutation=false noReconMutation=false friendsMutation=false halChooses=true",
         ITW_CLASH_ReconPlanningBridgeVersion
     ];
 };
