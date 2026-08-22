@@ -247,7 +247,7 @@ ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn = {
     if (count _attacks > _landSlot) then {
         _baseIndex = _attacks#_landSlot;
     };
-    if (_baseIndex == BASE_INDEX_NONE && {count _attacks > _airSlot}) then {
+    if (_baseIndex < 0 && {count _attacks > _airSlot}) then {
         _baseIndex = _attacks#_airSlot;
         _route = "air";
     };
