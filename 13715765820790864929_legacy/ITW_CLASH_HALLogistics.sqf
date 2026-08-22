@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 1;
+ITW_CLASH_HALLogisticsVersion = 2;
 ITW_CLASH_HALLogisticsReady = false;
 
 ITW_CLASH_HALLogistics_fnc_Log = {
@@ -135,26 +135,32 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
 
     HAL_SuppAmmo = {
         private _hq = _this param [0,grpNull];
-        private _result = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppAmmo;
+        private _result = true;
+        private _nativeResult = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppAmmo;
+        if !(isNil "_nativeResult") then {_result = _nativeResult};
         if (!isNull _hq) then {[_hq,"AMMO"] spawn ITW_CLASH_HALLogistics_fnc_Evaluate};
         _result
     };
     HAL_SuppFuel = {
         private _hq = _this param [0,grpNull];
-        private _result = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppFuel;
+        private _result = true;
+        private _nativeResult = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppFuel;
+        if !(isNil "_nativeResult") then {_result = _nativeResult};
         if (!isNull _hq) then {[_hq,"FUEL"] spawn ITW_CLASH_HALLogistics_fnc_Evaluate};
         _result
     };
     HAL_SuppRep = {
         private _hq = _this param [0,grpNull];
-        private _result = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppRep;
+        private _result = true;
+        private _nativeResult = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppRep;
+        if !(isNil "_nativeResult") then {_result = _nativeResult};
         if (!isNull _hq) then {[_hq,"REPAIR"] spawn ITW_CLASH_HALLogistics_fnc_Evaluate};
         _result
     };
 
     ITW_CLASH_HALLogisticsReady = true;
     diag_log format [
-        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true",
+        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true",
         ITW_CLASH_HALLogisticsVersion
     ];
 };
