@@ -6,6 +6,30 @@ if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exit
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
+// Active contracts must not silently expire in flight. Expiry applies only to
+// unclaimed HAL demand; BOARDING/EMBARKED remains valid until terminal release.
+ITW_CLASH_PlayerTransport_fnc_GetContract = {
+    params ["_group"];
+    if (isNull _group) exitWith {createHashMap};
+    private _contract = _group getVariable [
+        "ITW_CLASH_PlayerTransportContract",createHashMap
+    ];
+    if !(_contract isEqualType createHashMap) exitWith {createHashMap};
+    private _state = _contract getOrDefault ["state",""];
+    if !(_state in ["BOARDING","EMBARKED"] || {
+        (_contract getOrDefault ["expiresAt",0]) >= time
+    }) exitWith {
+        ["hal-demand-expired",[
+            _contract getOrDefault ["id",""],
+            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+            _state
+        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+        _group setVariable ["ITW_CLASH_PlayerTransportContract",nil];
+        createHashMap
+    };
+    _contract
+};
+
 /*
     Native Impasse proximity ferry selection is retained as the physical pickup
     scanner, but it is no longer a dispatcher. For ordinary friendly infantry a
@@ -80,9 +104,12 @@ ITW_AllyLoadIntoVehManager = {
                 };
                 if (!_authorized) then {continue};
 
-                private _halContract = !(_grp getVariable ["itwDelivery",false]) && {
-                    ([_grp] call ITW_CLASH_PlayerTransport_fnc_GetContract) isNotEqualTo createHashMap
+                private _contract = if (_grp getVariable ["itwDelivery",false]) then {
+                    createHashMap
+                } else {
+                    [_grp] call ITW_CLASH_PlayerTransport_fnc_GetContract
                 };
+                private _halContract = count _contract > 0;
                 _emptySeats = _emptySeats - _grpSize;
                 _groupsToLoad pushBack _grp;
                 _grp setVariable ["ITW_getInState",0];
@@ -158,11 +185,13 @@ ITW_CLASH_PlayerTransport_fnc_ExecuteHALContract = {
         !isNull currentPilot _veh && {vehicle _leader == _veh}
     };
     if (!_loaded) exitWith {
-        _grp leaveVehicle _veh;
+        if (!isNull _veh) then {
+            _grp leaveVehicle _veh;
+            _veh setVariable ["ITW_reservedGroups",nil];
+            _veh setVariable ["ITW_groupCntActive",((_veh getVariable ["ITW_groupCntActive",1]) - 1) max 0];
+        };
         {[_x] remoteExec ["unassignVehicle",_x]} forEach _units;
         _grp setVariable ["ITW_getInState",-1];
-        _veh setVariable ["ITW_reservedGroups",nil];
-        _veh setVariable ["ITW_groupCntActive",((_veh getVariable ["ITW_groupCntActive",1]) - 1) max 0];
         [_grp,"player-ferry-boarding-failed"] call ITW_CLASH_PlayerTransport_fnc_Release;
         false
     };
@@ -205,8 +234,31 @@ ITW_CLASH_PlayerTransport_fnc_ExecuteHALContract = {
 
     if (_aborted) exitWith {
         _grp setVariable ["ITW_getInState",2];
-        _veh setVariable ["ITW_transportGroups",nil,true];
-        _veh setVariable ["ITW_groupCntActive",((_veh getVariable ["ITW_groupCntActive",1]) - 1) max 0];
+        _grp setVariable ["ITW_CLASH_TransportPhysicalUnloadPending",true];
+        private _abortDeadline = time + 180;
+        waitUntil {
+            sleep 2;
+            isNull _veh || {{alive _x && {vehicle _x == _veh}} count _units == 0} || {
+                (isTouchingGround _veh || {ITW_ELEVATION_LT(_veh,2)}) && {speed _veh < 8}
+            } || {time >= _abortDeadline}
+        };
+        if (!isNull _veh && {
+            (isTouchingGround _veh || {ITW_ELEVATION_LT(_veh,2)}) && {speed _veh < 8}
+        }) then {
+            {
+                if (alive _x && {vehicle _x == _veh}) then {
+                    [_x] remoteExec ["unassignVehicle",_x];
+                    moveOut _x;
+                };
+            } forEach _units;
+        };
+        if (!isNull _veh) then {
+            _veh setVariable ["ITW_transportGroups",nil,true];
+            _veh setVariable ["ITW_reservedGroups",nil];
+            _veh setVariable ["ITW_groupCntActive",((_veh getVariable ["ITW_groupCntActive",1]) - 1) max 0];
+        };
+        _grp setVariable ["ITW_CLASH_TransportPhysicalUnloadPending",nil];
+        _grp setVariable ["ITW_getInState",-1];
         [_grp,"player-ferry-carrier-lost"] call ITW_CLASH_PlayerTransport_fnc_Release;
         false
     };
