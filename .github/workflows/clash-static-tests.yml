@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - fix/player-hal-job-routing-state-v1
   push:
     branches:
       - "agent/**"
