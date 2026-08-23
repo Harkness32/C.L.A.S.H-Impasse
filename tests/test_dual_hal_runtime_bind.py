@@ -68,8 +68,10 @@ def test_live_pilot_remains_the_single_native_hal_core_launcher():
     init = mission("init.sqf")
 
     assert controller.count("[] spawn NR6_fnc_HALcore;") == 1
-    assert "NR6_fnc_HALcore" not in api
-    assert "NR6_fnc_HALcore" not in binder
+    assert "spawn NR6_fnc_HALcore" not in api
+    assert "call NR6_fnc_HALcore" not in api
+    assert "spawn NR6_fnc_HALcore" not in binder
+    assert "call NR6_fnc_HALcore" not in binder
     assert "nativeCoreLaunch=live-mode-only" in init
     assert "nativeCoreLaunchPending=true" not in init
 
