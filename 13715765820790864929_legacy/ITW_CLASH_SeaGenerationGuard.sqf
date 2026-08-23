@@ -35,6 +35,18 @@ if (
     diag_log "CLASH BOOT | WARNING | service-stability-skipped | authority unavailable or file missing";
 };
 
+// Execution quarantine binds only after HAL exposes its Go* tactical functions.
+// The guard script waits for that runtime surface, so it can be launched here
+// without delaying SeaGuard's synchronous staging wrapper installation.
+if (
+    missionNamespace getVariable ["ITW_CLASH_ServiceStabilityReady",false]
+    && {fileExists "ITW_CLASH_ServiceExecutionGuards.sqf"}
+) then {
+    [] execVM "ITW_CLASH_ServiceExecutionGuards.sqf";
+} else {
+    diag_log "CLASH BOOT | WARNING | service-execution-guards-skipped | stability unavailable or file missing";
+};
+
 ITW_CLASH_SeaGuard_fnc_Log = {
     params ["_event",["_payload",[]]];
     if (!isNil "ITW_CLASH_DualHAL_fnc_Log") then {
@@ -224,7 +236,7 @@ if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
 
 ITW_CLASH_SeaGenerationGuardReady = true;
 diag_log format [
-    "CLASH BOOT | sea-generation-guard-ready | version=%1 boundedRelocation=%2 aslSurface=true atomicReject=true serviceAuthority=%3 serviceStability=%4",
+    "CLASH BOOT | sea-generation-guard-ready | version=%1 boundedRelocation=%2 aslSurface=true atomicReject=true serviceAuthority=%3 serviceStability=%4 executionGuardsScheduled=true",
     ITW_CLASH_SeaGenerationGuardVersion,
     ITW_CLASH_SeaGuardMaxRelocation,
     missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityReady",false],
