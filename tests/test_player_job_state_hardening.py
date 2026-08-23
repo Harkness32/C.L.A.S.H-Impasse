@@ -88,6 +88,32 @@ def test_employment_menu_uses_generic_active_job_state() -> None:
     assert '"ITW_CLASH_PlayerTasks_fnc_CancelRemote",2' in menu
 
 
+def test_admission_watcher_starts_before_player_task_support_binder() -> None:
+    transport = source("ITW_CLASH_PlayerTransportAuthority.sqf")
+    hardening = source("ITW_CLASH_PlayerTaskStateHardening.sqf")
+
+    assert 'execVM "ITW_CLASH_PlayerTaskStateHardening.sqf"' in transport
+    admission = hardening[
+        hardening.index('scriptName "ITW_CLASH_PlayerTaskStateAdmission"') :
+        hardening.index('scriptName "ITW_CLASH_PlayerTaskStateCancelBinder"')
+    ]
+    assert "ITW_CLASH_PlayerTaskSupportReady" not in admission
+    assert "ITW_CLASH_PlayerTasks_fnc_GetSubscriptions" in admission
+    assert "ITW_CLASH_PlayerTasks_fnc_GetSlingVehicle" in admission
+
+
+def test_transport_authority_keeps_original_null_hq_fail_open_shape() -> None:
+    transport = source("ITW_CLASH_PlayerTransportAuthority.sqf")
+    remove = transport[
+        transport.index("ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL = {") :
+        transport.index("ITW_CLASH_PlayerTransport_fnc_Acquire = {")
+    ]
+
+    assert 'if (!isNull _hq) then {' in remove
+    assert 'if (isNull _hq) exitWith {false};' not in remove
+    assert '_group setVariable ["ITW_CLASH_AuthorityHold",true];' in remove
+
+
 def test_recon_loads_state_hardening_before_installing_wrappers() -> None:
     recon = source("ITW_CLASH_ReconObserver.sqf")
 
