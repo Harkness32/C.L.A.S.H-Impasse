@@ -5,7 +5,9 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateHardeningStarted",fa
 
 ITW_CLASH_PlayerTaskStateHardeningStarted = true;
 ITW_CLASH_PlayerTaskStateHardeningReady = false;
-ITW_CLASH_PlayerTaskStateHardeningVersion = 1;
+ITW_CLASH_PlayerTaskStateCancelReady = false;
+ITW_CLASH_PlayerTaskStateArtilleryGuardReady = false;
+ITW_CLASH_PlayerTaskStateHardeningVersion = 2;
 
 ITW_CLASH_PlayerTaskState_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -16,21 +18,27 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
     };
 };
 
+// Phase 1: install admission as soon as PlayerTaskSupport has defined its
+// primitives. This intentionally does not wait for HAL's Action1ct binder, so
+// COMBAT exclusions are present before HAL gets its first useful planning pass.
 [] spawn {
-    scriptName "ITW_CLASH_PlayerTaskStateHardening";
+    scriptName "ITW_CLASH_PlayerTaskStateAdmission";
     private _deadline = diag_tickTime + 120;
     waitUntil {
-        sleep 0.25;
+        sleep 0.05;
         diag_tickTime >= _deadline || {
-            missionNamespace getVariable ["ITW_CLASH_PlayerTaskSupportReady",false]
-            && {!isNil "ITW_CLASH_PlayerTasks_fnc_NativeAction1"}
+            !isNil "ITW_CLASH_PlayerTasks_fnc_GroupFromSubject"
             && {!isNil "ITW_CLASH_PlayerTasks_fnc_GetSubscriptions"}
             && {!isNil "ITW_CLASH_PlayerTasks_fnc_IsSubscribed"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_HasArtilleryCapability"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_GetSlingVehicle"}
         }
     };
 
     if (diag_tickTime >= _deadline) exitWith {
-        ["bind-timeout",[]] call ITW_CLASH_PlayerTaskState_fnc_Log;
+        ["admission-bind-timeout",[]] call ITW_CLASH_PlayerTaskState_fnc_Log;
     };
     if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateHardeningReady",false]) exitWith {};
 
@@ -187,6 +195,44 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
         true
     };
 
+    {
+        private _group = group _x;
+        if (!isNull _group && {!isNil "ITW_PlayerSide"} && {
+            side _group == ITW_PlayerSide
+        }) then {
+            [_group,"hardening-install"] call
+                ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
+        };
+    } forEach allPlayers;
+
+    ITW_CLASH_PlayerTaskStateHardeningReady = true;
+    diag_log format [
+        "CLASH BOOT | player-task-state-admission-ready | version=%1 authoritativeAdmission=true busyAwareAvailability=true combatGate=true preHALBinder=true",
+        ITW_CLASH_PlayerTaskStateHardeningVersion
+    ];
+};
+
+// Phase 2: HAL's native deny function is only captured by PlayerTaskSupport's
+// binder. Install cancellation once that exact native function is available.
+[] spawn {
+    scriptName "ITW_CLASH_PlayerTaskStateCancelBinder";
+    private _deadline = diag_tickTime + 600;
+    waitUntil {
+        sleep 0.1;
+        diag_tickTime >= _deadline || {
+            missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateHardeningReady",false]
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_NativeAction1"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_CancelGroupJob"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_SendEmploymentState"}
+        }
+    };
+
+    if (diag_tickTime >= _deadline) exitWith {
+        ["cancel-bind-timeout",[]] call ITW_CLASH_PlayerTaskState_fnc_Log;
+    };
+    if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateCancelReady",false]) exitWith {};
+
     // Preserve whichever specialist cancel layers are already installed. If
     // artillery binds later, it will in turn preserve this function as its base.
     ITW_CLASH_PlayerTaskState_fnc_CancelGroupJobBase =
@@ -292,29 +338,44 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
         _success
     };
 
-    if (!isNil "ITW_CLASH_PlayerArtillery_fnc_EligibleVehicle") then {
-        ITW_CLASH_PlayerTaskState_fnc_ArtilleryEligibleBase =
-            ITW_CLASH_PlayerArtillery_fnc_EligibleVehicle;
-        ITW_CLASH_PlayerArtillery_fnc_EligibleVehicle = {
-            params ["_group"];
-            if !([_group,"ARTILLERY"] call
-                ITW_CLASH_PlayerTasks_fnc_CanAcceptJob
-            ) exitWith {objNull};
-            _this call ITW_CLASH_PlayerTaskState_fnc_ArtilleryEligibleBase
-        };
+    ITW_CLASH_PlayerTaskStateCancelReady = true;
+    diag_log format [
+        "CLASH BOOT | player-task-state-cancel-ready | version=%1 nativeCancelBridge=true leaderCancelAuthority=true",
+        ITW_CLASH_PlayerTaskStateHardeningVersion
+    ];
+};
+
+// Phase 3: apply the same central admission gate to the dedicated artillery
+// selector once that subsystem has defined its eligibility function.
+[] spawn {
+    scriptName "ITW_CLASH_PlayerTaskStateArtilleryBinder";
+    private _deadline = diag_tickTime + 600;
+    waitUntil {
+        sleep 0.1;
+        diag_tickTime >= _deadline || {
+            missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateHardeningReady",false]
+            && {!isNil "ITW_CLASH_PlayerArtillery_fnc_EligibleVehicle"}
+        }
     };
 
-    {
-        private _group = group _x;
-        if (!isNull _group && {side _group == ITW_PlayerSide}) then {
-            [_group,"hardening-install"] call
-                ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
-        };
-    } forEach allPlayers;
+    if (diag_tickTime >= _deadline) exitWith {
+        ["artillery-bind-timeout",[]] call ITW_CLASH_PlayerTaskState_fnc_Log;
+    };
+    if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateArtilleryGuardReady",false]) exitWith {};
 
-    ITW_CLASH_PlayerTaskStateHardeningReady = true;
+    ITW_CLASH_PlayerTaskState_fnc_ArtilleryEligibleBase =
+        ITW_CLASH_PlayerArtillery_fnc_EligibleVehicle;
+    ITW_CLASH_PlayerArtillery_fnc_EligibleVehicle = {
+        params ["_group"];
+        if !([_group,"ARTILLERY"] call
+            ITW_CLASH_PlayerTasks_fnc_CanAcceptJob
+        ) exitWith {objNull};
+        _this call ITW_CLASH_PlayerTaskState_fnc_ArtilleryEligibleBase
+    };
+
+    ITW_CLASH_PlayerTaskStateArtilleryGuardReady = true;
     diag_log format [
-        "CLASH BOOT | player-task-state-hardening-ready | version=%1 authoritativeAdmission=true busyAwareAvailability=true combatGate=true nativeCancelBridge=true leaderCancelAuthority=true",
+        "CLASH BOOT | player-task-state-artillery-guard-ready | version=%1 centralAdmission=true",
         ITW_CLASH_PlayerTaskStateHardeningVersion
     ];
 };
