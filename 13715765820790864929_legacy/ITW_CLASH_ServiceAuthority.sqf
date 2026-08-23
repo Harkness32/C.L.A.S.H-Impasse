@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceAuthorityStarted = true;
-ITW_CLASH_ServiceAuthorityVersion = 1;
+ITW_CLASH_ServiceAuthorityVersion = 2;
 ITW_CLASH_ServiceAuthorityReady = false;
 
 if (
@@ -71,6 +71,101 @@ ITW_CLASH_ServiceAuthority_fnc_HasLease = {
             [_lease#0] call ITW_CLASH_Service_fnc_IsCapability
         }
     }
+};
+
+// RegisterPhysical v1 rewrote state/timers every time the same vehicle crossed
+// a registration wrapper. Make registration idempotent. A true rematerialization
+// (AVAILABLE entry with no live physical vehicle) starts a new deployment; a
+// duplicate registration of the same live vehicle only refreshes safe metadata.
+ITW_CLASH_ServiceAuthority_fnc_RegisterPhysicalBase = ITW_CLASH_Service_fnc_RegisterPhysical;
+ITW_CLASH_Service_fnc_RegisterPhysical = {
+    params ["_veh","_capability",["_mode",""],["_source","service"]];
+    if (isNull _veh || {!([_capability] call ITW_CLASH_Service_fnc_IsCapability)}) exitWith {""};
+
+    private _group = group driver _veh;
+    if (isNull _group) exitWith {""};
+    private _lease = [_veh] call ITW_CLASH_ServiceAuthority_fnc_GetLease;
+    if (_lease isEqualTo []) then {_lease = [_group] call ITW_CLASH_ServiceAuthority_fnc_GetLease};
+    if (_lease isEqualTo []) exitWith {
+        ["registration-rejected",[
+            typeOf _veh,side _group,toUpperANSI _capability,_source,"no-explicit-service-lease"
+        ]] call ITW_CLASH_ServiceAuthority_fnc_Log;
+        ""
+    };
+
+    if (_mode isEqualTo "") then {_mode = [_veh] call ITW_CLASH_Service_fnc_ModeForVehicle};
+    _mode = toUpperANSI _mode;
+    _capability = toUpperANSI _capability;
+
+    _group setVariable ["ITW_CLASH_CapExempt",true];
+    _group setVariable ["ITW_CLASH_ServiceAsset",true];
+    _group setVariable ["ITW_CLASH_ServiceCapability",_capability];
+    _group setVariable ["ITW_CLASH_ExcludeHAL",nil];
+    _group setVariable ["ITW_CLASH_ServiceRTB",nil];
+    _veh setVariable ["ITW_CLASH_ServiceAsset",true,true];
+    _veh setVariable ["ITW_CLASH_ServiceCapability",_capability,true];
+
+    private _poolId = _veh getVariable ["ITW_CLASH_ServicePoolId",""];
+    private _index = [_poolId] call ITW_CLASH_Service_fnc_FindEntry;
+    private _newEntry = _index < 0;
+    if (_newEntry) then {
+        ITW_CLASH_ServiceSerial = ITW_CLASH_ServiceSerial + 1;
+        _poolId = format ["SVC-%1-%2",round (diag_tickTime * 1000),ITW_CLASH_ServiceSerial];
+        _index = count ITW_CLASH_ServicePool;
+        ITW_CLASH_ServicePool pushBack createHashMap;
+    };
+
+    private _entry = ITW_CLASH_ServicePool#_index;
+    private _oldVeh = _entry getOrDefault ["vehicle",objNull];
+    private _sameLivePhysical = !_newEntry && {!isNull _oldVeh} && {
+        _oldVeh isEqualTo _veh && {alive _oldVeh}
+    };
+    private _newDeployment = _newEntry || {!_sameLivePhysical};
+
+    // Home is deployment metadata. Do not overwrite a live entry's home on a
+    // duplicate registration: SeaGuard may already have corrected a ship home.
+    private _home = +(_entry getOrDefault ["home",[]]);
+    if (_newDeployment || {_home isEqualTo []}) then {
+        _home = _group getVariable ["START" + str _group,getPosATL _veh];
+        if (_home isEqualTo []) then {_home = getPosATL _veh};
+        if (count _home < 3) then {_home pushBack 0};
+    };
+
+    private _vehDef = _veh getVariable ["ITW_VehDef",[]];
+    _entry set ["id",_poolId];
+    _entry set ["side",side _group];
+    _entry set ["capability",_capability];
+    _entry set ["mode",_mode];
+    _entry set ["class",typeOf _veh];
+    if (_vehDef isNotEqualTo []) then {_entry set ["vehDef",_vehDef]};
+    _entry set ["vehicle",_veh];
+    _entry set ["group",_group];
+    _entry set ["source",_source];
+
+    if (_newDeployment) then {
+        _entry set ["home",+_home];
+        _entry set ["state","DEPLOYED"];
+        _entry set ["spawnedAt",time];
+        _entry set ["everBusy",false];
+        _entry set ["taskSeen",false];
+        _entry set ["idleSince",-1];
+        _entry set ["availableAt",0];
+        _entry set ["lastDistance",_veh distance2D _home];
+        _entry set ["lastProgressAt",time];
+    };
+    ITW_CLASH_ServicePool set [_index,_entry];
+
+    _veh setVariable ["ITW_CLASH_ServicePoolId",_poolId,true];
+    _group setVariable ["ITW_CLASH_ServicePoolId",_poolId];
+    _group setVariable ["ITW_CLASH_ServiceHome",+_home];
+
+    [if (_sameLivePhysical) then {"physical-registration-refreshed"} else {"physical-registered"},[
+        _poolId,_capability,side _group,_mode,typeOf _veh,_source,+_home,
+        _entry getOrDefault ["state",""],
+        _entry getOrDefault ["everBusy",false],
+        _entry getOrDefault ["taskSeen",false]
+    ]] call ITW_CLASH_Service_fnc_Log;
+    _poolId
 };
 
 // Explicit Checkbook transport demand creates the lease before lifecycle-v1's
@@ -176,7 +271,7 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
 
 ITW_CLASH_ServiceAuthorityReady = true;
 diag_log format [
-    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true sharedVehDefImmutable=true dualDeploymentAware=true",
+    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true sharedVehDefImmutable=true dualDeploymentAware=true idempotentRegistration=true",
     ITW_CLASH_ServiceAuthorityVersion
 ];
 true
