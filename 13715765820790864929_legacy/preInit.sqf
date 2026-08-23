@@ -21,6 +21,7 @@ diag_log "CLASH BOOT | preInit | fail-open hooks installed; controller deferred 
 if (isServer) then {
     ITW_CLASH_DeferredFinalizers = [
         "ITW_AtkAiCount",
+        "ITW_AtkBeginReconstitutionTransit",
         "ITW_AtkDispatchReconstitutionTransport",
         "ITW_AtkReconstitutionTransitManager",
         "ITW_AtkInfantryMoveUp",
@@ -140,9 +141,14 @@ if (isServer) then {
         diag_log "CLASH BOOT | cap-accounting-preinit-fallback | baseline AI cap finalized";
     };
     if (!_dispatchFixed) then {
-        ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkDispatchReconstitutionTransport"];
-        ["ITW_AtkDispatchReconstitutionTransport"] call SKL_fnc_CompileFinal;
-        diag_log "CLASH BOOT | preinit-reconstitution-dispatch-fallback | baseline finalized";
+        {
+            ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - [_x];
+            [_x] call SKL_fnc_CompileFinal;
+        } forEach [
+            "ITW_AtkBeginReconstitutionTransit",
+            "ITW_AtkDispatchReconstitutionTransport"
+        ];
+        diag_log "CLASH BOOT | preinit-reconstitution-dispatch-fallback | baseline origin/dispatch finalized";
     };
     if (!_transitFixed) then {
         ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkReconstitutionTransitManager"];
@@ -228,7 +234,7 @@ isNil {call compile preprocessFileLineNumbers "ITW_Garage.sqf";                 
 isNil {call compile preprocessFileLineNumbers "ITW_Garrison.sqf";               };
 isNil {call compile preprocessFileLineNumbers "ITW_SideOps.sqf";                };
 isNil {call compile preprocessFileLineNumbers "ITW_Objectives.sqf";             };
-isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";             };
+isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_Radio.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Save.sqf";                   };
 isNil {call compile preprocessFileLineNumbers "ITW_Targets.sqf";                };
