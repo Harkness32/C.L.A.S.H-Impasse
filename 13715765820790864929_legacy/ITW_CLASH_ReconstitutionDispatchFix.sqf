@@ -227,6 +227,12 @@ ITW_AtkDispatchReconstitutionTransport = {
         _crewGroup setVariable ["ITW_CLASH_TransitObjective",_objectiveIndex];
         _crewGroup setVariable ["ITW_CLASH_CapExempt",true];
 
+        // While replacement infantry is physically aboard, keep this vehicle
+        // under Impasse's transit manager. The generic Dual-HAL handoff would
+        // otherwise interpret it as idle transport, unload the squad, and turn
+        // it into standing HAL cargo before the reconstitution trip begins.
+        _veh setVariable ["ITW_CLASH_ReconstitutionTransport",true,true];
+
         private _vehInfo = [
             _vehDef#ITW_VEH_TYPE,
             _vehDef#ITW_VEH_ROLE,
@@ -286,7 +292,7 @@ private _finalized = _beginFinalized && _dispatchFinalized;
 ITW_CLASH_ReconstitutionDispatchFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true capExemptCrew=true preInit=true",
+        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true capExemptCrew=true lifecycleReserved=true preInit=true",
         ITW_CLASH_ReconstitutionDispatchFixVersion
     ];
 } else {
