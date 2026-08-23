@@ -158,6 +158,6 @@ def test_player_artillery_deployment_is_vehicle_sized_and_fail_closed() -> None:
     assert 'toLowerANSI _role != "driver"' in text
     before(
         text,
-        "ITW_CLASH_PlayerGarage_fnc_FindSafeDestination",
-        '"APPROVED"',
+        "private _safePosition = [",
+        '"resolved-safe"',
     )
