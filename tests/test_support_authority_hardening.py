@@ -112,6 +112,14 @@ def test_native_proximity_loading_cannot_manufacture_a_hal_transport_job():
     assert state_zero in bridge
     assert bridge.index(acquire) < bridge.index(state_zero)
 
+    # The HAL-contract branch must not run the native objective/waypoint rewrite;
+    # those mutations belong only to the non-HAL standing-delivery branch.
+    hal_start = bridge.index("if (_halContract) then {")
+    native_else = bridge.index("} else {", hal_start)
+    hal_block = bridge[hal_start:native_else]
+    assert "_halContractSelected = true;" in hal_block
+    assert "VAR_SET_OBJ_IDX" not in hal_block
+    assert "ITW_DELETE_WAYPOINTS" not in hal_block
+
     assert "ITW_CLASH_PlayerTransport_fnc_GetContractDestination" in bridge
     assert '"player-ferry-delivered"' in bridge
-    assert "preserve HAL objective/task state" in bridge
