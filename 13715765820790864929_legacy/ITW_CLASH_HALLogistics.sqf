@@ -165,4 +165,17 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
     ];
 };
 
+// Shared lifecycle is loaded here because Checkbook API and ForceGeneration are
+// already live, while HAL logistics is the first common service layer for both
+// persistent Impasse transports and newly purchased support assets.
+if (fileExists "ITW_CLASH_ServiceLifecycle.sqf") then {
+    private _serviceLifecycleLoaded = call compile preprocessFileLineNumbers
+        "ITW_CLASH_ServiceLifecycle.sqf";
+    if !(_serviceLifecycleLoaded isEqualTo true) then {
+        diag_log "CLASH BOOT | WARNING | service-lifecycle-load-failed | persistent support behavior retained";
+    };
+} else {
+    diag_log "CLASH BOOT | WARNING | service-lifecycle-missing | persistent support behavior retained";
+};
+
 true
