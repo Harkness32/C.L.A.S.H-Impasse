@@ -41,3 +41,35 @@ def test_native_hal_consumes_leader_hqb_after_varinit():
     assert 'if not (isNull leaderHQB)' in ryd
     assert 'setVariable ["RydHQ_CodeSign","B"]' in ryd
     assert ryd.index('call compile preprocessfile (RYD_Path + "VarInit.sqf")') < ryd.index('if not (isNull leaderHQB)')
+
+def test_live_dual_hal_is_the_mission_default_and_disabled_modes_are_explicit():
+    description = mission("description.ext")
+    controller = mission("ITW_CLASH.sqf")
+
+    block = description[
+        description.index("class CLASHObserver"):
+        description.index("class HeadlessClient")
+    ]
+
+    assert 'title = "C.L.A.S.H. / HAL control mode";' in block
+    assert 'default = 2;' in block
+    assert "HAL disabled (compatibility only)" in block
+    assert "Observer only (RPT logging; HAL disabled)" in block
+    assert "Live dual-HAL campaign (recommended)" in block
+    assert "live-dual-hal-selected" in controller
+    assert "hal-control-disabled" in controller
+    assert "employment=false artilleryTasks=false logisticsTasks=false" in controller
+
+
+def test_live_pilot_remains_the_single_native_hal_core_launcher():
+    controller = mission("ITW_CLASH.sqf")
+    api = mission("ITW_CLASH_CheckbookAPI.sqf")
+    binder = mission("ITW_CLASH_DualHALCheckbook.sqf")
+    init = mission("init.sqf")
+
+    assert controller.count("[] spawn NR6_fnc_HALcore;") == 1
+    assert "NR6_fnc_HALcore" not in api
+    assert "NR6_fnc_HALcore" not in binder
+    assert "nativeCoreLaunch=live-mode-only" in init
+    assert "nativeCoreLaunchPending=true" not in init
+
