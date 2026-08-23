@@ -26,7 +26,7 @@ Action1fnc = {
 
 	_Unit = _this select 0;
 
-	_Action = _Unit addAction ["[HAL Tasking] Deny Assigned Task","[_this select 3] remoteExec ['Action1ct',2]",_Unit,-2,false,false,"","_target isEqualTo (vehicle player)",0.01];
+	_Action = _Unit addAction ["[HAL Tasking] Deny Assigned Task","[_this select 3] remoteExec ['Action1ct',2]",_Unit,-2,false,false,"","_this isEqualTo _target",0.01];
 	_Unit setVariable ["HAL_TaskAddedID",_Action];
 };
 
@@ -66,7 +66,7 @@ Action2fnc = {
 		[_this select 3] remoteExecCall ['Action2ct',2]
 		"
 		, 
-		_Unit,-2.1,false,false,"","_target isEqualTo (vehicle player)",0.01];
+		_Unit,-2.1,false,false,"","_this isEqualTo _target",0.01];
 
 	_Unit setVariable ["HAL_TaskDisabledID",_Action];
 
@@ -106,7 +106,7 @@ Action3fnc = {
 		[_this select 3] remoteExecCall ['Action3ct',2]
 		"
 		, 
-		_Unit,-2.2,false,false,"","_target isEqualTo (vehicle player)",0.01];
+		_Unit,-2.2,false,false,"","_this isEqualTo _target",0.01];
 	
 	_Unit setVariable ["HAL_TaskEnabledID",_Action];
 
@@ -1253,7 +1253,7 @@ ActionMfnc = {
 		showCommandingMenu '#USER:NR6_Player_Menu';
 		"
 		, 
-		_Unit,-4.5,false,false,"","_target isEqualTo (vehicle player)",50];
+		_Unit,-4.5,false,false,"","_this isEqualTo _target",50];
 	
 	_Unit setVariable ["HAL_ReqMenuID",_Action];
 
