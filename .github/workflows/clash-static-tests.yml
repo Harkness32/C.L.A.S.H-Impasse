@@ -34,3 +34,4 @@ jobs:
           tests/test_one_zero_burnin.py
           tests/test_dual_hal_checkbook.py
           tests/test_dual_hal_runtime_bind.py
+          tests/test_support_lifecycle.py
