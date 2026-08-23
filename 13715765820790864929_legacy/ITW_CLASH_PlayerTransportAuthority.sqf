@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerTransportAuthorityStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerTransportAuthorityStarted = true;
-ITW_CLASH_PlayerTransportAuthorityVersion = 1;
+ITW_CLASH_PlayerTransportAuthorityVersion = 2;
 
 ITW_CLASH_PlayerTransport_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -31,17 +31,17 @@ ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL = {
     } else {
         grpNull
     };
-    if (!isNull _hq) then {
-        private _included = +(_hq getVariable ["RydHQ_Included",[]]);
-        _included = _included - [_group];
-        _hq setVariable ["RydHQ_Included",_included];
+    if (isNull _hq) exitWith {false};
 
-        if (!isNil "ITW_CLASH_BLUFORHQ" && {_hq == ITW_CLASH_BLUFORHQ}) then {
-            RydHQB_Included = +_included;
-        };
-        if (!isNil "ITW_CLASH_HALHQ" && {_hq == ITW_CLASH_HALHQ}) then {
-            RydHQ_Included = +_included;
-        };
+    private _included = +(_hq getVariable ["RydHQ_Included",[]]);
+    _included = _included - [_group];
+    _hq setVariable ["RydHQ_Included",_included];
+
+    if (!isNil "ITW_CLASH_BLUFORHQ" && {_hq == ITW_CLASH_BLUFORHQ}) then {
+        RydHQB_Included = +_included;
+    };
+    if (!isNil "ITW_CLASH_HALHQ" && {_hq == ITW_CLASH_HALHQ}) then {
+        RydHQ_Included = +_included;
     };
 
     _group setVariable ["Break",true];
@@ -210,9 +210,18 @@ ITW_CLASH_PlayerTransport_fnc_Release = {
     true
 };
 
+// Start player employment admission before PlayerTaskSupport is compiled. The
+// hardening script waits for support primitives, so this creates an early
+// watcher without changing transport authority itself.
+if (fileExists "ITW_CLASH_PlayerTaskStateHardening.sqf") then {
+    [] execVM "ITW_CLASH_PlayerTaskStateHardening.sqf";
+} else {
+    diag_log "CLASH BOOT | WARNING | player-task-state-hardening-missing | employment admission remains v1";
+};
+
 ITW_CLASH_PlayerTransportAuthorityReady = true;
 diag_log format [
-    "CLASH BOOT | player-transport-authority-ready | version=%1 deliveryPreReserved=true boardingLease=true physicalRelease=true nativeITWTransport=true",
+    "CLASH BOOT | player-transport-authority-ready | version=%1 deliveryPreReserved=true boardingLease=true physicalRelease=true nativeITWTransport=true earlyPlayerAdmissionWatcher=true",
     ITW_CLASH_PlayerTransportAuthorityVersion
 ];
 true
