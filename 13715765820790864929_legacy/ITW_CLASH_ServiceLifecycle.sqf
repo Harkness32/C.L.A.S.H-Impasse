@@ -27,7 +27,7 @@ ITW_CLASH_Service_fnc_Log = {
 
 ITW_CLASH_Service_fnc_IsCapability = {
     params ["_capability"];
-    toUpperANSI _capability in [
+    (toUpperANSI _capability) in [
         "TRANSPORT",
         "LOGISTICS_AMMO",
         "LOGISTICS_FUEL",
@@ -79,13 +79,20 @@ ITW_CLASH_Service_fnc_RemoveHALOwnership = {
             _arr = _arr - [_group];
             _hq setVariable [_x,_arr];
         } forEach [
+            "RydHQ_Friends",
             "RydHQ_Included",
+            "RydHQ_AttackAv",
+            "RydHQ_FlankAv",
+            "RydHQ_CombatAv",
+            "RydHQ_ReconAv",
+            "RydHQ_ReconG",
             "RydHQ_CargoG",
             "RydHQ_CargoOnly",
             "RydHQ_NoAttack",
             "RydHQ_NoRecon",
             "RydHQ_NoDef",
             "RydHQ_AirG",
+            "RydHQ_DefRes",
             "RydHQ_AmmoSupportG",
             "RydHQ_AmmoDrop",
             "RydHQ_FuelSupportG",
@@ -110,7 +117,7 @@ ITW_CLASH_Service_fnc_RemoveHALOwnership = {
 };
 
 ITW_CLASH_Service_fnc_RegisterPhysical = {
-    params ["_veh","_capability",["_mode",""] ,["_source","service"]];
+    params ["_veh","_capability",["_mode",""],["_source","service"]];
     if (isNull _veh || {!([_capability] call ITW_CLASH_Service_fnc_IsCapability)}) exitWith {""};
 
     private _group = group driver _veh;
@@ -122,6 +129,8 @@ ITW_CLASH_Service_fnc_RegisterPhysical = {
     _group setVariable ["ITW_CLASH_CapExempt",true];
     _group setVariable ["ITW_CLASH_ServiceAsset",true];
     _group setVariable ["ITW_CLASH_ServiceCapability",_capability];
+    _group setVariable ["ITW_CLASH_ExcludeHAL",nil];
+    _group setVariable ["ITW_CLASH_ServiceRTB",nil];
     _veh setVariable ["ITW_CLASH_ServiceAsset",true,true];
     _veh setVariable ["ITW_CLASH_ServiceCapability",_capability,true];
 
@@ -155,7 +164,7 @@ ITW_CLASH_Service_fnc_RegisterPhysical = {
     _entry set ["taskSeen",false];
     _entry set ["idleSince",-1];
     _entry set ["availableAt",0];
-    _entry set ["lastDistance",round (_veh distance2D _home)];
+    _entry set ["lastDistance",_veh distance2D _home];
     _entry set ["lastProgressAt",time];
     ITW_CLASH_ServicePool set [_index,_entry];
 
@@ -225,11 +234,16 @@ ITW_CLASH_Service_fnc_Retire = {
     private _nearPlayer = (_players findIf {_x distance2D _veh < ITW_CLASH_ServiceRetirePlayerRadius}) >= 0;
     if (_nearPlayer) exitWith {false};
 
-    if (!isNull _group) then {[_group] call ITW_CLASH_Service_fnc_RemoveHALOwnership};
-    [_veh] call ITW_CLASH_Service_fnc_MarkTrackerReleased;
-
     private _vehDef = _entry getOrDefault ["vehDef",[]];
     if (_vehDef isEqualTo []) then {_vehDef = _veh getVariable ["ITW_VehDef",[]]};
+    if (_vehDef isEqualTo []) exitWith {false};
+
+    // Mark the physical tracker released before deletion so a successful RTB
+    // does not free the already-paid Impasse vehicle slot. Destruction still
+    // follows the normal tracker path and decrements the slot.
+    if !([_veh] call ITW_CLASH_Service_fnc_MarkTrackerReleased) exitWith {false};
+    if (!isNull _group) then {[_group] call ITW_CLASH_Service_fnc_RemoveHALOwnership};
+
     _entry set ["vehDef",_vehDef];
     _entry set ["class",typeOf _veh];
     _entry set ["state","AVAILABLE"];
@@ -247,8 +261,7 @@ ITW_CLASH_Service_fnc_Retire = {
     if (!isNull _group && {units _group isEqualTo []}) then {deleteGroup _group};
 
     ["virtualized",[
-        _poolId,_capability,_class,_reason,
-        if (_vehDef isEqualTo []) then {-1} else {_vehDef#ITW_VEH_COUNT}
+        _poolId,_capability,_class,_reason,_vehDef#ITW_VEH_COUNT
     ]] call ITW_CLASH_Service_fnc_Log;
     true
 };
@@ -524,6 +537,7 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
             private _entry = ITW_CLASH_ServicePool#_i;
             private _state = _entry getOrDefault ["state",""];
             if (_state isEqualTo "AVAILABLE") then {continue};
+            private _externalMutation = false;
 
             private _veh = _entry getOrDefault ["vehicle",objNull];
             if (isNull _veh || {!alive _veh}) then {
@@ -578,11 +592,13 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                         _entry set ["idleSince",_idleSince];
                     };
                     if (time - _idleSince >= ITW_CLASH_ServiceIdleGrace) then {
-                        [_i,"hal-task-complete"] call ITW_CLASH_Service_fnc_OrderRTB;
+                        ITW_CLASH_ServicePool set [_i,_entry];
+                        _externalMutation = [_i,"hal-task-complete"] call ITW_CLASH_Service_fnc_OrderRTB;
                     };
                 } else {
                     if (_idle && {_taskSeen && {_halReturn}}) then {
-                        [_i,"hal-rtb-takeover"] call ITW_CLASH_Service_fnc_OrderRTB;
+                        ITW_CLASH_ServicePool set [_i,_entry];
+                        _externalMutation = [_i,"hal-rtb-takeover"] call ITW_CLASH_Service_fnc_OrderRTB;
                     } else {
                         if (_idle && {_taskSeen && {_wpType isEqualTo "NONE" && {_distance > 175}}}) then {
                             private _idleSince = _entry getOrDefault ["idleSince",-1];
@@ -591,7 +607,8 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                                 _entry set ["idleSince",_idleSince];
                             };
                             if (time - _idleSince >= ITW_CLASH_ServiceIdleGrace) then {
-                                [_i,"idle-after-task"] call ITW_CLASH_Service_fnc_OrderRTB;
+                                ITW_CLASH_ServicePool set [_i,_entry];
+                                _externalMutation = [_i,"idle-after-task"] call ITW_CLASH_Service_fnc_OrderRTB;
                             };
                         } else {
                             if (!_taskSeen && {
@@ -599,7 +616,8 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                                     time - (_entry getOrDefault ["spawnedAt",time]) >= ITW_CLASH_ServiceUnclaimedTimeout
                                 }
                             }) then {
-                                [_i,"unclaimed-timeout"] call ITW_CLASH_Service_fnc_OrderRTB;
+                                ITW_CLASH_ServicePool set [_i,_entry];
+                                _externalMutation = [_i,"unclaimed-timeout"] call ITW_CLASH_Service_fnc_OrderRTB;
                             };
                         };
                     };
@@ -612,7 +630,8 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                         ITW_CLASH_ServiceRTBLandRadius
                     };
                     if (_distance <= _radius) then {
-                        [_i,"home-radius"] call ITW_CLASH_Service_fnc_Retire;
+                        ITW_CLASH_ServicePool set [_i,_entry];
+                        _externalMutation = [_i,"home-radius"] call ITW_CLASH_Service_fnc_Retire;
                     } else {
                         private _lastDistance = _entry getOrDefault ["lastDistance",_distance];
                         if (_distance < (_lastDistance - 25)) then {
@@ -624,23 +643,27 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                         if (time - _lastProgress >= ITW_CLASH_ServiceProgressTimeout && {
                             time - _lastOrder >= 45
                         }) then {
-                            [_i] call ITW_CLASH_Service_fnc_ReissueRTB;
+                            ITW_CLASH_ServicePool set [_i,_entry];
+                            _externalMutation = [_i] call ITW_CLASH_Service_fnc_ReissueRTB;
                             ["rtb-reissued",[
                                 _entry get "id",typeOf _veh,round _distance,
                                 round (time - _lastProgress)
                             ]] call ITW_CLASH_Service_fnc_Log;
                         };
-                        if (time - _lastProgress >= ITW_CLASH_ServiceHardStuckTimeout) then {
+                        if (!_externalMutation && {
+                            time - _lastProgress >= ITW_CLASH_ServiceHardStuckTimeout
+                        }) then {
                             private _players = allPlayers select {!(_x isKindOf "HeadlessClient_F")};
                             private _visible = (_players findIf {_x distance2D _veh < 1000}) >= 0;
                             if (!_visible) then {
-                                [_i,"stuck-safe-retire"] call ITW_CLASH_Service_fnc_Retire;
+                                ITW_CLASH_ServicePool set [_i,_entry];
+                                _externalMutation = [_i,"stuck-safe-retire"] call ITW_CLASH_Service_fnc_Retire;
                             };
                         };
                     };
                 };
             };
-            if (_i < count ITW_CLASH_ServicePool) then {
+            if (!_externalMutation && {_i < count ITW_CLASH_ServicePool}) then {
                 if ((ITW_CLASH_ServicePool#_i getOrDefault ["id",""]) isEqualTo (_entry getOrDefault ["id","-changed-"])) then {
                     ITW_CLASH_ServicePool set [_i,_entry];
                 };
