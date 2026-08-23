@@ -6,6 +6,19 @@ ITW_CLASH_SeaGenerationGuardStarted = true;
 ITW_CLASH_SeaGenerationGuardVersion = 1;
 ITW_CLASH_SeaGenerationGuardReady = false;
 
+// ServiceLifecycle is loaded immediately before this file. Install the canonical
+// explicit-lease authority layer now, before SeaGuard becomes the outermost
+// StageFieldVehicle wrapper.
+if (fileExists "ITW_CLASH_ServiceAuthority.sqf") then {
+    private _serviceAuthorityLoaded = call compile preprocessFileLineNumbers
+        "ITW_CLASH_ServiceAuthority.sqf";
+    if !(_serviceAuthorityLoaded isEqualTo true) then {
+        diag_log "CLASH BOOT | WARNING | service-authority-load-failed | lifecycle-v1 retained";
+    };
+} else {
+    diag_log "CLASH BOOT | WARNING | service-authority-missing | lifecycle-v1 retained";
+};
+
 ITW_CLASH_SeaGuard_fnc_Log = {
     params ["_event",["_payload",[]]];
     if (!isNil "ITW_CLASH_DualHAL_fnc_Log") then {
