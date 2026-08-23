@@ -57,15 +57,16 @@ private _lateDoctrineFinalizers = missionNamespace getVariable [
     []
 ];
 
-// ITW_Ally.sqf is compiled in preInit, but the player-transport authority layer
-// cannot bind until init after Dual-HAL/Checkbook exists. Keep only the two
-// native physical ferry functions mutable until that synchronous authority
-// module closes this window before ITW_Start launches ITW_AllyInit.
+// ITW_Ally.sqf is compiled in preInit, but the server-side player-transport
+// authority layer cannot bind until init after Dual-HAL/Checkbook exists. Keep
+// only the two server ferry functions mutable until that synchronous module
+// closes this window before ITW_Start launches ITW_AllyInit. Clients finalize
+// their unused native copies normally.
 private _allyTransportWindow = missionNamespace getVariable [
     "ITW_CLASH_AllyTransportFinalizationWindow",
     true
 ];
-private _allyTransportDeferred = _allyTransportWindow && {
+private _allyTransportDeferred = isServer && {_allyTransportWindow} && {
     _var in ["ITW_AllyLoadIntoVehManager","ITW_AllyLoadGrpIntoVeh"]
 };
 
