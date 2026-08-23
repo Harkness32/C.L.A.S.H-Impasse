@@ -31,17 +31,17 @@ ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL = {
     } else {
         grpNull
     };
-    if (isNull _hq) exitWith {false};
+    if (!isNull _hq) then {
+        private _included = +(_hq getVariable ["RydHQ_Included",[]]);
+        _included = _included - [_group];
+        _hq setVariable ["RydHQ_Included",_included];
 
-    private _included = +(_hq getVariable ["RydHQ_Included",[]]);
-    _included = _included - [_group];
-    _hq setVariable ["RydHQ_Included",_included];
-
-    if (!isNil "ITW_CLASH_BLUFORHQ" && {_hq == ITW_CLASH_BLUFORHQ}) then {
-        RydHQB_Included = +_included;
-    };
-    if (!isNil "ITW_CLASH_HALHQ" && {_hq == ITW_CLASH_HALHQ}) then {
-        RydHQ_Included = +_included;
+        if (!isNil "ITW_CLASH_BLUFORHQ" && {_hq == ITW_CLASH_BLUFORHQ}) then {
+            RydHQB_Included = +_included;
+        };
+        if (!isNil "ITW_CLASH_HALHQ" && {_hq == ITW_CLASH_HALHQ}) then {
+            RydHQ_Included = +_included;
+        };
     };
 
     _group setVariable ["Break",true];
