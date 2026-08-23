@@ -4,13 +4,16 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskSupportStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerTaskSupportStarted = true;
-ITW_CLASH_PlayerTaskSupportVersion = 1;
+ITW_CLASH_PlayerTaskSupportVersion = 2;
 ITW_CLASH_PlayerTaskSupportReady = false;
 ITW_CLASH_DisableNativeHC = true;
 ITW_CLASH_PlayerTaskGroups = [];
 ITW_CLASH_PlayerJobs = createHashMap;
 ITW_CLASH_PlayerJobEvents = [];
 ITW_CLASH_LogisticsPackages = [];
+ITW_CLASH_PlayerJobTypes = [
+    "COMBAT","TRANSPORT","MEDEVAC","LOGISTICS","ARTILLERY"
+];
 ITW_CLASH_PlayerAmmoDeliveryRadius = missionNamespace getVariable [
     "ITW_CLASH_PlayerAmmoDeliveryRadius",100
 ];
@@ -60,30 +63,178 @@ ITW_CLASH_PlayerTasks_fnc_HumanRoster = {
     }
 };
 
-ITW_CLASH_PlayerTasks_fnc_SetOptIn = {
-    params ["_subject","_enabled"];
+ITW_CLASH_PlayerTasks_fnc_GetSubscriptions = {
+    params ["_subject"];
+    private _group = [_subject] call ITW_CLASH_PlayerTasks_fnc_GroupFromSubject;
+    if (isNull _group) exitWith {[]};
+
+    private _subscriptions = +(_group getVariable [
+        "ITW_CLASH_PlayerJobSubscriptions",[]
+    ]);
+    _subscriptions = _subscriptions select {
+        _x isEqualType ""
+        && {_x in ITW_CLASH_PlayerJobTypes}
+    };
+    _subscriptions arrayIntersect ITW_CLASH_PlayerJobTypes
+};
+
+ITW_CLASH_PlayerTasks_fnc_IsSubscribed = {
+    params ["_subject","_jobType"];
+    if !(_jobType isEqualType "") exitWith {false};
+    _jobType = toUpperANSI _jobType;
+    _jobType in ([_subject] call
+        ITW_CLASH_PlayerTasks_fnc_GetSubscriptions)
+};
+
+ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle = {
+    params ["_group"];
+    if (isNull _group) exitWith {objNull};
+
+    private _leader = leader _group;
+    private _vehicle = if (isNull _leader) then {objNull} else {
+        vehicle _leader
+    };
+    if (!isNull _leader && {_vehicle == _leader}) then {
+        _vehicle = objNull;
+    };
+    if (isNull _vehicle) then {
+        {
+            if (isPlayer _x && {vehicle _x != _x}) exitWith {
+                _vehicle = vehicle _x;
+            };
+        } forEach units _group;
+    };
+    if (isNull _vehicle || {!alive _vehicle} || {!canMove _vehicle}) exitWith {
+        objNull
+    };
+    _vehicle
+};
+
+ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity = {
+    params ["_vehicle"];
+    if (isNull _vehicle) exitWith {false};
+    private _configured = getNumber (
+        configFile >> "CfgVehicles" >> typeOf _vehicle >> "transportSoldier"
+    );
+    _configured > 0 || {
+        (fullCrew [_vehicle,"cargo",true]) isNotEqualTo []
+    }
+};
+
+ITW_CLASH_PlayerTasks_fnc_HasArtilleryCapability = {
+    params ["_vehicle"];
+    if (isNull _vehicle) exitWith {false};
+    private _supportTypes = getArray (
+        configFile >> "CfgVehicles" >> typeOf _vehicle
+        >> "availableForSupportTypes"
+    );
+    "Artillery" in _supportTypes
+    && {(getArtilleryAmmo [_vehicle]) isNotEqualTo []}
+};
+
+ITW_CLASH_PlayerTasks_fnc_HasExecutableSubscription = {
+    params ["_group"];
+    if (isNull _group) exitWith {false};
+    private _subscriptions = [_group] call
+        ITW_CLASH_PlayerTasks_fnc_GetSubscriptions;
+    if (_subscriptions isEqualTo []) exitWith {false};
+    if (_group getVariable ["ITW_CLASH_AuthorityHold",false]) exitWith {
+        false
+    };
+    if ("COMBAT" in _subscriptions) exitWith {true};
+
+    private _vehicle = [_group] call
+        ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle;
+    if (
+        ("TRANSPORT" in _subscriptions || {"MEDEVAC" in _subscriptions})
+        && {[_vehicle] call
+            ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity}
+    ) exitWith {true};
+    if (
+        "LOGISTICS" in _subscriptions
+        && {!isNull ([_group] call
+            ITW_CLASH_PlayerTasks_fnc_GetSlingVehicle)}
+    ) exitWith {true};
+    if (
+        "ARTILLERY" in _subscriptions
+        && {[_vehicle] call
+            ITW_CLASH_PlayerTasks_fnc_HasArtilleryCapability}
+    ) exitWith {true};
+    false
+};
+
+ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState = {
+    params ["_subject",["_source","sync"]];
     private _group = [_subject] call ITW_CLASH_PlayerTasks_fnc_GroupFromSubject;
     if (isNull _group || {isNil "ITW_PlayerSide"} || {
         side _group != ITW_PlayerSide
     }) exitWith {false};
 
+    private _subscriptions = [_group] call
+        ITW_CLASH_PlayerTasks_fnc_GetSubscriptions;
+    private _active = _subscriptions isNotEqualTo [];
+    private _executable = _active && {
+        [_group] call
+            ITW_CLASH_PlayerTasks_fnc_HasExecutableSubscription
+    };
+    private _previous = _group getVariable [
+        "ITW_CLASH_PlayerTaskAvailable",-1
+    ];
+
     _group setVariable ["EnableHALActions",true,true];
     _group setVariable ["ITW_CLASH_PlayerTaskInitialized",true,true];
-    _group setVariable ["ITW_CLASH_PlayerTaskOptIn",_enabled,true];
-    _group setVariable ["Unable",!_enabled,true];
-    _group setVariable ["BUnable",!_enabled,true];
+    _group setVariable ["ITW_CLASH_PlayerTaskOptIn",_active,true];
+    _group setVariable ["ITW_CLASH_PlayerTaskAvailable",_executable,true];
+    _group setVariable ["Unable",!_executable,true];
+    _group setVariable ["BUnable",!_executable,true];
 
-    if (_enabled) then {
+    if (_active) then {
         ITW_CLASH_PlayerTaskGroups pushBackUnique _group;
     } else {
         ITW_CLASH_PlayerTaskGroups = ITW_CLASH_PlayerTaskGroups - [_group];
     };
 
-    ["opt-in-changed",[
+    if !(_previous isEqualTo _executable) then {
+        ["availability-changed",[
+            if (!isNil "ITW_CLASH_DualHAL_fnc_GroupId") then {
+                [_group] call ITW_CLASH_DualHAL_fnc_GroupId
+            } else {str _group},
+            _executable,
+            _subscriptions,
+            _source
+        ]] call ITW_CLASH_PlayerTasks_fnc_Log;
+    };
+    true
+};
+
+ITW_CLASH_PlayerTasks_fnc_SetSubscriptions = {
+    params ["_subject","_subscriptions",["_source","api"]];
+    private _group = [_subject] call ITW_CLASH_PlayerTasks_fnc_GroupFromSubject;
+    if (
+        isNull _group
+        || {isNil "ITW_PlayerSide"}
+        || {side _group != ITW_PlayerSide}
+        || {!(_subscriptions isEqualType [])}
+    ) exitWith {false};
+
+    _subscriptions = _subscriptions select {
+        _x isEqualType ""
+        && {_x in ITW_CLASH_PlayerJobTypes}
+    };
+    _subscriptions = _subscriptions arrayIntersect
+        ITW_CLASH_PlayerJobTypes;
+    _group setVariable [
+        "ITW_CLASH_PlayerJobSubscriptions",_subscriptions,true
+    ];
+    [_group,_source] call
+        ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
+
+    ["subscriptions-changed",[
         if (!isNil "ITW_CLASH_DualHAL_fnc_GroupId") then {
             [_group] call ITW_CLASH_DualHAL_fnc_GroupId
         } else {str _group},
-        _enabled,
+        _subscriptions,
+        _source,
         [_group] call ITW_CLASH_PlayerTasks_fnc_HumanRoster
     ]] call ITW_CLASH_PlayerTasks_fnc_Log;
 
@@ -93,13 +244,143 @@ ITW_CLASH_PlayerTasks_fnc_SetOptIn = {
     true
 };
 
+ITW_CLASH_PlayerTasks_fnc_SetSubscription = {
+    params ["_subject","_jobType","_enabled",["_source","api"]];
+    if !(_jobType isEqualType "" && {_enabled isEqualType true}) exitWith {
+        false
+    };
+    _jobType = toUpperANSI _jobType;
+    if !(_jobType in ITW_CLASH_PlayerJobTypes) exitWith {false};
+
+    private _subscriptions = [_subject] call
+        ITW_CLASH_PlayerTasks_fnc_GetSubscriptions;
+    if (_enabled) then {
+        _subscriptions pushBackUnique _jobType;
+    } else {
+        _subscriptions = _subscriptions - [_jobType];
+    };
+    [_subject,_subscriptions,_source] call
+        ITW_CLASH_PlayerTasks_fnc_SetSubscriptions
+};
+
+ITW_CLASH_PlayerTasks_fnc_SetOptIn = {
+    params ["_subject","_enabled"];
+    [
+        _subject,
+        if (_enabled) then {+ITW_CLASH_PlayerJobTypes} else {[]},
+        "legacy-opt-in"
+    ] call ITW_CLASH_PlayerTasks_fnc_SetSubscriptions
+};
+
+ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid = {
+    params ["_player",["_leaderRequired",true]];
+    _player isEqualType objNull
+    && {!isNull _player}
+    && {isRemoteExecuted}
+    && {remoteExecutedOwner == owner _player}
+    && {isPlayer _player}
+    && {!_leaderRequired || {leader group _player == _player}}
+};
+
+ITW_CLASH_PlayerTasks_fnc_SendEmploymentState = {
+    params ["_player","_success","_message"];
+    if (isNull _player || {!isPlayer _player}) exitWith {false};
+    [
+        _success,
+        _message,
+        [group _player] call
+            ITW_CLASH_PlayerTasks_fnc_GetSubscriptions
+    ] remoteExecCall [
+        "ITW_CLASH_PlayerEmployment_fnc_ReceiveState",owner _player
+    ];
+    true
+};
+
+ITW_CLASH_PlayerTasks_fnc_SetSubscriptionRemote = {
+    params ["_player","_jobType","_enabled"];
+    if !([_player,true] call
+        ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
+    ) exitWith {
+        if ([_player,false] call
+            ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
+        ) then {
+            [
+                _player,false,
+                "Only the group leader can change HAL employment."
+            ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
+        };
+        false
+    };
+
+    private _success = [
+        _player,_jobType,_enabled,"player-menu"
+    ] call ITW_CLASH_PlayerTasks_fnc_SetSubscription;
+    [
+        _player,
+        _success,
+        if (_success) then {
+            format [
+                "HAL employment updated: %1 %2.",
+                toUpperANSI _jobType,
+                if (_enabled) then {"enabled"} else {"disabled"}
+            ]
+        } else {
+            "HAL employment update rejected."
+        }
+    ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
+    _success
+};
+
+ITW_CLASH_PlayerTasks_fnc_SetAllSubscriptionsRemote = {
+    params ["_player","_enabled"];
+    if !([_player,true] call
+        ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
+    ) exitWith {
+        if ([_player,false] call
+            ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
+        ) then {
+            [
+                _player,false,
+                "Only the group leader can change HAL employment."
+            ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
+        };
+        false
+    };
+    if !(_enabled isEqualType true) exitWith {false};
+
+    private _success = [
+        _player,
+        if (_enabled) then {+ITW_CLASH_PlayerJobTypes} else {[]},
+        "player-menu-all"
+    ] call ITW_CLASH_PlayerTasks_fnc_SetSubscriptions;
+    [
+        _player,
+        _success,
+        if (_enabled) then {
+            "All HAL employment channels enabled."
+        } else {
+            "All HAL employment channels disabled."
+        }
+    ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
+    _success
+};
+
 ITW_CLASH_PlayerTasks_fnc_SetOptInRemote = {
     params ["_player","_enabled"];
-    if !(_player isEqualType objNull) exitWith {false};
-    if (isNull _player || {!isRemoteExecuted} || {
-        remoteExecutedOwner != owner _player
-    } || {!isPlayer _player}) exitWith {false};
-    [_player,_enabled] call ITW_CLASH_PlayerTasks_fnc_SetOptIn
+    if !([_player,true] call
+        ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
+    ) exitWith {false};
+    private _success = [_player,_enabled] call
+        ITW_CLASH_PlayerTasks_fnc_SetOptIn;
+    [
+        _player,_success,
+        if (_enabled) then {
+            "All HAL employment channels enabled."
+        } else {
+            "All HAL employment channels disabled."
+        }
+    ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
+    _success
 };
 
 ITW_CLASH_PlayerTasks_fnc_CancelRemote = {
@@ -141,7 +422,8 @@ ITW_CLASH_PlayerTasks_fnc_SyncLogisticsRole = {
 
     private _vehicle = [_group] call ITW_CLASH_PlayerTasks_fnc_GetSlingVehicle;
     private _eligible = (
-        _group getVariable ["ITW_CLASH_PlayerTaskOptIn",false]
+        [_group,"LOGISTICS"] call
+            ITW_CLASH_PlayerTasks_fnc_IsSubscribed
         && {!(_group getVariable ["Unable",false])}
         && {!(_group getVariable ["ITW_CLASH_AuthorityHold",false])}
         && {!isNull _vehicle}
@@ -189,8 +471,8 @@ ITW_CLASH_DualHAL_fnc_SyncIncluded = {
         !isNull _x
         && {side _x == ITW_PlayerSide}
         && {{alive _x && {isPlayer _x}} count units _x > 0}
-        && {_x getVariable ["ITW_CLASH_PlayerTaskOptIn",false]}
-        && {!(_x getVariable ["Unable",false])}
+        && {([_x] call
+            ITW_CLASH_PlayerTasks_fnc_GetSubscriptions) isNotEqualTo []}
     };
 
     if (!isNull ITW_CLASH_BLUFORHQ) then {
@@ -780,7 +1062,12 @@ ITW_CLASH_PlayerTasks_fnc_CancelGroupJob = {
             (units _providerGroup findIf {isPlayer _x}) >= 0
         };
         private _playerProvider = _humanProvider && {
-            _providerGroup getVariable ["ITW_CLASH_PlayerTaskOptIn",false]
+            [_providerGroup,"LOGISTICS"] call
+                ITW_CLASH_PlayerTasks_fnc_IsSubscribed
+        } && {
+            _providerGroup getVariable [
+                "ITW_CLASH_PlayerLogisticsAir",false
+            ]
         } && {!(_providerGroup getVariable ["Unable",false])};
 
         if (_humanProvider && {!_playerProvider}) exitWith {
@@ -833,7 +1120,7 @@ ITW_CLASH_PlayerTasks_fnc_CancelGroupJob = {
     publicVariable "RydxHQ_SlingDrop";
     ITW_CLASH_PlayerTaskSupportReady = true;
     diag_log format [
-        "CLASH BOOT | player-task-support-ready | version=%1 nativeToggle=true defaultOptIn=false slingDrop=true humanExecutor=true sharedRosterLedger=true highCommand=false",
+        "CLASH BOOT | player-task-support-ready | version=%1 nativeToggle=compat employmentMenu=clash persistentSubscriptions=true vehicleResets=false slingDrop=true humanExecutor=true sharedRosterLedger=true highCommand=false",
         ITW_CLASH_PlayerTaskSupportVersion
     ];
 };
@@ -861,13 +1148,19 @@ ITW_CLASH_PlayerTasks_fnc_CancelGroupJob = {
             if !(_group getVariable [
                 "ITW_CLASH_PlayerTaskInitialized",false
             ]) then {
-                [_group,false] call ITW_CLASH_PlayerTasks_fnc_SetOptIn;
-            };
-            if (
-                _group getVariable ["ITW_CLASH_PlayerTaskOptIn",false]
-                && {!(_group getVariable ["Unable",false])}
-            ) then {
-                ITW_CLASH_PlayerTaskGroups pushBackUnique _group;
+                private _initialSubscriptions = if (
+                    _group getVariable ["ITW_CLASH_PlayerTaskOptIn",false]
+                ) then {
+                    +ITW_CLASH_PlayerJobTypes
+                } else {
+                    []
+                };
+                [
+                    _group,_initialSubscriptions,"roster-init"
+                ] call ITW_CLASH_PlayerTasks_fnc_SetSubscriptions;
+            } else {
+                [_group,"roster-refresh"] call
+                    ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
             };
             [_group] call ITW_CLASH_PlayerTasks_fnc_SyncLogisticsRole;
         } forEach allPlayers;

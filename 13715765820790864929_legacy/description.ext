@@ -945,6 +945,17 @@ class RscDisplayGarageSKL: RscDisplayGarage
 
 class CfgCommunicationMenu
 {
+    class ITW_CLASH_HALEmployment
+    {
+        text = "C.L.A.S.H. HAL Employment";
+        submenu = "";
+        expression = "[] call ITW_CLASH_PlayerEmployment_fnc_OpenMenu";
+        icon = "";
+        cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\iconCursorSupport_ca.paa";
+        enable = "1";
+        removeAfterExpressionCall = 0;
+    };
+
 	class lifeSignScan
 	{
 		text = "$STR_ITW_RADIO_CommLifeSignScan";		// Text displayed in the menu and in a notification

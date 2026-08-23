@@ -99,8 +99,8 @@ ITW_CLASH_PlayerArtillery_fnc_EligibleVehicle = {
     params ["_group"];
     if (
         isNull _group
-        || {!(_group getVariable ["ITW_CLASH_PlayerTaskOptIn",false])}
-        || {_group getVariable ["Unable",false]}
+        || {!([_group,"ARTILLERY"] call
+            ITW_CLASH_PlayerTasks_fnc_IsSubscribed)}
         || {_group getVariable ["ITW_CLASH_AuthorityHold",false]}
         || {_group getVariable ["RydHQ_BatteryBusy",false]}
         || {_group getVariable ["Busy" + str _group,false]}

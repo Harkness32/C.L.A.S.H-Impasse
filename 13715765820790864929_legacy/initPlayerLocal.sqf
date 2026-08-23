@@ -8,6 +8,10 @@ if (fileExists "ITW_CLASH_PlayerTaskClient.sqf") then {
     [] execVM "ITW_CLASH_PlayerTaskClient.sqf";
 };
 
+if (fileExists "ITW_CLASH_PlayerEmploymentMenu.sqf") then {
+    [] execVM "ITW_CLASH_PlayerEmploymentMenu.sqf";
+};
+
 if (fileExists "ITW_CLASH_PlayerGarageDeployment.sqf") then {
     [] execVM "ITW_CLASH_PlayerGarageDeployment.sqf";
 };

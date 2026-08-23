@@ -61,9 +61,10 @@ def test_human_groups_never_reach_native_cff() -> None:
     before(text, "_nativeArgs set [0,_aiGroups];", "_nativeArgs call")
 
 
-def test_provider_requires_opt_in_garage_and_deployment() -> None:
+def test_provider_requires_artillery_subscription_garage_and_deployment() -> None:
     text = source("ITW_CLASH_PlayerArtilleryTasks.sqf")
-    assert '"ITW_CLASH_PlayerTaskOptIn",false' in text
+    assert '[_group,"ARTILLERY"] call' in text
+    assert "ITW_CLASH_PlayerTasks_fnc_IsSubscribed" in text
     assert '"ITW_CLASH_PlayerGarageAsset",false' in text
     assert '"ITW_CLASH_PlayerArtyDeploymentState",""' in text
     assert '!= "DEPLOYED"' in text
