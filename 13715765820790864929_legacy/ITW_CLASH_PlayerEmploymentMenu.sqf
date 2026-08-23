@@ -4,7 +4,7 @@ if (missionNamespace getVariable [
 ]) exitWith {true};
 
 ITW_CLASH_PlayerEmploymentMenuStarted = true;
-ITW_CLASH_PlayerEmploymentMenuVersion = 1;
+ITW_CLASH_PlayerEmploymentMenuVersion = 2;
 ITW_CLASH_PlayerEmploymentJobTypes = [
     "COMBAT","TRANSPORT","MEDEVAC","LOGISTICS","ARTILLERY"
 ];
@@ -136,9 +136,13 @@ ITW_CLASH_PlayerEmployment_fnc_OpenMenu = {
     private _artilleryJob = (group player) getVariable [
         "ITW_CLASH_PlayerArtilleryJobId",""
     ];
-    private _jobStatus = if (
-        _ammoJob isNotEqualTo "" || {_artilleryJob isNotEqualTo ""}
-    ) then {
+    private _activeJob = (group player) getVariable [
+        "ITW_CLASH_PlayerHasActiveHALJob",false
+    ];
+    _activeJob = _activeJob
+        || {_ammoJob isNotEqualTo ""}
+        || {_artilleryJob isNotEqualTo ""};
+    private _jobStatus = if (_activeJob) then {
         "[ACTIVE] Cancel Current HAL Job"
     } else {
         "Cancel Current HAL Job"
@@ -274,7 +278,7 @@ ITW_CLASH_PlayerEmployment_fnc_Install = {
                 ITW_CLASH_PlayerEmployment_fnc_Install;
             _installedFor = player;
             diag_log format [
-                "CLASH BOOT | player-employment-menu-ready | version=%1 commandMenu=true scrollAction=true ace=%2 persistentSubscriptions=true vehicleResets=false leaderAuthority=true",
+                "CLASH BOOT | player-employment-menu-ready | version=%1 commandMenu=true scrollAction=true ace=%2 persistentSubscriptions=true vehicleResets=false leaderAuthority=true genericActiveState=true",
                 ITW_CLASH_PlayerEmploymentMenuVersion,
                 isClass (configFile >> "CfgPatches" >> "ace_main")
             ];
