@@ -119,8 +119,14 @@ if (isServer) then {
                 && {_playerArtilleryLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunchPending=true",
-                    _forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7",
+                    _forceGenerationReady,
+                    _halLogisticsLoaded,
+                    _playerTransportLoaded,
+                    _playerTasksLoaded,
+                    _playerGarageLoaded,
+                    _playerArtilleryLoaded,
+                    missionNamespace getVariable ["ITW_ParamCLASHObserver",-1]
                 ];
             } else {
                 diag_log format [
