@@ -135,3 +135,29 @@ def test_native_hal_employment_actions_remain_visible_in_vehicles() -> None:
         block = text[start:end]
         assert "_this isEqualTo _target" in block
         assert "_target isEqualTo (vehicle player)" not in block
+
+
+def test_player_artillery_deployment_is_vehicle_sized_and_fail_closed() -> None:
+    text = source("ITW_CLASH_PlayerGarageDeployment.sqf")
+    assert "ITW_CLASH_PlayerGarageDeploymentVersion = 3;" in text
+    assert "ITW_CLASH_PlayerGarage_fnc_FindSafeDestination" in text
+    assert "boundingBoxReal _vehicle" in text
+    assert "BIS_fnc_findSafePos" in text
+    assert "findEmptyPosition [0,125,_class]" in text
+    assert "surfaceIsWater _candidate" in text
+    assert "surfaceNormal _candidate" in text
+    assert "nearestObjects" in text
+    assert "nearestTerrainObjects" in text
+    assert '"no-clear-vehicle-sized-deployment-slot"' in text
+    assert "setPosATL _position" not in text
+    assert "setVehiclePosition [_destination,[],0,\"NONE\"]" in text
+    assert "_vehicle allowDamage false" in text
+    assert "player allowDamage false" in text
+    assert "sleep 2" in text
+    assert "driver _vehicle != player" in text
+    assert 'toLowerANSI _role != "driver"' in text
+    before(
+        text,
+        "ITW_CLASH_PlayerGarage_fnc_FindSafeDestination",
+        '"APPROVED"',
+    )
