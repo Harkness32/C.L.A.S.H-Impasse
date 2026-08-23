@@ -2621,14 +2621,19 @@ if (isServer) then {
 
         switch (ITW_CLASH_Mode) do {
             case 1: {
+                diag_log "CLASH BOOT | WARNING | observer-only-selected | HAL commanders, employment, artillery and logistics tasking are disabled";
                 call ITW_CLASH_fnc_StartObserver;
             };
             case 2: {
+                diag_log "CLASH BOOT | live-dual-hal-selected | commanderA=OPFOR commanderB=BLUFOR nativeCoreOwner=livePilot";
                 call ITW_CLASH_fnc_StartObserver;
                 call ITW_CLASH_fnc_StartLivePilot;
             };
             default {
-                diag_log "CLASH OBS | disabled | lobby parameter is Off";
+                diag_log format [
+                    "CLASH BOOT | WARNING | hal-control-disabled | configuredMode=%1 dualHAL=false employment=false artilleryTasks=false logisticsTasks=false",
+                    ITW_CLASH_Mode
+                ];
             };
         };
     };
