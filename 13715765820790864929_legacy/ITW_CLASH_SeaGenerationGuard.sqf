@@ -114,13 +114,14 @@ if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
 
         if !([_veh,_original,"impasse-handoff"] call ITW_CLASH_SeaGuard_fnc_EnsureWater) exitWith {
             private _group = group driver _veh;
-            if (!isNil "ITW_CLASH_Service_fnc_MarkTrackerReleased") then {
-                [_veh] call ITW_CLASH_Service_fnc_MarkTrackerReleased;
-            };
+            private _class = typeOf _veh;
+            // This is a rejected/lost physical asset, not a successful RTB.
+            // Leave its Checkbook tracker live so deletion follows normal loss
+            // accounting and releases the active vehicle slot.
             deleteVehicleCrew _veh;
             deleteVehicle _veh;
             if (!isNull _group && {units _group isEqualTo []}) then {deleteGroup _group};
-            ["handoff-rejected",[typeOf _veh,_original,"no-valid-sea-position"]] call
+            ["handoff-rejected",[_class,_original,"no-valid-sea-position"]] call
                 ITW_CLASH_SeaGuard_fnc_Log;
             false
         };
