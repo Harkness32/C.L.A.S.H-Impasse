@@ -123,3 +123,15 @@ def test_known_expression_regressions_are_absent() -> None:
     text = source("ITW_CLASH_PlayerTaskSupport.sqf")
     assert "isEqualTo createHashMap" not in text
     assert "(allPlayers findIf {_x distance2D _box < 100}) < 0" in text
+
+
+def test_native_hal_employment_actions_remain_visible_in_vehicles() -> None:
+    text = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "TaskInitNR6.sqf").read_text(
+        encoding="utf-8"
+    )
+    for function_name in ("Action1fnc", "Action2fnc", "Action3fnc", "ActionMfnc"):
+        start = text.index(f"{function_name} = {{")
+        end = text.index("\n};", start)
+        block = text[start:end]
+        assert "_this isEqualTo _target" in block
+        assert "_target isEqualTo (vehicle player)" not in block
