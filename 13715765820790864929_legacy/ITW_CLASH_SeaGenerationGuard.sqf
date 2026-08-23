@@ -3,8 +3,11 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_SeaGenerationGuardStarted",false]) exitWith {true};
 ITW_CLASH_SeaGenerationGuardStarted = true;
-ITW_CLASH_SeaGenerationGuardVersion = 1;
+ITW_CLASH_SeaGenerationGuardVersion = 2;
 ITW_CLASH_SeaGenerationGuardReady = false;
+ITW_CLASH_SeaGuardMaxRelocation = missionNamespace getVariable [
+    "ITW_CLASH_SeaGuardMaxRelocation",1500
+];
 
 // ServiceLifecycle is loaded immediately before this file. Install the canonical
 // explicit-lease authority layer now, before SeaGuard becomes the outermost
@@ -17,6 +20,19 @@ if (fileExists "ITW_CLASH_ServiceAuthority.sqf") then {
     };
 } else {
     diag_log "CLASH BOOT | WARNING | service-authority-missing | lifecycle-v1 retained";
+};
+
+if (
+    missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityReady",false]
+    && {fileExists "ITW_CLASH_ServiceStability.sqf"}
+) then {
+    private _serviceStabilityLoaded = call compile preprocessFileLineNumbers
+        "ITW_CLASH_ServiceStability.sqf";
+    if !(_serviceStabilityLoaded isEqualTo true) then {
+        diag_log "CLASH BOOT | WARNING | service-stability-load-failed | authority-only service behavior retained";
+    };
+} else {
+    diag_log "CLASH BOOT | WARNING | service-stability-skipped | authority unavailable or file missing";
 };
 
 ITW_CLASH_SeaGuard_fnc_Log = {
@@ -47,26 +63,43 @@ ITW_CLASH_SeaGuard_fnc_AllSeaPoints = {
     _points
 };
 
+ITW_CLASH_SeaGuard_fnc_SurfacePoint = {
+    params ["_position"];
+    if !(_position isEqualType [] && {count _position >= 2}) exitWith {[]};
+    [_position#0,_position#1,0]
+};
+
 ITW_CLASH_SeaGuard_fnc_ResolveWaterPosition = {
     params [["_preferred",[]],["_fallback",[]]];
+
+    private _reference = if (_preferred isNotEqualTo []) then {+_preferred} else {+_fallback};
+    if (_reference isEqualTo []) exitWith {[]};
+    if (count _reference < 3) then {_reference pushBack 0};
 
     if (_preferred isNotEqualTo []) then {
         private _position = +_preferred;
         if (count _position < 3) then {_position pushBack 0};
-        if (surfaceIsWater _position) exitWith {_position};
+        if (surfaceIsWater _position) exitWith {
+            [_position] call ITW_CLASH_SeaGuard_fnc_SurfacePoint
+        };
     };
     if (_fallback isNotEqualTo []) then {
         private _position = +_fallback;
         if (count _position < 3) then {_position pushBack 0};
-        if (surfaceIsWater _position) exitWith {_position};
+        if (surfaceIsWater _position && {
+            _position distance2D _reference <= ITW_CLASH_SeaGuardMaxRelocation
+        }) exitWith {
+            [_position] call ITW_CLASH_SeaGuard_fnc_SurfacePoint
+        };
     };
 
-    private _reference = if (_preferred isNotEqualTo []) then {+_preferred} else {+_fallback};
-    if (_reference isEqualTo []) then {_reference = [worldSize / 2,worldSize / 2,0]};
     private _points = call ITW_CLASH_SeaGuard_fnc_AllSeaPoints;
+    _points = _points select {
+        _x distance2D _reference <= ITW_CLASH_SeaGuardMaxRelocation
+    };
     if (_points isEqualTo []) exitWith {[]};
     private _ordered = [_points,[_reference],{_x distance2D _input0},"ASCEND"] call BIS_fnc_sortBy;
-    +(_ordered#0)
+    [_ordered#0] call ITW_CLASH_SeaGuard_fnc_SurfacePoint
 };
 
 ITW_CLASH_SeaGuard_fnc_EnsureWater = {
@@ -75,26 +108,47 @@ ITW_CLASH_SeaGuard_fnc_EnsureWater = {
     if !(_veh isKindOf "Ship") exitWith {true};
 
     private _current = getPosATL _veh;
-    if (surfaceIsWater _current && {_preferred isEqualTo []}) exitWith {true};
+    private _reference = if (_preferred isNotEqualTo []) then {+_preferred} else {+_current};
     private _water = [_preferred,_current] call ITW_CLASH_SeaGuard_fnc_ResolveWaterPosition;
     if (_water isEqualTo []) exitWith {
-        ["no-water-node",[typeOf _veh,_source,_preferred,_current]] call ITW_CLASH_SeaGuard_fnc_Log;
+        private _nearestDistance = -1;
+        private _points = call ITW_CLASH_SeaGuard_fnc_AllSeaPoints;
+        if (_points isNotEqualTo [] && {_reference isNotEqualTo []}) then {
+            private _ordered = [_points,[_reference],{_x distance2D _input0},"ASCEND"] call BIS_fnc_sortBy;
+            _nearestDistance = round ((_ordered#0) distance2D _reference);
+        };
+        [if (_nearestDistance > ITW_CLASH_SeaGuardMaxRelocation) then {
+            "sea-node-too-far"
+        } else {
+            "no-local-water-node"
+        },[
+            typeOf _veh,_source,_preferred,_current,
+            ITW_CLASH_SeaGuardMaxRelocation,_nearestDistance
+        ]] call ITW_CLASH_SeaGuard_fnc_Log;
         false
     };
 
-    if (_current distance2D _water > 2 || {!surfaceIsWater _current}) then {
-        _veh setPosATL _water;
-        _veh setVectorUp (surfaceNormal _water);
+    private _from = getPosATL _veh;
+    private _distance = _reference distance2D _water;
+    // ASL z=0 is the water surface. ATL z=0 over water is seabed-relative and
+    // was the source of submerged service boats in v1.
+    _veh setPosASL _water;
+    _veh setVectorUp (surfaceNormal (getPosATL _veh));
+    if (_from distance2D (getPosATL _veh) > 2 || {abs ((getPosASL _veh)#2) > 1}) then {
         ["relocated",[
-            typeOf _veh,_source,_current,_water,round (_current distance2D _water)
+            typeOf _veh,_source,_from,getPosATL _veh,round _distance,"ASL-surface"
         ]] call ITW_CLASH_SeaGuard_fnc_Log;
     };
-    surfaceIsWater (getPosATL _veh)
+    surfaceIsWater (getPosATL _veh) && {
+        _distance <= ITW_CLASH_SeaGuardMaxRelocation || {
+            _preferred isNotEqualTo [] && {surfaceIsWater _preferred}
+        }
+    }
 };
 
 // Generic Checkbook/ForceGeneration guard. Apply before the current registration
 // stack so every downstream tracker and service-home record sees a valid water
-// position. A ship with no valid water node is rejected before billing occurs.
+// position. A ship with no bounded water node is rejected before billing occurs.
 if (!isNil "ITW_CLASH_Generation_fnc_RegisterAsset") then {
     ITW_CLASH_SeaGuard_fnc_RegisterAssetBase = ITW_CLASH_Generation_fnc_RegisterAsset;
     ITW_CLASH_Generation_fnc_RegisterAsset = {
@@ -106,11 +160,9 @@ if (!isNil "ITW_CLASH_Generation_fnc_RegisterAsset") then {
     };
 };
 
-// Impasse already spawned ships using its native ITW_SeaPoints logic. The
-// dual-HAL handoff used to reinterpret every non-air vehicle as GROUND and move
-// ships to a FOB staging position. Capture the native position first, let the
-// normal handoff perform all authority bookkeeping, then restore/validate the
-// boat on water before gameplay can resume.
+// Preserve the native ship position as the preferred local reference. Generic
+// Dual-HAL staging may temporarily move the vehicle; the outer guard restores a
+// valid local water-surface position or rejects the entire formation atomically.
 if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
     ITW_CLASH_SeaGuard_fnc_StageFieldVehicleBase = ITW_CLASH_DualHAL_fnc_StageFieldVehicle;
     ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
@@ -128,20 +180,28 @@ if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
         if !([_veh,_original,"impasse-handoff"] call ITW_CLASH_SeaGuard_fnc_EnsureWater) exitWith {
             private _group = group driver _veh;
             private _class = typeOf _veh;
-            // This is a rejected/lost physical asset, not a successful RTB.
-            // Leave its Checkbook tracker live so deletion follows normal loss
-            // accounting and releases the active vehicle slot.
+            private _poolId = _veh getVariable ["ITW_CLASH_ServicePoolId",""];
+            if (!isNil "ITW_CLASH_ServiceAuthority_fnc_ClearLease") then {
+                [_veh,_group,"sea-handoff-rejected"] call ITW_CLASH_ServiceAuthority_fnc_ClearLease;
+            };
+            // Rejected formation is a real failed physical spawn, never a
+            // successful service retirement. Delete crew and hull together so
+            // a failed boat cannot manufacture stranded infantry.
             deleteVehicleCrew _veh;
             deleteVehicle _veh;
-            if (!isNull _group && {units _group isEqualTo []}) then {deleteGroup _group};
-            ["handoff-rejected",[_class,_original,"no-valid-sea-position"]] call
-                ITW_CLASH_SeaGuard_fnc_Log;
+            if (!isNull _group) then {
+                {deleteVehicle _x} forEach units _group;
+                if (units _group isEqualTo []) then {deleteGroup _group};
+            };
+            ["handoff-rejected",[
+                _class,_original,"no-bounded-sea-position",_poolId,
+                ITW_CLASH_SeaGuardMaxRelocation
+            ]] call ITW_CLASH_SeaGuard_fnc_Log;
             false
         };
 
-        // The service lifecycle may already have registered a transport/dual
-        // ship while the base handoff briefly held it at generic staging. Keep
-        // its RTB/virtualization home on the corrected water position too.
+        // SeaGuard is the final authority on ship home. Idempotent service
+        // registration never overwrites the home of a live entry afterward.
         if (!isNil "ITW_CLASH_ServicePool") then {
             private _poolId = _veh getVariable ["ITW_CLASH_ServicePoolId",""];
             if (_poolId isNotEqualTo "" && {!isNil "ITW_CLASH_Service_fnc_FindEntry"}) then {
@@ -164,7 +224,10 @@ if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
 
 ITW_CLASH_SeaGenerationGuardReady = true;
 diag_log format [
-    "CLASH BOOT | sea-generation-guard-ready | version=%1 impasseHandoff=true generatedAssets=true landFallback=false",
-    ITW_CLASH_SeaGenerationGuardVersion
+    "CLASH BOOT | sea-generation-guard-ready | version=%1 boundedRelocation=%2 aslSurface=true atomicReject=true serviceAuthority=%3 serviceStability=%4",
+    ITW_CLASH_SeaGenerationGuardVersion,
+    ITW_CLASH_SeaGuardMaxRelocation,
+    missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityReady",false],
+    missionNamespace getVariable ["ITW_CLASH_ServiceStabilityReady",false]
 ];
 true
