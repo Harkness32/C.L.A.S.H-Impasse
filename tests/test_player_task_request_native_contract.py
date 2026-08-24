@@ -11,6 +11,14 @@ def _block(text: str, start: str, end: str) -> str:
     return text[a:b]
 
 
+def _function_block(text: str, start: str) -> str:
+    a = text.index(start)
+    b = text.find("\nRYD_", a + len(start))
+    if b < 0:
+        b = len(text)
+    return text[a:b]
+
+
 def test_native_cff_target_selector_honors_taken_marker():
     text = NATIVE.read_text(encoding="utf-8", errors="ignore")
     cff_tgt = _block(text, "RYD_CFF_TGT =", "RYD_ArtyMission =")
@@ -22,7 +30,7 @@ def test_native_cff_target_selector_honors_taken_marker():
 
 def test_native_cff_uses_known_enemy_picture_and_target_selector():
     text = NATIVE.read_text(encoding="utf-8", errors="ignore")
-    cff = _block(text, "RYD_CFF =", "RYD_CFF_TGT =")
+    cff = _function_block(text, "RYD_CFF =")
 
     assert "_knEnemies = _this select 1" in cff
     assert "[_knEnemies] call RYD_CFF_TGT" in cff
