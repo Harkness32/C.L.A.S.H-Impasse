@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exitWith {false};
 
-ITW_CLASH_PlayerTransportNativeBridgeVersion = 3;
+ITW_CLASH_PlayerTransportNativeBridgeVersion = 4;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
@@ -33,6 +33,19 @@ ITW_CLASH_PlayerTransport_fnc_GetContract = {
     _contract
 };
 
+ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier = {
+    params ["_group","_carrier"];
+    if (isNull _group || {isNull _carrier}) exitWith {false};
+    (units _group findIf {
+        alive _x && {vehicle _x == _carrier}
+    }) >= 0
+};
+
+// Contract retirement and retask-lock retirement are separate events. HAL can
+// clear CargoCheckPending immediately after embarkation; that is not permission
+// to expose embarked infantry to attack/recon/defense planning. If a contract
+// end is observed while any living cargo remains linked to the carrier, retain
+// both the contract and lock and complete retirement only after physical unlink.
 ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {
     params ["_group","_contractId",["_reason","hal-scargo-ended"]];
     if (isNull _group) exitWith {false};
@@ -45,6 +58,65 @@ ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {
     private _state = _contract getOrDefault ["state",""];
     private _carrier = _contract getOrDefault ["carrier",objNull];
     private _destination = +(_contract getOrDefault ["destination",[]]);
+    private _aboard = [_group,_carrier] call
+        ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier;
+
+    if (_aboard) exitWith {
+        _contract set ["endDeferredAt",time];
+        _contract set ["endDeferredReason",_reason];
+        _contract set ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime];
+        _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
+
+        private _deferredId = _group getVariable [
+            "ITW_CLASH_PlayerTransportEndDeferredContractId",""
+        ];
+        if (_deferredId isNotEqualTo _contractId) then {
+            _group setVariable [
+                "ITW_CLASH_PlayerTransportEndDeferredContractId",_contractId
+            ];
+            [_group,_carrier,_contractId,_reason] spawn {
+                params ["_group","_carrier","_contractId","_reason"];
+                scriptName "ITW_CLASH_PlayerTransportDeferredEnd";
+                waitUntil {
+                    sleep 0.5;
+                    if (isNull _group) exitWith {true};
+                    private _current = _group getVariable [
+                        "ITW_CLASH_PlayerTransportContract",createHashMap
+                    ];
+                    if !(_current isEqualType createHashMap && {count _current > 0}) exitWith {true};
+                    if ((_current getOrDefault ["id",""]) isNotEqualTo _contractId) exitWith {true};
+                    !([_group,_carrier] call
+                        ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier)
+                };
+                if (isNull _group) exitWith {};
+
+                private _current = _group getVariable [
+                    "ITW_CLASH_PlayerTransportContract",createHashMap
+                ];
+                if !(_current isEqualType createHashMap && {count _current > 0}) exitWith {
+                    _group setVariable ["ITW_CLASH_PlayerTransportEndDeferredContractId",nil];
+                };
+                if ((_current getOrDefault ["id",""]) isNotEqualTo _contractId) exitWith {
+                    _group setVariable ["ITW_CLASH_PlayerTransportEndDeferredContractId",nil];
+                };
+
+                _group setVariable ["ITW_CLASH_PlayerTransportEndDeferredContractId",nil];
+                [_group,_contractId,_reason + ":physical-unlink"] call
+                    ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract;
+            };
+        };
+
+        ["hal-contract-end-deferred-embarked",[
+            _contractId,
+            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+            _state,_reason,
+            if (isNull _carrier) then {"<none>"} else {typeOf _carrier},
+            +_destination
+        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+        true
+    };
+
+    _group setVariable ["ITW_CLASH_PlayerTransportEndDeferredContractId",nil];
     if (!isNil "ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock") then {
         [_group] call ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock;
     };
@@ -345,7 +417,7 @@ private _managerFinal = ["ITW_AllyLoadIntoVehManager"] call SKL_fnc_CompileFinal
 private _loadFinal = ["ITW_AllyLoadGrpIntoVeh"] call SKL_fnc_CompileFinal;
 
 diag_log format [
-    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=true collisionSuppression=true proximityCreatesHALJob=false",
+    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=true collisionSuppression=true proximityCreatesHALJob=false contractEndUnlockSeparated=true",
     ITW_CLASH_PlayerTransportNativeBridgeVersion,_managerFinal,_loadFinal
 ];
 _managerFinal && _loadFinal
