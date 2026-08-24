@@ -26,6 +26,7 @@ This is the primary architectural rule for C.L.A.S.H.-Impasse. Any change that c
 - temporary retask/quarantine locks
 - reconstitution transit handoff
 - observation and telemetry across ownership seams
+- terminal task-state assertions when native HAL exposes a task with no live completion path
 
 ## The rule in practice
 
@@ -34,7 +35,9 @@ This is the primary architectural rule for C.L.A.S.H.-Impasse. Any change that c
 - HAL transport contracts store task identity and destination, not a cached interpretation of boarding state.
 - `baseHint` stores which Impasse base should be asked first, not a frozen coordinate returned by that base earlier.
 - service RTB resolves its destination against live `ITW_Bases` ownership at order time and periodically while returning.
+- transient player HAL carriers ask the same service-home resolver for the `START + str group` compatibility value; they are not registered into the persistent service pool.
 - a virtual service pool entry is a paid entitlement, not an invisible reserved Impasse vehicle slot.
+- HAL planning arrays are lossy metadata. If an authority invariant depends on membership, the owning lifecycle continuously reconciles that projection rather than assuming a one-time write is durable.
 
 ## Service-home contract
 
@@ -55,7 +58,7 @@ Only the service-home resolver writes authoritative RTB-home state:
 - `ITW_CLASH_ServiceHome`
 - `START + str group`
 
-`START` is compatibility output for leased service crews, never the source of truth for selecting a base.
+`START` is compatibility output, never the source of truth for selecting a base. This applies both to leased service crews and to transient player-flown HAL transport carriers.
 
 RTB resolution order:
 1. Validate `baseHint` against current side ownership and `ITW_BASE_SPAWNED`.
@@ -66,10 +69,24 @@ RTB resolution order:
 
 `homeResolvedAt` is load-bearing. An RTB asset is re-resolved on a time cadence even when it is making progress, because progress toward a base that has fallen is still wrong. A new waypoint is issued only when the newly resolved physical destination moves by the configured change threshold; otherwise metadata is refreshed without resetting AI pathing.
 
+## Player HAL transport RTB
+
+Native `SCargo` remains the sole movement executor. C.L.A.S.H. may make its RTB input honest and may supply the missing terminal task transition, but it must not issue player movement, waypoint, or landing commands.
+
+- Both native terminal shapes are covered: `Abort Pick Up, RTB` and post-delivery `Return To Base`.
+- The task marker/RTB coordinate comes from resolver-owned `START + str group`.
+- Terminal completion requires the contracted cargo to be physically unlinked and the carrier to satisfy HAL's intended landed/stopped semantics at the RTB destination.
+- HAL's original stopped-timeout behavior is preserved so an unsatisfiable RTB task cannot remain permanently assigned.
+- After terminalization, persistent employment subscriptions are re-synchronized; RTB completion does not unsubscribe the player.
+
+## Planning-array contract
+
+`RydHQ_NoAttack`, `RydHQ_NoRecon`, `RydHQ_NoDef`, and similar HAL arrays are projections of authority, not the authority itself. A live ferry retask lock therefore owns an explicit C.L.A.S.H. lock state and continuously reasserts the corresponding HAL-array memberships. Cleanup removes only memberships recorded as C.L.A.S.H.-owned.
+
 ## Review test
 
 For every future patch that crosses Impasse/HAL/C.L.A.S.H. authority, ask:
 
 > Are we storing the authority's question/reference and resolving the answer when it is needed, or are we caching an answer that can stop being true?
 
-The DUAL service misclassification, shadow vehicle-count model, player-ferry ownership abort, and stale service RTB home were all variants of the latter failure mode.
+The DUAL service misclassification, shadow vehicle-count model, player-ferry ownership abort, stale service RTB home, and hanging native player RTB task were all variants of the latter failure mode.
