@@ -80,6 +80,45 @@ def test_ferry_retask_lock_is_continuously_reconciled_without_corrupting_ownersh
     assert 'ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock' in end_body
 
 
+def test_player_air_transport_rtb_is_advisory_and_completes_on_return():
+    rtb = source("ITW_CLASH_PlayerTransportRTB.sqf")
+    logistics = source("ITW_CLASH_HALLogistics.sqf")
+
+    assert 'ITW_CLASH_PlayerTransportRTBVersion = 1;' in rtb
+    assert '"ITW_CLASH_PlayerTransportContract"' in rtb
+    assert '(_contract getOrDefault ["source",""]) != "HAL_SCargo"' in rtb
+    assert '_carrier isKindOf "Air"' in rtb
+    assert '(units _carrierGroup findIf {isPlayer _x}) >= 0' in rtb
+    assert '"HACAddedTasks"' in rtb
+    assert '"return to base"' in rtb
+    assert '"return to departure base."' in rtb
+    assert 'taskDestination _trackedTask' in rtb
+    assert 'isTouchingGround _carrier' in rtb
+    assert '(_carrier distance2D _destination) <= ITW_CLASH_PlayerTransportRTBRadius' in rtb
+    assert '[_trackedTask,"SUCCEEDED",true] call BIS_fnc_taskSetState;' in rtb
+    assert '"player-rtb-armed"' not in rtb  # prefix is added by the logger, not duplicated by event names
+    assert '["armed",[' in rtb
+    assert '["completed",[' in rtb
+    assert 'halRTBAdvisory=true' in rtb
+
+    # The adapter observes the task HAL created; it must never become a second
+    # aircraft movement executor.
+    forbidden = (
+        "RYD_WPadd",
+        "addWaypoint",
+        "doMove",
+        "moveTo",
+        "setWaypointPosition",
+        "land 'LAND'",
+        'land "LAND"',
+    )
+    for token in forbidden:
+        assert token not in rtb
+
+    assert 'fileExists "ITW_CLASH_PlayerTransportRTB.sqf"' in logistics
+    assert '[] execVM "ITW_CLASH_PlayerTransportRTB.sqf";' in logistics
+
+
 def test_leader_cancel_gate_survives_native_action_binder_failure():
     hardening = source("ITW_CLASH_PlayerTaskStateHardening.sqf")
 
