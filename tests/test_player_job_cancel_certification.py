@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MISSION = ROOT / "13715765820790864929_legacy"
+HAL = ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL"
 
 
 def source(name: str) -> str:
@@ -17,8 +18,6 @@ def test_seaguard_is_projection_only_and_cannot_clobber_service_home():
     assert '"projection-only"' in sea
     assert 'projectionOnly=true serviceHomeWrites=false' in sea
 
-    # SeaGuard may project a hull onto navigable water, but the live service-home
-    # resolver is the only layer allowed to select/write home or RTB progress.
     assert '_entry set ["home",' not in sea
     assert '_entry set ["lastDistance",0]' not in sea
     assert '_group setVariable ["ITW_CLASH_ServiceHome",' not in sea
@@ -80,72 +79,81 @@ def test_ferry_retask_lock_is_continuously_reconciled_without_corrupting_ownersh
     assert 'ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock' in end_body
 
 
-def test_player_hal_carrier_start_is_primed_from_live_impasse_home_resolver():
+def test_player_hal_carrier_start_is_written_only_by_service_home_authority():
     home = source("ITW_CLASH_PlayerCarrierHome.sqf")
+    resolver = source("ITW_CLASH_ServiceHomeResolver.sqf")
     rtb = source("ITW_CLASH_PlayerTransportRTB.sqf")
 
-    assert 'ITW_CLASH_PlayerCarrierHomeVersion = 1;' in home
-    assert 'ITW_CLASH_ServiceHome_fnc_ResolvePlayerCarrier' in home
-    assert 'missionNamespace getVariable ["ITW_CLASH_ServiceHomeResolverReady",false]' in home
-    assert 'ITW_CLASH_ServiceHome_fnc_Resolve' in home
-    assert '"ITW_CLASH_ServiceBaseHint"' in home
-    assert 'ITW_CLASH_ServiceHome_fnc_SetBaseHint' in home
-    assert '_group setVariable ["START" + str _group,+_position];' in home
-    assert '_group setVariable ["ITW_CLASH_ServiceHome",+_position];' in home
-    assert '"nearest-base"' not in home  # base choice belongs to the shared resolver
+    assert 'ITW_CLASH_PlayerCarrierHomeVersion = 3;' in home
+    assert 'ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup' in home
+    assert 'ITW_CLASH_ServiceHomeResolverVersion = 2;' in resolver
+    assert 'ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup = {' in resolver
+    assert '_group setVariable ["START" + str _group,+_position];' in resolver
+    assert '_group setVariable ["ITW_CLASH_ServiceHome",+_position];' in resolver
+    assert 'transientGroupWriteThrough=true' in resolver
+
+    # PlayerCarrierHome requests the answer. It is not another START writer and
+    # does not register the player's aircraft into the persistent service pool.
+    assert '_group setVariable ["START" + str _group,+_position];' not in home
+    assert 'ITW_CLASH_Service_fnc_RegisterPhysical' not in home
+    assert 'ITW_CLASH_ServicePool pushBack' not in home
     assert 'random 200' not in home
     assert 'position (vehicle (leader _HQ))' not in home
+    assert 'serviceHomeOwnsSTART=true' in home
     assert 'servicePoolRegistration=false' in home
     assert 'halRTBExecutor=true' in home
-
-    # The player-carrier extension answers HAL's RTB-input question only. It may
-    # not register the player's aircraft as a persistent service-pool asset or
-    # become a second movement executor.
-    forbidden = (
-        "ITW_CLASH_Service_fnc_RegisterPhysical",
-        "ITW_CLASH_ServicePool pushBack",
-        "RYD_WPadd",
-        "addWaypoint",
-        "doMove",
-        "moveTo",
-        "setWaypointPosition",
-        "land 'LAND'",
-        'land "LAND"',
-    )
-    for token in forbidden:
-        assert token not in home
 
     assert 'fileExists "ITW_CLASH_PlayerCarrierHome.sqf"' in rtb
     assert '[] execVM "ITW_CLASH_PlayerCarrierHome.sqf";' in rtb
 
 
-def test_player_air_transport_rtb_is_advisory_and_completes_on_return():
+def test_native_scargo_has_two_player_rtb_shapes_and_no_live_completion_path():
+    scargo = (HAL / "SCargo.sqf").read_text(encoding="utf-8")
+
+    assert '"Abort Pick Up, RTB"' in scargo
+    assert '"Return To Base"' in scargo
+    assert scargo.count('[_task,"SUCCEEDED",true] call BIS_fnc_taskSetState') >= 2
+    assert '//if not (_task isEqualTo taskNull) then {[_task,"SUCCEEDED",true] call BIS_fnc_taskSetState};' in scargo
+    assert '//if not (_task isEqualTo taskNull) then {[_task,"SUCCEEDED",true] call BIS_fnc_taskSetState};' in scargo
+
+
+def test_player_air_transport_rtb_covers_abort_delivery_landing_and_timeout():
     rtb = source("ITW_CLASH_PlayerTransportRTB.sqf")
+    home = source("ITW_CLASH_PlayerCarrierHome.sqf")
     logistics = source("ITW_CLASH_HALLogistics.sqf")
 
-    assert 'ITW_CLASH_PlayerTransportRTBVersion = 2;' in rtb
-    assert '"ITW_CLASH_PlayerTransportContract"' in rtb
-    assert '(_contract getOrDefault ["source",""]) != "HAL_SCargo"' in rtb
-    assert '_carrier isKindOf "Air"' in rtb
-    assert '(units _carrierGroup findIf {isPlayer _x}) >= 0' in rtb
+    assert 'ITW_CLASH_PlayerTransportRTBVersion = 3;' in rtb
+    assert '"ITW_CLASH_PlayerTransportRTBRadius",350' in rtb
+    assert '"ITW_CLASH_PlayerTransportRTBStopTimeout",120' in rtb
+    assert 'if (_title == "abort pick up, rtb") exitWith {"ABORT"};' in rtb
+    assert 'if (_title == "return to base") exitWith {"DELIVERY"};' in rtb
     assert '"HACAddedTasks"' in rtb
-    assert '"return to base"' in rtb
-    assert '"return to departure base."' in rtb
     assert 'taskDestination _trackedTask' in rtb
-    assert 'isTouchingGround _carrier' in rtb
-    assert '(_carrier distance2D _destination) <= ITW_CLASH_PlayerTransportRTBRadius' in rtb
-    assert '"ITW_CLASH_PlayerTransportRTBCargoGroup"' in rtb
-    assert 'alive _x && {vehicle _x == _carrier}' in rtb
+    assert '((getPosATL _carrier)#2) < 1' in rtb
+    assert 'abs speed _carrier < 0.5' in rtb
+    assert 'ITW_CLASH_PlayerTransportRTB_fnc_CargoUnlinked' in rtb
+    assert 'ITW_CLASH_PlayerTransportRTBStoppedSeconds' in rtb
+    assert '_stoppedSeconds >= ITW_CLASH_PlayerTransportRTBStopTimeout' in rtb
+    assert '_method = "landed";' in rtb
+    assert '_method = "timeout";' in rtb
     assert '[_trackedTask,"SUCCEEDED",true] call BIS_fnc_taskSetState;' in rtb
-    assert '"player-rtb-armed"' not in rtb  # prefix is added by the logger, not duplicated by event names
-    assert '["armed",[' in rtb
+    assert '["rtb-" + _event,_payload] call ITW_CLASH_PlayerTransport_fnc_Log;' in rtb
     assert '["completed",[' in rtb
-    assert 'halRTBAdvisory=true' in rtb
+    assert '"method=" + _method' in rtb
+    assert 'abortAndDelivery=true' in rtb
+    assert 'altitudeLt1=true' in rtb
+    assert 'speedLt0_5=true' in rtb
     assert 'cargoUnlinked=true' in rtb
-    assert 'liveHomePrimed=true' in rtb
+    assert 'stoppedTimeout=%3' in rtb
 
-    # The adapter observes the task HAL created; it must never become a second
-    # aircraft movement executor.
+    # The compatibility terminal hook must actually refresh persistent
+    # subscriptions/HAL inclusion after the native Busy flag has already cleared.
+    assert 'ITW_CLASH_PlayerTasks_fnc_SyncAll = {' in home
+    assert 'ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState' in home
+    assert 'ITW_CLASH_DualHAL_fnc_SyncIncluded' in home
+    assert 'call ITW_CLASH_PlayerTasks_fnc_SyncAll;' in rtb
+
+    # Neither layer may become a second movement executor.
     forbidden = (
         "RYD_WPadd",
         "addWaypoint",
@@ -157,6 +165,7 @@ def test_player_air_transport_rtb_is_advisory_and_completes_on_return():
     )
     for token in forbidden:
         assert token not in rtb
+        assert token not in home
 
     assert 'fileExists "ITW_CLASH_PlayerTransportRTB.sqf"' in logistics
     assert '[] execVM "ITW_CLASH_PlayerTransportRTB.sqf";' in logistics
