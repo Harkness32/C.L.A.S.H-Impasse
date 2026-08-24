@@ -105,17 +105,25 @@ def test_reconstitution_transport_cannot_be_stolen_before_dismount():
     assert '"forward-fob"' in transit
 
 
-def test_boats_are_restored_to_water_or_rejected_never_left_on_fob_land():
+def test_boats_are_restored_to_bounded_surface_water_or_rejected_atomically():
     sea = mission("ITW_CLASH_SeaGenerationGuard.sqf")
     logistics = mission("ITW_CLASH_HALLogistics.sqf")
 
     assert 'isKindOf "Ship"' in sea
     assert "ITW_SeaPoints" in sea
     assert "surfaceIsWater" in sea
+    assert "ITW_CLASH_SeaGuardMaxRelocation" in sea
+    assert '"ITW_CLASH_SeaGuardMaxRelocation",1500' in sea
+    assert "_x distance2D _reference <= ITW_CLASH_SeaGuardMaxRelocation" in sea
+    assert "_veh setPosASL _water;" in sea
+    assert '"ASL-surface"' in sea
+    assert '"sea-node-too-far"' in sea
+    assert '"no-local-water-node"' in sea
     assert '"impasse-handoff"' in sea
     assert '"generated-asset"' in sea
     assert '"handoff-rejected"' in sea
-    assert "landFallback=false" in sea
+    assert "deleteVehicleCrew _veh;" in sea
+    assert "atomicReject=true" in sea
 
     # Sea guard is deliberately outermost: service lifecycle first, then water
     # correction around the final StageFieldVehicle/RegisterAsset stack.
