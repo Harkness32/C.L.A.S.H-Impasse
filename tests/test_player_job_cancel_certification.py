@@ -80,11 +80,50 @@ def test_ferry_retask_lock_is_continuously_reconciled_without_corrupting_ownersh
     assert 'ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock' in end_body
 
 
+def test_player_hal_carrier_start_is_primed_from_live_impasse_home_resolver():
+    home = source("ITW_CLASH_PlayerCarrierHome.sqf")
+    rtb = source("ITW_CLASH_PlayerTransportRTB.sqf")
+
+    assert 'ITW_CLASH_PlayerCarrierHomeVersion = 1;' in home
+    assert 'ITW_CLASH_ServiceHome_fnc_ResolvePlayerCarrier' in home
+    assert 'missionNamespace getVariable ["ITW_CLASH_ServiceHomeResolverReady",false]' in home
+    assert 'ITW_CLASH_ServiceHome_fnc_Resolve' in home
+    assert '"ITW_CLASH_ServiceBaseHint"' in home
+    assert 'ITW_CLASH_ServiceHome_fnc_SetBaseHint' in home
+    assert '_group setVariable ["START" + str _group,+_position];' in home
+    assert '_group setVariable ["ITW_CLASH_ServiceHome",+_position];' in home
+    assert '"nearest-base"' not in home  # base choice belongs to the shared resolver
+    assert 'random 200' not in home
+    assert 'position (vehicle (leader _HQ))' not in home
+    assert 'servicePoolRegistration=false' in home
+    assert 'halRTBExecutor=true' in home
+
+    # The player-carrier extension answers HAL's RTB-input question only. It may
+    # not register the player's aircraft as a persistent service-pool asset or
+    # become a second movement executor.
+    forbidden = (
+        "ITW_CLASH_Service_fnc_RegisterPhysical",
+        "ITW_CLASH_ServicePool pushBack",
+        "RYD_WPadd",
+        "addWaypoint",
+        "doMove",
+        "moveTo",
+        "setWaypointPosition",
+        "land 'LAND'",
+        'land "LAND"',
+    )
+    for token in forbidden:
+        assert token not in home
+
+    assert 'fileExists "ITW_CLASH_PlayerCarrierHome.sqf"' in rtb
+    assert '[] execVM "ITW_CLASH_PlayerCarrierHome.sqf";' in rtb
+
+
 def test_player_air_transport_rtb_is_advisory_and_completes_on_return():
     rtb = source("ITW_CLASH_PlayerTransportRTB.sqf")
     logistics = source("ITW_CLASH_HALLogistics.sqf")
 
-    assert 'ITW_CLASH_PlayerTransportRTBVersion = 1;' in rtb
+    assert 'ITW_CLASH_PlayerTransportRTBVersion = 2;' in rtb
     assert '"ITW_CLASH_PlayerTransportContract"' in rtb
     assert '(_contract getOrDefault ["source",""]) != "HAL_SCargo"' in rtb
     assert '_carrier isKindOf "Air"' in rtb
@@ -95,11 +134,15 @@ def test_player_air_transport_rtb_is_advisory_and_completes_on_return():
     assert 'taskDestination _trackedTask' in rtb
     assert 'isTouchingGround _carrier' in rtb
     assert '(_carrier distance2D _destination) <= ITW_CLASH_PlayerTransportRTBRadius' in rtb
+    assert '"ITW_CLASH_PlayerTransportRTBCargoGroup"' in rtb
+    assert 'alive _x && {vehicle _x == _carrier}' in rtb
     assert '[_trackedTask,"SUCCEEDED",true] call BIS_fnc_taskSetState;' in rtb
     assert '"player-rtb-armed"' not in rtb  # prefix is added by the logger, not duplicated by event names
     assert '["armed",[' in rtb
     assert '["completed",[' in rtb
     assert 'halRTBAdvisory=true' in rtb
+    assert 'cargoUnlinked=true' in rtb
+    assert 'liveHomePrimed=true' in rtb
 
     # The adapter observes the task HAL created; it must never become a second
     # aircraft movement executor.
