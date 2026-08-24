@@ -1,9 +1,43 @@
 _SCRname = "SuppAmmo";
 
 private ["_HQ","_ammo","_noenemy","_ammoS","_ammoSG","_Hollow","_soldiers","_ZeroA","_ammoN","_av","_MTrucks","_mtr","_unitvar","_busy","_Unable","_MTrucks2","_MTrucks3","_MTrucks2a","_MTrucks3a","_Zunits","_a",
-	"_Zunit","_halfway","_distT","_eClose1","_eClose2","_UL","_Hunits","_MTruck","_Hunit","_ammoBox","_supported"];
+	"_Zunit","_halfway","_distT","_eClose1","_eClose2","_UL","_Hunits","_MTruck","_Hunit","_ammoBox","_supported","_providerVehicle"];
 
 _HQ = _this select 0;
+
+/*
+    HAL's native ammo-provider path resolves carriers with assignedVehicle.
+    That is correct for AI crews, but a player who manually enters a purchased
+    helicopter may have no assignedVehicle even though vehicle leader _group is
+    the aircraft currently being flown. C.L.A.S.H. admits player LOGISTICS from
+    the physical vehicle, so preserve native AI semantics and allow only human
+    ammo-drop groups to fall back to their actual current vehicle.
+*/
+_providerVehicle = {
+	params ["_group"];
+	if (isNull _group) exitWith {objNull};
+	private _leader = leader _group;
+	if (isNull _leader) exitWith {objNull};
+	private _veh = assignedVehicle _leader;
+	if (isNull _veh && {(units _group findIf {isPlayer _x}) >= 0}) then
+		{
+		private _current = vehicle _leader;
+		if (_current != _leader) then
+			{
+			_veh = _current;
+			private _nextLog = _group getVariable ["ITW_CLASH_PlayerAmmoVehicleFallbackLogAt",0];
+			if (time >= _nextLog) then
+				{
+				_group setVariable ["ITW_CLASH_PlayerAmmoVehicleFallbackLogAt",time + 30];
+				diag_log format [
+					"CLASH PLAYER LOGISTICS | provider-current-vehicle-fallback | group=%1 vehicle=%2",
+					groupId _group,typeOf _veh
+				];
+				};
+			}
+		};
+	_veh
+};
 
 _ammo = RHQ_Ammo + RYD_WS_ammo - RHQs_Ammo;
 
@@ -100,7 +134,7 @@ _HQ setVariable ["RydHQ_Hollow",_Hollow + _ZeroA];
 _MTrucks = [];
 
 	{
-	_mtr = assignedVehicle (leader _x);
+	_mtr = [_x] call _providerVehicle;
 
 	if not (isNull _mtr) then
 		{
@@ -153,14 +187,15 @@ _a = 0;
 for [{_a = 500},{_a <= 44000},{_a = _a + 500}] do
 	{
 		{
-		_MTruck = assignedvehicle (leader _x);
+		_MTruck = [_x] call _providerVehicle;
 
 		for [{_b = 0},{_b < (count _ZeroA)},{_b = _b + 1}] do 
 			{
 			_Zunit = _ZeroA select _b;		
 
 				{
-				if ((_Zunit distance (assignedvehicle (leader _x))) < 400) exitwith 
+				private _nearProvider = [_x] call _providerVehicle;
+				if (!isNull _nearProvider && {(_Zunit distance _nearProvider) < 400}) exitwith 
 					{
 					if not ((group _Zunit) in (_HQ getVariable ["RydHQ_ASupportedG",[]])) then 
 						{
@@ -237,14 +272,15 @@ if ((count (_HQ getVariable ["RydHQ_AmmoBoxes",[]])) > 0) then
 	for [{_a = 500},{_a < 44000},{_a = _a + 500}] do
 		{
 			{
-			_MTruck = assignedvehicle (leader _x);
+			_MTruck = [_x] call _providerVehicle;
 			
 			for [{_b = 0},{_b < (count _Hollow)},{_b = _b + 1}] do 
 				{
 				_Hunit = _Hollow select _b;
 
 					{
-					if ((_Hunit distance (assignedvehicle (leader _x))) < 250) exitwith 
+					private _nearProvider = [_x] call _providerVehicle;
+					if (!isNull _nearProvider && {(_Hunit distance _nearProvider) < 250}) exitwith 
 						{
 						if not ((group _Hunit) in (_HQ getVariable ["RydHQ_ASupportedG",[]])) then 
 							{

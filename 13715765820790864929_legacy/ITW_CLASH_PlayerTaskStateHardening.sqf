@@ -5,9 +5,10 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateHardeningStarted",fa
 
 ITW_CLASH_PlayerTaskStateHardeningStarted = true;
 ITW_CLASH_PlayerTaskStateHardeningReady = false;
+ITW_CLASH_PlayerTaskStateLeaderGateReady = false;
 ITW_CLASH_PlayerTaskStateCancelReady = false;
 ITW_CLASH_PlayerTaskStateArtilleryGuardReady = false;
-ITW_CLASH_PlayerTaskStateHardeningVersion = 2;
+ITW_CLASH_PlayerTaskStateHardeningVersion = 3;
 
 ITW_CLASH_PlayerTaskState_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -16,6 +17,66 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
     } else {
         diag_log format ["CLASH PLAYER TASK STATE | %1 | %2",_event,_payload];
     };
+};
+
+// Leader authority is independent of native HAL cancellation. Install this gate
+// as soon as the generic remote surface exists so observer mode, HAL load
+// failure, or an Action1ct binder timeout can never fall back to the permissive
+// v1 CancelRemote path.
+ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate = {
+    if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateLeaderGateReady",false]) exitWith {true};
+    if (
+        isNil "ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid"
+        || {isNil "ITW_CLASH_PlayerTasks_fnc_SendEmploymentState"}
+        || {isNil "ITW_CLASH_PlayerTasks_fnc_CancelGroupJob"}
+    ) exitWith {false};
+
+    ITW_CLASH_PlayerTasks_fnc_CancelRemote = {
+        params ["_player"];
+        if !([_player,true] call
+            ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
+        ) exitWith {
+            if ([_player,false] call
+                ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
+            ) then {
+                [_player,false,"Only the group leader can cancel HAL employment."] call
+                    ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
+            };
+            false
+        };
+
+        private _success = [_player] call
+            ITW_CLASH_PlayerTasks_fnc_CancelGroupJob;
+        [_player,_success,if (_success) then {
+            "HAL job cancellation requested."
+        } else {
+            "No active HAL job to cancel."
+        }] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
+        _success
+    };
+
+    ITW_CLASH_PlayerTaskStateLeaderGateReady = true;
+    ["leader-cancel-gate-ready",[
+        "native-action-independent",true
+    ]] call ITW_CLASH_PlayerTaskState_fnc_Log;
+    true
+};
+
+[] spawn {
+    scriptName "ITW_CLASH_PlayerTaskStateLeaderGate";
+    private _deadline = diag_tickTime + 120;
+    waitUntil {
+        sleep 0.05;
+        diag_tickTime >= _deadline || {
+            !isNil "ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid"
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_SendEmploymentState"}
+            && {!isNil "ITW_CLASH_PlayerTasks_fnc_CancelGroupJob"}
+        }
+    };
+    if (diag_tickTime >= _deadline) exitWith {
+        ["leader-cancel-gate-bind-timeout",[]] call ITW_CLASH_PlayerTaskState_fnc_Log;
+    };
+    call ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate;
 };
 
 // Phase 1: install admission as soon as PlayerTaskSupport has defined its
@@ -207,13 +268,15 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
 
     ITW_CLASH_PlayerTaskStateHardeningReady = true;
     diag_log format [
-        "CLASH BOOT | player-task-state-admission-ready | version=%1 authoritativeAdmission=true busyAwareAvailability=true combatGate=true preHALBinder=true",
-        ITW_CLASH_PlayerTaskStateHardeningVersion
+        "CLASH BOOT | player-task-state-admission-ready | version=%1 authoritativeAdmission=true busyAwareAvailability=true combatGate=true preHALBinder=true leaderCancelGate=%2",
+        ITW_CLASH_PlayerTaskStateHardeningVersion,
+        missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateLeaderGateReady",false]
     ];
 };
 
 // Phase 2: HAL's native deny function is only captured by PlayerTaskSupport's
-// binder. Install cancellation once that exact native function is available.
+// binder. Native cancellation waits for that exact function, but leader
+// authority above does not.
 [] spawn {
     scriptName "ITW_CLASH_PlayerTaskStateCancelBinder";
     private _deadline = diag_tickTime + 600;
@@ -225,11 +288,15 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
             && {!isNil "ITW_CLASH_PlayerTasks_fnc_CancelGroupJob"}
             && {!isNil "ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid"}
             && {!isNil "ITW_CLASH_PlayerTasks_fnc_SendEmploymentState"}
+            && {!isNil "Action1ct"}
         }
     };
 
     if (diag_tickTime >= _deadline) exitWith {
-        ["cancel-bind-timeout",[]] call ITW_CLASH_PlayerTaskState_fnc_Log;
+        ["cancel-bind-timeout",[
+            "leaderGateRetained",
+            missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateLeaderGateReady",false]
+        ]] call ITW_CLASH_PlayerTaskState_fnc_Log;
     };
     if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskStateCancelReady",false]) exitWith {};
 
@@ -255,26 +322,43 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
                 _group getVariable ["Busy" + str _group,false]
             }
         };
+        private _nativeDenyInFlight = _group getVariable [
+            "ITW_CLASH_PlayerNativeJobCancelRequested",false
+        ];
 
         ["cancel-request",[
             if (!isNil "ITW_CLASH_DualHAL_fnc_GroupId") then {
                 [_group] call ITW_CLASH_DualHAL_fnc_GroupId
             } else {str _group},
-            _ammoJob,_artilleryJob,_nativeJob,_nativeActive
+            _ammoJob,_artilleryJob,_nativeJob,_nativeActive,_nativeDenyInFlight
         ]] call ITW_CLASH_PlayerTaskState_fnc_Log;
 
         private _specialResult = _this call
             ITW_CLASH_PlayerTaskState_fnc_CancelGroupJobBase;
         private _nativeResult = false;
 
-        if (_nativeActive && {!isNil "ITW_CLASH_PlayerTasks_fnc_NativeAction1"}) then {
-            private _leader = leader _group;
-            if (!isNull _leader) then {
-                _group setVariable [
-                    "ITW_CLASH_PlayerNativeJobCancelRequested",true,true
-                ];
-                [_leader] call ITW_CLASH_PlayerTasks_fnc_NativeAction1;
-                _nativeResult = true;
+        if (_nativeActive && {_nativeDenyInFlight}) then {
+            // Hosted-server Action1ct already issued the native HAL deny before
+            // entering this wrapper. Count it as accepted; never invoke it twice.
+            _nativeResult = true;
+            ["cancel-native-deny-already-in-flight",[
+                if (!isNil "ITW_CLASH_DualHAL_fnc_GroupId") then {
+                    [_group] call ITW_CLASH_DualHAL_fnc_GroupId
+                } else {str _group}
+            ]] call ITW_CLASH_PlayerTaskState_fnc_Log;
+        } else {
+            if (_nativeActive && {!isNil "ITW_CLASH_PlayerTasks_fnc_NativeAction1"}) then {
+                private _leader = leader _group;
+                if (!isNull _leader) then {
+                    _group setVariable [
+                        "ITW_CLASH_PlayerNativeJobCancelRequested",true
+                    ];
+                    [_leader] call ITW_CLASH_PlayerTasks_fnc_NativeAction1;
+                    _group setVariable [
+                        "ITW_CLASH_PlayerNativeJobCancelRequested",nil
+                    ];
+                    _nativeResult = true;
+                };
             };
         };
 
@@ -312,35 +396,38 @@ ITW_CLASH_PlayerTaskState_fnc_Log = {
         _accepted
     };
 
-    // The client menu already requires group leadership. Enforce the same
-    // authority on the server instead of trusting the UI boundary.
-    ITW_CLASH_PlayerTasks_fnc_CancelRemote = {
-        params ["_player"];
-        if !([_player,true] call
-            ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
-        ) exitWith {
-            if ([_player,false] call
-                ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
-            ) then {
-                [_player,false,"Only the group leader can cancel HAL employment."] call
-                    ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
-            };
-            false
+    // On a hosted server the action menu invokes PlayerTaskSupport's Action1ct
+    // wrapper in the same namespace. That wrapper performs NativeAction1 first
+    // and then calls the now-hardened CancelGroupJob. Scope the existing flag
+    // around that wrapper so the inner cancellation path observes that native
+    // deny is already in flight and cannot issue a second deny.
+    ITW_CLASH_PlayerTaskState_fnc_Action1CancelBase = Action1ct;
+    Action1ct = {
+        private _unit = _this param [0,objNull];
+        if (isNull _unit && {hasInterface}) then {_unit = player};
+        private _group = if (isNull _unit) then {grpNull} else {group _unit};
+        if (!isNull _group) then {
+            _group setVariable [
+                "ITW_CLASH_PlayerNativeJobCancelRequested",true
+            ];
         };
-
-        private _success = [_player] call
-            ITW_CLASH_PlayerTasks_fnc_CancelGroupJob;
-        [_player,_success,if (_success) then {
-            "HAL job cancellation requested."
-        } else {
-            "No active HAL job to cancel."
-        }] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
-        _success
+        private _result = _this call ITW_CLASH_PlayerTaskState_fnc_Action1CancelBase;
+        if (!isNull _group) then {
+            _group setVariable [
+                "ITW_CLASH_PlayerNativeJobCancelRequested",nil
+            ];
+        };
+        _result
     };
+
+    // Reassert the leader gate after native cancellation binds. The gate calls
+    // CancelGroupJob by global name, so it automatically reaches the hardened
+    // specialist/native composite above.
+    call ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate;
 
     ITW_CLASH_PlayerTaskStateCancelReady = true;
     diag_log format [
-        "CLASH BOOT | player-task-state-cancel-ready | version=%1 nativeCancelBridge=true leaderCancelAuthority=true",
+        "CLASH BOOT | player-task-state-cancel-ready | version=%1 nativeCancelBridge=true leaderCancelAuthority=true degradedLeaderGate=true hostedDoubleDenyGuard=true",
         ITW_CLASH_PlayerTaskStateHardeningVersion
     ];
 };

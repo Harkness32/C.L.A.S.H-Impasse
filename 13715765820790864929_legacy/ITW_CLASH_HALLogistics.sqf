@@ -200,4 +200,14 @@ if (fileExists "ITW_CLASH_HALTransportAudio.sqf") then {
     diag_log "CLASH BOOT | WARNING | hal-transport-audio-missing | HAL transport remains functional but boarding cues are unavailable";
 };
 
+// Native SCargo deliberately creates a terminal "Return To Base" task for the
+// carrier after troop delivery, but its original arrival/task-success block is
+// commented out. Keep the useful RTB guidance for player-flown aircraft and
+// passively complete only that task once the player actually lands back home.
+if (fileExists "ITW_CLASH_PlayerTransportRTB.sqf") then {
+    [] execVM "ITW_CLASH_PlayerTransportRTB.sqf";
+} else {
+    diag_log "CLASH BOOT | WARNING | player-transport-rtb-missing | native HAL RTB task may remain assigned";
+};
+
 true

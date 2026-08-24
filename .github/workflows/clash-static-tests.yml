@@ -38,3 +38,6 @@ jobs:
           tests/test_support_lifecycle.py
           tests/test_support_authority_hardening.py
           tests/test_hal_transport_audio.py
+          tests/test_player_job_state_hardening.py
+          tests/test_player_job_cancel_certification.py
+          tests/test_player_logistics_provider_compat.py
