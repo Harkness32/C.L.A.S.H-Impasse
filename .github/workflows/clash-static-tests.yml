@@ -41,3 +41,4 @@ jobs:
           tests/test_player_job_state_hardening.py
           tests/test_player_job_cancel_certification.py
           tests/test_player_logistics_provider_compat.py
+          tests/test_player_demand_dispatch.py
