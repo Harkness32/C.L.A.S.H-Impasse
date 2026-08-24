@@ -3,11 +3,20 @@
 if (!isServer) exitWith {false};
 if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exitWith {false};
 
+ITW_CLASH_PlayerTransportNativeBridgeVersion = 2;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
-// Active contracts must not silently expire in flight. Expiry applies only to
-// unclaimed HAL demand; BOARDING/EMBARKED remains valid until terminal release.
+/*
+    HAL_SCargo is a complete transport executor, not merely a carrier selector:
+    it reserves the carrier, moves it to pickup, assigns cargo seats, waits for
+    embarkation, owns the transport leg and owns terminal cleanup/RTB. Therefore
+    C.L.A.S.H. observes and protects that lifecycle but never starts a second
+    physical GET IN / GET OUT executor for the same HAL request.
+*/
+
+// Active HAL requests are retired by the passive SCargo-state monitor below.
+// Do not make a live pickup disappear merely because a wall-clock lease elapsed.
 ITW_CLASH_PlayerTransport_fnc_GetContract = {
     params ["_group"];
     if (isNull _group) exitWith {createHashMap};
@@ -16,25 +25,218 @@ ITW_CLASH_PlayerTransport_fnc_GetContract = {
     ];
     if !(_contract isEqualType createHashMap) exitWith {createHashMap};
     private _state = _contract getOrDefault ["state",""];
-    if !(_state in ["BOARDING","EMBARKED"] || {
-        (_contract getOrDefault ["expiresAt",0]) >= time
-    }) exitWith {
-        ["hal-demand-expired",[
-            _contract getOrDefault ["id",""],
-            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-            _state
-        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    private _active = _state in ["HAL_DEMAND","HAL_ASSIGNED","EMBARKED"];
+    if (!_active && {(_contract getOrDefault ["expiresAt",0]) < time}) exitWith {
         _group setVariable ["ITW_CLASH_PlayerTransportContract",nil];
         createHashMap
     };
     _contract
 };
 
+ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {
+    params ["_group","_contractId",["_reason","hal-scargo-ended"]];
+    if (isNull _group) exitWith {false};
+    private _contract = _group getVariable [
+        "ITW_CLASH_PlayerTransportContract",createHashMap
+    ];
+    if !(_contract isEqualType createHashMap && {count _contract > 0}) exitWith {false};
+    if ((_contract getOrDefault ["id",""]) isNotEqualTo _contractId) exitWith {false};
+
+    private _state = _contract getOrDefault ["state",""];
+    private _carrier = _contract getOrDefault ["carrier",objNull];
+    private _destination = +(_contract getOrDefault ["destination",[]]);
+    if (!isNil "ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock") then {
+        [_group] call ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock;
+    };
+    _group setVariable ["ITW_CLASH_PlayerTransportContract",nil];
+
+    ["hal-contract-ended",[
+        _contractId,
+        [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+        _state,_reason,
+        if (isNull _carrier) then {"<none>"} else {typeOf _carrier},
+        +_destination
+    ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    true
+};
+
+ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
+    params ["_group","_contractId"];
+    if (isNull _group || {_contractId isEqualTo ""}) exitWith {};
+
+    private _pendingKey = "CargoCheckPending" + str _group;
+    private _assignedKey = "AssignedCargo" + str _group;
+    private _sawPending = false;
+    private _lastCarrier = objNull;
+    private _startedAt = time;
+    private _hardDeadline = time + 1800;
+    private _reason = "hal-scargo-ended";
+
+    while {true} do {
+        sleep 0.5;
+        if (isNull _group || {{alive _x} count units _group == 0}) exitWith {
+            _reason = "cargo-group-lost";
+        };
+
+        private _contract = _group getVariable [
+            "ITW_CLASH_PlayerTransportContract",createHashMap
+        ];
+        if !(_contract isEqualType createHashMap && {count _contract > 0}) exitWith {
+            _reason = "contract-cleared-externally";
+        };
+        if ((_contract getOrDefault ["id",""]) isNotEqualTo _contractId) exitWith {
+            _reason = "contract-replaced";
+        };
+
+        private _pending = _group getVariable [_pendingKey,false];
+        if (_pending) then {_sawPending = true};
+        private _carrier = _group getVariable [_assignedKey,objNull];
+
+        if (!isNull _carrier && {_carrier != _lastCarrier}) then {
+            _lastCarrier = _carrier;
+            private _carrierGroup = group assignedDriver _carrier;
+            if (isNull _carrierGroup) then {_carrierGroup = group driver _carrier};
+            _contract set ["carrier",_carrier];
+            _contract set ["carrierGroup",_carrierGroup];
+            _contract set ["state","HAL_ASSIGNED"];
+            _contract set ["assignedAt",time];
+            _contract set ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime];
+            _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
+            ["hal-carrier-selected",[
+                _contractId,
+                [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+                typeOf _carrier,
+                !isNull currentPilot _carrier && {isPlayer currentPilot _carrier},
+                if (isNull _carrierGroup) then {"<null>"} else {
+                    [_carrierGroup] call ITW_CLASH_PlayerTransport_fnc_GroupId
+                },
+                +(_contract getOrDefault ["destination",[]])
+            ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+        };
+
+        if (!isNull _carrier && {vehicle leader _group == _carrier} && {
+            (_contract getOrDefault ["state",""]) != "EMBARKED"
+        }) then {
+            _contract set ["state","EMBARKED"];
+            _contract set ["embarkedAt",time];
+            _contract set ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime];
+            _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
+            ["hal-contract-embarked",[
+                _contractId,
+                [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+                typeOf _carrier,
+                +(_contract getOrDefault ["destination",[]])
+            ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+        };
+
+        if (_sawPending && {!_pending}) exitWith {
+            _reason = "hal-scargo-pending-cleared";
+        };
+        if (!_sawPending && {time - _startedAt > 15} && {
+            isNull _carrier && {!(_group getVariable ["CargoChosen",false])}
+        }) exitWith {
+            _reason = "hal-scargo-no-assignment";
+        };
+        if (time >= _hardDeadline) exitWith {
+            _reason = "hal-scargo-monitor-timeout";
+        };
+    };
+
+    if (_reason isNotEqualTo "contract-replaced") then {
+        [_group,_contractId,_reason] call
+            ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract;
+    };
+};
+
+// Replace the v3 demand recorder with a passive HAL-owned contract observer.
+// The retask lock blocks new tactical jobs while SCargo executes its existing
+// request; no HAL membership, Busy state, waypoint or cargo variable is stolen.
+ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
+    params ["_group","_hq","_destination",["_mode","AUTO"]];
+    if (isNull _group || {isNull _hq} || {_destination isEqualTo []}) exitWith {false};
+    if (!isNil "ITW_CLASH_DualHAL_fnc_IsPlayerGroup" && {
+        [_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup
+    }) exitWith {false};
+    if (_group getVariable ["itwDelivery",false]) exitWith {false};
+
+    private _existing = [_group] call ITW_CLASH_PlayerTransport_fnc_GetContract;
+    if (count _existing > 0) exitWith {true};
+
+    ITW_CLASH_PlayerTransportContractSerial = ITW_CLASH_PlayerTransportContractSerial + 1;
+    private _id = format [
+        "HAL-TRANSPORT-%1-%2",
+        round (diag_tickTime * 1000),ITW_CLASH_PlayerTransportContractSerial
+    ];
+    private _contract = createHashMapFromArray [
+        ["id",_id],
+        ["cargo",_group],
+        ["hq",_hq],
+        ["destination",+_destination],
+        ["mode",toUpperANSI _mode],
+        ["state","HAL_DEMAND"],
+        ["createdAt",time],
+        ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime],
+        ["carrier",objNull],
+        ["carrierGroup",grpNull],
+        ["source","HAL_SCargo"]
+    ];
+    _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
+    if (!isNil "ITW_CLASH_PlayerTransport_fnc_ApplyRetaskLock") then {
+        [_group] call ITW_CLASH_PlayerTransport_fnc_ApplyRetaskLock;
+    };
+
+    ["hal-demand-observed",[
+        _id,
+        [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+        _hq getVariable ["RydHQ_CodeSign","?"],
+        toUpperANSI _mode,+_destination,
+        round (leader _group distance2D _destination),
+        "hal-owns-physical-execution"
+    ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    [_group,_id] spawn ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract;
+    true
+};
+
+// Standing Impasse delivery squads may still use the old authority lease. Any
+// ordinary group with a HAL contract is explicitly rejected here: HAL_SCargo is
+// already the sole physical executor for that contract.
+ITW_CLASH_PlayerTransport_fnc_AcquireHALOwnedBase = ITW_CLASH_PlayerTransport_fnc_Acquire;
+ITW_CLASH_PlayerTransport_fnc_Acquire = {
+    params ["_group",["_vehicle",objNull],["_reason","player-ferry-boarding"]];
+    if (isNull _group) exitWith {false};
+    if (_group getVariable ["itwDelivery",false]) exitWith {
+        _this call ITW_CLASH_PlayerTransport_fnc_AcquireHALOwnedBase
+    };
+
+    private _contract = [_group] call ITW_CLASH_PlayerTransport_fnc_GetContract;
+    ["native-proximity-rejected",[
+        [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+        if (isNull _vehicle) then {"<none>"} else {typeOf _vehicle},
+        if (count _contract > 0) then {
+            "hal-scargo-owns-physical-execution"
+        } else {
+            "no-hal-transport-contract"
+        },
+        if (count _contract > 0) then {_contract getOrDefault ["id",""]} else {""}
+    ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    false
+};
+
+ITW_CLASH_PlayerTransport_fnc_ThrottleLog = {
+    params ["_veh","_key","_event","_payload",["_seconds",15]];
+    if (isNull _veh) exitWith {false};
+    private _next = _veh getVariable [_key,0];
+    if (time < _next) exitWith {false};
+    _veh setVariable [_key,time + _seconds];
+    [_event,_payload] call ITW_CLASH_PlayerTransport_fnc_Log;
+    true
+};
+
 /*
-    Native Impasse proximity ferry selection is retained as the physical pickup
-    scanner, but it is no longer a dispatcher. For ordinary friendly infantry a
-    successful C.L.A.S.H. Acquire is required before ITW_getInState or waypoint
-    state is touched. Standing itwDelivery squads remain a native Impasse case.
+    Preserve native Impasse proximity ferries for idle players, but make the
+    seam one-way: a player already occupied by HAL is invisible to this manager,
+    and cargo currently owned by HAL_SCargo is never selected. Thus an ITW ferry
+    cannot cancel, duplicate or manufacture a HAL transport job.
 */
 ITW_AllyLoadIntoVehManager = {
     scriptName "ITW_AllyLoadIntoVehManager_CLASH";
@@ -56,6 +258,25 @@ ITW_AllyLoadIntoVehManager = {
             if (_veh getVariable ["ITW_AllyCrewEject",false]) then {continue};
             if (_veh getVariable ["SKL_BFC_running",false]) then {continue};
 
+            private _pilotGroup = group _pilot;
+            private _halOccupied = !isNull _pilotGroup && {
+                _pilotGroup getVariable ["Busy" + str _pilotGroup,false] || {
+                    (_pilotGroup getVariable ["ITW_CLASH_PlayerNativeJobId",""]) isNotEqualTo ""
+                } || {
+                    (_pilotGroup getVariable ["ITW_CLASH_PlayerAmmoJobId",""]) isNotEqualTo ""
+                } || {
+                    (_pilotGroup getVariable ["ITW_CLASH_PlayerArtilleryJobId",""]) isNotEqualTo ""
+                }
+            };
+            if (_halOccupied) then {
+                [_veh,"ITW_CLASH_ProximityBusyLogAt","native-proximity-suppressed-hal-busy-carrier",[
+                    if (isNull _pilotGroup) then {"<null>"} else {
+                        [_pilotGroup] call ITW_CLASH_PlayerTransport_fnc_GroupId
+                    },typeOf _veh,"hal-job-active"
+                ],15] call ITW_CLASH_PlayerTransport_fnc_ThrottleLog;
+                continue
+            };
+
             private _emptySeats = if (_veh getVariable ["ITW_BlockAllyCrew",true]) then {
                 {isNull (_x#5) && {_x#2 >= 0}} count fullCrew [_veh,"",true]
             } else {
@@ -75,54 +296,48 @@ ITW_AllyLoadIntoVehManager = {
             private _closestObj = [_vPos,ITW_OWNER_CONTESTED,_objType] call ITW_ObjGetNearest;
             if (_closestObj#ITW_OBJ_POS distance _veh < 1000) then {continue};
 
-            private _onFootAllies = ITW_AllyGroups select {
+            private _onFootAllies = [];
+            {
                 private _grp = _x;
                 private _leader = leader _grp;
-                !(_grp getVariable ["ITW_Garrison",false]) &&
-                {!(_grp getVariable ["itwInitGrp",false]) &&
-                {vehicle _leader == _leader &&
-                {_leader distance _veh < 250 &&
-                {isNull getAttackTarget _leader &&
-                {!fleeing _leader &&
-                {_grp getVariable ["ITW_getInState",-1] == -1}}}}}}
-            } apply {[leader _x distance _veh,_x]};
+                if (
+                    !(_grp getVariable ["ITW_Garrison",false])
+                    && {!(_grp getVariable ["itwInitGrp",false])}
+                    && {vehicle _leader == _leader}
+                    && {_leader distance _veh < 250}
+                    && {isNull getAttackTarget _leader}
+                    && {!fleeing _leader}
+                    && {_grp getVariable ["ITW_getInState",-1] == -1}
+                ) then {
+                    private _contract = [_grp] call ITW_CLASH_PlayerTransport_fnc_GetContract;
+                    if (count _contract > 0) then {
+                        [_veh,"ITW_CLASH_ProximityContractLogAt","native-proximity-skipped-hal-contract",[
+                            [_grp] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+                            typeOf _veh,_contract getOrDefault ["id",""],
+                            "hal-scargo-owns-physical-execution"
+                        ],15] call ITW_CLASH_PlayerTransport_fnc_ThrottleLog;
+                    } else {
+                        _onFootAllies pushBack [leader _grp distance _veh,_grp];
+                    };
+                };
+            } forEach ITW_AllyGroups;
             if (_onFootAllies isEqualTo []) then {continue};
 
             _onFootAllies sort true;
             private _groupsToLoad = [];
-            private _halContractSelected = false;
             {
-                if (_halContractSelected) then {continue};
                 private _grp = _x#1;
                 private _grpSize = count units _grp;
                 if (_grpSize > _emptySeats) then {continue};
-
-                private _authorized = true;
-                if (!isNil "ITW_CLASH_PlayerTransport_fnc_Acquire") then {
-                    _authorized = [_grp,_veh,"player-ferry-boarding"] call
-                        ITW_CLASH_PlayerTransport_fnc_Acquire;
-                };
-                if (!_authorized) then {continue};
-
-                private _contract = if (_grp getVariable ["itwDelivery",false]) then {
-                    createHashMap
-                } else {
-                    [_grp] call ITW_CLASH_PlayerTransport_fnc_GetContract
-                };
-                private _halContract = count _contract > 0;
                 _emptySeats = _emptySeats - _grpSize;
                 _groupsToLoad pushBack _grp;
+                VAR_SET_OBJ_IDX(_grp,_closestObj#ITW_OBJ_INDEX);
                 _grp setVariable ["ITW_getInState",0];
-
-                if (_halContract) then {
-                    // Preserve HAL objective/task state. The physical executor
-                    // uses direct unit commands only; it does not delete HAL's
-                    // cargo mission waypoint or rewrite objective affinity.
-                    _halContractSelected = true;
-                } else {
-                    VAR_SET_OBJ_IDX(_grp,_closestObj#ITW_OBJ_INDEX);
-                    ITW_DELETE_WAYPOINTS(_grp);
-                };
+                ITW_DELETE_WAYPOINTS(_grp);
+                ["native-proximity-itw-ferry",[
+                    [_grp] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+                    typeOf _veh,"halContract",false,"halJobManufactured",false
+                ]] call ITW_CLASH_PlayerTransport_fnc_Log;
             } forEach _onFootAllies;
 
             if !(_groupsToLoad isEqualTo []) then {
@@ -135,192 +350,16 @@ ITW_AllyLoadIntoVehManager = {
     };
 };
 
-/*
-    HAL-contract ferry executor. Native Impasse remains untouched for standing
-    itwDelivery groups. For a HAL contract, this executor owns only the physical
-    board/carry/unload sequence; HAL's mission waypoint and objective affinity are
-    preserved from pickup through delivery.
-*/
-ITW_CLASH_PlayerTransport_fnc_ExecuteHALContract = {
-    params ["_veh","_grp"];
-    if (isNull _veh || {isNull _grp}) exitWith {false};
-    private _reportProgress = isPlayer currentPilot _veh;
-    private _units = units _grp select {ALIVE(_x)};
-    if (_units isEqualTo []) exitWith {false};
-
-    _veh setVariable ["ITW_groupCntActive",(_veh getVariable ["ITW_groupCntActive",0]) + 1];
-    if (_reportProgress) then {
-        private _nearbyPlayers = allPlayers select {_veh distance _x < 20};
-        ["bStart",_veh] remoteExec ["ITW_AllyRadioMsg",_nearbyPlayers];
-        [leader _grp,localize "STR_ITW_ALLY_WeAreBoarding"] remoteExec ["sideChat",currentPilot _veh];
-    };
-
-    private _leader = leader _grp;
-    private _vPos = getPosATL _veh;
-    {
-        if (_x distance _leader > 200) then {_x setPosATL (getPosATL _leader)};
-        _x setDamage 0;
-        _x doMove _vPos;
-        [_x,_veh] call ITW_AllyOrderGetIn;
-    } forEach _units;
-    [_units,true] remoteExec ["orderGetIn",_leader];
-    _grp setVariable ["ITW_ExitVehicle",false];
-
-    private _timeout = time + 40;
-    waitUntil {
-        sleep 1;
-        if (time > _timeout) then {
-            {
-                if (alive _x && {vehicle _x == _x}) then {
-                    [_x,_veh,true] call ITW_AllyOrderGetIn;
-                };
-            } forEach _units;
-        };
-        isNull _veh || {!canMove _veh} || {fuel _veh == 0} ||
-        {isNull currentPilot _veh} || {_grp getVariable ["ITW_ExitVehicle",false]} ||
-        {{ALIVE(_x) && {vehicle _x != _veh}} count _units == 0} || {time > _timeout + 15}
-    };
-
-    private _loaded = !isNull _veh && {canMove _veh} && {fuel _veh > 0} && {
-        !isNull currentPilot _veh && {vehicle _leader == _veh}
-    };
-    if (!_loaded) exitWith {
-        if (!isNull _veh) then {
-            _grp leaveVehicle _veh;
-            _veh setVariable ["ITW_reservedGroups",nil];
-            _veh setVariable ["ITW_groupCntActive",((_veh getVariable ["ITW_groupCntActive",1]) - 1) max 0];
-        };
-        {[_x] remoteExec ["unassignVehicle",_x]} forEach _units;
-        _grp setVariable ["ITW_getInState",-1];
-        [_grp,"player-ferry-boarding-failed"] call ITW_CLASH_PlayerTransport_fnc_Release;
-        false
-    };
-
-    _grp setVariable ["ITW_getInState",1];
-    _veh setVariable ["ITW_reservedGroups",nil];
-    _veh setVariable ["ITW_transportGroups",[_grp],true];
-    if (_reportProgress) then {
-        private _nearbyPlayers = allPlayers select {_veh distance _x < 20};
-        ["bEnd",_veh] remoteExec ["ITW_AllyRadioMsg",_nearbyPlayers];
-        if (!isNull driver _veh) then {
-            [leader _grp,localize "STR_ITW_ALLY_WeAreIn"] remoteExec ["sideChat",driver _veh];
-        };
-    };
-    [_grp,_veh] call ITW_CLASH_PlayerTransport_fnc_MarkEmbarked;
-
-    private _destination = [_grp,_veh] call
-        ITW_CLASH_PlayerTransport_fnc_GetContractDestination;
-    private _arrived = false;
-    private _aborted = false;
-    while {!_arrived && {!_aborted}} do {
-        sleep 1;
-        if (isNull _veh || {!alive _veh} || {!canMove _veh} || {fuel _veh == 0} || {
-            isNull currentPilot _veh
-        }) then {
-            _aborted = true;
-        } else {
-            _destination = [_grp,_veh] call
-                ITW_CLASH_PlayerTransport_fnc_GetContractDestination;
-            if (_destination isEqualTo []) then {
-                _aborted = true;
-            } else {
-                private _low = isTouchingGround _veh || {ITW_ELEVATION_LT(_veh,2)};
-                _arrived = (_veh distance2D _destination) <= ITW_CLASH_PlayerTransportDropRadius && {
-                    _low && {speed _veh < 5}
-                };
-            };
-        };
-    };
-
-    if (_aborted) exitWith {
-        _grp setVariable ["ITW_getInState",2];
-        _grp setVariable ["ITW_CLASH_TransportPhysicalUnloadPending",true];
-        private _abortDeadline = time + 180;
-        waitUntil {
-            sleep 2;
-            isNull _veh || {{alive _x && {vehicle _x == _veh}} count _units == 0} || {
-                (isTouchingGround _veh || {ITW_ELEVATION_LT(_veh,2)}) && {speed _veh < 8}
-            } || {time >= _abortDeadline}
-        };
-        if (!isNull _veh && {
-            (isTouchingGround _veh || {ITW_ELEVATION_LT(_veh,2)}) && {speed _veh < 8}
-        }) then {
-            {
-                if (alive _x && {vehicle _x == _veh}) then {
-                    [_x] remoteExec ["unassignVehicle",_x];
-                    moveOut _x;
-                };
-            } forEach _units;
-        };
-        if (!isNull _veh) then {
-            _veh setVariable ["ITW_transportGroups",nil,true];
-            _veh setVariable ["ITW_reservedGroups",nil];
-            _veh setVariable ["ITW_groupCntActive",((_veh getVariable ["ITW_groupCntActive",1]) - 1) max 0];
-        };
-        _grp setVariable ["ITW_CLASH_TransportPhysicalUnloadPending",nil];
-        _grp setVariable ["ITW_getInState",-1];
-        [_grp,"player-ferry-carrier-lost"] call ITW_CLASH_PlayerTransport_fnc_Release;
-        false
-    };
-
-    _grp setVariable ["ITW_ExitVehicle",true];
-    _grp setVariable ["ITW_getInState",2];
-    _grp setVariable ["ITW_CLASH_TransportPhysicalUnloadPending",true];
-    if (_reportProgress) then {
-        private _nearbyPlayers = allPlayers select {_veh distance _x < 20};
-        ["dStart",_veh] remoteExec ["ITW_AllyRadioMsg",_nearbyPlayers];
-    };
-
-    {
-        [_x] remoteExec ["unassignVehicle",_x];
-        moveOut _x;
-        sleep 1;
-    } forEach _units;
-    [_units,false] remoteExec ["orderGetIn",_leader];
-    [_units,_leader] remoteExec ["doFollow",_leader];
-    sleep 1;
-
-    _veh setVariable ["ITW_transportGroups",nil,true];
-    _veh setVariable ["ITW_pickupSuccess",nil];
-    _veh setVariable ["reported",nil];
-    _veh setVariable ["ITW_groupCntActive",((_veh getVariable ["ITW_groupCntActive",1]) - 1) max 0];
-    _grp setVariable ["ITW_CLASH_TransportPhysicalUnloadPending",nil];
-    _grp setVariable ["ITW_getInState",-1];
-
-    if (_reportProgress && {canMove _veh && {fuel _veh > 0}}) then {
-        private _nearbyPlayers = allPlayers select {_veh distance _x < 20};
-        ["dEnd",_veh] remoteExec ["ITW_AllyRadioMsg",_nearbyPlayers];
-        if (!isNull driver _veh) then {
-            [leader _grp,localize "STR_ITW_ALLY_WereAllOut"] remoteExec ["sideChat",driver _veh];
-        };
-    };
-
-    [_grp,"player-ferry-delivered"] call ITW_CLASH_PlayerTransport_fnc_Release;
-    true
-};
-
-ITW_AllyLoadGrpIntoVeh = {
-    params ["_veh","_groupsToLoad"];
-    private _contractGroups = _groupsToLoad select {
-        !(_x getVariable ["itwDelivery",false]) && {
-            ([_x,_veh] call ITW_CLASH_PlayerTransport_fnc_GetContractDestination) isNotEqualTo []
-        }
-    };
-    if (_contractGroups isEqualTo []) exitWith {
-        _this call ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh
-    };
-
-    // Contract selection is intentionally one cargo group per player carrier.
-    private _grp = _contractGroups#0;
-    [_veh,_grp] call ITW_CLASH_PlayerTransport_fnc_ExecuteHALContract
-};
+// Native Impasse remains the sole executor for native ITW proximity ferries.
+// HAL_SCargo remains the sole executor for HAL cargo requests.
+ITW_AllyLoadGrpIntoVeh = ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh;
 
 ITW_CLASH_AllyTransportFinalizationWindow = false;
 private _managerFinal = ["ITW_AllyLoadIntoVehManager"] call SKL_fnc_CompileFinal;
 private _loadFinal = ["ITW_AllyLoadGrpIntoVeh"] call SKL_fnc_CompileFinal;
 
 diag_log format [
-    "CLASH BOOT | player-transport-native-bridge-ready | manager=%1 loader=%2 contractGate=true exactContractDestination=true stockRadio=true",
-    _managerFinal,_loadFinal
+    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=true collisionSuppression=true proximityCreatesHALJob=false",
+    ITW_CLASH_PlayerTransportNativeBridgeVersion,_managerFinal,_loadFinal
 ];
 _managerFinal && _loadFinal
