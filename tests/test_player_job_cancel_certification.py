@@ -89,13 +89,9 @@ def test_hosted_action_cancel_cannot_issue_native_deny_twice():
     assert inflight_index < native_call_index
 
     action = hardening[action_start:]
-    set_index = action.index(
-        '_group setVariable [\n                "ITW_CLASH_PlayerNativeJobCancelRequested",true'
-    )
+    set_index = action.index('"ITW_CLASH_PlayerNativeJobCancelRequested",true')
     base_call_index = action.index(
         "_this call ITW_CLASH_PlayerTaskState_fnc_Action1CancelBase"
     )
-    clear_index = action.index(
-        '_group setVariable [\n                "ITW_CLASH_PlayerNativeJobCancelRequested",nil'
-    )
+    clear_index = action.index('"ITW_CLASH_PlayerNativeJobCancelRequested",nil')
     assert set_index < base_call_index < clear_index
