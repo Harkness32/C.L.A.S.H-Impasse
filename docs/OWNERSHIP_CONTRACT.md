@@ -38,6 +38,7 @@ This is the primary architectural rule for C.L.A.S.H.-Impasse. Any change that c
 - transient player HAL carriers ask the same service-home resolver for the `START + str group` compatibility value; they are not registered into the persistent service pool.
 - a virtual service pool entry is a paid entitlement, not an invisible reserved Impasse vehicle slot.
 - HAL planning arrays are lossy metadata. If an authority invariant depends on membership, the owning lifecycle continuously reconciles that projection rather than assuming a one-time write is durable.
+- Player employment capability is evaluated from the player's actual current asset. When native HAL later consumes a legacy AI bookkeeping field such as `assignedVehicle`, C.L.A.S.H. may provide a player-only compatibility fallback to that same current asset; it must not change native AI semantics merely to make player employment work.
 
 ## Service-home contract
 
@@ -79,6 +80,16 @@ Native `SCargo` remains the sole movement executor. C.L.A.S.H. may make its RTB 
 - HAL's original stopped-timeout behavior is preserved so an unsatisfiable RTB task cannot remain permanently assigned.
 - After terminalization, persistent employment subscriptions are re-synchronized; RTB completion does not unsubscribe the player.
 
+## Player HAL logistics provider compatibility
+
+Player LOGISTICS admission uses the actual currently occupied sling-capable helicopter because that is the gameplay capability the player is offering. Native `SuppAmmo` historically re-resolves providers with `assignedVehicle`, which is reliable for AI-assigned crews but may be null for a player who manually entered a purchased aircraft.
+
+- Native AI providers continue to use `assignedVehicle` exactly as before.
+- Only a provider group containing a human may fall back from null `assignedVehicle` to `vehicle leader _group`.
+- This compatibility seam does not select a logistics target, manufacture an ammo demand, or bypass HAL's `SuppAmmo` arbitration.
+- Once HAL selects a player ammo-drop provider, `HAL_GoAmmoSupp` is intercepted into the existing C.L.A.S.H. player sling job; native HAL movement execution is not run for that player job.
+- `provider-current-vehicle-fallback` telemetry proves when the compatibility path was required during a hosted smoke.
+
 ## Planning-array contract
 
 `RydHQ_NoAttack`, `RydHQ_NoRecon`, `RydHQ_NoDef`, and similar HAL arrays are projections of authority, not the authority itself. A live ferry retask lock therefore owns an explicit C.L.A.S.H. lock state and continuously reasserts the corresponding HAL-array memberships. Cleanup removes only memberships recorded as C.L.A.S.H.-owned.
@@ -89,4 +100,4 @@ For every future patch that crosses Impasse/HAL/C.L.A.S.H. authority, ask:
 
 > Are we storing the authority's question/reference and resolving the answer when it is needed, or are we caching an answer that can stop being true?
 
-The DUAL service misclassification, shadow vehicle-count model, player-ferry ownership abort, stale service RTB home, and hanging native player RTB task were all variants of the latter failure mode.
+The DUAL service misclassification, shadow vehicle-count model, player-ferry ownership abort, stale service RTB home, hanging native player RTB task, and player logistics `assignedVehicle` mismatch were all variants of the latter failure mode.
