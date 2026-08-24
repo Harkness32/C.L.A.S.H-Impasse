@@ -11,6 +11,7 @@ def mission(name: str) -> str:
 def test_service_home_is_resolved_from_live_impasse_bases():
     text = mission("ITW_CLASH_ServiceHomeResolver.sqf")
 
+    assert 'ITW_CLASH_ServiceHomeResolverVersion = 2;' in text
     assert 'ITW_CLASH_ServiceHomeRevalidateInterval' in text
     assert '"ITW_CLASH_ServiceHomeRevalidateInterval",120' in text
     assert '"ITW_CLASH_ServiceHomeChangeThreshold",200' in text
@@ -36,6 +37,22 @@ def test_service_home_resolution_is_load_bearing_and_write_through():
     assert '_group setVariable ["ITW_CLASH_ServiceHome",+_position];' in text
     assert '["resolved",[' in text
     assert '["no-friendly-base",[' in text
+
+
+def test_transient_groups_use_same_live_resolver_and_start_writer():
+    text = mission("ITW_CLASH_ServiceHomeResolver.sqf")
+
+    assert 'ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup = {' in text
+    start = text.index('ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup = {')
+    stop = text.index('ITW_CLASH_ServiceHome_fnc_ResolveAndStore = {', start)
+    transient = text[start:stop]
+
+    assert 'call ITW_CLASH_ServiceHome_fnc_Resolve;' in transient
+    assert 'ITW_CLASH_ServiceHome_fnc_SetBaseHint' in transient
+    assert '_group setVariable ["START" + str _group,+_position];' in transient
+    assert '_group setVariable ["ITW_CLASH_ServiceHome",+_position];' in transient
+    assert '"transient-resolved"' in transient
+    assert 'transientGroupWriteThrough=true' in text
 
 
 def test_rtb_resolves_at_order_and_revalidates_while_progressing():
