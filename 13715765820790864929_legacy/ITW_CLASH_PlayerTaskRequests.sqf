@@ -199,4 +199,14 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     ];
 };
 
+// NativeInterceptors still boots the router directly on this stacked branch.
+// From here, hand adapter loading to one bootstrap so later STRIKE/RECON/
+// TRANSPORT phases do not require repeatedly editing that high-risk file.
+if (
+    fileExists "ITW_CLASH_PlayerTaskRequestBootstrap.sqf"
+    && {!missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestBootstrapStarted",false]}
+) then {
+    call compile preprocessFileLineNumbers "ITW_CLASH_PlayerTaskRequestBootstrap.sqf";
+};
+
 true
