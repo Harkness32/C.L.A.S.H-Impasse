@@ -7,7 +7,7 @@ ITW_CLASH_PlayerTaskRequestsStarted = true;
 ITW_CLASH_PlayerTaskRequestsReady = false;
 ITW_CLASH_PlayerTaskRequestsVersion = 1;
 ITW_CLASH_PlayerTaskRequestCooldown = missionNamespace getVariable [
-    "ITW_CLASH_PlayerTaskRequestCooldown",3
+    "ITW_CLASH_PlayerTaskRequestCooldown",15
 ];
 ITW_CLASH_PlayerTaskRequestAdapters = createHashMap;
 ITW_CLASH_PlayerTaskRequestTypes = [
