@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exitWith {false};
 
-ITW_CLASH_PlayerTransportNativeBridgeVersion = 4;
+ITW_CLASH_PlayerTransportNativeBridgeVersion = 5;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
@@ -39,6 +39,58 @@ ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier = {
     (units _group findIf {
         alive _x && {vehicle _x == _carrier}
     }) >= 0
+};
+
+/*
+    HAL planning arrays are lossy metadata. A live ferry retask lock is an
+    authority invariant, so it must be continuously asserted just like service
+    quarantine. Preserve ApplyRetaskLock's original ownership ledger: this
+    reconciler only restores missing memberships and never rewrites
+    ITW_CLASH_TransportRetaskOwned.
+*/
+ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock = {
+    params ["_group",["_source","reconcile"]];
+    if (isNull _group) exitWith {false};
+
+    if !(_group getVariable ["ITW_CLASH_TransportRetaskLock",false]) then {
+        if (!isNil "ITW_CLASH_PlayerTransport_fnc_ApplyRetaskLock") then {
+            [_group] call ITW_CLASH_PlayerTransport_fnc_ApplyRetaskLock;
+        };
+    };
+    if !(_group getVariable ["ITW_CLASH_TransportRetaskLock",false]) exitWith {false};
+
+    private _hq = if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+        [_group] call ITW_CLASH_fnc_GetCommanderForGroup
+    } else {grpNull};
+    if (isNull _hq) exitWith {false};
+
+    private _changed = [];
+    {
+        private _name = _x;
+        private _members = +(_hq getVariable [_name,[]]);
+        if !(_group in _members) then {
+            _members pushBackUnique _group;
+            _hq setVariable [_name,_members];
+            _changed pushBack _name;
+        };
+    } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+
+    if (_changed isNotEqualTo []) then {
+        private _contract = _group getVariable [
+            "ITW_CLASH_PlayerTransportContract",createHashMap
+        ];
+        ["hal-retask-lock-reconciled",[
+            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+            if (_contract isEqualType createHashMap) then {
+                _contract getOrDefault ["id",""]
+            } else {""},
+            if (_contract isEqualType createHashMap) then {
+                _contract getOrDefault ["state",""]
+            } else {""},
+            _source,+_changed
+        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    };
+    true
 };
 
 // Contract retirement and retask-lock retirement are separate events. HAL can
@@ -85,6 +137,8 @@ ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {
                     ];
                     if !(_current isEqualType createHashMap && {count _current > 0}) exitWith {true};
                     if ((_current getOrDefault ["id",""]) isNotEqualTo _contractId) exitWith {true};
+                    [_group,"deferred-unlink-watch"] call
+                        ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock;
                     !([_group,_carrier] call
                         ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier)
                 };
@@ -159,6 +213,9 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
         if ((_contract getOrDefault ["id",""]) isNotEqualTo _contractId) exitWith {
             _reason = "contract-replaced";
         };
+
+        [_group,"active-contract-watch"] call
+            ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock;
 
         private _pending = _group getVariable [_pendingKey,false];
         if (_pending) then {_sawPending = true};
@@ -417,7 +474,7 @@ private _managerFinal = ["ITW_AllyLoadIntoVehManager"] call SKL_fnc_CompileFinal
 private _loadFinal = ["ITW_AllyLoadGrpIntoVeh"] call SKL_fnc_CompileFinal;
 
 diag_log format [
-    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=true collisionSuppression=true proximityCreatesHALJob=false contractEndUnlockSeparated=true",
+    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=true collisionSuppression=true proximityCreatesHALJob=false contractEndUnlockSeparated=true retaskLockReconciled=true",
     ITW_CLASH_PlayerTransportNativeBridgeVersion,_managerFinal,_loadFinal
 ];
 _managerFinal && _loadFinal
