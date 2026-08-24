@@ -5,7 +5,16 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 1;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 2;
+
+// Load the post-bind execution ownership correction before any native support
+// handoff can be intercepted. The hardening file waits for DemandDispatchReady
+// and then makes specialist executors authoritative once a job is EXECUTING.
+if (fileExists "ITW_CLASH_PlayerDemandExecutionHardening.sqf") then {
+    call compile preprocessFileLineNumbers "ITW_CLASH_PlayerDemandExecutionHardening.sqf";
+} else {
+    diag_log "CLASH BOOT | player-demand-execution-hardening-missing | native interceptors remain fail-open";
+};
 
 ITW_CLASH_PlayerDemandNative_fnc_FindCandidate = {
     params ["_channel"];
@@ -116,6 +125,7 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeMedevac = {
         sleep 0.1;
         diag_tickTime >= _deadline || {
             missionNamespace getVariable ["ITW_CLASH_PlayerDemandDispatchReady",false]
+            && {missionNamespace getVariable ["ITW_CLASH_PlayerDemandExecutionHardeningReady",false]}
             && {missionNamespace getVariable ["ITW_CLASH_PlayerTaskSupportReady",false]}
             && {!isNil "HAL_GoAmmoSupp"}
             && {!isNil "HAL_GoMedSupp"}
@@ -162,7 +172,7 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeMedevac = {
 
     ITW_CLASH_PlayerDemandNativeInterceptorsReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true nativeFailOpen=true",
+        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true specialistExecutionOwnership=true nativeFailOpen=true",
         ITW_CLASH_PlayerDemandNativeInterceptorsVersion
     ];
 
