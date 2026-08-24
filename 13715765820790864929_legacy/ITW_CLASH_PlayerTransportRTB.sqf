@@ -5,13 +5,21 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTransportRTBStarted",false]) 
 
 ITW_CLASH_PlayerTransportRTBStarted = true;
 ITW_CLASH_PlayerTransportRTBReady = false;
-ITW_CLASH_PlayerTransportRTBVersion = 1;
+ITW_CLASH_PlayerTransportRTBVersion = 2;
 ITW_CLASH_PlayerTransportRTBCaptureGrace = missionNamespace getVariable [
     "ITW_CLASH_PlayerTransportRTBCaptureGrace",180
 ];
 ITW_CLASH_PlayerTransportRTBRadius = missionNamespace getVariable [
     "ITW_CLASH_PlayerTransportRTBRadius",500
 ];
+
+// The home-prime module shares the service-home resolver's live-base answer and
+// writes HAL's own START input before native SCargo creates its RTB task.
+if (fileExists "ITW_CLASH_PlayerCarrierHome.sqf") then {
+    [] execVM "ITW_CLASH_PlayerCarrierHome.sqf";
+} else {
+    diag_log "CLASH BOOT | WARNING | player-carrier-home-missing | HAL SCargo may fall back to HQ-jitter RTB coordinates";
+};
 
 ITW_CLASH_PlayerTransportRTB_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -99,7 +107,7 @@ ITW_CLASH_PlayerTransportRTB_fnc_AtDestination = {
 
     ITW_CLASH_PlayerTransportRTBReady = true;
     diag_log format [
-        "CLASH BOOT | player-transport-rtb-ready | version=%1 transportOnly=true halRTBAdvisory=true arrivalCompletesTask=true radius=%2 grounded=true",
+        "CLASH BOOT | player-transport-rtb-ready | version=%1 transportOnly=true halRTBAdvisory=true arrivalCompletesTask=true radius=%2 grounded=true cargoUnlinked=true liveHomePrimed=true",
         ITW_CLASH_PlayerTransportRTBVersion,
         ITW_CLASH_PlayerTransportRTBRadius
     ];
@@ -129,6 +137,9 @@ ITW_CLASH_PlayerTransportRTB_fnc_AtDestination = {
             ];
             _carrierGroup setVariable [
                 "ITW_CLASH_PlayerTransportRTBCarrier",_carrier
+            ];
+            _carrierGroup setVariable [
+                "ITW_CLASH_PlayerTransportRTBCargoGroup",_cargoGroup
             ];
             _carrierGroup setVariable [
                 "ITW_CLASH_PlayerTransportRTBContractId",
@@ -203,6 +214,17 @@ ITW_CLASH_PlayerTransportRTB_fnc_AtDestination = {
                 ITW_CLASH_PlayerTransportRTB_fnc_CarrierGroup;
             if (_carrierGroup != _group) then {continue};
 
+            // RTB is terminal guidance only after the insertion is physically
+            // over. Never succeed it while the contracted infantry still rides.
+            private _cargoGroup = _group getVariable [
+                "ITW_CLASH_PlayerTransportRTBCargoGroup",grpNull
+            ];
+            if (!isNull _cargoGroup && {
+                (units _cargoGroup findIf {
+                    alive _x && {vehicle _x == _carrier}
+                }) >= 0
+            }) then {continue};
+
             private _destination = +(_group getVariable [
                 "ITW_CLASH_PlayerTransportRTBDestination",[]
             ]);
@@ -223,6 +245,7 @@ ITW_CLASH_PlayerTransportRTB_fnc_AtDestination = {
             _group setVariable ["ITW_CLASH_PlayerTransportRTBDestination",nil];
             _group setVariable ["ITW_CLASH_PlayerTransportRTBEligibleUntil",nil];
             _group setVariable ["ITW_CLASH_PlayerTransportRTBContractId",nil];
+            _group setVariable ["ITW_CLASH_PlayerTransportRTBCargoGroup",nil];
             _group setVariable ["ITW_CLASH_PlayerTransportRTBCarrier",nil];
         } forEach _playerGroups;
 
