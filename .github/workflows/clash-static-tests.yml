@@ -28,9 +28,6 @@ jobs:
       - name: Install pytest
         run: python -m pip install --disable-pip-version-check pytest
 
-      - name: Run service-home resolver regression
-        run: python -m pytest -q tests/test_service_home_resolver.py
-
       - name: Run C.L.A.S.H. regression assertions
         run: >-
           python -m pytest -q
