@@ -97,6 +97,7 @@ def test_virtual_pool_is_entitlement_while_physical_count_stays_native():
 
 
 def test_hal_scargo_is_the_only_physical_executor_for_hal_transport_contracts():
+    authority = mission("ITW_CLASH_PlayerTransportAuthority.sqf")
     bridge = mission("ITW_CLASH_PlayerTransportNativeBridge.sqf")
 
     assert '"hal-owns-physical-execution"' in bridge
@@ -126,6 +127,16 @@ def test_hal_scargo_is_the_only_physical_executor_for_hal_transport_contracts():
     assert "ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL" not in observer
     assert 'setVariable ["ITW_CLASH_PlayerTransportContract",_contract]' in observer
 
+    # The authority module itself must also be observer-only for ordinary HAL
+    # cargo. Destructive ownership removal exists only behind an itwDelivery gate.
+    acquire_start = authority.index("ITW_CLASH_PlayerTransport_fnc_Acquire =")
+    acquire_end = authority.index("ITW_CLASH_PlayerTransport_fnc_ReserveDelivery", acquire_start)
+    acquire = authority[acquire_start:acquire_end]
+    assert 'if !(_group getVariable ["itwDelivery",false]) exitWith {false};' in acquire
+    assert "ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL" in acquire
+    assert "HAL_CONTRACT" not in authority
+    assert "halSCargoSoleExecutor=true observerOnly=true" in authority
+
 
 def test_native_proximity_ferry_is_one_way_and_never_manufactures_a_hal_job():
     bridge = mission("ITW_CLASH_PlayerTransportNativeBridge.sqf")
@@ -147,8 +158,8 @@ def test_native_proximity_ferry_is_one_way_and_never_manufactures_a_hal_job():
     assert contract_filter < native_obj
     assert contract_filter < native_wp
 
-    # Acquire is now rejection-only for ordinary HAL cargo. The legacy authority
-    # path is retained solely for standing Impasse itwDelivery formations.
+    # Acquire is rejection-only for ordinary HAL cargo. The legacy authority path
+    # is retained solely for standing Impasse itwDelivery formations.
     acquire_start = bridge.index("ITW_CLASH_PlayerTransport_fnc_Acquire =")
     acquire_end = bridge.index("ITW_CLASH_PlayerTransport_fnc_ThrottleLog", acquire_start)
     acquire = bridge[acquire_start:acquire_end]
