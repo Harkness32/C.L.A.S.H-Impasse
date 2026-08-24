@@ -156,3 +156,17 @@ def test_native_proximity_ferry_is_one_way_and_never_manufactures_a_hal_job():
     assert '"hal-scargo-owns-physical-execution"' in acquire
     assert '"no-hal-transport-contract"' in acquire
     assert "false\n};" in acquire
+
+
+def test_hal_scargo_native_source_really_owns_the_physical_transport_lifecycle():
+    scargo = (
+        ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "SCargo.sqf"
+    ).read_text(encoding="utf-8")
+
+    assert '_GD setVariable [("Busy" + (str _GD)), true];' in scargo
+    assert '[_GD] call RYD_WPdel;' in scargo
+    assert "_wp = [_GD,_Lpos" in scargo
+    assert '_x assignAsCargo _ChosenOne;' in scargo
+    assert '"Return to departure base."' in scargo
+    assert '"Abort Pick Up, RTB"' in scargo
+    assert 'setVariable ["CargoCheckPending" + (str _unitG),false]' in scargo
