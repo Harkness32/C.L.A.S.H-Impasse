@@ -8,6 +8,13 @@ def mission(name: str) -> str:
     return (MISSION / name).read_text(encoding="utf-8")
 
 
+def executable_lines(text: str) -> str:
+    return "\n".join(
+        line for line in text.splitlines()
+        if not line.strip().startswith("//")
+    )
+
+
 def test_hal_transport_audio_is_passive_and_restores_native_boarding_cues():
     audio = mission("ITW_CLASH_HALTransportAudio.sqf")
     loader = mission("ITW_CLASH_HALLogistics.sqf")
@@ -22,7 +29,9 @@ def test_hal_transport_audio_is_passive_and_restores_native_boarding_cues():
     assert '"audio-" + _event' in audio
 
     # This layer is instrumentation/audio only. HAL SCargo remains the sole
-    # movement and physical boarding executor.
+    # movement and physical boarding executor. Check executable code rather
+    # than comments describing the native HAL behavior we observe.
+    executable = executable_lines(audio)
     for forbidden in [
         "assignAsCargo",
         "assignAsDriver",
@@ -35,7 +44,7 @@ def test_hal_transport_audio_is_passive_and_restores_native_boarding_cues():
         "RYD_WPadd",
         "RYD_WPdel",
     ]:
-        assert forbidden not in audio
+        assert forbidden not in executable
 
     assert '[] execVM "ITW_CLASH_HALTransportAudio.sqf";' in loader
     assert "boarding cues are unavailable" in loader
