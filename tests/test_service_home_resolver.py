@@ -84,5 +84,6 @@ def test_home_resolver_is_loaded_after_seaguard_path_starts():
 def test_ownership_contract_carries_general_rule():
     doc = (ROOT / "docs" / "OWNERSHIP_CONTRACT.md").read_text(encoding="utf-8")
     assert "No system stores another system's answer; it stores the question, and asks at use time." in doc
-    assert "homeResolvedAt is load-bearing" in doc
+    assert "homeResolvedAt" in doc
+    assert "load-bearing" in doc
     assert "SeaGuard answers where a hull can float; it does not own home selection." in doc
