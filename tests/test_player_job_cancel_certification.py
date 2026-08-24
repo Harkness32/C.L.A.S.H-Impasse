@@ -29,7 +29,7 @@ def test_seaguard_is_projection_only_and_cannot_clobber_service_home():
 def test_embarked_hal_contract_defers_unlock_until_physical_unlink():
     bridge = source("ITW_CLASH_PlayerTransportNativeBridge.sqf")
 
-    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 4;' in bridge
+    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 5;' in bridge
     assert 'ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier' in bridge
     assert 'alive _x && {vehicle _x == _carrier}' in bridge
     assert '"hal-contract-end-deferred-embarked"' in bridge
@@ -49,6 +49,35 @@ def test_embarked_hal_contract_defers_unlock_until_physical_unlink():
     assert defer_index < clear_lock_index
     assert defer_index < clear_contract_index
     assert ':physical-unlink' in end_body
+
+
+def test_ferry_retask_lock_is_continuously_reconciled_without_corrupting_ownership():
+    bridge = source("ITW_CLASH_PlayerTransportNativeBridge.sqf")
+
+    assert 'ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock' in bridge
+    assert '"hal-retask-lock-reconciled"' in bridge
+    assert 'retaskLockReconciled=true' in bridge
+
+    ensure_start = bridge.index("ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock = {")
+    ensure_stop = bridge.index("ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {", ensure_start)
+    ensure = bridge[ensure_start:ensure_stop]
+
+    for name in ("RydHQ_NoAttack", "RydHQ_NoRecon", "RydHQ_NoDef"):
+        assert f'"{name}"' in ensure
+    assert 'ITW_CLASH_TransportRetaskOwned' not in ensure
+    assert '_members pushBackUnique _group;' in ensure
+
+    monitor_start = bridge.index("ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {")
+    monitor_stop = bridge.index("ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {", monitor_start)
+    monitor = bridge[monitor_start:monitor_stop]
+    assert '"active-contract-watch"' in monitor
+    assert 'ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock' in monitor
+
+    end_start = bridge.index("ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {")
+    end_stop = bridge.index("ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {", end_start)
+    end_body = bridge[end_start:end_stop]
+    assert '"deferred-unlink-watch"' in end_body
+    assert 'ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock' in end_body
 
 
 def test_leader_cancel_gate_survives_native_action_binder_failure():
