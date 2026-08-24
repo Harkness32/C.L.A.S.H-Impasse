@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exitWith {false};
 
-ITW_CLASH_PlayerTransportNativeBridgeVersion = 2;
+ITW_CLASH_PlayerTransportNativeBridgeVersion = 3;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
@@ -148,9 +148,9 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
     };
 };
 
-// Replace the v3 demand recorder with a passive HAL-owned contract observer.
-// The retask lock blocks new tactical jobs while SCargo executes its existing
-// request; no HAL membership, Busy state, waypoint or cargo variable is stolen.
+// Replace the authority-layer demand recorder with a passive HAL-owned contract
+// observer. Retask protection is planning-only: HAL membership, Busy state,
+// waypoints and cargo variables remain entirely under SCargo.
 ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
     params ["_group","_hq","_destination",["_mode","AUTO"]];
     if (isNull _group || {isNull _hq} || {_destination isEqualTo []}) exitWith {false};
@@ -197,15 +197,14 @@ ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
     true
 };
 
-// Standing Impasse delivery squads may still use the old authority lease. Any
-// ordinary group with a HAL contract is explicitly rejected here: HAL_SCargo is
-// already the sole physical executor for that contract.
-ITW_CLASH_PlayerTransport_fnc_AcquireHALOwnedBase = ITW_CLASH_PlayerTransport_fnc_Acquire;
+// The legacy authority function is now a one-way gate. Standing Impasse delivery
+// squads may still lease their own physical ferry. Ordinary HAL cargo never does.
+ITW_CLASH_PlayerTransport_fnc_AcquireDeliveryBase = ITW_CLASH_PlayerTransport_fnc_Acquire;
 ITW_CLASH_PlayerTransport_fnc_Acquire = {
     params ["_group",["_vehicle",objNull],["_reason","player-ferry-boarding"]];
     if (isNull _group) exitWith {false};
     if (_group getVariable ["itwDelivery",false]) exitWith {
-        _this call ITW_CLASH_PlayerTransport_fnc_AcquireHALOwnedBase
+        _this call ITW_CLASH_PlayerTransport_fnc_AcquireDeliveryBase
     };
 
     private _contract = [_group] call ITW_CLASH_PlayerTransport_fnc_GetContract;
