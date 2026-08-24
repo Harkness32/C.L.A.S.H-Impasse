@@ -92,8 +92,6 @@ def test_player_hal_carrier_start_is_written_only_by_service_home_authority():
     assert '_group setVariable ["ITW_CLASH_ServiceHome",+_position];' in resolver
     assert 'transientGroupWriteThrough=true' in resolver
 
-    # PlayerCarrierHome requests the answer. It is not another START writer and
-    # does not register the player's aircraft into the persistent service pool.
     assert '_group setVariable ["START" + str _group,+_position];' not in home
     assert 'ITW_CLASH_Service_fnc_RegisterPhysical' not in home
     assert 'ITW_CLASH_ServicePool pushBack' not in home
@@ -112,9 +110,16 @@ def test_native_scargo_has_two_player_rtb_shapes_and_no_live_completion_path():
 
     assert '"Abort Pick Up, RTB"' in scargo
     assert '"Return To Base"' in scargo
-    assert scargo.count('[_task,"SUCCEEDED",true] call BIS_fnc_taskSetState') >= 2
-    assert '//if not (_task isEqualTo taskNull) then {[_task,"SUCCEEDED",true] call BIS_fnc_taskSetState};' in scargo
-    assert '//if not (_task isEqualTo taskNull) then {[_task,"SUCCEEDED",true] call BIS_fnc_taskSetState};' in scargo
+    completion = '[_task,"SUCCEEDED",true] call BIS_fnc_taskSetState'
+    assert scargo.count(completion) >= 2
+    live_completion_lines = [
+        line.strip() for line in scargo.splitlines()
+        if completion in line and not line.lstrip().startswith("//")
+    ]
+    assert live_completion_lines == []
+    assert '/*\n\t_GD Move _LandPos;' in scargo
+    assert '((_cnt < 1) and (((getpos _ChosenOne) select 2) < 1))' in scargo
+    assert 'if (abs (speed _ChosenOne) < 0.5) then {_timer = _timer + 5};' in scargo
 
 
 def test_player_air_transport_rtb_covers_abort_delivery_landing_and_timeout():
@@ -146,14 +151,11 @@ def test_player_air_transport_rtb_covers_abort_delivery_landing_and_timeout():
     assert 'cargoUnlinked=true' in rtb
     assert 'stoppedTimeout=%3' in rtb
 
-    # The compatibility terminal hook must actually refresh persistent
-    # subscriptions/HAL inclusion after the native Busy flag has already cleared.
     assert 'ITW_CLASH_PlayerTasks_fnc_SyncAll = {' in home
     assert 'ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState' in home
     assert 'ITW_CLASH_DualHAL_fnc_SyncIncluded' in home
     assert 'call ITW_CLASH_PlayerTasks_fnc_SyncAll;' in rtb
 
-    # Neither layer may become a second movement executor.
     forbidden = (
         "RYD_WPadd",
         "addWaypoint",
