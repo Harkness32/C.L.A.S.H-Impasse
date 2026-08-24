@@ -191,4 +191,13 @@ if (fileExists "ITW_CLASH_SeaGenerationGuard.sqf") then {
     diag_log "CLASH BOOT | WARNING | sea-generation-guard-missing | native sea staging retained";
 };
 
+// HAL SCargo owns physical transport execution. This observer restores the
+// native Impasse boarding audio cues from HAL's real seat-assignment/embark
+// state without issuing movement, waypoint, or GET IN/GET OUT commands.
+if (fileExists "ITW_CLASH_HALTransportAudio.sqf") then {
+    [] execVM "ITW_CLASH_HALTransportAudio.sqf";
+} else {
+    diag_log "CLASH BOOT | WARNING | hal-transport-audio-missing | HAL transport remains functional but boarding cues are unavailable";
+};
+
 true
