@@ -18,8 +18,6 @@ def test_service_identity_is_an_explicit_per_deployment_lease_not_shared_vehdef_
     assert "_role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}" in authority
     assert '"no-explicit-service-lease"' in authority
 
-    # vehDef is a shared faction/class definition. Per-deployment transport state
-    # must never be written into its DUAL-as-transport field.
     assert "_vehDef set [ITW_VEH_IS_DUAL_AS_TRANSPORT" not in authority
     assert "_vehDef set [ITW_VEH_ROLE" not in authority
 
@@ -55,14 +53,11 @@ def test_service_quarantine_guards_recon_attack_and_defense_execution():
     execution = mission("ITW_CLASH_ServiceExecutionGuards.sqf")
     sea = mission("ITW_CLASH_SeaGenerationGuard.sqf")
 
-    # Recon execution is already owned by ServiceStability.
     assert "HAL_GoRecon =" in stability
     assert "HAL_GoDefRecon =" in stability
     assert '"RECON","offensive"' in stability
     assert '"RECON","defensive"' in stability
 
-    # Every canonical HAL attack executor is guarded, with flank/SF guarded when
-    # those optional functions are present in the loaded HAL build.
     for fn in [
         "HAL_GoAttInf", "HAL_GoAttArmor", "HAL_GoAttSniper",
         "HAL_GoAttAir", "HAL_GoAttAirCAP", "HAL_GoAttNaval",
@@ -106,9 +101,6 @@ def test_hal_scargo_is_the_only_physical_executor_for_hal_transport_contracts():
     assert '"hal-contract-embarked"' in bridge
     assert '"hal-contract-ended"' in bridge
     assert "ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract" in bridge
-
-    # The old duplicate physical executor must stay gone. HAL SCargo already owns
-    # pickup movement, boarding, transport, dismount and RTB.
     assert "ITW_CLASH_PlayerTransport_fnc_ExecuteHALContract" not in bridge
     assert (
         "ITW_AllyLoadGrpIntoVeh = "
@@ -127,8 +119,6 @@ def test_hal_scargo_is_the_only_physical_executor_for_hal_transport_contracts():
     assert "ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL" not in observer
     assert 'setVariable ["ITW_CLASH_PlayerTransportContract",_contract]' in observer
 
-    # The authority module itself must also be observer-only for ordinary HAL
-    # cargo. Destructive ownership removal exists only behind an itwDelivery gate.
     acquire_start = authority.index("ITW_CLASH_PlayerTransport_fnc_Acquire =")
     acquire_end = authority.index("ITW_CLASH_PlayerTransport_fnc_ReserveDelivery", acquire_start)
     acquire = authority[acquire_start:acquire_end]
@@ -147,9 +137,6 @@ def test_native_proximity_ferry_is_one_way_and_never_manufactures_a_hal_job():
     assert '"halJobManufactured",false' in bridge
     assert '"halContract",false' in bridge
 
-    # HAL-contracted cargo is filtered before native ITW writes objective,
-    # boarding-state or waypoint state. Those mutations remain available only to
-    # a genuine native proximity ferry with no HAL contract.
     contract_filter = bridge.index('if (count _contract > 0) then {')
     native_state = bridge.index('_grp setVariable ["ITW_getInState",0];')
     native_obj = bridge.index("VAR_SET_OBJ_IDX(_grp,_closestObj#ITW_OBJ_INDEX);")
@@ -158,8 +145,6 @@ def test_native_proximity_ferry_is_one_way_and_never_manufactures_a_hal_job():
     assert contract_filter < native_obj
     assert contract_filter < native_wp
 
-    # Acquire is rejection-only for ordinary HAL cargo. The legacy authority path
-    # is retained solely for standing Impasse itwDelivery formations.
     acquire_start = bridge.index("ITW_CLASH_PlayerTransport_fnc_Acquire =")
     acquire_end = bridge.index("ITW_CLASH_PlayerTransport_fnc_ThrottleLog", acquire_start)
     acquire = bridge[acquire_start:acquire_end]
