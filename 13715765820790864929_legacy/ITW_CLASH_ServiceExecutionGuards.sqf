@@ -4,6 +4,15 @@ ITW_CLASH_ServiceExecutionGuardsStarted = true;
 ITW_CLASH_ServiceExecutionGuardsVersion = 1;
 ITW_CLASH_ServiceExecutionGuardsReady = false;
 
+// ServiceExecutionGuards is launched by SeaGuard. Start the home resolver here;
+// it waits for SeaGuardReady before installing, so RTB home authority always
+// composes as Impasse base -> C.L.A.S.H. resolver -> SeaGuard water projection.
+if (fileExists "ITW_CLASH_ServiceHomeResolver.sqf") then {
+    [] execVM "ITW_CLASH_ServiceHomeResolver.sqf";
+} else {
+    diag_log "CLASH BOOT | WARNING | service-home-resolver-missing | legacy START/home RTB retained";
+};
+
 ITW_CLASH_ServiceExecution_fnc_Log = {
     params ["_event",["_payload",[]]];
     if (!isNil "ITW_CLASH_ServiceStability_fnc_Log") then {
