@@ -175,27 +175,27 @@ ITW_CLASH_ServiceHome_fnc_Resolve = {
         if (_baseIndex >= 0) then {_method = "nearest-base"};
     };
 
+    private _baseResolution = createHashMap;
     if (_baseIndex >= 0) then {
         private _position = [_baseIndex,_mode] call ITW_CLASH_ServiceHome_fnc_BasePoint;
         if ([_position] call ITW_CLASH_ServiceHome_fnc_PositionValid) then {
             if (_mode == "SEA" || {!isNull _veh && {_veh isKindOf "Ship"}}) then {
                 private _water = [_position,[]] call ITW_CLASH_SeaGuard_fnc_ResolveWaterPosition;
-                if (_water isNotEqualTo []) exitWith {
-                    createHashMapFromArray [
+                if (_water isNotEqualTo []) then {
+                    _baseResolution = createHashMapFromArray [
                         ["status","RESOLVED"],["baseIndex",_baseIndex],
                         ["method","water-node"],["position",+_water]
-                    ]
+                    ];
                 };
             } else {
-                exitWith {
-                    createHashMapFromArray [
-                        ["status","RESOLVED"],["baseIndex",_baseIndex],
-                        ["method",_method],["position",+_position]
-                    ]
-                };
+                _baseResolution = createHashMapFromArray [
+                    ["status","RESOLVED"],["baseIndex",_baseIndex],
+                    ["method",_method],["position",+_position]
+                ];
             };
         };
     };
+    if (count _baseResolution > 0) exitWith {_baseResolution};
 
     ["no-friendly-base",[
         _entry getOrDefault ["id","?"],_side,_hint,_baseIndex,_mode,+_currentPos
@@ -216,7 +216,10 @@ ITW_CLASH_ServiceHome_fnc_Resolve = {
 
     if (_mode == "SEA" || {!isNull _veh && {_veh isKindOf "Ship"}}) then {
         private _water = [_fallback,[]] call ITW_CLASH_SeaGuard_fnc_ResolveWaterPosition;
-        if (_water isNotEqualTo []) then {_fallback = _water};
+        if (_water isEqualTo []) exitWith {
+            createHashMapFromArray [["status","UNRESOLVED"],["reason","fallback-start-no-water"]]
+        };
+        _fallback = _water;
     };
     createHashMapFromArray [
         ["status","RESOLVED"],["baseIndex",-1],
@@ -242,7 +245,7 @@ ITW_CLASH_ServiceHome_fnc_ResolveAndStore = {
     _entry set ["homeMethod",_method];
     _entry set ["homeResolvedPos",+_position];
     _entry set ["homeResolvedAt",time];
-    _entry set ["home",+_position]; // compatibility field; resolver is its only authoritative writer
+    _entry set ["home",+_position];
     _entry set ["homeAuthority","IMPASSE_BASE_RESOLVER"];
     if (_baseIndex >= 0) then {
         _entry set ["baseHint",_baseIndex];
@@ -260,10 +263,6 @@ ITW_CLASH_ServiceHome_fnc_ResolveAndStore = {
     _resolved
 };
 
-// Preserve lifecycle-v1's deployment-origin heuristics, but never allow a
-// duplicate registration of a live physical asset to overwrite resolver-owned
-// home metadata. The legacy `home` key remains a compatibility field while the
-// asset is DEPLOYED; it becomes authoritative only after ResolveAndStore.
 ITW_CLASH_ServiceHome_fnc_RegisterPhysicalBase = ITW_CLASH_Service_fnc_RegisterPhysical;
 ITW_CLASH_Service_fnc_RegisterPhysical = {
     private _veh = _this param [0,objNull];
@@ -302,8 +301,6 @@ ITW_CLASH_Service_fnc_RegisterPhysical = {
         _entry set ["homeBaseIndex",-1];
         _entry set ["homeMethod",""];
         _entry set ["homeAuthority","UNRESOLVED"];
-        // `home` remains a deployment-origin compatibility value only so the
-        // v1 DEPLOYED monitor can measure task travel. OrderRTB never trusts it.
         if (!isNull _group) then {_group setVariable ["ITW_CLASH_ServiceHome",nil]};
     } else {
         if (_previousResolvedAt > 0 && {
@@ -389,8 +386,6 @@ ITW_CLASH_Service_fnc_ReissueRTB = {
     [_index,"watchdog"] call ITW_CLASH_ServiceHome_fnc_RefreshRTB
 };
 
-// Capture a base hint at explicit service enrollment. This hint is never a home
-// coordinate and is always revalidated against live Impasse ownership at use.
 ITW_CLASH_ServiceHome_fnc_RegisterTransportBase = ITW_CLASH_Checkbook_fnc_RegisterTransport;
 ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     private _veh = _this param [0,objNull];
@@ -434,8 +429,6 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
                 if (_baseIndex >= 0) then {
                     [_veh,_group,_baseIndex,"field-handoff"] call ITW_CLASH_ServiceHome_fnc_SetBaseHint;
                 };
-                // SeaGuard may have written its projected position into the v1
-                // `home` compatibility key. It is not authoritative until RTB.
                 private _poolId = _veh getVariable ["ITW_CLASH_ServicePoolId",""];
                 private _index = [_poolId] call ITW_CLASH_Service_fnc_FindEntry;
                 if (_index >= 0 && {_index < count ITW_CLASH_ServicePool}) then {
@@ -457,8 +450,6 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     _result
 };
 
-// RTB destinations can become invalid while a vehicle is making perfectly good
-// progress. Revalidate on time as well as on the stuck watchdog path.
 [] spawn {
     scriptName "ITW_CLASH_ServiceHomeRevalidationWatch";
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
