@@ -66,21 +66,29 @@ HAL remains the tactical source of truth for whether support is needed and, wher
 
 When HAL exposes or selects a valid requirement, C.L.A.S.H. may publish it into `ITW_CLASH_PlayerDemands` and reserve that exact requirement for a subscribed player. Reservation is an arbitration seam:
 
-- the demand records its player owner;
-- the narrow native target-reservation array is suppressed/reasserted as needed so AI cannot silently execute the same request while the player owns it;
-- the player may remain in preparation state without a short arbitrary equipment timeout;
+- the demand ledger records the player owner;
+- long-lived reservation authority is a C.L.A.S.H.-owned ledger entry/marker or deferred native-call contract, not a HAL HQ-array membership;
+- any native exclusion projection used to keep AI from consuming a reserved demand is either call-scoped and restored immediately or continuously reconciled if it truly must persist;
+- the player may remain in preparation state without a fixed equipment-acquisition deadline, but the reservation must satisfy a progress/liveness lease;
 - capability is re-evaluated at the execution step;
 - completion consumes the reservation;
-- explicit cancellation releases a still-valid requirement back to HAL/another player without changing employment subscriptions;
+- explicit cancellation releases a still-valid requirement without changing employment subscriptions;
+- disconnect/death/unsubscribe/authority loss or preparation-liveness expiry releases still-valid work;
+- a per-demand decline cooldown prevents immediate same-player re-offer;
+- repeated bounces deliberately expose the request to native AI for a fallback window so demand cannot be starved by player arbitration;
 - if the underlying battlefield requirement vanishes, the demand is invalidated rather than requeued.
 
-For native support paths such as ammunition and medical support, the preferred seam is the actual HAL assignment handoff. If HAL is about to invoke an AI executor and an idle subscribed player exists, C.L.A.S.H. can reserve the exact HAL-selected requirement and suppress that one AI execution. If no player can take it, the original native executor runs unchanged.
+For native support paths such as ammunition and medical support, the preferred seam is the native scan and final assignment handoff. If no player owns the request, native execution remains fail-open. If a player owns the request, C.L.A.S.H. excludes that exact target from the synchronous native support scan and restores the original exclusion input immediately afterward. A final `Go*Supp` marker check blocks a same-cycle race without turning supported arrays into long-lived reservation state.
 
 ### Player logistics demand
 
-HAL ammunition need remains represented by `RydHQ_Hollow`; native target reservation remains represented by `RydHQ_ASupportedG`. A demand-first LOGISTICS assignment may be delivered to a player before the player has a sling-capable helicopter.
+HAL ammunition need is discovered through its native ammo-support logic and `RydHQ_Hollow`. A demand-first LOGISTICS assignment may be delivered to a player before the player has a sling-capable helicopter.
 
 - The preparation task states the recipient and required sling capability.
+- The durable player reservation is `ITW_CLASH_PlayerAmmoDemandReservation` on the recipient group plus the demand ledger entry.
+- While the player reservation exists, native `HAL_SuppAmmo` is called with the reserved group temporarily included in `RydHQ_ExReAmmo`; the exact pre-call exclusion list is restored immediately afterward.
+- `RydHQ_ASupportedG` remains native HAL assignment bookkeeping. If C.L.A.S.H. intercepts an already-selected native assignment, it may clear only the assignment marker HAL just wrote as takeover cleanup; it is not the durable player lock.
+- Because `ExReAmmo` suppresses native `RydHQ_Hollow` publication for that reserved target, reserved ammo validity is resolved directly from the selected group's ammo state using the equivalent native need criteria rather than treating absence from `Hollow` as cancellation.
 - Impasse/Checkbook may materialize the ammunition package through the existing `LOGISTICS_PACKAGE_AMMO` provider.
 - When the assigned player later presents a compatible sling-capable helicopter and package, execution hands off to the existing `ITW_CLASH_PlayerTasks_fnc_PlayerAmmoJob` physical sling executor.
 - C.L.A.S.H. does not add a second sling movement executor.
@@ -94,12 +102,16 @@ Native HAL `SuppMed` provides friendly casualty knowledge in `RydHQ_Wounded` and
 
 C.L.A.S.H. may reserve a severe HAL medical requirement for a MEDEVAC subscriber and replace that one native medical-support execution with a player casualty-extraction lifecycle:
 
-1. the player receives the casualty mission regardless of current vehicle;
-2. execution waits until the player reaches the casualty with a grounded/stopped passenger-capable vehicle with sufficient seats;
-3. severe casualties are physically loaded for evacuation;
-4. the destination is resolved against the live friendly service-home/base graph at use time;
-5. casualties are physically unloaded at that live friendly destination;
-6. the demand completes and native medical support becomes available again for any continuing treatment need.
+- the durable reservation is `ITW_CLASH_PlayerMedevacDemandReservation` on the casualty group plus the demand ledger entry;
+- while the reservation exists, native `HAL_SuppMed` is called with that group temporarily added to `RydHQ_ExMedic`, then the original list is restored immediately;
+- `RydHQ_SupportedG` remains native assignment bookkeeping rather than C.L.A.S.H. reservation authority;
+- a same-cycle final handoff guard prevents duplicate native `GoMedSupp` if a native selection raced the new player marker;
+- the player receives the casualty mission regardless of current vehicle;
+- execution waits until the player reaches the casualty with a grounded/stopped passenger-capable vehicle with sufficient seats;
+- severe casualties are physically loaded for evacuation;
+- the destination is resolved against the live friendly service-home/base graph at use time;
+- casualties are physically unloaded at that live friendly destination;
+- the demand completes and native medical support becomes available again for any continuing treatment need.
 
 Enemy GroundMEDEVAC/CASEVAC remains the OPFOR withdrawal/reconstitution system and is not reinterpreted as the BLUFOR player MEDEVAC system.
 
@@ -155,9 +167,24 @@ Native `SuppAmmo` historically re-resolves providers with `assignedVehicle`, whi
 
 ## Planning-array contract
 
-`RydHQ_NoAttack`, `RydHQ_NoRecon`, `RydHQ_NoDef`, `RydHQ_ASupportedG`, `RydHQ_SupportedG`, and similar HAL arrays are projections of authority, not the authority itself. If C.L.A.S.H. reserves an exact tactical demand for a player, the demand ledger owns the reservation; the corresponding HAL-array membership is only the native suppression projection. Cleanup removes only memberships recorded as C.L.A.S.H.-owned.
+Commander-B `HQSitRepB.sqf` periodically reprojects `RydHQB_*` globals onto the HQ object. This is the source of the previously observed roughly cycle-length loss of object-side memberships such as:
 
-A live ferry retask lock likewise owns explicit C.L.A.S.H. lock state and continuously reasserts the corresponding HAL-array memberships. Cleanup removes only memberships recorded as C.L.A.S.H.-owned.
+- `RydHQ_NoAttack`;
+- `RydHQ_NoRecon`;
+- `RydHQ_NoDef`;
+- `RydHQ_ASupportedG`;
+- `RydHQ_SupportedG`.
+
+Therefore these arrays are **projections of authority, not the authority itself**.
+
+- Durable player ammo/MEDEVAC reservation does not live in `ASupportedG`/`SupportedG`; it lives in demand markers and the ledger.
+- Ammo/medical native exclusions are call-scoped through `ExReAmmo`/`ExMedic` and restored synchronously.
+- If an already-selected native support assignment is taken over, clearing the just-written supported-array membership is assignment-handoff cleanup only.
+- A live ferry retask lock owns explicit C.L.A.S.H. lock state and continuously reasserts `NoAttack`/`NoRecon`/`NoDef` because those memberships must remain visible to HAL during the physical ferry lifecycle.
+- Any future long-lived projection that depends on a Commander-B array must either mirror the correct `RydHQB_*` source or continuously reconcile the HQ-object membership with explicit ownership telemetry.
+- Cleanup removes only memberships/markers recorded as C.L.A.S.H.-owned.
+
+A one-time object-array write is never accepted as durable cross-system authority.
 
 ## Review test
 
@@ -165,4 +192,4 @@ For every future patch that crosses Impasse/HAL/C.L.A.S.H. authority, ask:
 
 > Are we storing the authority's question/reference and resolving the answer when it is needed, or are we caching an answer that can stop being true?
 
-The DUAL service misclassification, shadow vehicle-count model, player-ferry ownership abort, stale service RTB home, hanging native player RTB task, player logistics `assignedVehicle` mismatch, and capability-gated player dispatch were all variants of the latter failure mode.
+The DUAL service misclassification, shadow vehicle-count model, player-ferry ownership abort, stale service RTB home, hanging native player RTB task, player logistics `assignedVehicle` mismatch, capability-gated player dispatch, and SitRep-overwritten planning locks were all variants of the latter failure mode.
