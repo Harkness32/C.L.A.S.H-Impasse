@@ -96,30 +96,63 @@ def test_virtual_pool_is_entitlement_while_physical_count_stays_native():
     assert "ITW_TICKET_REDUCE(_vehDef)" not in stability
 
 
-def test_native_proximity_loading_cannot_manufacture_a_hal_transport_job():
-    authority = mission("ITW_CLASH_PlayerTransportAuthority.sqf")
+def test_hal_scargo_is_the_only_physical_executor_for_hal_transport_contracts():
     bridge = mission("ITW_CLASH_PlayerTransportNativeBridge.sqf")
 
-    assert '"native-proximity-rejected"' in authority
-    assert '"no-hal-transport-contract"' in authority
-    assert '"HAL_SCargo"' in authority
-    assert '"hal-demand-observed"' in authority
-    assert '"hal-contract-acquired"' in authority
+    assert '"hal-owns-physical-execution"' in bridge
+    assert '"hal-scargo-owns-physical-execution"' in bridge
+    assert '"hal-carrier-selected"' in bridge
+    assert '"hal-contract-embarked"' in bridge
+    assert '"hal-contract-ended"' in bridge
+    assert "ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract" in bridge
 
-    acquire = '[_grp,_veh,"player-ferry-boarding"] call\n                        ITW_CLASH_PlayerTransport_fnc_Acquire;'
-    state_zero = '_grp setVariable ["ITW_getInState",0];'
-    assert acquire in bridge
-    assert state_zero in bridge
-    assert bridge.index(acquire) < bridge.index(state_zero)
+    # The old duplicate physical executor must stay gone. HAL SCargo already owns
+    # pickup movement, boarding, transport, dismount and RTB.
+    assert "ITW_CLASH_PlayerTransport_fnc_ExecuteHALContract" not in bridge
+    assert (
+        "ITW_AllyLoadGrpIntoVeh = "
+        "ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh;"
+    ) in bridge
 
-    # The HAL-contract branch must not run the native objective/waypoint rewrite;
-    # those mutations belong only to the non-HAL standing-delivery branch.
-    hal_start = bridge.index("if (_halContract) then {")
-    native_else = bridge.index("} else {", hal_start)
-    hal_block = bridge[hal_start:native_else]
-    assert "_halContractSelected = true;" in hal_block
-    assert "VAR_SET_OBJ_IDX" not in hal_block
-    assert "ITW_DELETE_WAYPOINTS" not in hal_block
+    observer_start = bridge.index(
+        "ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand ="
+    )
+    observer_end = bridge.index(
+        "ITW_CLASH_PlayerTransport_fnc_AcquireHALOwnedBase",
+        observer_start,
+    )
+    observer = bridge[observer_start:observer_end]
+    assert "ITW_CLASH_PlayerTransport_fnc_ApplyRetaskLock" in observer
+    assert "ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL" not in observer
+    assert 'setVariable ["ITW_CLASH_PlayerTransportContract",_contract]' in observer
 
-    assert "ITW_CLASH_PlayerTransport_fnc_GetContractDestination" in bridge
-    assert '"player-ferry-delivered"' in bridge
+
+def test_native_proximity_ferry_is_one_way_and_never_manufactures_a_hal_job():
+    bridge = mission("ITW_CLASH_PlayerTransportNativeBridge.sqf")
+
+    assert '"native-proximity-suppressed-hal-busy-carrier"' in bridge
+    assert '"native-proximity-skipped-hal-contract"' in bridge
+    assert '"native-proximity-itw-ferry"' in bridge
+    assert '"halJobManufactured",false' in bridge
+    assert '"halContract",false' in bridge
+
+    # HAL-contracted cargo is filtered before native ITW writes objective,
+    # boarding-state or waypoint state. Those mutations remain available only to
+    # a genuine native proximity ferry with no HAL contract.
+    contract_filter = bridge.index('if (count _contract > 0) then {')
+    native_state = bridge.index('_grp setVariable ["ITW_getInState",0];')
+    native_obj = bridge.index("VAR_SET_OBJ_IDX(_grp,_closestObj#ITW_OBJ_INDEX);")
+    native_wp = bridge.index("ITW_DELETE_WAYPOINTS(_grp);")
+    assert contract_filter < native_state
+    assert contract_filter < native_obj
+    assert contract_filter < native_wp
+
+    # Acquire is now rejection-only for ordinary HAL cargo. The legacy authority
+    # path is retained solely for standing Impasse itwDelivery formations.
+    acquire_start = bridge.index("ITW_CLASH_PlayerTransport_fnc_Acquire =")
+    acquire_end = bridge.index("ITW_CLASH_PlayerTransport_fnc_ThrottleLog", acquire_start)
+    acquire = bridge[acquire_start:acquire_end]
+    assert 'getVariable ["itwDelivery",false]' in acquire
+    assert '"hal-scargo-owns-physical-execution"' in acquire
+    assert '"no-hal-transport-contract"' in acquire
+    assert "false\n};" in acquire
