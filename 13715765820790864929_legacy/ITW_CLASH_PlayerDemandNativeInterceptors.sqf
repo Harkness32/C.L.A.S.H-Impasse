@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 3;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 4;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -26,35 +26,15 @@ if (fileExists "ITW_CLASH_PlayerDemandAmmoValidityHardening.sqf") then {
     diag_log "CLASH BOOT | player-demand-ammo-validity-hardening-missing | native interceptors remain fail-open";
 };
 
-ITW_CLASH_PlayerDemandNative_fnc_FindCandidate = {
-    params ["_channel"];
-    private _found = grpNull;
-    {
-        if (isNull _x) then {continue};
-        if ([_x,_channel] call ITW_CLASH_PlayerTasks_fnc_CanAcceptJob) exitWith {
-            _found = _x;
-        };
-    } forEach +ITW_CLASH_PlayerTaskGroups;
-    _found
-};
-
 // HAL has already selected this ammo target and inserted the target group into
-// ASupportedG immediately before calling GoAmmoSupp. If C.L.A.S.H. takes over
-// that exact assignment, remove only that just-created native assignment marker.
-// This is handoff cleanup, not the long-lived player reservation mechanism.
+// ASupportedG immediately before calling GoAmmoSupp. Publish/find the exact
+// demand first, then use the demand-specific dispatcher so decline cooldowns and
+// AI fallback windows apply equally to passive offers and native takeover.
 ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo = {
     params ["_hq","_target"];
     if (isNull _hq || {isNull _target}) exitWith {false};
-    private _candidate = ["LOGISTICS"] call ITW_CLASH_PlayerDemandNative_fnc_FindCandidate;
-    if (isNull _candidate) exitWith {false};
-
     private _targetGroup = [_target] call ITW_CLASH_PlayerDemand_fnc_TargetGroup;
     if (isNull _targetGroup) exitWith {false};
-    private _supportedBefore = +(_hq getVariable ["RydHQ_ASupportedG",[]]);
-    private _nativeOwned = _targetGroup in _supportedBefore;
-    if (_nativeOwned) then {
-        _hq setVariable ["RydHQ_ASupportedG",_supportedBefore - [_targetGroup]];
-    };
 
     private _name = [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId;
     private _demandId = [
@@ -65,10 +45,23 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo = {
         "Acquire a sling-capable helicopter that can lift the ammunition package.",
         getPosATL _target
     ] call ITW_CLASH_PlayerDemand_fnc_Publish;
+    if (_demandId isEqualTo "") exitWith {false};
 
-    private _reserved = _demandId isNotEqualTo "" && {
-        [_demandId,_candidate] call ITW_CLASH_PlayerDemand_fnc_Reserve
+    private _candidate = [_demandId] call ITW_CLASH_PlayerDemand_fnc_FindDispatchGroup;
+    if (isNull _candidate) exitWith {
+        ["native-takeover-deferred-to-ai",[
+            _demandId,"LOGISTICS_AMMO",_name,"no-demand-eligible-player"
+        ]] call ITW_CLASH_PlayerDemand_fnc_Log;
+        false
     };
+
+    private _supportedBefore = +(_hq getVariable ["RydHQ_ASupportedG",[]]);
+    private _nativeOwned = _targetGroup in _supportedBefore;
+    if (_nativeOwned) then {
+        _hq setVariable ["RydHQ_ASupportedG",_supportedBefore - [_targetGroup]];
+    };
+
+    private _reserved = [_demandId,_candidate] call ITW_CLASH_PlayerDemand_fnc_Reserve;
     if (!_reserved && {_nativeOwned}) then {
         private _restore = +(_hq getVariable ["RydHQ_ASupportedG",[]]);
         _restore pushBackUnique _targetGroup;
@@ -91,8 +84,6 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeMedevac = {
     params ["_hq","_casualty"];
     if (isNull _hq || {isNull _casualty}) exitWith {false};
     if !([_casualty] call ITW_CLASH_PlayerDemand_fnc_IsSevereCasualty) exitWith {false};
-    private _candidate = ["MEDEVAC"] call ITW_CLASH_PlayerDemandNative_fnc_FindCandidate;
-    if (isNull _candidate) exitWith {false};
 
     private _targetGroup = group _casualty;
     if (isNull _targetGroup) exitWith {false};
@@ -100,12 +91,6 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeMedevac = {
     if (_deliveredAt >= 0 && {
         time - _deliveredAt < ITW_CLASH_PlayerDemandMedevacDeliveredCooldown
     }) exitWith {false};
-
-    private _supportedBefore = +(_hq getVariable ["RydHQ_SupportedG",[]]);
-    private _nativeOwned = _targetGroup in _supportedBefore;
-    if (_nativeOwned) then {
-        _hq setVariable ["RydHQ_SupportedG",_supportedBefore - [_targetGroup]];
-    };
 
     private _name = [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId;
     private _demandId = [
@@ -116,10 +101,23 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeMedevac = {
         "Acquire any living movable vehicle with sufficient passenger capacity for the evacuees.",
         getPosATL _casualty
     ] call ITW_CLASH_PlayerDemand_fnc_Publish;
+    if (_demandId isEqualTo "") exitWith {false};
 
-    private _reserved = _demandId isNotEqualTo "" && {
-        [_demandId,_candidate] call ITW_CLASH_PlayerDemand_fnc_Reserve
+    private _candidate = [_demandId] call ITW_CLASH_PlayerDemand_fnc_FindDispatchGroup;
+    if (isNull _candidate) exitWith {
+        ["native-takeover-deferred-to-ai",[
+            _demandId,"MEDEVAC_SEVERE",_name,"no-demand-eligible-player"
+        ]] call ITW_CLASH_PlayerDemand_fnc_Log;
+        false
     };
+
+    private _supportedBefore = +(_hq getVariable ["RydHQ_SupportedG",[]]);
+    private _nativeOwned = _targetGroup in _supportedBefore;
+    if (_nativeOwned) then {
+        _hq setVariable ["RydHQ_SupportedG",_supportedBefore - [_targetGroup]];
+    };
+
+    private _reserved = [_demandId,_candidate] call ITW_CLASH_PlayerDemand_fnc_Reserve;
     if (!_reserved && {_nativeOwned}) then {
         private _restore = +(_hq getVariable ["RydHQ_SupportedG",[]]);
         _restore pushBackUnique _targetGroup;
@@ -254,7 +252,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
 
     ITW_CLASH_PlayerDemandNativeInterceptorsReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true markerAuthority=true callScopedNativeExclusion=true sameCycleRaceGuard=true specialistExecutionOwnership=true nativeFailOpen=true",
+        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true callScopedNativeExclusion=true sameCycleRaceGuard=true specialistExecutionOwnership=true nativeFailOpen=true",
         ITW_CLASH_PlayerDemandNativeInterceptorsVersion
     ];
 
