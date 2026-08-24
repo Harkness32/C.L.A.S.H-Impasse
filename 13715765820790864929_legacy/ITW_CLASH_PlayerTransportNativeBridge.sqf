@@ -148,9 +148,6 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
     };
 };
 
-// Replace the authority-layer demand recorder with a passive HAL-owned contract
-// observer. Retask protection is planning-only: HAL membership, Busy state,
-// waypoints and cargo variables remain entirely under SCargo.
 ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
     params ["_group","_hq","_destination",["_mode","AUTO"]];
     if (isNull _group || {isNull _hq} || {_destination isEqualTo []}) exitWith {false};
@@ -197,8 +194,6 @@ ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
     true
 };
 
-// The legacy authority function is now a one-way gate. Standing Impasse delivery
-// squads may still lease their own physical ferry. Ordinary HAL cargo never does.
 ITW_CLASH_PlayerTransport_fnc_AcquireDeliveryBase = ITW_CLASH_PlayerTransport_fnc_Acquire;
 ITW_CLASH_PlayerTransport_fnc_Acquire = {
     params ["_group",["_vehicle",objNull],["_reason","player-ferry-boarding"]];
@@ -231,12 +226,6 @@ ITW_CLASH_PlayerTransport_fnc_ThrottleLog = {
     true
 };
 
-/*
-    Preserve native Impasse proximity ferries for idle players, but make the
-    seam one-way: a player already occupied by HAL is invisible to this manager,
-    and cargo currently owned by HAL_SCargo is never selected. Thus an ITW ferry
-    cannot cancel, duplicate or manufacture a HAL transport job.
-*/
 ITW_AllyLoadIntoVehManager = {
     scriptName "ITW_AllyLoadIntoVehManager_CLASH";
     while {!ITW_GameOver} do {
@@ -349,8 +338,6 @@ ITW_AllyLoadIntoVehManager = {
     };
 };
 
-// Native Impasse remains the sole executor for native ITW proximity ferries.
-// HAL_SCargo remains the sole executor for HAL cargo requests.
 ITW_AllyLoadGrpIntoVeh = ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh;
 
 ITW_CLASH_AllyTransportFinalizationWindow = false;
