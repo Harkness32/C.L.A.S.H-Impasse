@@ -47,3 +47,4 @@ jobs:
           tests/test_player_demand_native_takeover_policy.py
           tests/test_player_task_requests.py
           tests/test_player_task_request_native_contract.py
+          tests/test_player_task_request_strike_recon.py
