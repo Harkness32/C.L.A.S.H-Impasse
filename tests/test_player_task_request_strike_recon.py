@@ -1,0 +1,146 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+MISSION = ROOT / "13715765820790864929_legacy"
+NATIVE_ORDERS = ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "HQOrders.sqf"
+
+
+def _text(name: str) -> str:
+    return (MISSION / name).read_text(encoding="utf-8")
+
+
+def _block(text: str, start: str, end: str) -> str:
+    a = text.index(start)
+    b = text.index(end, a)
+    return text[a:b]
+
+
+def test_strike_uses_only_hal_known_enemy_picture_and_hal_taxonomy():
+    text = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+
+    assert 'getVariable ["RydHQ_KnEnemiesG",[]]' in text
+    assert 'getVariable ["RydHQ_KnEnemies",[]]' in text
+    for key in (
+        "RydHQ_EnHArmorG",
+        "RydHQ_EnMArmorG",
+        "RydHQ_EnLArmorG",
+        "RydHQ_EnLArmorATG",
+        "RydHQ_EnInfG",
+        "RydHQ_EnStaticG",
+        "RydHQ_EnCarsG",
+    ):
+        assert key in text
+
+    for forbidden in ("allUnits", "nearEntities", "nearestObjects", "reveal "):
+        assert forbidden not in text
+
+
+def test_strike_reservation_is_player_job_only_and_does_not_block_hal_combat():
+    text = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+
+    assert "ITW_CLASH_PlayerStrikeReservation" in text
+    assert "ITW_CLASH_PlayerStrikeJobId" in text
+    assert "other friendly forces may engage the same enemy" in text
+    for forbidden in (
+        'setVariable ["RydHQ_NoAttack"',
+        'setVariable ["RydHQ_NoRecon"',
+        'setVariable ["RydHQ_NoDef"',
+        'setVariable ["Unable",true',
+    ):
+        assert forbidden not in text
+
+
+def test_strike_uses_native_nearest_known_threat_heuristic_after_class_filter():
+    adapter = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+    native = NATIVE_ORDERS.read_text(encoding="utf-8", errors="ignore")
+
+    native_nearest = _block(native, '_HQ setVariable ["RydHQ_NearestE",ObjNull];', "_ReconAv = [];")
+    assert 'getVariable ["RydHQ_KnEnemiesG",[]]' in native_nearest
+    assert 'setVariable ["RydHQ_NearestE",_x]' in native_nearest
+    assert "distance _vHQ" in native_nearest
+
+    selector = _block(
+        adapter,
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_SelectTarget = {",
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_Request = {",
+    )
+    assert "distance2D _hqVehicle" in selector
+    assert "random" not in selector.lower()
+    assert "rating" not in selector.lower()
+
+
+def test_strike_is_fixed_marker_observer_and_reward_authorization_only():
+    text = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+
+    assert '["targetPosition",+_targetPosition]' in text
+    assert '"PLAYER_TASK_REWARD_AUTHORIZED"' in text
+    assert '["rewardClass","STRIKE"]' in text
+    assert "setPos" not in text
+    assert "setMarkerPos" not in text
+    assert "addScore" not in text
+    assert "money" not in text.lower()
+
+
+def test_recon_history_can_only_remember_contacts_hal_previously_knew():
+    text = _text("ITW_CLASH_PlayerTaskRequestRecon.sqf")
+
+    history = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequestRecon_fnc_KnownGroups = {",
+        "ITW_CLASH_PlayerTaskRequestRecon_fnc_PlayerKnowledge = {",
+    )
+    assert 'getVariable ["RydHQ_KnEnemiesG",[]]' in history
+    assert 'getVariable ["RydHQ_KnEnemies",[]]' in history
+    assert "lastKnownPos" in history
+    assert "lostAt" in history
+    for forbidden in ("allUnits", "nearEntities", "nearestObjects", "reveal "):
+        assert forbidden not in text
+
+
+def test_recon_is_vehicle_agnostic_and_has_no_recon_variant_taxonomy():
+    text = _text("ITW_CLASH_PlayerTaskRequestRecon.sqf")
+
+    request = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequestRecon_fnc_Request = {",
+        "[] spawn {",
+    )
+    for forbidden in (
+        "GetEmploymentVehicle",
+        "HasPassengerCapacity",
+        "isKindOf \"Air\"",
+        "isKindOf \"LandVehicle\"",
+        "SOF",
+        "ARMORED_RECON",
+        "FORCE_RECON",
+        "IsSubscribed",
+    ):
+        assert forbidden not in request
+    assert '["requestType","RECON"]' in request
+
+
+def test_recon_success_requires_player_observation_and_hal_reacquisition():
+    text = _text("ITW_CLASH_PlayerTaskRequestRecon.sqf")
+    monitor = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequestRecon_fnc_Monitor = {",
+        "ITW_CLASH_PlayerTaskRequestRecon_fnc_SelectRecord = {",
+    )
+
+    assert "knowsAbout" in text
+    assert "_playerKnowledge >= ITW_CLASH_PlayerReconKnowledgeThreshold" in monitor
+    assert "&& {_halKnows}" in monitor
+    assert '"hal-intel-reacquired"' in monitor
+    assert '"contact-reacquired-by-other-friendly"' in monitor
+    assert "killed" not in monitor.lower()
+
+
+def test_recon_task_uses_frozen_last_known_marker_and_authorizes_reward_only_on_success():
+    text = _text("ITW_CLASH_PlayerTaskRequestRecon.sqf")
+
+    assert '["lastKnownPosition",+_lastKnownPos]' in text
+    assert "The marker is the last legitimate HAL position and will not track the target." in text
+    assert '"PLAYER_TASK_REWARD_AUTHORIZED"' in text
+    assert '["rewardClass","RECON"]' in text
+    assert "setMarkerPos" not in text
+    assert "addScore" not in text
