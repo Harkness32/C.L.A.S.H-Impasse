@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceHomeResolverStarted",false]) exitWith {true};
 ITW_CLASH_ServiceHomeResolverStarted = true;
-ITW_CLASH_ServiceHomeResolverVersion = 1;
+ITW_CLASH_ServiceHomeResolverVersion = 2;
 ITW_CLASH_ServiceHomeResolverReady = false;
 ITW_CLASH_ServiceHomeRevalidateInterval = missionNamespace getVariable [
     "ITW_CLASH_ServiceHomeRevalidateInterval",120
@@ -225,6 +225,58 @@ ITW_CLASH_ServiceHome_fnc_Resolve = {
         ["status","RESOLVED"],["baseIndex",-1],
         ["method","fallback-start"],["position",+_fallback]
     ]
+};
+
+/*
+    Transient groups such as player-flown HAL carriers are not service-pool
+    assets, but HAL still consumes START+str(group) as its RTB input. Keep the
+    live Impasse base resolver as the sole writer of that shared answer.
+*/
+ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup = {
+    params ["_group","_veh",["_reason","transient"]];
+    if (isNull _group || {isNull _veh}) exitWith {
+        createHashMapFromArray [["status","UNRESOLVED"],["reason","null-transient"]]
+    };
+
+    private _mode = if (_veh isKindOf "Ship") then {"SEA"} else {
+        if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"}
+    };
+    private _hint = _veh getVariable ["ITW_CLASH_ServiceBaseHint",-1];
+    if (_hint < 0) then {
+        _hint = _group getVariable ["ITW_CLASH_ServiceBaseHint",-1];
+    };
+    private _entry = createHashMapFromArray [
+        ["id","TRANSIENT-" + str _group],
+        ["side",side _group],
+        ["mode",_mode],
+        ["vehicle",_veh],
+        ["group",_group],
+        ["baseHint",_hint]
+    ];
+
+    private _resolved = [_entry,getPosATL _veh] call ITW_CLASH_ServiceHome_fnc_Resolve;
+    if ((_resolved getOrDefault ["status",""]) != "RESOLVED") exitWith {
+        ["transient-unresolved",[
+            str _group,typeOf _veh,_mode,_reason,
+            _resolved getOrDefault ["reason","unknown"]
+        ]] call ITW_CLASH_ServiceHome_fnc_Log;
+        _resolved
+    };
+
+    private _position = +(_resolved get "position");
+    private _baseIndex = _resolved getOrDefault ["baseIndex",-1];
+    private _method = _resolved getOrDefault ["method","unknown"];
+    if (_baseIndex >= 0) then {
+        [_veh,_group,_baseIndex,"transient:" + _reason] call
+            ITW_CLASH_ServiceHome_fnc_SetBaseHint;
+    };
+
+    _group setVariable ["START" + str _group,+_position];
+    _group setVariable ["ITW_CLASH_ServiceHome",+_position];
+    ["transient-resolved",[
+        str _group,typeOf _veh,_baseIndex,_method,+_position,_reason
+    ]] call ITW_CLASH_ServiceHome_fnc_Log;
+    _resolved
 };
 
 ITW_CLASH_ServiceHome_fnc_ResolveAndStore = {
@@ -469,7 +521,7 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
 
 ITW_CLASH_ServiceHomeResolverReady = true;
 diag_log format [
-    "CLASH BOOT | service-home-resolver-ready | version=%1 liveImpasseBases=true baseHintOnly=true rtbResolveAtUse=true periodicRevalidate=%2 changeThreshold=%3 seaGuardProjectionOnly=true startWriteThrough=true",
+    "CLASH BOOT | service-home-resolver-ready | version=%1 liveImpasseBases=true baseHintOnly=true rtbResolveAtUse=true periodicRevalidate=%2 changeThreshold=%3 seaGuardProjectionOnly=true startWriteThrough=true transientGroupWriteThrough=true",
     ITW_CLASH_ServiceHomeResolverVersion,
     ITW_CLASH_ServiceHomeRevalidateInterval,
     ITW_CLASH_ServiceHomeChangeThreshold
