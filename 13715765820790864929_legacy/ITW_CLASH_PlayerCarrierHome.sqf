@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerCarrierHomeStarted",false]) e
 
 ITW_CLASH_PlayerCarrierHomeStarted = true;
 ITW_CLASH_PlayerCarrierHomeReady = false;
-ITW_CLASH_PlayerCarrierHomeVersion = 2;
+ITW_CLASH_PlayerCarrierHomeVersion = 3;
 
 ITW_CLASH_PlayerCarrierHome_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -69,6 +69,29 @@ ITW_CLASH_PlayerCarrierHome_fnc_Resolve = {
     _resolved
 };
 
+// PlayerTaskSupport exposes per-group employment synchronization but no public
+// all-groups terminal refresh. RTB uses this tiny compatibility hook after a
+// terminal transition so persistent subscriptions immediately return to the
+// correct executable/HAL-inclusion state.
+if (isNil "ITW_CLASH_PlayerTasks_fnc_SyncAll") then {
+    ITW_CLASH_PlayerTasks_fnc_SyncAll = {
+        if (!isNil "ITW_CLASH_PlayerTaskGroups" && {
+            !isNil "ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState"
+        }) then {
+            {
+                if (!isNull _x) then {
+                    [_x,"transport-rtb-terminal"] call
+                        ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
+                };
+            } forEach +ITW_CLASH_PlayerTaskGroups;
+        };
+        if (!isNil "ITW_CLASH_DualHAL_fnc_SyncIncluded") then {
+            call ITW_CLASH_DualHAL_fnc_SyncIncluded;
+        };
+        true
+    };
+};
+
 [] spawn {
     scriptName "ITW_CLASH_PlayerCarrierHomeWatch";
 
@@ -87,7 +110,7 @@ ITW_CLASH_PlayerCarrierHome_fnc_Resolve = {
 
     ITW_CLASH_PlayerCarrierHomeReady = true;
     diag_log format [
-        "CLASH BOOT | player-carrier-home-ready | version=%1 playerAirOnly=true liveImpasseBaseResolver=true serviceHomeOwnsSTART=true servicePoolRegistration=false halRTBExecutor=true",
+        "CLASH BOOT | player-carrier-home-ready | version=%1 playerAirOnly=true liveImpasseBaseResolver=true serviceHomeOwnsSTART=true servicePoolRegistration=false halRTBExecutor=true employmentSyncAll=true",
         ITW_CLASH_PlayerCarrierHomeVersion
     ];
 
