@@ -23,6 +23,7 @@ def test_design_contract_makes_subscription_not_vehicle_the_dispatch_gate():
 def test_demand_layer_loads_after_player_task_surfaces_exist():
     init = (MISSION / "init.sqf").read_text(encoding="utf-8")
     demand = (MISSION / "ITW_CLASH_PlayerDemandDispatch.sqf").read_text(encoding="utf-8")
+    interceptors = (MISSION / "ITW_CLASH_PlayerDemandNativeInterceptors.sqf").read_text(encoding="utf-8")
 
     assert '"ITW_CLASH_PlayerDemandDispatch.sqf"' in init
     assert '"ITW_CLASH_PlayerDemandNativeInterceptors.sqf"' in init
@@ -30,6 +31,8 @@ def test_demand_layer_loads_after_player_task_surfaces_exist():
     assert 'ITW_CLASH_PlayerTaskStateCancelReady' in demand
     assert 'ITW_CLASH_PlayerTaskStateArtilleryGuardReady' in demand
     assert 'player-demand-dispatch-ready' in demand
+    assert '"ITW_CLASH_PlayerDemandExecutionHardening.sqf"' in interceptors
+    assert 'ITW_CLASH_PlayerDemandExecutionHardeningReady' in interceptors
 
 
 def test_player_dispatch_admission_contains_no_current_vehicle_capability_gate():
@@ -166,3 +169,22 @@ def test_native_support_interceptors_are_fail_open_and_preserve_hal_target_selec
     assert '_this call ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase' in text
     assert 'RydHQ_Hollow' in text
     assert 'RydHQ_Wounded' in text
+    assert 'ITW_CLASH_PlayerDemandExecutionHardeningReady' in text
+
+
+def test_specialist_executor_owns_terminal_state_after_execution_starts():
+    text = (MISSION / "ITW_CLASH_PlayerDemandExecutionHardening.sqf").read_text(encoding="utf-8")
+
+    assert 'ITW_CLASH_PlayerDemand_fnc_UpdateReserved = {' in text
+    reserved = _block(text, 'if (_state == "RESERVED") exitWith {', '// EXECUTING is deliberately')
+    assert 'ITW_CLASH_PlayerDemand_fnc_StillValid' in reserved
+    assert 'underlying-demand-invalidated-before-execution' in reserved
+    assert 'ITW_CLASH_PlayerDemand_fnc_StartAmmoExecution' in reserved
+    assert 'ITW_CLASH_PlayerDemand_fnc_StartMedevacExecution' in reserved
+
+    executing = text[text.index('// EXECUTING is deliberately'):]
+    assert 'ITW_CLASH_PlayerDemand_fnc_StillValid' not in executing
+    assert 'ITW_CLASH_PlayerDemandCancel' in executing
+    assert 'ITW_CLASH_PlayerAmmoJobCancel' in executing
+    assert 'player-demand-execution-owner-lost' in executing
+    assert 'executingTerminalOwnedBySpecialist=true' in executing
