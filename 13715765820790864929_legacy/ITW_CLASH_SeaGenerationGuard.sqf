@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_SeaGenerationGuardStarted",false]) exitWith {true};
 ITW_CLASH_SeaGenerationGuardStarted = true;
-ITW_CLASH_SeaGenerationGuardVersion = 2;
+ITW_CLASH_SeaGenerationGuardVersion = 3;
 ITW_CLASH_SeaGenerationGuardReady = false;
 ITW_CLASH_SeaGuardMaxRelocation = missionNamespace getVariable [
     "ITW_CLASH_SeaGuardMaxRelocation",1500
@@ -212,20 +212,22 @@ if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
             false
         };
 
-        // SeaGuard is the final authority on ship home. Idempotent service
-        // registration never overwrites the home of a live entry afterward.
+        // SeaGuard owns only physical water projection. The service-home
+        // resolver owns home selection and RTB progress. Record the corrected
+        // physical origin only for a live DEPLOYED entry; never rewrite home,
+        // ITW_CLASH_ServiceHome, lastDistance, or any RTB watchdog state here.
         if (!isNil "ITW_CLASH_ServicePool") then {
             private _poolId = _veh getVariable ["ITW_CLASH_ServicePoolId",""];
             if (_poolId isNotEqualTo "" && {!isNil "ITW_CLASH_Service_fnc_FindEntry"}) then {
                 private _index = [_poolId] call ITW_CLASH_Service_fnc_FindEntry;
                 if (_index >= 0 && {_index < count ITW_CLASH_ServicePool}) then {
                     private _entry = ITW_CLASH_ServicePool#_index;
-                    _entry set ["home",getPosATL _veh];
-                    _entry set ["lastDistance",0];
-                    ITW_CLASH_ServicePool set [_index,_entry];
-                    private _group = group driver _veh;
-                    if (!isNull _group) then {
-                        _group setVariable ["ITW_CLASH_ServiceHome",getPosATL _veh];
+                    if ((_entry getOrDefault ["state",""]) == "DEPLOYED") then {
+                        _entry set ["deploymentOrigin",getPosATL _veh];
+                        ITW_CLASH_ServicePool set [_index,_entry];
+                        ["deployment-origin-refreshed",[
+                            typeOf _veh,_poolId,getPosATL _veh,"projection-only"
+                        ]] call ITW_CLASH_SeaGuard_fnc_Log;
                     };
                 };
             };
@@ -236,7 +238,7 @@ if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
 
 ITW_CLASH_SeaGenerationGuardReady = true;
 diag_log format [
-    "CLASH BOOT | sea-generation-guard-ready | version=%1 boundedRelocation=%2 aslSurface=true atomicReject=true serviceAuthority=%3 serviceStability=%4 executionGuardsScheduled=true",
+    "CLASH BOOT | sea-generation-guard-ready | version=%1 boundedRelocation=%2 aslSurface=true atomicReject=true serviceAuthority=%3 serviceStability=%4 executionGuardsScheduled=true projectionOnly=true serviceHomeWrites=false",
     ITW_CLASH_SeaGenerationGuardVersion,
     ITW_CLASH_SeaGuardMaxRelocation,
     missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityReady",false],
