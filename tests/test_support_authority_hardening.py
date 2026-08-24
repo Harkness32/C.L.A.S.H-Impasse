@@ -119,7 +119,7 @@ def test_hal_scargo_is_the_only_physical_executor_for_hal_transport_contracts():
         "ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand ="
     )
     observer_end = bridge.index(
-        "ITW_CLASH_PlayerTransport_fnc_AcquireHALOwnedBase",
+        "ITW_CLASH_PlayerTransport_fnc_AcquireDeliveryBase",
         observer_start,
     )
     observer = bridge[observer_start:observer_end]
