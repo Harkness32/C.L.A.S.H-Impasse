@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - fix/player-hal-job-routing-state-v1
+      - fix/player-job-cancel-hardening-v1
   push:
     branches:
       - "agent/**"
+      - "feature/**"
 
 permissions:
   contents: read
@@ -43,3 +45,4 @@ jobs:
           tests/test_player_logistics_provider_compat.py
           tests/test_player_demand_dispatch.py
           tests/test_player_demand_native_takeover_policy.py
+          tests/test_player_task_requests.py
