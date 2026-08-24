@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerTransportAuthorityStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerTransportAuthorityStarted = true;
-ITW_CLASH_PlayerTransportAuthorityVersion = 3;
+ITW_CLASH_PlayerTransportAuthorityVersion = 4;
 ITW_CLASH_PlayerTransportAuthorityReady = false;
 ITW_CLASH_PlayerTransportContractSerial = 0;
 ITW_CLASH_PlayerTransportContractLifetime = missionNamespace getVariable [
@@ -55,6 +55,9 @@ ITW_CLASH_PlayerTransport_fnc_GetContractDestination = {
     +(_contract getOrDefault ["destination",[]])
 };
 
+// V4's native bridge replaces this function synchronously before HAL can call
+// SCargo. Keep this definition as a fail-open recorder if that bridge fails to
+// load; it does not select or command a carrier.
 ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
     params ["_group","_hq","_destination",["_mode","AUTO"]];
     if (isNull _group || {isNull _hq} || {_destination isEqualTo []}) exitWith {false};
@@ -62,11 +65,6 @@ ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
         [_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup
     }) exitWith {false};
     if (_group getVariable ["itwDelivery",false]) exitWith {false};
-
-    private _existing = [_group] call ITW_CLASH_PlayerTransport_fnc_GetContract;
-    if (count _existing > 0 && {
-        (_existing getOrDefault ["state",""]) in ["BOARDING","EMBARKED"]
-    }) exitWith {true};
 
     ITW_CLASH_PlayerTransportContractSerial = ITW_CLASH_PlayerTransportContractSerial + 1;
     private _id = format [
@@ -86,45 +84,11 @@ ITW_CLASH_PlayerTransport_fnc_ObserveHALDemand = {
         ["source","HAL_SCargo"]
     ];
     _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
-
     ["hal-demand-observed",[
-        _id,
-        [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-        _hq getVariable ["RydHQ_CodeSign","?"],
-        toUpperANSI _mode,+_destination,
-        round (leader _group distance2D _destination)
+        _id,[_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+        _hq getVariable ["RydHQ_CodeSign","?"],toUpperANSI _mode,+_destination
     ]] call ITW_CLASH_PlayerTransport_fnc_Log;
     true
-};
-
-ITW_CLASH_PlayerTransport_fnc_PlayerCarrierEligible = {
-    params ["_vehicle"];
-    if (isNull _vehicle) exitWith {[false,grpNull,"null-vehicle"]};
-    private _pilot = currentPilot _vehicle;
-    if (isNull _pilot || {!isPlayer _pilot}) exitWith {[false,grpNull,"not-player-piloted"]};
-    private _group = group _pilot;
-    if (isNull _group) exitWith {[false,grpNull,"null-player-group"]};
-
-    private _capable = true;
-    if (!isNil "ITW_CLASH_PlayerTasks_fnc_CanAcceptJob") then {
-        _capable = [_group,"TRANSPORT",true] call
-            ITW_CLASH_PlayerTasks_fnc_CanAcceptJob;
-    } else {
-        if (!isNil "ITW_CLASH_PlayerTasks_fnc_IsSubscribed") then {
-            _capable = [_group,"TRANSPORT"] call
-                ITW_CLASH_PlayerTasks_fnc_IsSubscribed;
-        };
-    };
-    if (!_capable) exitWith {[false,_group,"transport-channel-unavailable"]};
-
-    // A proximity ferry is allowed to become a HAL-backed player contract only
-    // when HAL currently has this player formation occupied. This prevents an
-    // idle subscribed pilot from stealing any nearby HAL transport demand.
-    private _halOccupied = _group getVariable ["Busy" + str _group,false] || {
-        (_group getVariable ["ITW_CLASH_PlayerNativeJobId",""]) isNotEqualTo ""
-    };
-    if (!_halOccupied) exitWith {[false,_group,"player-not-hal-occupied"]};
-    [true,_group,"eligible"]
 };
 
 ITW_CLASH_PlayerTransport_fnc_ApplyRetaskLock = {
@@ -168,8 +132,8 @@ ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock = {
     true
 };
 
-// Retained only for standing native Impasse delivery squads, which are reserved
-// before HAL admission. HAL-backed ferries must never call this function.
+// This authority path is retained only for standing native Impasse delivery
+// squads. HAL SCargo cargo never enters it after the v2 native bridge is loaded.
 ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL = {
     params ["_group",["_reason","itw-transport-lease"]];
     if (isNull _group) exitWith {false};
@@ -207,84 +171,18 @@ ITW_CLASH_PlayerTransport_fnc_Acquire = {
     if (!isNil "ITW_CLASH_DualHAL_fnc_IsPlayerGroup" && {
         [_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup
     }) exitWith {false};
+    if !(_group getVariable ["itwDelivery",false]) exitWith {false};
 
-    private _standingDelivery = _group getVariable ["itwDelivery",false];
-    if (_standingDelivery) exitWith {
-        private _already = _group getVariable ["ITW_CLASH_TransportAuthorityLease",false];
-        if (!_already) then {
-            _group setVariable ["ITW_CLASH_TransportPreviousUnable",_group getVariable ["Unable",false]];
-            _group setVariable ["ITW_CLASH_TransportPreviousBUnable",_group getVariable ["BUnable",false]];
-            _group setVariable ["ITW_CLASH_TransportPreviousBreak",_group getVariable ["Break",false]];
-        };
-        _group setVariable ["ITW_CLASH_TransportLeaseMode","ITW_DELIVERY"];
-        _group setVariable ["Unable",true,true];
-        _group setVariable ["BUnable",true,true];
-        [_group,_reason] call ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL;
-        true
+    private _already = _group getVariable ["ITW_CLASH_TransportAuthorityLease",false];
+    if (!_already) then {
+        _group setVariable ["ITW_CLASH_TransportPreviousUnable",_group getVariable ["Unable",false]];
+        _group setVariable ["ITW_CLASH_TransportPreviousBUnable",_group getVariable ["BUnable",false]];
+        _group setVariable ["ITW_CLASH_TransportPreviousBreak",_group getVariable ["Break",false]];
     };
-
-    private _contract = [_group] call ITW_CLASH_PlayerTransport_fnc_GetContract;
-    if (count _contract == 0) exitWith {
-        ["native-proximity-rejected",[
-            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-            if (isNull _vehicle) then {"<none>"} else {typeOf _vehicle},
-            "no-hal-transport-contract"
-        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
-        false
-    };
-
-    private _carrierCheck = [_vehicle] call ITW_CLASH_PlayerTransport_fnc_PlayerCarrierEligible;
-    _carrierCheck params ["_eligible","_carrierGroup","_eligibilityReason"];
-    if (!_eligible) exitWith {
-        ["native-proximity-rejected",[
-            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-            if (isNull _vehicle) then {"<none>"} else {typeOf _vehicle},
-            _eligibilityReason,_contract getOrDefault ["id",""]
-        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
-        false
-    };
-
-    private _participants = (units _carrierGroup select {isPlayer _x}) apply {
-        [getPlayerUID _x,name _x]
-    };
-    _group setVariable ["ITW_CLASH_TransportCarrier",_vehicle,true];
-    _group setVariable ["ITW_CLASH_TransportCarrierGroup",_carrierGroup];
-    _group setVariable ["ITW_CLASH_TransportParticipants",_participants];
-    _group setVariable ["ITW_CLASH_TransportAuthorityLease",true];
-    _group setVariable ["ITW_CLASH_TransportLeaseMode","HAL_CONTRACT"];
-    [_group] call ITW_CLASH_PlayerTransport_fnc_ApplyRetaskLock;
-
-    _contract set ["carrier",_vehicle];
-    _contract set ["carrierGroup",_carrierGroup];
-    _contract set ["state","BOARDING"];
-    _contract set ["boardAt",time];
-    _contract set ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime];
-    _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
-
-    ["hal-contract-acquired",[
-        _contract getOrDefault ["id",""],
-        [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-        typeOf _vehicle,+(_contract getOrDefault ["destination",[]]),
-        _participants,
-        _group in ((_contract getOrDefault ["hq",grpNull]) getVariable ["RydHQ_Included",[]])
-    ]] call ITW_CLASH_PlayerTransport_fnc_Log;
-    true
-};
-
-ITW_CLASH_PlayerTransport_fnc_MarkEmbarked = {
-    params ["_group","_vehicle"];
-    private _contract = [_group] call ITW_CLASH_PlayerTransport_fnc_GetContract;
-    if (count _contract == 0) exitWith {false};
-    if ((_contract getOrDefault ["carrier",objNull]) != _vehicle) exitWith {false};
-    _contract set ["state","EMBARKED"];
-    _contract set ["embarkedAt",time];
-    _contract set ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime];
-    _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
-    ["hal-contract-embarked",[
-        _contract getOrDefault ["id",""],
-        [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-        typeOf _vehicle,+(_contract getOrDefault ["destination",[]])
-    ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    _group setVariable ["ITW_CLASH_TransportLeaseMode","ITW_DELIVERY"];
+    _group setVariable ["Unable",true,true];
+    _group setVariable ["BUnable",true,true];
+    [_group,_reason] call ITW_CLASH_PlayerTransport_fnc_RemoveFromHAL;
     true
 };
 
@@ -299,29 +197,18 @@ ITW_CLASH_PlayerTransport_fnc_Release = {
     params ["_group",["_reason","player-ferry-released"]];
     if (isNull _group) exitWith {false};
     if !(_group getVariable ["ITW_CLASH_TransportAuthorityLease",false]) exitWith {false};
-
     if (_group getVariable ["itwDelivery",false]) exitWith {false};
     if ((_group getVariable ["ITW_getInState",-1]) in [0,1]) exitWith {false};
     if (_group getVariable ["ITW_CLASH_TransportPhysicalUnloadPending",false]) exitWith {false};
 
-    private _mode = _group getVariable ["ITW_CLASH_TransportLeaseMode",""];
     private _participants = +(_group getVariable ["ITW_CLASH_TransportParticipants",[]]);
     private _vehicle = _group getVariable ["ITW_CLASH_TransportCarrier",objNull];
-    private _contract = [_group] call ITW_CLASH_PlayerTransport_fnc_GetContract;
-    private _contractId = if (count _contract == 0) then {""} else {_contract getOrDefault ["id",""]};
-    private _destination = if (count _contract == 0) then {[]} else {+(_contract getOrDefault ["destination",[]])};
-
-    if (_mode == "HAL_CONTRACT") then {
-        [_group] call ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock;
-    } else {
-        _group setVariable ["Break",_group getVariable ["ITW_CLASH_TransportPreviousBreak",false]];
-        _group setVariable ["Unable",_group getVariable ["ITW_CLASH_TransportPreviousUnable",false],true];
-        _group setVariable ["BUnable",_group getVariable ["ITW_CLASH_TransportPreviousBUnable",false],true];
-        _group setVariable ["ITW_CLASH_AuthorityHold",nil];
-        _group setVariable ["ITW_CLASH_Authority",nil];
-        _group setVariable ["ITW_CLASH_AuthorityReason",nil];
-    };
-
+    _group setVariable ["Break",_group getVariable ["ITW_CLASH_TransportPreviousBreak",false]];
+    _group setVariable ["Unable",_group getVariable ["ITW_CLASH_TransportPreviousUnable",false],true];
+    _group setVariable ["BUnable",_group getVariable ["ITW_CLASH_TransportPreviousBUnable",false],true];
+    _group setVariable ["ITW_CLASH_AuthorityHold",nil];
+    _group setVariable ["ITW_CLASH_Authority",nil];
+    _group setVariable ["ITW_CLASH_AuthorityReason",nil];
     _group setVariable ["ITW_CLASH_TransportAuthorityLease",nil];
     _group setVariable ["ITW_CLASH_TransportLeaseMode",nil];
     _group setVariable ["ITW_CLASH_TransportCarrier",nil,true];
@@ -332,53 +219,16 @@ ITW_CLASH_PlayerTransport_fnc_Release = {
     _group setVariable ["ITW_CLASH_TransportPreviousBUnable",nil];
     _group setVariable ["ITW_CLASH_TransportPreviousBreak",nil];
 
-    private _delivered = _reason == "player-ferry-delivered";
-    if (_mode == "HAL_CONTRACT" && {count _contract > 0}) then {
-        if (_delivered) then {
-            _contract set ["state","DELIVERED"];
-            _contract set ["completedAt",time];
-            _group setVariable ["ITW_CLASH_PlayerTransportContract",nil];
-        } else {
-            _contract set ["state","HAL_DEMAND"];
-            _contract set ["carrier",objNull];
-            _contract set ["carrierGroup",grpNull];
-            _contract set ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime];
-            _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
-        };
-    };
-
-    ["hal-contract-released",[
-        _contractId,
+    ["itw-delivery-lease-released",[
         [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
         if (isNull _vehicle) then {"<none>"} else {typeOf _vehicle},
-        _reason,_mode,+_destination,_participants
+        _reason,_participants
     ]] call ITW_CLASH_PlayerTransport_fnc_Log;
-
-    if (_delivered && {_participants isNotEqualTo []} && {
-        !isNil "ITW_CLASH_PlayerTasks_fnc_RecordEvent"
-    }) then {
-        ["TRANSPORT_DELIVERED",createHashMapFromArray [
-            ["contractId",_contractId],
-            ["cargoGroup",_group],
-            ["vehicle",_vehicle],
-            ["destination",+_destination],
-            ["participants",_participants],
-            ["completedAt",time]
-        ]] call ITW_CLASH_PlayerTasks_fnc_RecordEvent;
-    };
-
-    if (!isNil "ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState" && {!isNull _vehicle}) then {
-        private _pilot = currentPilot _vehicle;
-        if (!isNull _pilot && {isPlayer _pilot}) then {
-            [group _pilot,"transport-contract-released"] call
-                ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
-        };
-    };
     true
 };
 
 // Observe HAL's actual cargo request before its untouched native dispatcher runs.
-// This records strategic cargo+destination intent; it does not select a carrier.
+// This records strategic cargo+destination intent; it never selects a carrier.
 [] spawn {
     scriptName "ITW_CLASH_PlayerTransportHALDemandBinder";
     private _deadline = diag_tickTime + 600;
@@ -427,9 +277,6 @@ if !(_nativeBridgeReady isEqualTo true) then {
     diag_log "CLASH BOOT | WARNING | player-transport-native-bridge-failed | baseline ferry finalized";
 };
 
-// Start player employment admission before PlayerTaskSupport is compiled. The
-// hardening script waits for support primitives, so this creates an early
-// watcher without changing transport authority itself.
 if (fileExists "ITW_CLASH_PlayerTaskStateHardening.sqf") then {
     [] execVM "ITW_CLASH_PlayerTaskStateHardening.sqf";
 } else {
@@ -438,7 +285,7 @@ if (fileExists "ITW_CLASH_PlayerTaskStateHardening.sqf") then {
 
 ITW_CLASH_PlayerTransportAuthorityReady = _nativeBridgeReady isEqualTo true;
 diag_log format [
-    "CLASH BOOT | player-transport-authority-ready | version=%1 halContract=true halOwnsCargo=true retaskLock=true nativeBridge=%2 proximityContractGate=true contractDestination=true",
+    "CLASH BOOT | player-transport-authority-ready | version=%1 halSCargoSoleExecutor=true observerOnly=true retaskLock=true nativeBridge=%2 proximityCollisionGuard=true",
     ITW_CLASH_PlayerTransportAuthorityVersion,
     ITW_CLASH_PlayerTransportAuthorityReady
 ];
