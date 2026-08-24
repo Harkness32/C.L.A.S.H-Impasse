@@ -4,26 +4,31 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPhase0Started",false]) exitWith {};
 
 ITW_CLASH_ReconPhase0Started = true;
-ITW_CLASH_ReconPhase0Version = 2;
+ITW_CLASH_ReconPhase0Version = 3;
 ITW_CLASH_ReconPollInterval = 2;
 ITW_CLASH_ReconActiveGroups = createHashMap;
 
 /*
-    C.L.A.S.H. 1.0 reconnaissance doctrine
+    C.L.A.S.H. reconnaissance doctrine
 
-    HAL owns reconnaissance selection and execution. C.L.A.S.H. no longer turns
-    reconnaissance into a SOF-only job and no longer rejects conventional groups
-    selected by native HAL. Native HAL's own ReconAv construction decides which
-    formations are reconnaissance-capable.
+    HAL owns reconnaissance selection and execution. Recon is a COMBAT-channel
+    job for player groups; it is not a sixth employment subscription. AI groups
+    retain HAL's native broad reconnaissance behavior.
 
-    SOF identity is protected separately by the planning bridge, which keeps
-    semantically recognized SOF in RydHQ_SpecForG before HAL plans. Native HAL
-    deliberately subtracts SpecForG from its ordinary reconnaissance pool.
-
-    This file therefore observes native GoRecon/GoDefRecon only. It does not
-    spawn units, spend tickets, alter HAL candidate lists, reveal targets, or
-    create a second reconnaissance implementation.
+    C.L.A.S.H. observes native GoRecon/GoDefRecon and adds only the player
+    employment admission boundary. It does not spawn reconnaissance units,
+    spend tickets, reveal targets, or create a second recon implementation.
 */
+
+if (fileExists "ITW_CLASH_PlayerTaskStateHardening.sqf") then {
+    private _stateHardening = call compile preprocessFileLineNumbers
+        "ITW_CLASH_PlayerTaskStateHardening.sqf";
+    if !(_stateHardening isEqualTo true) then {
+        diag_log "CLASH BOOT | WARNING | player-task-state-hardening-load-failed | recon execution guard remains fail-closed for unsubscribed players";
+    };
+} else {
+    diag_log "CLASH BOOT | WARNING | player-task-state-hardening-missing | recon execution guard remains fail-closed for unsubscribed players";
+};
 
 ITW_CLASH_Recon_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -39,6 +44,80 @@ ITW_CLASH_Recon_fnc_GroupId = {
         [_group] call ITW_CLASH_fnc_GroupId
     };
     str _group
+};
+
+ITW_CLASH_Recon_fnc_IsPlayerGroup = {
+    params ["_group"];
+    if (isNull _group) exitWith {false};
+    if (!isNil "ITW_CLASH_DualHAL_fnc_IsPlayerGroup") exitWith {
+        [_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup
+    };
+    (units _group findIf {isPlayer _x}) >= 0
+};
+
+ITW_CLASH_Recon_fnc_PlayerCombatAllowed = {
+    params ["_group"];
+    if (isNull _group) exitWith {[false,"null-group"]};
+    if !([_group] call ITW_CLASH_Recon_fnc_IsPlayerGroup) exitWith {
+        [true,"ai-native"]
+    };
+
+    if (!isNil "ITW_CLASH_PlayerTasks_fnc_CanAcceptJob") exitWith {
+        if ([_group,"COMBAT",true] call
+            ITW_CLASH_PlayerTasks_fnc_CanAcceptJob
+        ) then {
+            [true,"combat-subscribed"]
+        } else {
+            [false,"combat-channel-disabled-or-held"]
+        }
+    };
+
+    if (!isNil "ITW_CLASH_PlayerTasks_fnc_IsSubscribed") exitWith {
+        if ([_group,"COMBAT"] call
+            ITW_CLASH_PlayerTasks_fnc_IsSubscribed
+        ) then {
+            [true,"combat-subscribed-fallback"]
+        } else {
+            [false,"combat-channel-disabled"]
+        }
+    };
+
+    // Player employment support exists on the tested branch. If its admission
+    // API is unavailable, do not silently hand a player an unsolicited recon.
+    [false,"player-employment-admission-unavailable"]
+};
+
+ITW_CLASH_Recon_fnc_RejectPlayerMission = {
+    params ["_mode","_group","_hq","_destination","_reason"];
+    if (isNull _group) exitWith {false};
+
+    _group setVariable ["Busy" + str _group,false];
+    _group setVariable ["ITW_CLASH_PlayerNativeJobId",nil,true];
+    _group setVariable ["ITW_CLASH_PlayerNativeJobType",nil,true];
+    _group setVariable ["ITW_CLASH_PlayerNativeJobCancelRequested",nil,true];
+    _group setVariable ["ITW_CLASH_PlayerHasActiveHALJob",false,true];
+
+    if (!isNil "ITW_CLASH_PlayerTasks_fnc_SyncCombatAdmission") then {
+        [_group] call ITW_CLASH_PlayerTasks_fnc_SyncCombatAdmission;
+    };
+    if (!isNil "ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState") then {
+        [_group,"recon-execution-rejected"] call
+            ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
+    };
+
+    ["tasking-rejected",[
+        [_group] call ITW_CLASH_Recon_fnc_GroupId,
+        _mode,
+        _reason,
+        if (isNull _hq) then {"<null>"} else {
+            _hq getVariable ["RydHQ_CodeSign","?"]
+        },
+        round (leader _group distance2D _destination),
+        if (!isNil "ITW_CLASH_PlayerTasks_fnc_GetSubscriptions") then {
+            [_group] call ITW_CLASH_PlayerTasks_fnc_GetSubscriptions
+        } else {[]}
+    ]] call ITW_CLASH_Recon_fnc_Log;
+    true
 };
 
 ITW_CLASH_Recon_fnc_Classify = {
@@ -121,9 +200,34 @@ ITW_CLASH_Recon_fnc_BeginMission = {
 
     private _classification = [_group] call ITW_CLASH_Recon_fnc_Classify;
     private _isSOF = _classification#0;
+    private _jobId = "";
+
+    if ([_group] call ITW_CLASH_Recon_fnc_IsPlayerGroup) then {
+        _jobId = format [
+            "HAL-COMBAT-RECON-%1-%2",
+            round (diag_tickTime * 1000),
+            [_group] call ITW_CLASH_Recon_fnc_GroupId
+        ];
+        _group setVariable ["ITW_CLASH_PlayerNativeJobId",_jobId,true];
+        _group setVariable ["ITW_CLASH_PlayerNativeJobType","COMBAT",true];
+        _group setVariable ["ITW_CLASH_PlayerNativeJobCancelRequested",false,true];
+        _group setVariable ["ITW_CLASH_PlayerHasActiveHALJob",true,true];
+
+        if (!isNil "ITW_CLASH_PlayerTasks_fnc_RecordEvent") then {
+            ["NATIVE_COMBAT_ASSIGNED",createHashMapFromArray [
+                ["jobId",_jobId],
+                ["group",_group],
+                ["mode",_mode],
+                ["kind","RECON"],
+                ["destination",+_destination],
+                ["assignedAt",time]
+            ]] call ITW_CLASH_PlayerTasks_fnc_RecordEvent;
+        };
+    };
+
     _group setVariable ["ITW_CLASH_ReconPhase0Active",true];
     _group setVariable ["ITW_CLASH_ReconPhase0Mode",_mode];
-    ITW_CLASH_ReconActiveGroups set [str _group,[_group,_mode,time]];
+    ITW_CLASH_ReconActiveGroups set [str _group,[_group,_mode,time,_jobId]];
 
     ["assigned",[
         [_group] call ITW_CLASH_Recon_fnc_GroupId,
@@ -132,7 +236,8 @@ ITW_CLASH_Recon_fnc_BeginMission = {
         _isSOF,
         {alive _x} count units _group,
         round (leader _group distance2D _destination),
-        _destination
+        _destination,
+        _jobId
     ]] call ITW_CLASH_Recon_fnc_Log;
 
     if (_isSOF) then {
@@ -151,20 +256,59 @@ ITW_CLASH_Recon_fnc_EndMission = {
     params ["_mode","_group","_startedAt"];
     if (isNull _group) exitWith {};
 
+    private _jobId = _group getVariable ["ITW_CLASH_PlayerNativeJobId",""];
+    private _cancelRequested = _group getVariable [
+        "ITW_CLASH_PlayerNativeJobCancelRequested",false
+    ];
+
     _group setVariable ["ITW_CLASH_ReconPhase0Active",nil];
     _group setVariable ["ITW_CLASH_ReconPhase0Mode",nil];
     ITW_CLASH_ReconActiveGroups deleteAt (str _group);
 
     private _alive = {alive _x} count units _group;
     private _event = if (_alive == 0) then {"wiped"} else {
-        if (_group getVariable ["ITW_CLASH_Withdrawing",false]) then {"aborted"} else {"complete"}
+        if (_cancelRequested || {
+            _group getVariable ["ITW_CLASH_Withdrawing",false]
+        }) then {"aborted"} else {"complete"}
     };
     [_event,[
         [_group] call ITW_CLASH_Recon_fnc_GroupId,
         _mode,
         _alive,
-        round (time - _startedAt)
+        round (time - _startedAt),
+        _jobId
     ]] call ITW_CLASH_Recon_fnc_Log;
+
+    if (_jobId isNotEqualTo "" && {
+        !isNil "ITW_CLASH_PlayerTasks_fnc_RecordEvent"
+    }) then {
+        private _recordType = if (_alive == 0) then {
+            "NATIVE_COMBAT_FAILED"
+        } else {
+            if (_cancelRequested) then {
+                "NATIVE_COMBAT_CANCELED"
+            } else {
+                "NATIVE_COMBAT_COMPLETED"
+            }
+        };
+        [_recordType,createHashMapFromArray [
+            ["jobId",_jobId],
+            ["group",_group],
+            ["mode",_mode],
+            ["kind","RECON"],
+            ["alive",_alive],
+            ["duration",round (time - _startedAt)]
+        ]] call ITW_CLASH_PlayerTasks_fnc_RecordEvent;
+    };
+
+    _group setVariable ["ITW_CLASH_PlayerNativeJobId",nil,true];
+    _group setVariable ["ITW_CLASH_PlayerNativeJobType",nil,true];
+    _group setVariable ["ITW_CLASH_PlayerNativeJobCancelRequested",nil,true];
+
+    if (!isNil "ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState") then {
+        [_group,"native-recon-ended"] call
+            ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
+    };
 };
 
 [] spawn {
@@ -201,6 +345,15 @@ ITW_CLASH_Recon_fnc_EndMission = {
             _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
         };
 
+        private _admission = [_group] call
+            ITW_CLASH_Recon_fnc_PlayerCombatAllowed;
+        if !(_admission#0) exitWith {
+            [
+                "offensive",_group,_hq,_destination,_admission#1
+            ] call ITW_CLASH_Recon_fnc_RejectPlayerMission;
+            false
+        };
+
         private _startedAt = time;
         ["offensive",_group,_hq,_destination] call ITW_CLASH_Recon_fnc_BeginMission;
         _this call ITW_CLASH_Recon_fnc_NativeGoRecon;
@@ -216,6 +369,15 @@ ITW_CLASH_Recon_fnc_EndMission = {
             _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
         };
 
+        private _admission = [_group] call
+            ITW_CLASH_Recon_fnc_PlayerCombatAllowed;
+        if !(_admission#0) exitWith {
+            [
+                "defensive",_group,_hq,_destination,_admission#1
+            ] call ITW_CLASH_Recon_fnc_RejectPlayerMission;
+            false
+        };
+
         private _startedAt = time;
         ["defensive",_group,_hq,_destination] call ITW_CLASH_Recon_fnc_BeginMission;
         _this call ITW_CLASH_Recon_fnc_NativeGoDefRecon;
@@ -224,7 +386,7 @@ ITW_CLASH_Recon_fnc_EndMission = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true observerOnly=true specForExcludedByHAL=true spawning=false requisition=false reveal=false",
+        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true spawning=false requisition=false reveal=false",
         ITW_CLASH_ReconPhase0Version
     ];
 };

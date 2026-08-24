@@ -81,7 +81,8 @@ def test_commander_b_prepare_is_explicit_and_not_dependent_on_halcore_wrapper_su
     assert '!isNil "ITW_PlayerSide"' in api
     assert 'call ITW_CLASH_DualHAL_fnc_PrepareCommanderB' in api
     assert "dual-hal-checkbook-deferred-ready" in init
-    assert "nativeCoreLaunchPending=true" in init
+    assert "nativeCoreLaunch=live-mode-only" in init
+    assert "nativeCoreLaunchPending=true" not in init
     assert "dual-hal-core-wrapper-skipped" in dual
     assert "NR6_fnc_HALcore =" not in dual
 

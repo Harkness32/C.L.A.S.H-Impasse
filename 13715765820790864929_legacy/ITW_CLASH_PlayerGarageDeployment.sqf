@@ -361,12 +361,6 @@ if (hasInterface) then {
                 "ITW_CLASH_PlayerGarage_fnc_ServerDeploy",2
             ];
         }];
-
-        player addEventHandler ["Respawn",{
-            params ["_unit","_corpse"];
-            _unit setVariable ["ITW_CLASH_PlayerGarageGetInBound",false];
-            [] call ITW_CLASH_PlayerGarage_fnc_BindPlayer;
-        }];
         true
     };
 
