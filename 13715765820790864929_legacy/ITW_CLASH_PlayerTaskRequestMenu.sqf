@@ -2,7 +2,7 @@ if (!hasInterface) exitWith {true};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestMenuStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerTaskRequestMenuStarted = true;
-ITW_CLASH_PlayerTaskRequestMenuVersion = 1;
+ITW_CLASH_PlayerTaskRequestMenuVersion = 2;
 
 ITW_CLASH_PlayerTaskRequestMenu_fnc_ReceiveResponse = {
     params ["_status","_message",["_jobId",""]];
@@ -45,7 +45,12 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_Request = {
     true
 };
 
-ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenStrike = {
+// Commanding-menu submenus must be linked through the submenuName field.
+// Opening a second #USER menu from the parent entry's expression races the
+// engine closing the parent after CMD_EXECUTE and causes the new menu to flash
+// open and immediately disappear. Build the submenu before the parent is shown
+// and let the command-menu engine own the transition instead.
+ITW_CLASH_PlayerTaskRequestMenu_fnc_BuildStrike = {
     ITW_CLASH_PlayerTaskRequestStrikeMenu = [
         ["HAL REQUEST - STRIKE",false],
         [
@@ -68,11 +73,16 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenStrike = {
         ],
         [
             "Back",
-            [0],"",-3,
-            [["expression","[] call ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenMenu"]],
+            [0],"",-4,
+            [],
             "1","1"
         ]
     ];
+    true
+};
+
+ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenStrike = {
+    call ITW_CLASH_PlayerTaskRequestMenu_fnc_BuildStrike;
     showCommandingMenu "#USER:ITW_CLASH_PlayerTaskRequestStrikeMenu";
     true
 };
@@ -85,12 +95,14 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenMenu = {
         _active = (group player) getVariable ["ITW_CLASH_PlayerHasActiveHALJob",false];
     };
 
+    call ITW_CLASH_PlayerTaskRequestMenu_fnc_BuildStrike;
+
     ITW_CLASH_PlayerTaskRequestMenu = [
         ["C.L.A.S.H. HAL - REQUEST TASK",false],
         [
             "Strike >",
-            [2],"",-5,
-            [["expression","[] call ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenStrike"]],
+            [2],"#USER:ITW_CLASH_PlayerTaskRequestStrikeMenu",-5,
+            [],
             "1","1"
         ],
         [
@@ -185,7 +197,7 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_Install = {
             [player] call ITW_CLASH_PlayerTaskRequestMenu_fnc_Install;
             _installedFor = player;
             diag_log format [
-                "CLASH BOOT | player-task-request-menu-ready | version=%1 separateMenu=true strikeSubmenu=true reconGeneric=true artillery=true transport=true",
+                "CLASH BOOT | player-task-request-menu-ready | version=%1 separateMenu=true strikeSubmenu=true nativeSubmenuLink=true reconGeneric=true artillery=true transport=true",
                 ITW_CLASH_PlayerTaskRequestMenuVersion
             ];
         };
