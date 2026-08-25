@@ -9,6 +9,29 @@ ITW_CLASH_ReconstitutionTransitFixVersion = 4;
 ITW_CLASH_ReconstitutionTransitFixReady = false;
 ITW_CLASH_ReconstitutionHandoffBuffer = 250;
 
+// Once replacement infantry is physically out of its dedicated transit
+// vehicle, release the lifecycle reservation. Impasse can finish removing the
+// cargo bookkeeping, after which the normal Dual-HAL handoff/service lifecycle
+// may adopt the now-empty transport and return/virtualize it.
+ITW_CLASH_Reconstitution_fnc_ReleaseTransportReservation = {
+    params ["_group",["_reason","dismounted"]];
+    if (isNull _group) exitWith {false};
+    private _veh = _group getVariable ["ITW_CLASH_TransitVehicle",objNull];
+    if (isNull _veh || {
+        !(_veh getVariable ["ITW_CLASH_ReconstitutionTransport",false])
+    }) exitWith {false};
+
+    _veh setVariable ["ITW_CLASH_ReconstitutionTransport",nil,true];
+    if (!isNil "ITW_CLASH_fnc_Log") then {
+        ["reconstitution-transport-released",[
+            _group getVariable ["ITW_CLASH_ReconstitutionRequest",""],
+            _group getVariable ["ITW_CLASH_Lineage",""],
+            typeOf _veh,_reason,getPosATL _veh
+        ]] call ITW_CLASH_fnc_Log;
+    };
+    true
+};
+
 // This file is compiled synchronously from preInit immediately after
 // ITW_Attack.sqf. preInit defers this one finalizer so the canonical function is
 // still mutable. The corrected manager is therefore the function that becomes
@@ -38,6 +61,9 @@ ITW_AtkReconstitutionTransitManager = {
             ];
 
             if (isNull _group || {{alive _x} count units _group == 0}) then {
+                if (!isNull _group) then {
+                    [_group,"group-lost"] call ITW_CLASH_Reconstitution_fnc_ReleaseTransportReservation;
+                };
                 ITW_AtkReconstitutionTransits deleteAt _i;
                 if (!isNil "ITW_CLASH_fnc_Log") then {
                     ["reconstitution-transit-failed",[
@@ -65,6 +91,16 @@ ITW_AtkReconstitutionTransitManager = {
                 _state in ["transport","walking"] && {
                     _distance <= _handoffRadius
                 }
+            };
+
+            // The dedicated vehicle has finished its only protected purpose as
+            // soon as every replacement soldier is physically on foot. Do this
+            // before waiting on Impasse cargo/assignedVehicle cleanup, so the
+            // empty vehicle can enter the shared service lifecycle immediately
+            // after those ownership references clear.
+            if (_state isEqualTo "transport" && {!_inVehicle}) then {
+                [_group,"physical-dismount"] call
+                    ITW_CLASH_Reconstitution_fnc_ReleaseTransportReservation;
             };
 
             // Physical dismount alone is not enough for HAL handoff. Impasse's
@@ -110,6 +146,7 @@ ITW_AtkReconstitutionTransitManager = {
             };
 
             if (_nearHandoff) then {
+                [_group,"ao-handoff"] call ITW_CLASH_Reconstitution_fnc_ReleaseTransportReservation;
                 _group setVariable ["ITW_CLASH_ReconstitutionTransit",nil];
                 _group setVariable ["ITW_CLASH_TransitState",nil];
                 _group setVariable ["ITW_CLASH_TransitVehicle",nil];
@@ -175,20 +212,19 @@ ITW_AtkReconstitutionTransitManager = {
                 if (_dispatchSucceeded) then {
                     _state = "transport";
                 } else {
-                    private _corridor = [_objectiveIndex] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
-                    private _airOnly = _corridor isNotEqualTo [] && {
-                        ((_corridor#2) find "support-corridor-air") == 0
-                    };
-                    if (!_airOnly && {
-                        time - _createdAt >= ITW_AtkReconstitutionTransportWait
-                    }) then {
+                    // Replacement infantry now starts at the forward FOB. If
+                    // transport cannot be funded/created, the squad may simply
+                    // walk forward after the existing grace period; there is no
+                    // longer a support-corridor air-only exception to preserve.
+                    if (time - _createdAt >= ITW_AtkReconstitutionTransportWait) then {
                         _state = "walking";
                         _group setVariable ["ITW_CLASH_TransitState",_state];
                         [_group,false] spawn ITW_AtkEngageInfantry;
                         if (!isNil "ITW_CLASH_fnc_Log") then {
                             ["reconstitution-transport-fallback-walk",[
                                 _requestId,_lineage,_objectiveIndex,
-                                round (time - _createdAt),round _distance
+                                round (time - _createdAt),round _distance,
+                                "forward-fob"
                             ]] call ITW_CLASH_fnc_Log;
                         };
                     };
@@ -214,7 +250,7 @@ private _finalized = ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_Compil
 ITW_CLASH_ReconstitutionTransitFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true preInit=true vehicleOwnershipGate=true",
+        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true preInit=true vehicleOwnershipGate=true lifecycleRelease=true forwardFOBFallback=true",
         ITW_CLASH_ReconstitutionTransitFixVersion,
         ITW_CLASH_ReconstitutionHandoffBuffer
     ];

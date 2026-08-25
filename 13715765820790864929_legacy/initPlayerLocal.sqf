@@ -4,6 +4,22 @@ if (!isDedicated) then {waitUntil {player == player};};
 if ((!isServer) && (player != player)) then {waitUntil {player == player};};
 waitUntil {! isNil "ITW_PreInitComplete"}; // wait for the server to catch up
 
+if (fileExists "ITW_CLASH_PlayerTaskClient.sqf") then {
+    [] execVM "ITW_CLASH_PlayerTaskClient.sqf";
+};
+
+if (fileExists "ITW_CLASH_PlayerEmploymentMenu.sqf") then {
+    [] execVM "ITW_CLASH_PlayerEmploymentMenu.sqf";
+};
+
+if (fileExists "ITW_CLASH_PlayerTaskRequestMenu.sqf") then {
+    [] execVM "ITW_CLASH_PlayerTaskRequestMenu.sqf";
+};
+
+if (fileExists "ITW_CLASH_PlayerGarageDeployment.sqf") then {
+    [] execVM "ITW_CLASH_PlayerGarageDeployment.sqf";
+};
+
 // Code to allow player to fix frozen animation
 [] spawn { 
     scriptName "ITW_AnimFreezeFixer";

@@ -762,10 +762,10 @@ class Params
 	};
 	class CLASHObserver
 	{
-		title = "C.L.A.S.H. control mode";
+		title = "C.L.A.S.H. / HAL control mode";
 		values[] = {0,1,2};
-		texts[] = {"Off (baseline)","Observer only (RPT logging)","Live OPFOR infantry pilot"};
-		default = 0;
+		texts[] = {"HAL disabled (compatibility only)","Observer only (RPT logging; HAL disabled)","Live dual-HAL campaign (recommended)"};
+		default = 2;
 	};
 	class HeadlessClient
 	{
@@ -945,6 +945,17 @@ class RscDisplayGarageSKL: RscDisplayGarage
 
 class CfgCommunicationMenu
 {
+    class ITW_CLASH_HALEmployment
+    {
+        text = "C.L.A.S.H. HAL Employment";
+        submenu = "";
+        expression = "[] call ITW_CLASH_PlayerEmployment_fnc_OpenMenu";
+        icon = "";
+        cursor = "\a3\Ui_f\data\IGUI\Cfg\Cursors\iconCursorSupport_ca.paa";
+        enable = "1";
+        removeAfterExpressionCall = 0;
+    };
+
 	class lifeSignScan
 	{
 		text = "$STR_ITW_RADIO_CommLifeSignScan";		// Text displayed in the menu and in a notification

@@ -47,12 +47,10 @@ if (isServer) then {
         };
     };
 
-    // Dual-HAL / Checkbook loads synchronously after the canonical controller
-    // is validated. Commander B must be prepared here, at the C.L.A.S.H.-owned
-    // launch boundary, before ITW_Start can eventually launch native HAL core.
-    // Do not rely on wrapping NR6_fnc_HALcore: RydHQInit/VarInit legitimately
-    // rebind native HAL functions during initialization. Native RydHQInit reads
-    // leaderHQB after VarInit and registers it as Commander B.
+    // Dual-HAL / Checkbook loads synchronously after the canonical controller.
+    // Impasse does not establish side identity until ITW_Start, so Commander B
+    // preparation is intentionally deferred to Checkbook API V2's side binder.
+    // Native RydHQInit later consumes leaderHQB without any HAL-core override.
     if (
         missionNamespace getVariable ["ITW_CLASH_BootstrapReady",false]
         && {missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitReady",false]}
@@ -69,29 +67,90 @@ if (isServer) then {
                 _checkbookAPIReady = call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf";
             };
 
-            private _dualHALPrepared = false;
+            private _forceGenerationReady = false;
+            if (_checkbookAPIReady isEqualTo true && {fileExists "ITW_CLASH_ForceGeneration.sqf"}) then {
+                _forceGenerationReady = call compile preprocessFileLineNumbers "ITW_CLASH_ForceGeneration.sqf";
+            };
+            private _halLogisticsLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
+                _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
+            };
+            private _playerTransportLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {
+                fileExists "ITW_CLASH_PlayerTransportAuthority.sqf"
+            }) then {
+                _playerTransportLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_PlayerTransportAuthority.sqf";
+            };
+            private _playerTasksLoaded = false;
+            if (_playerTransportLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_PlayerTaskSupport.sqf"
+            }) then {
+                _playerTasksLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_PlayerTaskSupport.sqf";
+            };
+            private _playerGarageLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
+                _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";
+            };
+            private _playerArtilleryLoaded = false;
             if (
-                _dualHALHardened isEqualTo true
-                && {_checkbookAPIReady isEqualTo true}
-                && {!isNil "ITW_CLASH_DualHAL_fnc_Prepare"}
+                _playerTasksLoaded isEqualTo true
+                && {_playerGarageLoaded isEqualTo true}
+                && {fileExists "ITW_CLASH_PlayerArtilleryTasks.sqf"}
             ) then {
-                _dualHALPrepared = call ITW_CLASH_DualHAL_fnc_Prepare;
+                _playerArtilleryLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_PlayerArtilleryTasks.sqf";
+            };
+
+            // Demand-first employment is a post-hardening policy layer. It
+            // installs asynchronously after PlayerTaskStateHardening has bound
+            // its admission/cancel/artillery surfaces, so this synchronous load
+            // cannot race those existing guards. Native interceptors then wait
+            // for both the demand layer and PlayerTaskSupport's HAL binder.
+            if (_playerTasksLoaded isEqualTo true && {
+                _playerArtilleryLoaded isEqualTo true
+            } && {fileExists "ITW_CLASH_PlayerDemandDispatch.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_PlayerDemandDispatch.sqf";
+                if (fileExists "ITW_CLASH_PlayerDemandNativeInterceptors.sqf") then {
+                    call compile preprocessFileLineNumbers "ITW_CLASH_PlayerDemandNativeInterceptors.sqf";
+                } else {
+                    diag_log "CLASH BOOT | player-demand-native-interceptors-missing | demand ledger remains fail-open";
+                };
+            } else {
+                diag_log "CLASH BOOT | player-demand-dispatch-missing-or-prereq-failed | legacy player admission retained";
+            };
+
+            if (missionNamespace getVariable ["ITW_CLASH_CertificationMode",false] && {
+                fileExists "ITW_CLASH_ArtilleryCertification.sqf"
+            }) then {
+                [] execVM "ITW_CLASH_ArtilleryCertification.sqf";
             };
 
             if (
                 _dualHALHardened isEqualTo true
                 && {_checkbookAPIReady isEqualTo true}
-                && {_dualHALPrepared isEqualTo true}
+                && {_forceGenerationReady isEqualTo true}
+                && {_halLogisticsLoaded isEqualTo true}
+                && {_playerTransportLoaded isEqualTo true}
+                && {_playerTasksLoaded isEqualTo true}
+                && {_playerGarageLoaded isEqualTo true}
+                && {_playerArtilleryLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-prepared | commanderB=%1 leaderHQB=%2 hardening=true capabilityAPI=true nativeCoreLaunchPending=true",
-                    !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull]),
-                    !isNull (missionNamespace getVariable ["ITW_CLASH_BLUFORLeader",objNull])
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7",
+                    _forceGenerationReady,
+                    _halLogisticsLoaded,
+                    _playerTransportLoaded,
+                    _playerTasksLoaded,
+                    _playerGarageLoaded,
+                    _playerArtilleryLoaded,
+                    missionNamespace getVariable ["ITW_ParamCLASHObserver",-1]
                 ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 prepared=%3 runtime candidate blocked",
-                    _dualHALHardened,_checkbookAPIReady,_dualHALPrepared
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded
                 ];
             };
         } else {

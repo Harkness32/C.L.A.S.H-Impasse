@@ -447,6 +447,10 @@ ITW_GarageVehSpawn = {
     };
     if (!isNull _veh) then {
         _veh call compile _init;
+        if !(isNil "ITW_CLASH_PlayerGarage_fnc_OnVehicleSpawned") then {
+            [_veh,_player,_type] call
+                ITW_CLASH_PlayerGarage_fnc_OnVehicleSpawned;
+        };
         if (unitIsUAV _veh) then {
             west createVehicleCrew _veh;
         } else {

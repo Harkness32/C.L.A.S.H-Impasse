@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 1;
+ITW_CLASH_DualHALCheckbookVersion = 2;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -93,6 +93,7 @@ ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup = {
     if ([_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup) exitWith {false};
     if ([_group] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved) exitWith {false};
     if (_group == ITW_CLASH_BLUFORHQ) exitWith {false};
+    if (((units _group) findIf {!(_x isKindOf "Logic") && {!(_x isKindOf "VirtualMan_F")}}) < 0) exitWith {false};
     ({alive _x} count units _group) > 0
 };
 
@@ -116,6 +117,7 @@ ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter = {
 ITW_CLASH_DualHAL_fnc_RegisterGroup = {
     params ["_group",["_reason","fielded"]];
     if (isNull _group || {[_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup}) exitWith {false};
+    if (((units _group) findIf {!(_x isKindOf "Logic") && {!(_x isKindOf "VirtualMan_F")}}) < 0) exitWith {false};
 
     private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
     if (isNull _hq || {_group == _hq}) exitWith {false};
@@ -321,6 +323,30 @@ ITW_CLASH_DualHAL_fnc_PrepareCommanderB = {
 ITW_CLASH_DualHAL_fnc_GetSupportSpawn = {
     params ["_side",["_mode","GROUND"],["_reference",[]]];
     if (isNil "ITW_Objectives" || {isNil "ITW_Bases"}) exitWith {[]};
+
+    // V2 delegates geography to the symmetric ITW generation-node resolver.
+    // Keep the legacy FOB-derived fallback below so transport remains fail-open
+    // while the campaign graph is still being established.
+    private _resolvedSpawn = [];
+    if (!isNil "ITW_CLASH_Generation_fnc_Resolve") then {
+        private _resolved = [
+            _side,
+            "TRANSPORT",
+            if (_mode == "AIR") then {"FORWARD_AIR"} else {"FORWARD"},
+            _reference
+        ] call ITW_CLASH_Generation_fnc_Resolve;
+        if (_resolved isEqualType createHashMap && {
+            (_resolved getOrDefault ["status",""]) == "RESOLVED"
+        }) then {
+            _resolvedSpawn = [
+                +(_resolved getOrDefault ["origin",[]]),
+                _resolved getOrDefault ["forwardBase",-1],
+                _resolved getOrDefault ["objective",-1],
+                _resolved getOrDefault ["source","generation-node"]
+            ];
+        };
+    };
+    if (_resolvedSpawn isNotEqualTo []) exitWith {_resolvedSpawn};
 
     if (_reference isEqualTo []) then {
         _reference = if (!isNil "ITW_Bases" && {count ITW_Bases > 0}) then {
@@ -722,17 +748,20 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
 };
 
 ITW_CLASH_Checkbook_fnc_RequestTransport = {
-    params ["_requester","_hq","_destination","_mode",["_seatCount",1]];
+    params ["_requester","_hq","_destination","_mode",["_seatCount",1],["_externalRequestId",""]];
     if !(missionNamespace getVariable ["ITW_CLASH_CheckbookEnabled",true]) exitWith {objNull};
     if (isNull _requester || {isNull _hq} || {_destination isEqualTo []}) exitWith {objNull};
     if !(_mode in ["AIR","GROUND"]) exitWith {objNull};
 
     private _side = side _requester;
     private _defs = [_side,_mode,_seatCount] call ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
-    ITW_CLASH_CheckbookRequestSerial = ITW_CLASH_CheckbookRequestSerial + 1;
-    private _requestId = format [
-        "CB-%1-%2-%3",round time,ITW_CLASH_CheckbookRequestSerial,_mode
-    ];
+    private _requestId = _externalRequestId;
+    if (_requestId isEqualTo "") then {
+        ITW_CLASH_CheckbookRequestSerial = ITW_CLASH_CheckbookRequestSerial + 1;
+        _requestId = format [
+            "CB-%1-%2-%3",round time,ITW_CLASH_CheckbookRequestSerial,_mode
+        ];
+    };
 
     if (_defs isEqualTo []) exitWith {
         ["checkbook-denied",[
@@ -765,8 +794,8 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     };
 
     private _result = objNull;
-    scopeName "CLASH_CHECKBOOK_TRANSPORT";
     {
+        if (!isNull _result) then {continue};
         private _vehDef = _x;
         private _veh = [_vehDef,_crewTypes,_unitTypes,_side,_spawn] call ITW_AtkSpawnVeh;
         if (isNull _veh) then {continue};
@@ -787,12 +816,20 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
             continue;
         };
 
+        private _registered = [_veh,_crewGroup,_vehDef,_hq,_requestId,"checkbook"] call
+            ITW_CLASH_Checkbook_fnc_RegisterTransport;
+        if (!_registered) then {
+            deleteVehicleCrew _veh;
+            deleteVehicle _veh;
+            if (!isNull _crewGroup && {units _crewGroup isEqualTo []}) then {
+                deleteGroup _crewGroup;
+            };
+            continue;
+        };
+
         ITW_TICKET_SEM_CHECK;
         ITW_VEH_COUNT_INCR(_vehDef);
         ITW_TICKET_REDUCE(_vehDef);
-
-        [_veh,_crewGroup,_vehDef,_hq,_requestId,"checkbook"] call
-            ITW_CLASH_Checkbook_fnc_RegisterTransport;
 
         {_x addCuratorEditableObjects [[_veh] + units _crewGroup,true]} forEach allCurators;
         _result = _veh;
@@ -803,7 +840,6 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
             _baseIndex,_objectiveIndex,_spawnSource,
             _vehDef#ITW_VEH_REQD_TICKETS,_vehDef#ITW_VEH_CURR_TICKETS
         ]] call ITW_CLASH_DualHAL_fnc_Log;
-        breakOut "CLASH_CHECKBOOK_TRANSPORT";
     } forEach _defs;
 
     if (isNull _result) then {
@@ -821,19 +857,16 @@ ITW_CLASH_Checkbook_fnc_HasCargoCapacity = {
     private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
     (_cargo findIf {
         private _group = _x;
-        if (isNull _group || {{alive _x} count units _group == 0}) exitWith {false};
-        private _busy = _group getVariable ["Busy" + str _group,false];
-        private _unable = _group getVariable ["Unable",false];
-        if (_busy || {_unable}) exitWith {false};
-
-        private _veh = assignedVehicle leader _group;
-        if (isNull _veh || {!alive _veh} || {!canMove _veh}) exitWith {false};
-        private _modeOK = if (_mode == "AIR") then {
-            _veh isKindOf "Air"
-        } else {
-            !(_veh isKindOf "Air")
+        private _valid = !isNull _group && {{alive _x} count units _group > 0};
+        private _veh = if (_valid) then {assignedVehicle leader _group} else {objNull};
+        private _modeOK = _valid && {!isNull _veh} && {
+            if (_mode == "AIR") then {_veh isKindOf "Air"} else {!(_veh isKindOf "Air")}
         };
         _modeOK
+        && {!(_group getVariable ["Busy" + str _group,false])}
+        && {!(_group getVariable ["Unable",false])}
+        && {alive _veh}
+        && {canMove _veh}
         && {_veh emptyPositions "" >= _seatCount}
         && {(assignedCargo _veh) isEqualTo []}
     }) >= 0
@@ -900,8 +933,20 @@ ITW_CLASH_DualHAL_fnc_InstallCargoHook = {
                         _hq getVariable ["RydHQ_CodeSign","?"],
                         _mode,_seatCount,_destination
                     ]] call ITW_CLASH_DualHAL_fnc_Log;
-                    [_requester,_hq,_destination,_mode,_seatCount] call
-                        ITW_CLASH_Checkbook_fnc_RequestTransport;
+                    if (!isNil "ITW_CLASH_fnc_RequestCapability") then {
+                        private _requirements = createHashMapFromArray [
+                            ["hq",_hq],
+                            ["destination",+_destination],
+                            ["mode",_mode],
+                            ["seats",_seatCount],
+                            ["side",side _requester]
+                        ];
+                        ["TRANSPORT",_requester,_requirements,"NORMAL"] call
+                            ITW_CLASH_fnc_RequestCapability;
+                    } else {
+                        [_requester,_hq,_destination,_mode,_seatCount] call
+                            ITW_CLASH_Checkbook_fnc_RequestTransport;
+                    };
                 };
             };
         };
@@ -920,16 +965,10 @@ ITW_CLASH_DualHAL_fnc_Prepare = {
     true
 };
 
-if (!isNil "NR6_fnc_HALcore") then {
-    ITW_CLASH_DualHAL_fnc_HALcoreBase = NR6_fnc_HALcore;
-    NR6_fnc_HALcore = {
-        call ITW_CLASH_DualHAL_fnc_Prepare;
-        _this call ITW_CLASH_DualHAL_fnc_HALcoreBase
-    };
-    diag_log "CLASH BOOT | dual-hal-core-wrapper-ready | leaderHQB=pre-native-core";
-} else {
-    diag_log "CLASH BOOT | WARNING | dual-hal-core-wrapper-missing | NR6_fnc_HALcore unavailable";
-};
+// Do not wrap NR6_fnc_HALcore here. Native HAL legitimately rebinds its core
+// during VarInit, which made the old override both ineffective and misleading.
+// The Checkbook API's deferred side binder owns Commander B preparation.
+diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=true";
 
 [] spawn {
     scriptName "ITW_CLASH_DualHAL_Runtime";

@@ -56,11 +56,25 @@ private _lateDoctrineFinalizers = missionNamespace getVariable [
     "ITW_CLASH_LateDoctrineFinalizers",
     []
 ];
-if (_var in (
+
+// ITW_Ally.sqf is compiled in preInit, but the server-side player-transport
+// authority layer cannot bind until init after Dual-HAL/Checkbook exists. Keep
+// only the two server ferry functions mutable until that synchronous module
+// closes this window before ITW_Start launches ITW_AllyInit. Clients finalize
+// their unused native copies normally.
+private _allyTransportWindow = missionNamespace getVariable [
+    "ITW_CLASH_AllyTransportFinalizationWindow",
+    true
+];
+private _allyTransportDeferred = isServer && {_allyTransportWindow} && {
+    _var in ["ITW_AllyLoadIntoVehManager","ITW_AllyLoadGrpIntoVeh"]
+};
+
+if (_allyTransportDeferred || {_var in (
     _deferredFinalizers +
     _persistentDeferredFinalizers +
     _lateDoctrineFinalizers
-)) exitWith {
+)}) exitWith {
     diag_log format ["CLASH BOOT | finalization-deferred | %1",_var];
     true
 };

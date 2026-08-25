@@ -20,6 +20,8 @@ diag_log "CLASH BOOT | preInit | fail-open hooks installed; controller deferred 
 // Impasse tactical ownership only after the runtime commander layer is ready.
 if (isServer) then {
     ITW_CLASH_DeferredFinalizers = [
+        "ITW_AtkAiCount",
+        "ITW_AtkBeginReconstitutionTransit",
         "ITW_AtkDispatchReconstitutionTransport",
         "ITW_AtkReconstitutionTransitManager",
         "ITW_AtkInfantryMoveUp",
@@ -40,6 +42,60 @@ if (isServer) then {
 isNil {call compile preprocessFileLineNumbers "ITW_Airfield.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_Ally.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Attack.sqf";                };
+
+// Service crews are real battlefield entities, but they are not combat
+// manpower. Impasse's native spawner compares an all-units side count against
+// ITW_AtkAiCount, so increase only the cap by the number of explicitly exempt
+// service crewmen. The native cap calculation itself remains authoritative.
+private _capAccountingFixed = false;
+if (isServer && {!isNil "ITW_AtkAiCount"}) then {
+    ITW_CLASH_CapAccountingVersion = 1;
+    ITW_CLASH_CapAccountingReady = false;
+    ITW_CLASH_Cap_fnc_GroupIsExempt = {
+        params ["_group"];
+        if (isNull _group) exitWith {false};
+        if (_group getVariable ["ITW_CLASH_CapExempt",false]) exitWith {true};
+        if (_group getVariable ["ITW_CLASH_CASEVAC",false]) exitWith {true};
+        if (_group getVariable ["ITW_CLASH_GroundMEDEVAC",false]) exitWith {true};
+        private _leader = leader _group;
+        if (isNull _leader) exitWith {false};
+        private _veh = vehicle _leader;
+        !isNull _veh && {
+            _veh getVariable ["ITW_CLASH_CASEVAC",false] ||
+            {_veh getVariable ["ITW_CLASH_GroundMEDEVAC",false]}
+        }
+    };
+    ITW_CLASH_Cap_fnc_ExemptUnits = {
+        params ["_side"];
+        {
+            alive _x && {
+                side _x == _side && {
+                    [group _x] call ITW_CLASH_Cap_fnc_GroupIsExempt
+                }
+            }
+        } count allUnits
+    };
+    ITW_CLASH_Cap_fnc_NativeAtkAiCount = ITW_AtkAiCount;
+    ITW_AtkAiCount = {
+        private _isFriendly = _this;
+        private _native = _isFriendly call ITW_CLASH_Cap_fnc_NativeAtkAiCount;
+        if !(missionNamespace getVariable ["ITW_CLASH_CapAccountingReady",false]) exitWith {_native};
+        private _side = if (_isFriendly) then {
+            missionNamespace getVariable ["ITW_PlayerSide",west]
+        } else {
+            missionNamespace getVariable ["ITW_EnemySide",east]
+        };
+        _native + ([_side] call ITW_CLASH_Cap_fnc_ExemptUnits)
+    };
+    ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkAiCount"];
+    _capAccountingFixed = ["ITW_AtkAiCount"] call SKL_fnc_CompileFinal;
+    ITW_CLASH_CapAccountingReady = _capAccountingFixed;
+    diag_log format [
+        "CLASH BOOT | cap-accounting-preinit | ready=%1 version=%2 serviceCrewsExempt=true combatManpowerNative=true",
+        _capAccountingFixed,
+        ITW_CLASH_CapAccountingVersion
+    ];
+};
 
 // Install the fail-open field handoff wrappers while the attack writers are
 // still mutable. Before the runtime dual-HAL layer is ready they delegate to
@@ -79,10 +135,20 @@ if (isServer) then {
         _transitFixed = call compile preprocessFileLineNumbers "ITW_CLASH_ReconstitutionTransitFix.sqf";
     };
 
+    if (!_capAccountingFixed) then {
+        ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkAiCount"];
+        ["ITW_AtkAiCount"] call SKL_fnc_CompileFinal;
+        diag_log "CLASH BOOT | cap-accounting-preinit-fallback | baseline AI cap finalized";
+    };
     if (!_dispatchFixed) then {
-        ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkDispatchReconstitutionTransport"];
-        ["ITW_AtkDispatchReconstitutionTransport"] call SKL_fnc_CompileFinal;
-        diag_log "CLASH BOOT | preinit-reconstitution-dispatch-fallback | baseline finalized";
+        {
+            ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - [_x];
+            [_x] call SKL_fnc_CompileFinal;
+        } forEach [
+            "ITW_AtkBeginReconstitutionTransit",
+            "ITW_AtkDispatchReconstitutionTransport"
+        ];
+        diag_log "CLASH BOOT | preinit-reconstitution-dispatch-fallback | baseline origin/dispatch finalized";
     };
     if (!_transitFixed) then {
         ITW_CLASH_DeferredFinalizers = ITW_CLASH_DeferredFinalizers - ["ITW_AtkReconstitutionTransitManager"];
@@ -115,6 +181,7 @@ if (isServer) then {
     ITW_CLASH_DualHALCheckbookPreInitReady = _dualHALCheckbookPreInitFixed;
     ITW_CLASH_PhysicalMovementPreInitReady = _physicalMovementFixed;
     ITW_CLASH_InfantryAuthorityPreInitReady = _infantryAuthorityPreInitFixed;
+    ITW_CLASH_CapAccountingReady = _capAccountingFixed;
     diag_log format [
         "CLASH BOOT | reconstitution-preinit-authority | ready=%1 dispatch=%2 transit=%3",
         ITW_CLASH_ReconstitutionPreInitReady,
@@ -134,6 +201,10 @@ if (isServer) then {
         "CLASH BOOT | infantry-authority-preinit | ready=%1 managerFilter=%2",
         ITW_CLASH_InfantryAuthorityPreInitReady,
         _infantryAuthorityPreInitFixed
+    ];
+    diag_log format [
+        "CLASH BOOT | cap-accounting-authority | ready=%1",
+        ITW_CLASH_CapAccountingReady
     ];
 };
 
@@ -163,7 +234,7 @@ isNil {call compile preprocessFileLineNumbers "ITW_Garage.sqf";                 
 isNil {call compile preprocessFileLineNumbers "ITW_Garrison.sqf";               };
 isNil {call compile preprocessFileLineNumbers "ITW_SideOps.sqf";                };
 isNil {call compile preprocessFileLineNumbers "ITW_Objectives.sqf";             };
-isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";             };
+isNil {call compile preprocessFileLineNumbers "ITW_RallyPoint.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_Radio.sqf";                  };
 isNil {call compile preprocessFileLineNumbers "ITW_Save.sqf";                   };
 isNil {call compile preprocessFileLineNumbers "ITW_Targets.sqf";                };

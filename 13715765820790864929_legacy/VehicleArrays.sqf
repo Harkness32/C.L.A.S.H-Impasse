@@ -1152,6 +1152,27 @@ if (ITW_ParamArtilleryType > 0) then {
     } forEach [va_pArtyClasses,va_eArtyClasses];
 };
 
+// C.L.A.S.H. capability export seam. Impasse remains the owner of faction
+// discovery; Checkbook consumes immutable snapshots after this file releases
+// several enemy support arrays during its normal cleanup.
+ITW_CLASH_PlayerArtilleryClasses = +va_pArtyClasses;
+ITW_CLASH_EnemyArtilleryClasses = +va_eArtyClasses;
+ITW_CLASH_PlayerAmmoClasses = +va_pAmmoClasses;
+ITW_CLASH_EnemyAmmoClasses = +va_eAmmoClasses;
+ITW_CLASH_PlayerFuelClasses = +va_pFuelClasses;
+ITW_CLASH_EnemyFuelClasses = +va_eFuelClasses;
+ITW_CLASH_PlayerRepairClasses = +va_pRepairClasses;
+ITW_CLASH_EnemyRepairClasses = +va_eRepairClasses;
+ITW_CLASH_PlayerAmmoHeloClasses = va_pHeliClasses select {
+    private _class = if (_x isEqualType []) then {_x#0} else {_x};
+    getNumber (configFile >> "CfgVehicles" >> _class >> "transportAmmo") > 100
+};
+ITW_CLASH_EnemyAmmoHeloClasses = va_eHeliClasses select {
+    private _class = if (_x isEqualType []) then {_x#0} else {_x};
+    getNumber (configFile >> "CfgVehicles" >> _class >> "transportAmmo") > 100
+};
+ITW_CLASH_CapabilityPoolsReady = true;
+
 VEHICLE_ARRAYS_COMPLETE = true;
 
 // clean up arrays not used in this mission

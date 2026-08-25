@@ -631,6 +631,12 @@ ITW_SdoTransport = {
         _units pushBack _unit
     };
     _grp deleteGroupWhenEmpty true;
+    if (!isNil "ITW_CLASH_PlayerTransport_fnc_ReserveDelivery") then {
+        [_grp,"itw-sideop-delivery"] call
+            ITW_CLASH_PlayerTransport_fnc_ReserveDelivery;
+    } else {
+        _grp setVariable ["itwDelivery",true];
+    };
     [_grp] call ITW_AtkAddInfantryGroup;
     [_grp] call ITW_AllyGroupCallback;
     [_grp] call ITW_AllyDelivery;
