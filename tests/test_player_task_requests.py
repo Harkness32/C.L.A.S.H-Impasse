@@ -53,6 +53,27 @@ def test_request_menu_is_separate_and_exposes_locked_revision_one_shape():
     assert "Request HAL Task" not in employment
 
 
+def test_strike_menu_uses_native_commanding_menu_submenu_link():
+    menu = _text("ITW_CLASH_PlayerTaskRequestMenu.sqf")
+    open_menu = _block(
+        menu,
+        "ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenMenu = {",
+        "ITW_CLASH_PlayerTaskRequestMenu_fnc_Install = {",
+    )
+    strike_builder = _block(
+        menu,
+        "ITW_CLASH_PlayerTaskRequestMenu_fnc_BuildStrike = {",
+        "ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenStrike = {",
+    )
+
+    assert '"Strike >"' in open_menu
+    assert '"#USER:ITW_CLASH_PlayerTaskRequestStrikeMenu"' in open_menu
+    assert '[] call ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenStrike' not in open_menu
+    assert '"Back"' in strike_builder
+    assert '"",-4,' in strike_builder
+    assert "nativeSubmenuLink=true" in menu
+
+
 def test_artillery_request_uses_hal_known_targets_and_native_cff_reservation():
     text = _text("ITW_CLASH_PlayerTaskRequestArtillery.sqf")
 
