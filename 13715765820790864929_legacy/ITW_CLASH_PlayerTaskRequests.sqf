@@ -204,7 +204,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
 // TRANSPORT phases do not require repeatedly editing that high-risk file.
 if (
     fileExists "ITW_CLASH_PlayerTaskRequestBootstrap.sqf"
-    && {!missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestBootstrapStarted",false]}
+    && {!(missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestBootstrapStarted",false])}
 ) then {
     call compile preprocessFileLineNumbers "ITW_CLASH_PlayerTaskRequestBootstrap.sqf";
 };
