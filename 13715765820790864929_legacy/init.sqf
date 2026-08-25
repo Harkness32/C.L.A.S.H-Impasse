@@ -102,6 +102,25 @@ if (isServer) then {
                 _playerArtilleryLoaded = call compile preprocessFileLineNumbers
                     "ITW_CLASH_PlayerArtilleryTasks.sqf";
             };
+
+            // Demand-first employment is a post-hardening policy layer. It
+            // installs asynchronously after PlayerTaskStateHardening has bound
+            // its admission/cancel/artillery surfaces, so this synchronous load
+            // cannot race those existing guards. Native interceptors then wait
+            // for both the demand layer and PlayerTaskSupport's HAL binder.
+            if (_playerTasksLoaded isEqualTo true && {
+                _playerArtilleryLoaded isEqualTo true
+            } && {fileExists "ITW_CLASH_PlayerDemandDispatch.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_PlayerDemandDispatch.sqf";
+                if (fileExists "ITW_CLASH_PlayerDemandNativeInterceptors.sqf") then {
+                    call compile preprocessFileLineNumbers "ITW_CLASH_PlayerDemandNativeInterceptors.sqf";
+                } else {
+                    diag_log "CLASH BOOT | player-demand-native-interceptors-missing | demand ledger remains fail-open";
+                };
+            } else {
+                diag_log "CLASH BOOT | player-demand-dispatch-missing-or-prereq-failed | legacy player admission retained";
+            };
+
             if (missionNamespace getVariable ["ITW_CLASH_CertificationMode",false] && {
                 fileExists "ITW_CLASH_ArtilleryCertification.sqf"
             }) then {
