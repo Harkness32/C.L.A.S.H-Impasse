@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 4;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 5;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -273,6 +273,21 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
         };
         [_hq,_severe] call ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand;
     };
+};
+
+// Player-initiated tasking is a follow-on layer stacked on top of the demand-
+// first tranche. Loading it here guarantees PlayerTaskSupport and the shared
+// one-owner lifecycle exist before request adapters become available, while the
+// adapters themselves remain readiness-gated and fail closed.
+if (fileExists "ITW_CLASH_PlayerTaskRequests.sqf") then {
+    call compile preprocessFileLineNumbers "ITW_CLASH_PlayerTaskRequests.sqf";
+    if (fileExists "ITW_CLASH_PlayerTaskRequestArtillery.sqf") then {
+        call compile preprocessFileLineNumbers "ITW_CLASH_PlayerTaskRequestArtillery.sqf";
+    } else {
+        diag_log "CLASH BOOT | player-task-request-artillery-missing | ARTILLERY request remains unavailable";
+    };
+} else {
+    diag_log "CLASH BOOT | player-task-request-router-missing | player-initiated tasking disabled";
 };
 
 true
