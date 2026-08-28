@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALTransportAudioStarted",false]) e
 
 ITW_CLASH_HALTransportAudioStarted = true;
 ITW_CLASH_HALTransportAudioReady = false;
-ITW_CLASH_HALTransportAudioVersion = 1;
+ITW_CLASH_HALTransportAudioVersion = 2;
 
 ITW_CLASH_HALTransportAudio_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -39,16 +39,26 @@ ITW_CLASH_HALTransportAudio_fnc_Emit = {
             if (!isNil "ITW_AllyRadioMsg" && {_nearbyPlayers isNotEqualTo []}) then {
                 ["bStart",_carrier] remoteExec ["ITW_AllyRadioMsg",_nearbyPlayers];
             };
-            if (!isNull _pilot) then {
-                [leader _group,localize "STR_ITW_ALLY_WeAreBoarding"] remoteExec ["sideChat",_pilot];
+            if (!isNull _pilot && {isPlayer _pilot}) then {
+                private _line = format [
+                    "%1: %2",
+                    groupId _group,
+                    localize "STR_ITW_ALLY_WeAreBoarding"
+                ];
+                _line remoteExecCall ["systemChat",_pilot];
             };
         };
         case "BOARD_END": {
             if (!isNil "ITW_AllyRadioMsg" && {_nearbyPlayers isNotEqualTo []}) then {
                 ["bEnd",_carrier] remoteExec ["ITW_AllyRadioMsg",_nearbyPlayers];
             };
-            if (!isNull _pilot) then {
-                [leader _group,localize "STR_ITW_ALLY_WeAreIn"] remoteExec ["sideChat",_pilot];
+            if (!isNull _pilot && {isPlayer _pilot}) then {
+                private _line = format [
+                    "%1: %2",
+                    groupId _group,
+                    localize "STR_ITW_ALLY_WeAreIn"
+                ];
+                _line remoteExecCall ["systemChat",_pilot];
             };
         };
         default {};
@@ -83,7 +93,7 @@ ITW_CLASH_HALTransportAudio_fnc_Emit = {
 
     ITW_CLASH_HALTransportAudioReady = true;
     diag_log format [
-        "CLASH BOOT | hal-transport-audio-ready | version=%1 passive=true nativeRadio=true soleExecutor=HAL_SCargo",
+        "CLASH BOOT | hal-transport-audio-ready | version=%1 passive=true nativeRadio=true pilotTextLocal=true soleExecutor=HAL_SCargo",
         ITW_CLASH_HALTransportAudioVersion
     ];
 
