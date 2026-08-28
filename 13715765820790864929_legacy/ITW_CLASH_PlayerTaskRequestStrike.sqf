@@ -80,10 +80,15 @@ ITW_CLASH_PlayerTaskRequestStrike_fnc_ThreatCount = {
                 _vehicles pushBackUnique _vehicle;
             };
         } forEach units _targetGroup;
-        if (_vehicles isNotEqualTo []) exitWith {count _vehicles};
-    };
 
-    {alive _x} count units _targetGroup
+        // Armor STRIKE is against the fighting vehicles, not their dismounted
+        // crews. Once no living, combat-capable armored vehicle remains, the
+        // armored objective is complete even if surviving crew escape on foot.
+        // Do not fall through to the infantry count for LIGHT/HEAVY requests.
+        count _vehicles
+    } else {
+        {alive _x} count units _targetGroup
+    }
 };
 
 ITW_CLASH_PlayerTaskRequestStrike_fnc_CombatIneffective = {
@@ -303,7 +308,7 @@ ITW_CLASH_PlayerTaskRequestStrike_fnc_Request = {
         _taskId,
         [
             format [
-                "HAL has designated a %1 target of opportunity. Last confirmed position is marked. Destroy the assigned formation or reduce it below meaningful combat effectiveness. HAL retains normal battlefield authority; other friendly forces may engage the same enemy.",
+                "HAL has designated a %1 target of opportunity. Last confirmed position is marked. Destroy or render the assigned combat vehicles ineffective. Dismounted surviving crews are not part of an armor STRIKE objective. HAL retains normal battlefield authority; other friendly forces may engage the same enemy.",
                 toLowerANSI _label
             ],
             "HAL Strike: " + _label,
