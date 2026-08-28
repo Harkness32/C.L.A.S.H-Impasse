@@ -144,3 +144,20 @@ def test_recon_task_uses_frozen_last_known_marker_and_authorizes_reward_only_on_
     assert '["rewardClass","RECON"]' in text
     assert "setMarkerPos" not in text
     assert "addScore" not in text
+
+
+def test_armor_strike_completion_counts_combat_vehicles_not_dismounted_crew():
+    text = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+    threat = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_ThreatCount = {",
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_CombatIneffective = {",
+    )
+
+    assert 'if (_requestType in ["STRIKE_LIGHT_ARMOR","STRIKE_HEAVY_ARMOR"]) then {' in threat
+    assert "alive _vehicle" in threat
+    assert "canFire _vehicle" in threat
+    assert "count _vehicles" in threat
+    assert "} else {" in threat
+    assert "{alive _x} count units _targetGroup" in threat
+    assert "Dismounted surviving crews are not part of an armor STRIKE objective." in text
