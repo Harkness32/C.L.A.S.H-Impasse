@@ -5,10 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestsStarted",false]) 
 
 ITW_CLASH_PlayerTaskRequestsStarted = true;
 ITW_CLASH_PlayerTaskRequestsReady = false;
-ITW_CLASH_PlayerTaskRequestsVersion = 1;
-ITW_CLASH_PlayerTaskRequestCooldown = missionNamespace getVariable [
-    "ITW_CLASH_PlayerTaskRequestCooldown",15
-];
+ITW_CLASH_PlayerTaskRequestsVersion = 2;
 ITW_CLASH_PlayerTaskRequestAdapters = createHashMap;
 ITW_CLASH_PlayerTaskRequestTypes = [
     "STRIKE_SOFT","STRIKE_LIGHT_ARMOR","STRIKE_HEAVY_ARMOR",
@@ -132,18 +129,6 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
         false
     };
 
-    private _nextAllowed = _group getVariable ["ITW_CLASH_PlayerTaskRequestNextAt",0];
-    if (time < _nextAllowed) exitWith {
-        _result = ["COOLDOWN","HAL is still processing your last task query."] call
-            ITW_CLASH_PlayerTaskRequests_fnc_Result;
-        [_player,_result] call ITW_CLASH_PlayerTaskRequests_fnc_SendResponse;
-        false
-    };
-    _group setVariable [
-        "ITW_CLASH_PlayerTaskRequestNextAt",
-        time + ITW_CLASH_PlayerTaskRequestCooldown
-    ];
-
     private _hq = if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
         [_group] call ITW_CLASH_fnc_GetCommanderForGroup
     } else {grpNull};
@@ -193,9 +178,8 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     ITW_CLASH_PlayerTaskRequestsReady = true;
     publicVariable "ITW_CLASH_PlayerTaskRequestsReady";
     diag_log format [
-        "CLASH BOOT | player-task-request-router-ready | version=%1 ephemeralRequests=true leaderAuthority=true subscriptionsRequired=false oneActiveJob=true cooldown=%2",
-        ITW_CLASH_PlayerTaskRequestsVersion,
-        ITW_CLASH_PlayerTaskRequestCooldown
+        "CLASH BOOT | player-task-request-router-ready | version=%1 ephemeralRequests=true leaderAuthority=true subscriptionsRequired=false oneActiveJob=true queryCooldown=false",
+        ITW_CLASH_PlayerTaskRequestsVersion
     ];
 };
 
