@@ -20,7 +20,10 @@ def test_request_router_is_ephemeral_leader_authoritative_and_subscription_indep
     assert "ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid" in text
     assert "ITW_CLASH_PlayerTaskRequests_fnc_HasActiveJob" in text
     assert "ITW_CLASH_AuthorityHold" in text
-    assert "ITW_CLASH_PlayerTaskRequestCooldown" in text
+    assert "ITW_CLASH_PlayerTaskRequestCooldown" not in text
+    assert "ITW_CLASH_PlayerTaskRequestNextAt" not in text
+    assert "HAL is still processing your last task query." not in text
+    assert "queryCooldown=false" in text
     assert "ITW_CLASH_PlayerTaskRequestAdapters = createHashMap" in text
     assert "ephemeralRequests=true" in text
     assert "subscriptionsRequired=false" in text
@@ -136,3 +139,17 @@ def test_request_layer_boots_after_demand_first_native_interceptors():
     assert "ITW_CLASH_PlayerTaskRequests.sqf" in boot
     assert "ITW_CLASH_PlayerTaskRequestArtillery.sqf" in boot
     assert "player-initiated tasking is a follow-on layer".lower() in boot.lower()
+
+
+def test_request_router_allows_immediate_requery_when_no_job_is_assigned():
+    text = _text("ITW_CLASH_PlayerTaskRequests.sqf")
+    handler = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {",
+        "[] spawn {",
+    )
+
+    assert "COOLDOWN" not in handler
+    assert "PlayerTaskRequestNextAt" not in handler
+    assert "PlayerTaskRequestCooldown" not in handler
+    assert "ITW_CLASH_PlayerTaskRequests_fnc_HasActiveJob" in handler
