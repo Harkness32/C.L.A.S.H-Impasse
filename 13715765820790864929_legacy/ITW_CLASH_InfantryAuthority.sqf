@@ -1,7 +1,7 @@
 #include "defines.hpp"
 
 if (!isServer) exitWith {false};
-ITW_CLASH_InfantryAuthorityVersion = 3;
+ITW_CLASH_InfantryAuthorityVersion = 4;
 
 /*
     Persistent infantry authority doctrine
@@ -263,6 +263,11 @@ ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints = {
             _hq = [_side] call ITW_CLASH_fnc_GetCommanderForSide;
         };
         if (isNull _hq && {
+            !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide}
+        }) then {
+            _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
+        };
+        if (isNull _hq && {
             !isNil "ITW_EnemySide" && {_side == ITW_EnemySide}
         }) then {
             _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
@@ -338,7 +343,7 @@ ITW_CLASH_fnc_ApplyObjectiveDoctrine = {
 };
 
 diag_log format [
-    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true garrisonConstraintsSelfCleaning=true garrisonConstraintsBothSides=true supportSpecialistsHAL=true transportHandoff=true impasseTacticalWritersSuppressed=true defendPhasePersistent=true",
+    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true garrisonConstraintsSelfCleaning=true garrisonConstraintsBothSides=true symmetricCommanderFallback=true supportSpecialistsHAL=true transportHandoff=true impasseTacticalWritersSuppressed=true defendPhasePersistent=true",
     ITW_CLASH_InfantryAuthorityVersion
 ];
 
