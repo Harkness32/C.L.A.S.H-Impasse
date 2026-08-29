@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_FieldHardeningStarted",false]) exitWith {};
 
 ITW_CLASH_FieldHardeningStarted = true;
-ITW_CLASH_FieldHardeningVersion = 2;
+ITW_CLASH_FieldHardeningVersion = 3;
 ITW_CLASH_GTFO_BusyStallGrace = 90;
 ITW_CLASH_GTFO_BusyStallProgress = 25;
 ITW_CLASH_GTFO_BusyStallLogCooldown = 60;
@@ -407,6 +407,11 @@ ITW_CLASH_FieldHardening_fnc_IsCombatUnit = {
                 _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
             };
             if (isNull _hq && {
+                !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+            }) then {
+                _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
+            };
+            if (isNull _hq && {
                 !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
             }) then {
                 _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
@@ -442,6 +447,6 @@ ITW_CLASH_FieldHardening_fnc_IsCombatUnit = {
 };
 
 diag_log format [
-    "CLASH BOOT | field-hardening-ready | version=%1 reconNilGuard=true casevacAbortCleanup=true reconstitutionAssignmentRepair=true aceContactFilter=true gtfoBusyObserver=true commanderAwareDiagnostics=true",
+    "CLASH BOOT | field-hardening-ready | version=%1 reconNilGuard=true casevacAbortCleanup=true reconstitutionAssignmentRepair=true aceContactFilter=true gtfoBusyObserver=true commanderAwareDiagnostics=true symmetricCommanderFallback=true",
     ITW_CLASH_FieldHardeningVersion
 ];
