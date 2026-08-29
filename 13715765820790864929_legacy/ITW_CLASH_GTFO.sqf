@@ -2,7 +2,7 @@
 
 if (!isServer) exitWith {false};
 
-ITW_CLASH_GTFOVersion = 3;
+ITW_CLASH_GTFOVersion = 4;
 if (isNil "ITW_CLASH_GTFO_Corridor") then {ITW_CLASH_GTFO_Corridor = []};
 if (isNil "ITW_CLASH_GTFO_CorridorSignature") then {ITW_CLASH_GTFO_CorridorSignature = ""};
 if (isNil "ITW_CLASH_GTFO_ConstraintSignature") then {ITW_CLASH_GTFO_ConstraintSignature = ""};
@@ -42,10 +42,11 @@ ITW_CLASH_GTFO_fnc_SetPersistentConstraints = {
     private _isPlayerCommander = (
         !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
     );
+    if (isNull _hq && {_isPlayerCommander}) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
+    };
     if (isNull _hq && {
-        !_isPlayerCommander && {
-            !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
-        }
+        !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
     }) then {
         _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
     };
@@ -354,6 +355,11 @@ ITW_CLASH_fnc_OrderWithdrawal = {
     if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
         _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
     };
+    if (isNull _hq && {
+        !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+    }) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
+    };
     if (isNull _hq && {_isEnemySide}) then {
         _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
     };
@@ -583,7 +589,7 @@ ITW_CLASH_fnc_CancelWithdrawals = {
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-hal-withdrawal-ready | version=%1 bridgeOnly=true nativeGoRest=true groupRestDecoy=true bluforReconstitution=true symmetricCancel=true directMove=false directBlue=false directAttackDisable=false recoveryOwnership=postBoarding",
+    "CLASH BOOT | gtfo-hal-withdrawal-ready | version=%1 bridgeOnly=true nativeGoRest=true groupRestDecoy=true bluforReconstitution=true symmetricCancel=true symmetricCommanderFallback=true directMove=false directBlue=false directAttackDisable=false recoveryOwnership=postBoarding",
     ITW_CLASH_GTFOVersion
 ];
 
