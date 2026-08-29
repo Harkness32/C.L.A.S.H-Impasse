@@ -1113,13 +1113,13 @@ ITW_AtkManager = {
                 // never enter this path; the parity layer publishes AI demand.
                 if (_isFriendly && {
                     _newSquads isNotEqualTo [] && {
-                        !isNil "ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill" && {
-                            !isNil "ITW_CLASH_CommanderParity_Anchor_fnc_AcknowledgeRefill"
+                        !isNil "ITW_CLASH_CommanderParity_fnc_NextAnchorRefill" && {
+                            !isNil "ITW_CLASH_CommanderParity_fnc_AcknowledgeAnchorRefill"
                         }
                     }
                 }) then {
                     private _friendlyRefillObjective = call
-                        ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill;
+                        ITW_CLASH_CommanderParity_fnc_NextAnchorRefill;
                     while {
                         _newSquads isNotEqualTo [] && {
                             _friendlyRefillObjective >= 0
@@ -1149,20 +1149,20 @@ ITW_AtkManager = {
                         [_group,_obj] call ITW_AtkAddInfantryGroup;
                         if (isNull _group) then {
                             _friendlyRefillObjective = call
-                                ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill;
+                                ITW_CLASH_CommanderParity_fnc_NextAnchorRefill;
                             continue;
                         };
                         VAR_SET_OBJ_IDX(_group,_friendlyRefillObjective);
                         ITW_DELETE_WAYPOINTS(_group);
                         [
                             _group,_friendlyRefillObjective
-                        ] call ITW_CLASH_CommanderParity_Anchor_fnc_AcknowledgeRefill;
+                        ] call ITW_CLASH_CommanderParity_fnc_AcknowledgeAnchorRefill;
                         _group setVariable ["itwInitGrp",nil];
                         [_group] call _fnGroupsCallback;
 
                         YIELD_CPU;
                         _friendlyRefillObjective = call
-                            ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill;
+                            ITW_CLASH_CommanderParity_fnc_NextAnchorRefill;
                     };
                 };
 
