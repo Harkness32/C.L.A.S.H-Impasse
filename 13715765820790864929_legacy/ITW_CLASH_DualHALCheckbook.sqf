@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 2;
+ITW_CLASH_DualHALCheckbookVersion = 3;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -501,6 +501,94 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
     true
 };
 
+ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
+    params ["_vehInfo"];
+    if !(_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) exitWith {[]};
+
+    private _veh = _vehInfo#VEHINFO_VEH;
+    private _crewGroup = _vehInfo#VEHINFO_CREW_GRP;
+    if (isNull _veh || {isNull _crewGroup}) exitWith {[]};
+
+    private _vehType = _vehInfo#VEHINFO_TYPE;
+    private _class = typeOf _veh;
+    private _artilleryClasses = if (
+        !isNil "ITW_PlayerSide" && {side _crewGroup == ITW_PlayerSide}
+    ) then {
+        missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryClasses",[]]
+    } else {
+        missionNamespace getVariable ["ITW_CLASH_EnemyArtilleryClasses",[]]
+    };
+    private _isArtillery = _class in _artilleryClasses;
+
+    private _profile = if (_isArtillery) then {
+        "INTERSTITIAL"
+    } else {
+        if (_vehType in [ITW_TYPE_VEH_TANK,ITW_TYPE_VEH_APC]) then {
+            "REAR"
+        } else {
+            "FORWARD"
+        }
+    };
+
+    if (_profile == "FORWARD") exitWith {
+        [
+            side _crewGroup,
+            if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"},
+            getPosATL _veh
+        ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn
+    };
+
+    if (!isNil "ITW_CLASH_Generation_fnc_Resolve") then {
+        private _resolved = [
+            side _crewGroup,
+            if (_isArtillery) then {"ARTILLERY"} else {"FIELD_ARMOR"},
+            _profile,
+            getPosATL _veh
+        ] call ITW_CLASH_Generation_fnc_Resolve;
+        if (_resolved isEqualType createHashMap && {
+            (_resolved getOrDefault ["status",""]) == "RESOLVED"
+        }) exitWith {
+            private _baseIndex = if (_profile == "REAR") then {
+                _resolved getOrDefault ["rearBase",-1]
+            } else {
+                _resolved getOrDefault ["forwardBase",-1]
+            };
+            [
+                +(_resolved getOrDefault ["origin",[]]),
+                _baseIndex,
+                _resolved getOrDefault ["objective",-1],
+                format [
+                    "field-%1-%2",
+                    toLowerANSI _profile,
+                    _resolved getOrDefault ["source","generation-node"]
+                ]
+            ]
+        };
+    };
+
+    // Never deliberately fall artillery back into a protected FOB when the
+    // interstitial geometry cannot be resolved. Preserve its native physical
+    // origin and let HAL own tactical employment from there.
+    if (_isArtillery) exitWith {
+        [
+            getPosATL _veh,
+            -1,
+            VAR_GET_OBJ_IDX(_crewGroup),
+            "field-interstitial-unresolved-native-origin"
+        ]
+    };
+
+    // Rear armor resolution should normally be available once ForceGeneration
+    // is live. Fail open to native field position instead of moving heavy armor
+    // forward in violation of the echelon contract.
+    [
+        getPosATL _veh,
+        -1,
+        VAR_GET_OBJ_IDX(_crewGroup),
+        "field-rear-unresolved-native-origin"
+    ]
+};
+
 ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     params ["_vehInfo",["_teleportToAttackPos",false],["_populateObjectives",false]];
     if !(_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) exitWith {false};
@@ -514,8 +602,8 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
 
     private _mode = if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"};
     private _spawnInfo = [
-        side _crewGroup,_mode,getPosATL _veh
-    ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn;
+        _vehInfo
+    ] call ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn;
     if (_spawnInfo isEqualTo []) exitWith {false};
     _spawnInfo params ["_spawn","_baseIndex","_objectiveIndex","_source"];
 
