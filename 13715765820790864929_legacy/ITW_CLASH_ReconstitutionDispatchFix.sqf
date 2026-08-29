@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixStarted",f
     missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixReady",false]
 };
 ITW_CLASH_ReconstitutionDispatchFixStarted = true;
-ITW_CLASH_ReconstitutionDispatchFixVersion = 4;
+ITW_CLASH_ReconstitutionDispatchFixVersion = 5;
 ITW_CLASH_ReconstitutionDispatchFixReady = false;
 
 // Resolve the exact active objective's attack-source forward FOB. Prefer the
@@ -136,9 +136,20 @@ if (isNil "ITW_AtkDispatchReconstitutionTransport") exitWith {
 ITW_AtkDispatchReconstitutionTransport = {
     params ["_group","_requestId","_objectiveIndex","_lineage"];
     if (!isServer || {isNull _group}) exitWith {false};
-    if (ITW_AtkReconstitutionTransportContext isEqualTo []) exitWith {false};
+    private _context = [];
+    if (!isNil "ITW_AtkReconstitutionTransportContexts") then {
+        _context = ITW_AtkReconstitutionTransportContexts getOrDefault [
+            toUpperANSI str (side _group),[]
+        ];
+    };
+    if (_context isEqualTo []) then {
+        _context = missionNamespace getVariable [
+            "ITW_AtkReconstitutionTransportContext",[]
+        ];
+    };
+    if (_context isEqualTo []) exitWith {false};
 
-    ITW_AtkReconstitutionTransportContext params [
+    _context params [
         "_transport","_dualVeh","_crewTypes","_unitTypes","_side"
     ];
     if (side _group != _side) exitWith {false};
@@ -254,7 +265,13 @@ ITW_AtkDispatchReconstitutionTransport = {
         _hcIDs pushBack 2;
         [_veh] remoteExec ["ITW_AtkUnloadProtect",_hcIDs];
         {_x addCuratorEditableObjects [[_veh] + units _crewGroup,true]} forEach allCurators;
-        if (!isNil "ITW_EnemyGroupCallback") then {[_crewGroup] call ITW_EnemyGroupCallback};
+        if (
+            !isNil "ITW_EnemySide"
+            && {side _crewGroup == ITW_EnemySide}
+            && {!isNil "ITW_EnemyGroupCallback"}
+        ) then {
+            [_crewGroup] call ITW_EnemyGroupCallback
+        };
 
         if (!isNil "ITW_CLASH_fnc_Log") then {
             ["reconstitution-transport-dispatched",[
@@ -292,7 +309,7 @@ private _finalized = _beginFinalized && _dispatchFinalized;
 ITW_CLASH_ReconstitutionDispatchFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true capExemptCrew=true lifecycleReserved=true preInit=true",
+        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true sideContexts=true capExemptCrew=true lifecycleReserved=true preInit=true",
         ITW_CLASH_ReconstitutionDispatchFixVersion
     ];
 } else {
