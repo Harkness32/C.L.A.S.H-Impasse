@@ -1,6 +1,6 @@
 #include "defines.hpp"
 
-ITW_CLASH_RuntimePatchVersion = 4;
+ITW_CLASH_RuntimePatchVersion = 5;
 ITW_CLASH_ReconstitutionTransitVersion = 1;
 
 /*
@@ -283,6 +283,30 @@ ITW_CLASH_fnc_GetEgressPoint = {
     };
     if (_lockedEgress isNotEqualTo []) exitWith {_lockedEgress};
 
+    // Commander B uses the same physical forward-FOB reconstitution contract.
+    // Do not send friendly exhausted squads to the hidden strategic HQ/base 0.
+    if (!isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}) then {
+        private _objectiveIndex = _preferredObjective;
+        if (_objectiveIndex < 0) then {
+            _objectiveIndex = _group getVariable [
+                "ITW_CLASH_DualHALObjectiveAffinity",
+                VAR_GET_OBJ_IDX(_group)
+            ];
+        };
+        if (!isNil "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn") then {
+            private _forward = [
+                _objectiveIndex,side _group
+            ] call ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn;
+            if (_forward isNotEqualTo []) exitWith {
+                [
+                    +(_forward#0),
+                    _forward#1,
+                    "blufor-" + (_forward#2)
+                ]
+            };
+        };
+    };
+
     private _corridor = [
         _preferredObjective
     ] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
@@ -316,6 +340,33 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
             _group getVariable ["ITW_CLASH_ReconstitutionSupportBase",-1],
             _group getVariable ["ITW_CLASH_ReconstitutionSpawnSource",""]
         ]] call ITW_CLASH_fnc_Log;
+    };
+
+    if (
+        !isNull _group
+        && {!isNil "ITW_PlayerSide"}
+        && {side _group == ITW_PlayerSide}
+    ) exitWith {
+        _group setVariable ["itwInitGrp",nil,true];
+        _group setVariable ["ITW_CLASH_Archetype",+_archetype];
+        _group setVariable ["ITW_CLASH_Lineage",_lineage];
+        _group setVariable [
+            "ITW_CLASH_DualHALObjectiveAffinity",_objectiveIndex
+        ];
+        VAR_SET_OBJ_IDX(_group,_objectiveIndex);
+
+        private _accepted = false;
+        if (!isNil "ITW_CLASH_DualHAL_fnc_RegisterGroup") then {
+            _accepted = [
+                _group,"reconstitution-handoff"
+            ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+        };
+        if (_accepted) then {
+            ["reconstitution-handoff-blufor",[
+                _requestId,_lineage,_objectiveIndex,count _archetype
+            ]] call ITW_CLASH_fnc_Log;
+        };
+        _accepted
     };
 
     [
