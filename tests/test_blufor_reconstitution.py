@@ -71,11 +71,11 @@ def test_gtfo_uses_forward_fob_and_persists_commander_b_constraints():
     assert "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn" in gtfo
     assert '"ITW_CLASH_GTFO_GroupRestDecoy"' in gtfo
     assert "ITW_CLASH_GTFO_fnc_SetPersistentConstraints" in gtfo
-    assert 'private _prefix = if (_isPlayerCommander) then {"RydHQB_"} else {"RydHQ_"};' in gtfo
-    for token in ['["NoDef","RydHQ_NoDef"]',
-                  '["NoAttack","RydHQ_NoAttack"]',
-                  '["NoRecon","RydHQ_NoRecon"]',
-                  '["Exhausted","RydHQ_Exhausted"]']:
+    assert "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership" in gtfo
+    assert "RydHQB_" not in gtfo
+    parity = mission("ITW_CLASH_CommanderParity.sqf")
+    assert "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership" in parity
+    for token in ['"NoDef"', '"NoAttack"', '"NoRecon"', '"Exhausted"']:
         assert token in gtfo
 
     assert 'getVariable ["ITW_CLASH_GTFO_GroupRestDecoy",objNull]' in native_rest
@@ -228,7 +228,8 @@ def test_shared_infantry_hardening_covers_both_hal_registries():
     assert "ITW_CLASH_DualHALBLUFORGroups" in authority
     assert "ITW_CLASH_DualHALOPFORExtraGroups" in authority
     assert "ITW_CLASH_InfantryAuthorityGarrisonsBySide" in authority
-    assert '"RydHQB_"' in authority
+    assert "ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership" in authority
+    assert "RydHQB_" not in authority
     assert "garrisonConstraintsBothSides=true" in authority
 
     assert "ITW_CLASH_InfantryAuthorityAllocationFixVersion = 2;" in allocation
@@ -259,7 +260,7 @@ def test_transport_settle_blocks_same_frame_hal_adoption_on_both_sides():
     assert 'ITW_CLASH_ReeligibleAt' in should_own
 
 
-def test_shared_commander_fallbacks_resolve_a_and_b():
+def test_commander_ab_compatibility_is_centralized_in_master_parity_layer():
     gtfo = mission("ITW_CLASH_GTFO.sqf")
     runtime = mission("ITW_CLASH_GTFO_Runtime.sqf")
     bookkeeping = mission("ITW_CLASH_GTFO_Bookkeeping.sqf")
@@ -267,8 +268,11 @@ def test_shared_commander_fallbacks_resolve_a_and_b():
     field = mission("ITW_CLASH_FieldHardening.sqf")
 
     for source in [gtfo, runtime, bookkeeping, recon, field]:
-        assert "ITW_CLASH_BLUFORHQ" in source
-        assert "ITW_CLASH_HALHQ" in source
+        assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup" in source
+        assert "ITW_CLASH_BLUFORHQ" not in source
+
+    for source in [runtime, recon, field]:
+        assert "ITW_CLASH_HALHQ" not in source
 
     cancel = gtfo[
         gtfo.index("ITW_CLASH_fnc_CancelWithdrawals = {"):
@@ -283,20 +287,25 @@ def test_commander_parity_is_one_master_layer_not_behavior_specific_blufor_patch
     init = mission("init.sqf")
     attack = mission("ITW_Attack.sqf")
 
-    assert "ITW_CLASH_CommanderParityVersion = 1;" in parity
+    assert "ITW_CLASH_CommanderParityVersion = 2;" in parity
     assert "Single authority layer" in parity
     assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForSide" in parity
     assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup" in parity
     assert "ITW_CLASH_CommanderParity_fnc_GlobalPrefixForSide" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership" in parity
     assert "ITW_CLASH_CommanderParity_fnc_IsPlayerGroup" in parity
-    assert "sections=anchor" in parity
+    assert "sections=projection,anchor" in parity
     assert "playerExcluded=true" in parity
 
     assert not (MISSION / "ITW_CLASH_FriendlyAnchorParity.sqf").exists()
     forbidden = [
         path.name
         for path in MISSION.glob("ITW_CLASH_*.sqf")
-        if "bluefor" in path.name.lower() and "fix" in path.name.lower()
+        if "fix" in path.name.lower() and any(
+            marker in path.name.lower()
+            for marker in ["bluefor", "commanderb", "commander_b", "commander-b"]
+        )
     ]
     assert forbidden == []
 

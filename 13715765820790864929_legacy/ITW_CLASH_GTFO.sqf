@@ -33,51 +33,15 @@ ITW_CLASH_GTFO_fnc_Log = {
 
 ITW_CLASH_GTFO_fnc_SetPersistentConstraints = {
     params ["_group",["_enabled",true]];
-    if (isNull _group) exitWith {false};
+    if (isNull _group || {
+        isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership"
+    }) exitWith {false};
 
-    private _hq = grpNull;
-    if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
-        _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-    };
-    private _isPlayerCommander = (
-        !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
-    );
-    if (isNull _hq && {_isPlayerCommander}) then {
-        _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
-    };
-    if (isNull _hq && {
-        !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
-    }) then {
-        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
-    };
-    if (isNull _hq) exitWith {false};
-
-    private _prefix = if (_isPlayerCommander) then {"RydHQB_"} else {"RydHQ_"};
-    {
-        _x params ["_suffix","_hqName"];
-        private _globalName = _prefix + _suffix;
-        private _global = +(missionNamespace getVariable [_globalName,[]]);
-        if (_enabled) then {
-            _global pushBackUnique _group;
-        } else {
-            _global = _global - [_group];
-        };
-        missionNamespace setVariable [_globalName,_global];
-
-        private _hqList = +(_hq getVariable [_hqName,[]]);
-        if (_enabled) then {
-            _hqList pushBackUnique _group;
-        } else {
-            _hqList = _hqList - [_group];
-        };
-        _hq setVariable [_hqName,_hqList];
-    } forEach [
-        ["NoDef","RydHQ_NoDef"],
-        ["NoAttack","RydHQ_NoAttack"],
-        ["NoRecon","RydHQ_NoRecon"],
-        ["Exhausted","RydHQ_Exhausted"]
-    ];
-    true
+    [
+        _group,
+        ["NoDef","NoAttack","NoRecon","Exhausted"],
+        _enabled
+    ] call ITW_CLASH_CommanderParity_fnc_SetConstraintMembership
 };
 
 ITW_CLASH_GTFO_fnc_RefreshCorridor = {
@@ -351,17 +315,12 @@ ITW_CLASH_fnc_OrderWithdrawal = {
         };
     };
 
-    private _hq = grpNull;
-    if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
-        _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-    };
-    if (isNull _hq && {
-        !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
-    }) then {
-        _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
-    };
-    if (isNull _hq && {_isEnemySide}) then {
-        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+    private _hq = if (
+        isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
+    ) then {
+        grpNull
+    } else {
+        [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup
     };
 
     if (!isNull _hq) then {
@@ -581,7 +540,7 @@ ITW_CLASH_fnc_CancelWithdrawals = {
     } forEach _groups;
 
     // Rebuild A's legacy doctrine after removing its withdrawal constraints.
-    // Commander B's durable RydHQB_* arrays were already cleaned per-group by
+    // Commander B's durable parity projection was already cleaned per-group by
     // SetPersistentConstraints and will survive its next SitRep projection.
     call ITW_CLASH_fnc_ApplyObjectiveDoctrine;
     ["cancelled",[_reason,_count]] call ITW_CLASH_GTFO_fnc_Log;

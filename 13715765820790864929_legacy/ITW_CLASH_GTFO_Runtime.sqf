@@ -49,22 +49,10 @@ ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal = {
 
 ITW_CLASH_GTFO_fnc_GetCommander = {
     params ["_group"];
-    if (isNull _group) exitWith {grpNull};
-    private _hq = grpNull;
-    if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
-        _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-    };
-    if (isNull _hq && {
-        !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
-    }) then {
-        _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
-    };
-    if (isNull _hq && {
-        !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
-    }) then {
-        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
-    };
-    _hq
+    if (isNull _group || {
+        isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
+    }) exitWith {grpNull};
+    [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup
 };
 
 ITW_CLASH_GTFO_fnc_ClearStaleHALRoles = {

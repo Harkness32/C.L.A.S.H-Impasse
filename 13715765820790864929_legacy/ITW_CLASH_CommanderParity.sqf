@@ -7,25 +7,28 @@ if (missionNamespace getVariable ["ITW_CLASH_CommanderParityStarted",false]) exi
 
 ITW_CLASH_CommanderParityStarted = true;
 ITW_CLASH_CommanderParityReady = false;
-ITW_CLASH_CommanderParityVersion = 1;
+ITW_CLASH_CommanderParityVersion = 2;
 ITW_CLASH_CommanderParity_AnchorReady = false;
 
 /*
     C.L.A.S.H. Commander Parity
 
-    Single authority layer for doctrine that cannot be made naturally symmetric
-    inside the shared source because HAL exposes Commander A and Commander B
-    through separate global projections.
+    Single authority layer for unavoidable Commander A/B compatibility
+    adaptation. HAL exposes the two commanders through separate global
+    projections, but domain behavior remains shared and side-aware in its own
+    source.
 
     Rule:
       - shared behavior belongs in the shared behavior file;
-      - unavoidable A/B adaptation belongs here;
-      - never create behavior-specific BLUFOR patch files;
+      - ordinary side-aware behavior is allowed in domain source;
+      - unavoidable A/B commander resolution and HAL-array projection belongs here;
+      - never create behavior-specific Commander A/B or BLUFOR patch files;
       - player groups are the intentional exclusion where AI-only doctrine is
         being mirrored.
 
     Current parity sections:
-      1. Objective anchors / six-man point defense for Commander B.
+      1. Commander resolution and durable HAL-array projection.
+      2. Objective anchors / six-man point defense for Commander B.
 
     Future parity corrections must extend this file rather than introducing
     behavior-specific side-fix files.
@@ -72,6 +75,63 @@ ITW_CLASH_CommanderParity_fnc_GlobalPrefixForSide = {
     if (!isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide}) exitWith {"RydHQB_"};
     if (!isNil "ITW_EnemySide" && {_side == ITW_EnemySide}) exitWith {"RydHQ_"};
     ""
+};
+
+/*
+    Commander A/B projection API.
+
+    Domain systems decide WHAT behavior they need. This layer owns HOW that
+    behavior is projected into HAL A vs HAL B globals so SitRep cannot erase it.
+*/
+ITW_CLASH_CommanderParity_fnc_SetConstraintMembership = {
+    params ["_group",["_suffixes",[]],["_enabled",true]];
+    if (isNull _group || {_suffixes isEqualTo []}) exitWith {false};
+
+    private _side = side _group;
+    private _hq = [_side] call ITW_CLASH_CommanderParity_fnc_GetCommanderForSide;
+    private _prefix = [_side] call ITW_CLASH_CommanderParity_fnc_GlobalPrefixForSide;
+    if (isNull _hq || {_prefix isEqualTo ""}) exitWith {false};
+
+    {
+        private _suffix = _x;
+        private _hqName = "RydHQ_" + _suffix;
+        private _globalName = _prefix + _suffix;
+        private _hqList = +(_hq getVariable [_hqName,[]]);
+        private _global = +(missionNamespace getVariable [_globalName,_hqList]);
+
+        if (_enabled) then {
+            _hqList pushBackUnique _group;
+            _global pushBackUnique _group;
+        } else {
+            _hqList = _hqList - [_group];
+            _global = _global - [_group];
+        };
+
+        _hq setVariable [_hqName,_hqList];
+        missionNamespace setVariable [_globalName,_global];
+    } forEach _suffixes;
+    true
+};
+
+ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership = {
+    params ["_side",["_suffixes",[]],["_previous",[]],["_current",[]]];
+    if (_suffixes isEqualTo []) exitWith {false};
+
+    private _hq = [_side] call ITW_CLASH_CommanderParity_fnc_GetCommanderForSide;
+    private _prefix = [_side] call ITW_CLASH_CommanderParity_fnc_GlobalPrefixForSide;
+    if (isNull _hq || {_prefix isEqualTo ""}) exitWith {false};
+
+    {
+        private _suffix = _x;
+        private _hqName = "RydHQ_" + _suffix;
+        private _members = +(_hq getVariable [_hqName,[]]);
+        _members = _members - _previous;
+        {_members pushBackUnique _x} forEach _current;
+
+        _hq setVariable [_hqName,_members];
+        missionNamespace setVariable [_prefix + _suffix,+_members];
+    } forEach _suffixes;
+    true
 };
 ITW_CLASH_CommanderParity_AnchorGroups = createHashMap;
 ITW_CLASH_CommanderParity_AnchorRefills = createHashMap;
@@ -724,7 +784,7 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Audit = {
     ITW_CLASH_CommanderParity_AnchorReady = true;
     ITW_CLASH_CommanderParityReady = true;
     diag_log format [
-        "CLASH BOOT | commander-parity-ready | version=%1 sections=anchor minimum=%2 playerExcluded=true sofExcluded=true refill=impasse-friendly nativeHALDefense=true",
+        "CLASH BOOT | commander-parity-ready | version=%1 sections=projection,anchor minimum=%2 playerExcluded=true sofExcluded=true refill=impasse-friendly nativeHALDefense=true",
         ITW_CLASH_CommanderParityVersion,
         missionNamespace getVariable ["ITW_CLASH_MinAnchorSoldiers",6]
     ];

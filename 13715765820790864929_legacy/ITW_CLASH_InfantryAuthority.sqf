@@ -258,45 +258,18 @@ ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints = {
 
     {
         private _side = _x;
-        private _hq = grpNull;
-        if (!isNil "ITW_CLASH_fnc_GetCommanderForSide") then {
-            _hq = [_side] call ITW_CLASH_fnc_GetCommanderForSide;
-        };
-        if (isNull _hq && {
-            !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide}
-        }) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
-        };
-        if (isNull _hq && {
-            !isNil "ITW_EnemySide" && {_side == ITW_EnemySide}
-        }) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
-        };
-        if (isNull _hq) then {continue};
-
         private _key = toUpperANSI str _side;
         private _previous = _previousBySide getOrDefault [_key,[]];
         private _current = _currentBySide getOrDefault [_key,[]];
 
-        private _noAttack = +(_hq getVariable ["RydHQ_NoAttack",[]]);
-        private _noRecon = +(_hq getVariable ["RydHQ_NoRecon",[]]);
-        _noAttack = _noAttack - _previous;
-        _noRecon = _noRecon - _previous;
-        {_noAttack pushBackUnique _x} forEach _current;
-        {_noRecon pushBackUnique _x} forEach _current;
-
-        _hq setVariable ["RydHQ_NoAttack",_noAttack];
-        _hq setVariable ["RydHQ_NoRecon",_noRecon];
-
-        private _prefix = if (
-            !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide}
-        ) then {
-            "RydHQB_"
-        } else {
-            "RydHQ_"
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership") then {
+            [
+                _side,
+                ["NoAttack","NoRecon"],
+                _previous,
+                _current
+            ] call ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership;
         };
-        missionNamespace setVariable [_prefix + "NoAttack",+_noAttack];
-        missionNamespace setVariable [_prefix + "NoRecon",+_noRecon];
     } forEach _sides;
 
     missionNamespace setVariable [

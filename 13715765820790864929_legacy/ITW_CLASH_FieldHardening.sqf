@@ -402,19 +402,12 @@ ITW_CLASH_FieldHardening_fnc_IsCombatUnit = {
                     waypointSpeed [_group,_wpIndex],waypointPosition [_group,_wpIndex]
                 ]
             };
-            private _hq = grpNull;
-            if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
-                _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-            };
-            if (isNull _hq && {
-                !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
-            }) then {
-                _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
-            };
-            if (isNull _hq && {
-                !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
-            }) then {
-                _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+            private _hq = if (
+                isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
+            ) then {
+                grpNull
+            } else {
+                [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup
             };
             private _membership = [];
             {

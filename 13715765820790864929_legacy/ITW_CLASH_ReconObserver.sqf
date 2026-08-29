@@ -341,21 +341,10 @@ ITW_CLASH_Recon_fnc_EndMission = {
         private _group = _this param [0,grpNull];
         private _destination = _this param [1,[]];
         private _hq = _this param [3,grpNull];
-        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}) then {
-            _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-        };
-        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForSide"}) then {
-            _hq = [side _group] call ITW_CLASH_fnc_GetCommanderForSide;
-        };
         if (isNull _hq && {
-            !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+            !isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
         }) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
-        };
-        if (isNull _hq && {
-            !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
-        }) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+            _hq = [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup;
         };
 
         private _admission = [_group] call
@@ -378,21 +367,10 @@ ITW_CLASH_Recon_fnc_EndMission = {
         private _group = _this param [0,grpNull];
         private _destination = _this param [1,[]];
         private _hq = _this param [3,grpNull];
-        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}) then {
-            _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-        };
-        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForSide"}) then {
-            _hq = [side _group] call ITW_CLASH_fnc_GetCommanderForSide;
-        };
         if (isNull _hq && {
-            !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+            !isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
         }) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
-        };
-        if (isNull _hq && {
-            !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
-        }) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+            _hq = [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup;
         };
 
         private _admission = [_group] call
