@@ -35,7 +35,8 @@ def test_blufor_hal_groups_capture_original_archetype_and_pause_only_during_reco
 
     assert 'getVariable ["ITW_CLASH_Archetype",[]]' in dual
     assert '(units _group) apply {toLowerANSI typeOf _x}' in dual
-    assert 'setVariable ["ITW_CLASH_Lineage"' in dual
+    assert '"ITW_CLASH_Lineage"' in dual
+    assert '[_group] call ITW_CLASH_DualHAL_fnc_GroupId' in dual
 
     sync = dual[dual.index("ITW_CLASH_DualHAL_fnc_SyncIncluded = {"):
                 dual.index("ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {")]
