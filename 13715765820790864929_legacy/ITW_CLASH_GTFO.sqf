@@ -280,16 +280,20 @@ ITW_CLASH_fnc_OrderWithdrawal = {
     if (!isServer || {isNull _group}) exitWith {false};
 
     private _isEnemyManaged = _group getVariable ["ITW_CLASH_Managed",false];
+    private _isEnemySide = !isNil "ITW_EnemySide" && {
+        side _group == ITW_EnemySide
+    };
 
     // A failed OPFOR recovery returns tactical authority to the original HAL
     // pilot. BLUFOR groups remain under Commander B throughout recovery, so
     // never convert them into the enemy managed-group ledger here.
-    if (_isEnemyManaged && {
+    if (_isEnemySide && {
         _group getVariable ["ITW_CLASH_GTFO",false] && {
             !(_group getVariable ["ITW_CLASH_Managed",false])
         }
     }) then {
         [_group] call ITW_CLASH_GTFO_fnc_ResumeHAL;
+        _isEnemyManaged = true;
     };
 
     if (_destination isNotEqualTo []) then {
@@ -320,7 +324,7 @@ ITW_CLASH_fnc_OrderWithdrawal = {
     if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
         _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
     };
-    if (isNull _hq && {_isEnemyManaged}) then {
+    if (isNull _hq && {_isEnemySide}) then {
         _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
     };
 
