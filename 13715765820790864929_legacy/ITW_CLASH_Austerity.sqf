@@ -94,17 +94,28 @@ ITW_CLASH_Austerity_fnc_HandleCompletedJob = {
     _paid > 0
 };
 
-ITW_CLASH_Austerity_fnc_RecordEventBase =
-    ITW_CLASH_PlayerTasks_fnc_RecordEvent;
+[] spawn {
+    scriptName "ITW_CLASH_AusterityRewardObserver";
 
-ITW_CLASH_PlayerTasks_fnc_RecordEvent = {
-    params ["_type",["_payload",createHashMap]];
-    private _event = _this call ITW_CLASH_Austerity_fnc_RecordEventBase;
+    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
+        {
+            private _jobId = _x;
+            private _job = _y;
 
-    if (_type == "JOB_COMPLETED") then {
-        [_payload] call ITW_CLASH_Austerity_fnc_HandleCompletedJob;
+            if (
+                (_job getOrDefault ["state",""]) == "COMPLETED"
+                && {
+                    !(ITW_CLASH_AusterityRewardedJobs getOrDefault [
+                        _jobId,false
+                    ])
+                }
+            ) then {
+                [_job] call ITW_CLASH_Austerity_fnc_HandleCompletedJob;
+            };
+        } forEach ITW_CLASH_PlayerJobs;
+
+        sleep 0.5;
     };
-    _event
 };
 
 ITW_CLASH_Austerity_fnc_RequestSync = {
