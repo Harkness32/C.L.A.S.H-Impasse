@@ -661,6 +661,78 @@ class RscTitles
             };
         };
     };
+    // Austerity POC: KOTH-inspired compact cash readout, implemented clean-room.
+    class ITW_CLASH_AusterityHud
+    {
+        idd = -1;
+        duration = 1e+011;
+        fadeIn = 0;
+        fadeOut = 0;
+        movingEnable = 0;
+        enableSimulation = 1;
+
+        onLoad = "uiNamespace setVariable ['ITW_CLASH_AusterityHudDisplay', _this select 0]; [] call ITW_CLASH_AusterityClient_fnc_RefreshHud;";
+        onUnload = "uiNamespace setVariable ['ITW_CLASH_AusterityHudDisplay', displayNull];";
+
+        class Controls
+        {
+            class Background: RscText
+            {
+                idc = 95500;
+                text = "";
+                x = safezoneX + safezoneW - (safezoneW * 0.17) - (safezoneW * 0.012);
+                y = safezoneY + safezoneH - (safezoneH * 0.065) - (safezoneH * 0.025);
+                w = safezoneW * 0.17;
+                h = safezoneH * 0.065;
+                colorBackground[] = {0.03,0.03,0.03,0.76};
+            };
+
+            class Title: RscText
+            {
+                idc = 95501;
+                text = "AUSTERITY";
+                style = 0;
+                font = "PuristaSemiBold";
+                x = safezoneX + safezoneW - (safezoneW * 0.17) - (safezoneW * 0.012) + (safezoneW * 0.008);
+                y = safezoneY + safezoneH - (safezoneH * 0.065) - (safezoneH * 0.025) + (safezoneH * 0.006);
+                w = safezoneW * 0.08;
+                h = safezoneH * 0.018;
+                sizeEx = "0.012 * safeZoneH";
+                colorText[] = {0.84,0.84,0.80,0.90};
+                colorBackground[] = {0,0,0,0};
+            };
+
+            class CashLabel: RscText
+            {
+                idc = 95502;
+                text = "CASH";
+                style = 0;
+                font = "PuristaSemiBold";
+                x = safezoneX + safezoneW - (safezoneW * 0.17) - (safezoneW * 0.012) + (safezoneW * 0.008);
+                y = safezoneY + safezoneH - (safezoneH * 0.065) - (safezoneH * 0.025) + (safezoneH * 0.027);
+                w = safezoneW * 0.05;
+                h = safezoneH * 0.025;
+                sizeEx = "0.014 * safeZoneH";
+                colorText[] = {0.84,0.84,0.80,0.95};
+                colorBackground[] = {0,0,0,0};
+            };
+
+            class CashValue: RscText
+            {
+                idc = 95503;
+                text = "$0";
+                style = 1;
+                font = "EtelkaMonospaceProBold";
+                x = safezoneX + safezoneW - (safezoneW * 0.17) - (safezoneW * 0.012) + (safezoneW * 0.055);
+                y = safezoneY + safezoneH - (safezoneH * 0.065) - (safezoneH * 0.025) + (safezoneH * 0.021);
+                w = safezoneW * 0.105;
+                h = safezoneH * 0.034;
+                sizeEx = "0.022 * safeZoneH";
+                colorText[] = {0.96,0.84,0.34,1};
+                colorBackground[] = {0,0,0,0};
+            };
+        };
+    };
 };
     
 #define ITW_GUI_ASMT_WIDTH  (GUI_GRID_W * 14)

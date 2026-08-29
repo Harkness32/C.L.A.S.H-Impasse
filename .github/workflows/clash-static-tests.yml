@@ -10,6 +10,7 @@ on:
     branches:
       - "agent/**"
       - "feature/**"
+      - "austerity"
 
 permissions:
   contents: read
@@ -52,3 +53,4 @@ jobs:
           tests/test_player_task_request_strike_recon.py
           tests/test_player_task_request_strike_classifier_v2.py
           tests/test_blufor_reconstitution.py
+          tests/test_austerity_poc.py

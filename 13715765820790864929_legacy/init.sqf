@@ -113,6 +113,19 @@ if (isServer) then {
                 _playerTasksLoaded = call compile preprocessFileLineNumbers
                     "ITW_CLASH_PlayerTaskSupport.sqf";
             };
+            // Austerity is an experimental branch-local economy overlay.
+            // It listens to the existing shared JOB_COMPLETED event and never
+            // changes HAL task success/failure authority.
+            private _austerityLoaded = false;
+            if (_playerTasksLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_Austerity.sqf"
+            }) then {
+                _austerityLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_Austerity.sqf";
+            } else {
+                diag_log "CLASH AUSTERITY | server layer unavailable; core tasking continues";
+            };
+
             private _playerGarageLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
                 _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";

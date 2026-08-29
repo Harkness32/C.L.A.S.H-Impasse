@@ -20,6 +20,10 @@ if (fileExists "ITW_CLASH_PlayerGarageDeployment.sqf") then {
     [] execVM "ITW_CLASH_PlayerGarageDeployment.sqf";
 };
 
+if (fileExists "ITW_CLASH_AusterityClient.sqf") then {
+    [] execVM "ITW_CLASH_AusterityClient.sqf";
+};
+
 // Code to allow player to fix frozen animation
 [] spawn { 
     scriptName "ITW_AnimFreezeFixer";
