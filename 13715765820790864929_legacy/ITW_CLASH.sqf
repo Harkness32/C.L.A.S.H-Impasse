@@ -92,12 +92,19 @@ ITW_CLASH_fnc_CountConscious = {
 
 ITW_CLASH_fnc_IsHALExhausted = {
     params ["_group"];
-    !isNull _group && {
-        !isNull ITW_CLASH_HALHQ && {
-            _group in (
-                ITW_CLASH_HALHQ getVariable ["RydHQ_Exhausted",[]]
-            )
-        }
+    if (isNull _group) exitWith {false};
+
+    private _hq = grpNull;
+    if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+        _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+    };
+    if (isNull _hq && {
+        !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
+    }) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+    };
+    !isNull _hq && {
+        _group in (_hq getVariable ["RydHQ_Exhausted",[]])
     }
 };
 
@@ -1178,46 +1185,70 @@ ITW_CLASH_fnc_AuditWithdrawals = {
         }
     }) exitWith {[]};
 
-    private _exhausted = ITW_CLASH_HALHQ getVariable [
-        "RydHQ_Exhausted",
-        []
-    ];
+    private _candidates = +ITW_CLASH_ManagedGroups;
+    if (!isNil "ITW_CLASH_DualHALBLUFORGroups") then {
+        {
+            if (!isNull _x) then {_candidates pushBackUnique _x};
+        } forEach +ITW_CLASH_DualHALBLUFORGroups;
+    };
+
     {
         private _group = _x;
-        if (!isNull _group && {
-            _group getVariable ["ITW_CLASH_Managed",false]
-        }) then {
-            if (_group in _exhausted) then {
-                private _since = _group getVariable [
-                    "ITW_CLASH_ExhaustedSince",
-                    -1
-                ];
-                if (_since < 0) then {
-                    _group setVariable [
-                        "ITW_CLASH_ExhaustedSince",
-                        time
-                    ];
-                    ["exhaustion-observed",[
-                        [_group] call ITW_CLASH_fnc_GroupId,
-                        _group getVariable [
-                            "ITW_CLASH_AssignedObjective",
-                            -1
-                        ],
-                        {alive _x} count units _group
-                    ]] call ITW_CLASH_fnc_Log;
-                } else {
-                    if (time - _since >= ITW_CLASH_ExhaustionConfirmGrace) then {
-                        [
-                            _group,
-                            "persistent-hal-exhaustion"
-                        ] call ITW_CLASH_fnc_StartWithdrawal;
-                    };
-                };
-            } else {
-                _group setVariable ["ITW_CLASH_ExhaustedSince",nil];
-            };
+        if (isNull _group) then {continue};
+
+        private _enemyManaged = _group getVariable ["ITW_CLASH_Managed",false];
+        private _friendlyManaged = (
+            !isNil "ITW_PlayerSide"
+            && {side _group == ITW_PlayerSide}
+            && {_group getVariable ["ITW_CLASH_DualHALManaged",false]}
+        );
+        if (!_enemyManaged && {!_friendlyManaged}) then {continue};
+
+        // BLUFOR recovery/reconstitution applies only to AI infantry formations.
+        // Vehicle crews, support assets and player groups retain their specialist
+        // lifecycles instead of being converted into infantry credits.
+        if (_friendlyManaged) then {
+            private _alive = units _group select {alive _x};
+            if (_alive isEqualTo [] || {
+                (_alive findIf {isPlayer _x}) >= 0 || {
+                    (_alive findIf {
+                        vehicle _x != _x || {!(_x isKindOf "CAManBase")}
+                    }) >= 0
+                }
+            }) then {continue};
         };
-    } forEach +ITW_CLASH_ManagedGroups;
+
+        if ([_group] call ITW_CLASH_fnc_IsHALExhausted) then {
+            private _since = _group getVariable [
+                "ITW_CLASH_ExhaustedSince",
+                -1
+            ];
+            if (_since < 0) then {
+                _group setVariable [
+                    "ITW_CLASH_ExhaustedSince",
+                    time
+                ];
+                ["exhaustion-observed",[
+                    [_group] call ITW_CLASH_fnc_GroupId,
+                    _group getVariable [
+                        "ITW_CLASH_AssignedObjective",
+                        VAR_GET_OBJ_IDX(_group)
+                    ],
+                    {alive _x} count units _group,
+                    side _group
+                ]] call ITW_CLASH_fnc_Log;
+            } else {
+                if (time - _since >= ITW_CLASH_ExhaustionConfirmGrace) then {
+                    [
+                        _group,
+                        "persistent-hal-exhaustion"
+                    ] call ITW_CLASH_fnc_StartWithdrawal;
+                };
+            };
+        } else {
+            _group setVariable ["ITW_CLASH_ExhaustedSince",nil];
+        };
+    } forEach _candidates;
 
     private _telemetry = [];
     {
@@ -1280,7 +1311,8 @@ ITW_CLASH_fnc_AuditWithdrawals = {
                     _archetype,
                     _egressObjective,
                     _lineage,
-                    getPosATL leader _group
+                    getPosATL leader _group,
+                    side _group
                 ] call ITW_AtkQueueReconstitution;
             };
 
