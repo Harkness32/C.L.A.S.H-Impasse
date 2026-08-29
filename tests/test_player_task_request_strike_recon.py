@@ -170,7 +170,7 @@ def test_armor_strike_completion_counts_combat_vehicles_not_dismounted_crew():
     assert "count _vehicles" in threat
     assert "} else {" in threat
     assert "{alive _x} count units _targetGroup" in threat
-    assert "Dismounted surviving crews are not part of an armor STRIKE objective." in text
+    assert "Dismounted surviving crews are not part of the armor STRIKE objective." in text
 
 
 def test_strike_task_presentation_uses_destroy_labels_and_last_known_tracking_language():
