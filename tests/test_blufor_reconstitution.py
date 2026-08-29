@@ -21,8 +21,10 @@ def test_impasse_reconstitution_queue_is_side_tagged_and_consumed_per_side():
     assert "toUpperANSI str _side,_reconstitutionContext" in source
     assert 'private _requestSide = _x param [6,_enemySide];' in source
     assert 'private _request = [_side] call ITW_AtkNextReconstitution;' in source
-    assert "private _ownedByRequestSide = if (_requestSide == ITW_PlayerSide)" in source
-    assert '"no-side-held-active-objective"' in source
+    assert "private _activeFrontObjective = !(" in source
+    assert "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn" in source
+    assert '"no-active-front-objective"' in source
+    assert '"no-side-forward-fob"' in source
 
     # A credit on the other commander must not suppress this side's normal spawn.
     spawn_gate = source[source.index("//// Infantry AI Spawner ////"):]
