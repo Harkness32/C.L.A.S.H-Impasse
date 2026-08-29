@@ -62,6 +62,20 @@ if (isServer) then {
             if (fileExists "ITW_CLASH_DualHALCheckbookHardening.sqf") then {
                 _dualHALHardened = call compile preprocessFileLineNumbers "ITW_CLASH_DualHALCheckbookHardening.sqf";
             };
+
+            // All unavoidable Commander A/B adaptation lives in one parity
+            // layer. Shared systems remain symmetric in their own source; we
+            // never bolt on behavior-specific BLUFOR fix files.
+            private _commanderParityLoaded = false;
+            if (_dualHALHardened isEqualTo true && {
+                fileExists "ITW_CLASH_CommanderParity.sqf"
+            }) then {
+                _commanderParityLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_CommanderParity.sqf";
+            } else {
+                diag_log "CLASH BOOT | commander-parity-missing-or-prereq-failed | Commander B parity extensions unavailable";
+            };
+
             private _checkbookAPIReady = false;
             if (_dualHALHardened isEqualTo true && {fileExists "ITW_CLASH_CheckbookAPI.sqf"}) then {
                 _checkbookAPIReady = call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf";
@@ -139,6 +153,7 @@ if (isServer) then {
 
             if (
                 _dualHALHardened isEqualTo true
+                && {_commanderParityLoaded isEqualTo true}
                 && {_checkbookAPIReady isEqualTo true}
                 && {_forceGenerationReady isEqualTo true}
                 && {_halLogisticsLoaded isEqualTo true}
@@ -148,7 +163,8 @@ if (isServer) then {
                 && {_playerArtilleryLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7",
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true commanderParity=%1 capabilityAPI=v2 forceGeneration=%2 halLogistics=%3 playerTransport=%4 playerTasks=%5 playerGarage=%6 playerArtillery=%7 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%8",
+                    _commanderParityLoaded,
                     _forceGenerationReady,
                     _halLogisticsLoaded,
                     _playerTransportLoaded,
@@ -159,8 +175,8 @@ if (isServer) then {
                 ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 runtime candidate blocked",
-                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 commanderParity=%2 capabilityAPI=%3 forceGeneration=%4 halLogistics=%5 playerTransport=%6 playerTasks=%7 playerGarage=%8 playerArtillery=%9 runtime candidate blocked",
+                    _dualHALHardened,_commanderParityLoaded,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded
                 ];
             };
         } else {
