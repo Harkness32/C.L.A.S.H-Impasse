@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GTFORuntimeStarted",false]) exitWith {};
 ITW_CLASH_GTFORuntimeStarted = true;
-ITW_CLASH_GTFORuntimeVersion = 2;
+ITW_CLASH_GTFORuntimeVersion = 3;
 ITW_CLASH_GTFO_ArrivalRadius = 160;
 ITW_CLASH_GTFO_RestRestartGrace = 90;
 ITW_CLASH_GTFO_RestRestartProgress = 25;
@@ -34,17 +34,46 @@ if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
         a withdrawal MOVE waypoint or blindly clears Busy.
 */
 
+ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal = {
+    params ["_group"];
+    if (isNull _group || {!(_group getVariable ["ITW_CLASH_GTFO",false])}) exitWith {
+        false
+    };
+    (_group getVariable ["ITW_CLASH_Managed",false])
+    || {
+        !isNil "ITW_PlayerSide"
+        && {side _group == ITW_PlayerSide}
+        && {_group getVariable ["ITW_CLASH_DualHALManaged",false]}
+    }
+};
+
+ITW_CLASH_GTFO_fnc_GetCommander = {
+    params ["_group"];
+    if (isNull _group) exitWith {grpNull};
+    private _hq = grpNull;
+    if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+        _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+    };
+    if (isNull _hq && {
+        !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
+    }) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+    };
+    _hq
+};
+
 ITW_CLASH_GTFO_fnc_ClearStaleHALRoles = {
     params ["_group",["_source","watch"]];
-    if (isNull _group || {isNull ITW_CLASH_HALHQ}) exitWith {[]};
-    if !(_group getVariable ["ITW_CLASH_GTFO",false]) exitWith {[]};
+    if !([_group] call ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal) exitWith {[]};
+    private _hq = [_group] call ITW_CLASH_GTFO_fnc_GetCommander;
+    if (isNull _hq) exitWith {[]};
 
     private _removed = [];
     {
         private _name = _x;
-        private _members = +(ITW_CLASH_HALHQ getVariable [_name,[]]);
+        private _members = +(_hq getVariable [_name,[]]);
         if (_group in _members) then {
-            ITW_CLASH_HALHQ setVariable [_name,_members - [_group]];
+            _hq setVariable [_name,_members - [_group]];
             _removed pushBack _name;
         };
     } forEach [
@@ -73,11 +102,7 @@ ITW_CLASH_GTFO_fnc_ClearStaleHALRoles = {
 
 ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
     params ["_mode","_group","_reason"];
-    if (isNull _group || {
-        !(_group getVariable ["ITW_CLASH_GTFO",false]) || {
-            !(_group getVariable ["ITW_CLASH_Managed",false])
-        }
-    }) exitWith {false};
+    if !([_group] call ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal) exitWith {false};
     if (_group getVariable ["ITW_CLASH_GTFO_RestRestartPending",false]) exitWith {false};
 
     _group setVariable ["ITW_CLASH_GTFO_RestRestartPending",true];
@@ -110,7 +135,7 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
             sleep 1;
             isNull _group || {
                 !(_group getVariable ["ITW_CLASH_GTFO",false]) || {
-                    !(_group getVariable ["ITW_CLASH_Managed",false]) || {
+                    !([_group] call ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal) || {
                         (
                             !(_group getVariable ["Busy" + str _group,false]) &&
                             {!(_group getVariable ["Resting" + str _group,false])} &&
@@ -125,7 +150,7 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
         if !(_group getVariable ["ITW_CLASH_GTFO",false]) exitWith {
             _group setVariable ["ITW_CLASH_GTFO_RestRestartPending",nil];
         };
-        if !(_group getVariable ["ITW_CLASH_Managed",false]) exitWith {
+        if !([_group] call ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal) exitWith {
             _group setVariable ["ITW_CLASH_GTFO_RestRestartPending",nil];
         };
         if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "" ||
@@ -149,21 +174,24 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
         };
 
         [_group,"pre-dispatch"] call ITW_CLASH_GTFO_fnc_ClearStaleHALRoles;
-        call ITW_CLASH_GTFO_fnc_ApplyConstraints;
+        if (!isNil "ITW_CLASH_GTFO_fnc_SetPersistentConstraints") then {
+            [_group,true] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
+        };
+        private _hq = [_group] call ITW_CLASH_GTFO_fnc_GetCommander;
 
-        if (isNil "HAL_GoRest" || {isNil "RYD_Spawn"} || {isNull ITW_CLASH_HALHQ}) exitWith {
+        if (isNil "HAL_GoRest" || {isNil "RYD_Spawn"} || {isNull _hq}) exitWith {
             ["rest-restart-unavailable",[
                 [_group] call ITW_CLASH_fnc_GroupId,
                 _mode,
                 _reason,
                 isNil "HAL_GoRest",
                 isNil "RYD_Spawn",
-                isNull ITW_CLASH_HALHQ
+                isNull _hq
             ]] call ITW_CLASH_GTFO_fnc_Log;
             _group setVariable ["ITW_CLASH_GTFO_RestRestartPending",nil];
         };
 
-        [[_group,ITW_CLASH_HALHQ,true],HAL_GoRest] call RYD_Spawn;
+        [[_group,_hq,true],HAL_GoRest] call RYD_Spawn;
         _group setVariable ["ITW_CLASH_GTFO_RestRestartPending",nil];
         _group setVariable ["ITW_CLASH_GTFO_NativeRestLogged",nil];
         ["rest-restart-dispatched",[
@@ -348,13 +376,28 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
         ) then {continue};
 
         private _activeKeys = [];
+        private _watchGroups = [];
+        if (!isNil "ITW_CLASH_Withdrawals") then {
+            {
+                private _entry = ITW_CLASH_Withdrawals getOrDefault [_x,[]];
+                if (_entry isNotEqualTo []) then {
+                    private _candidate = _entry#0;
+                    if (!isNull _candidate) then {
+                        _watchGroups pushBackUnique _candidate;
+                    };
+                };
+            } forEach +(keys ITW_CLASH_Withdrawals);
+        };
         {
             private _group = _x;
-            if (isNull _group || {!(_group getVariable ["ITW_CLASH_GTFO",false])}) then {continue};
+            if !([_group] call ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal) then {continue};
             private _id = [_group] call ITW_CLASH_fnc_GroupId;
             _activeKeys pushBack _id;
 
             [_group,"constraint-watch"] call ITW_CLASH_GTFO_fnc_ClearStaleHALRoles;
+            if (!isNil "ITW_CLASH_GTFO_fnc_SetPersistentConstraints") then {
+                [_group,true] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
+            };
 
             // One-shot field proof that HAL's native GoRest owns the formation.
             if !(_group getVariable ["ITW_CLASH_GTFO_NativeRestLogged",false]) then {
@@ -416,7 +459,7 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
             ITW_CLASH_GTFORuntimeProgress set [_id,[time,_distance]];
             ["stall-restart",_group,format ["busy-no-rest-%1s",round _stalledFor]] call
                 ITW_CLASH_GTFO_fnc_RequestNativeRestRestart;
-        } forEach +ITW_CLASH_ManagedGroups;
+        } forEach _watchGroups;
 
         {
             if !(_x in _activeKeys) then {
@@ -429,7 +472,7 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true explicitGoRestRestart=true staleHALRoles=true busyStallGrace=%2 busyProgress=%3 constraintPoll=2 arrivalRadius=%4 nativeRestTelemetry=true",
+    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true explicitGoRestRestart=true commanderAware=true bluforTracked=true staleHALRoles=true busyStallGrace=%2 busyProgress=%3 constraintPoll=2 arrivalRadius=%4 nativeRestTelemetry=true",
     ITW_CLASH_GTFORuntimeVersion,
     ITW_CLASH_GTFO_RestRestartGrace,
     ITW_CLASH_GTFO_RestRestartProgress,
