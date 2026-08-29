@@ -172,7 +172,13 @@ ITW_CLASH_DualHAL_fnc_SyncIncluded = {
         ITW_CLASH_DualHALBLUFORGroups = ITW_CLASH_DualHALBLUFORGroups select {
             !isNull _x && {{alive _x} count units _x > 0}
         };
-        private _blu = +ITW_CLASH_DualHALBLUFORGroups;
+        // Keep the durable registry intact, but expose only groups whose
+        // current lifecycle belongs to HAL. A boarded CASEVAC/MEDEVAC group
+        // temporarily disappears from Included and automatically returns if
+        // recovery aborts and the lifecycle markers clear.
+        private _blu = ITW_CLASH_DualHALBLUFORGroups select {
+            [_x] call ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup
+        };
         ITW_CLASH_BLUFORHQ setVariable ["RydHQ_Included",_blu];
         RydHQB_Included = +_blu;
     };
