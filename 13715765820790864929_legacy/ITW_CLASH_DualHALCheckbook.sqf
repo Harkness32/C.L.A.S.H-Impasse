@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 3;
+ITW_CLASH_DualHALCheckbookVersion = 4;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -91,6 +91,7 @@ ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup = {
     if (isNull _group || {isNil "ITW_PlayerSide"}) exitWith {false};
     if (side _group != ITW_PlayerSide) exitWith {false};
     if ([_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup) exitWith {false};
+    if (time < (_group getVariable ["ITW_CLASH_ReeligibleAt",0])) exitWith {false};
     if ([_group] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved) exitWith {false};
     if (_group == ITW_CLASH_BLUFORHQ) exitWith {false};
     if (((units _group) findIf {!(_x isKindOf "Logic") && {!(_x isKindOf "VirtualMan_F")}}) < 0) exitWith {false};
