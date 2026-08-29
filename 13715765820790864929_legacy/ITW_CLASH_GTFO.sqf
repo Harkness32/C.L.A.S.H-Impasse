@@ -2,7 +2,7 @@
 
 if (!isServer) exitWith {false};
 
-ITW_CLASH_GTFOVersion = 2;
+ITW_CLASH_GTFOVersion = 3;
 if (isNil "ITW_CLASH_GTFO_Corridor") then {ITW_CLASH_GTFO_Corridor = []};
 if (isNil "ITW_CLASH_GTFO_CorridorSignature") then {ITW_CLASH_GTFO_CorridorSignature = ""};
 if (isNil "ITW_CLASH_GTFO_ConstraintSignature") then {ITW_CLASH_GTFO_ConstraintSignature = ""};
@@ -556,6 +556,14 @@ ITW_CLASH_fnc_CancelWithdrawals = {
 
     private _count = [_reason] call ITW_CLASH_fnc_CancelWithdrawals_GTFOBase;
     {
+        if (!isNil "ITW_CLASH_GTFO_fnc_SetPersistentConstraints") then {
+            [_x,false] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
+        };
+        private _restDecoy = _x getVariable [
+            "ITW_CLASH_GTFO_GroupRestDecoy",objNull
+        ];
+        if (!isNull _restDecoy) then {deleteVehicle _restDecoy};
+        _x setVariable ["ITW_CLASH_GTFO_GroupRestDecoy",nil];
         _x setVariable ["ITW_CLASH_GTFO",nil];
         _x setVariable ["ITW_CLASH_GTFO_State",nil];
         _x setVariable ["ITW_CLASH_GTFO_Reason",nil];
@@ -566,18 +574,16 @@ ITW_CLASH_fnc_CancelWithdrawals = {
         _x setVariable ["ITW_CLASH_GTFO_OrderLogAt",nil];
     } forEach _groups;
 
-    if (!isNull ITW_CLASH_HALHQ) then {
-        private _exhausted = +(ITW_CLASH_HALHQ getVariable ["RydHQ_Exhausted",[]]);
-        _exhausted = _exhausted - _groups;
-        ITW_CLASH_HALHQ setVariable ["RydHQ_Exhausted",_exhausted];
-        call ITW_CLASH_fnc_ApplyObjectiveDoctrine;
-    };
+    // Rebuild A's legacy doctrine after removing its withdrawal constraints.
+    // Commander B's durable RydHQB_* arrays were already cleaned per-group by
+    // SetPersistentConstraints and will survive its next SitRep projection.
+    call ITW_CLASH_fnc_ApplyObjectiveDoctrine;
     ["cancelled",[_reason,_count]] call ITW_CLASH_GTFO_fnc_Log;
     _count
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-hal-withdrawal-ready | version=%1 bridgeOnly=true nativeGoRest=true groupRestDecoy=true bluforReconstitution=true directMove=false directBlue=false directAttackDisable=false recoveryOwnership=postBoarding",
+    "CLASH BOOT | gtfo-hal-withdrawal-ready | version=%1 bridgeOnly=true nativeGoRest=true groupRestDecoy=true bluforReconstitution=true symmetricCancel=true directMove=false directBlue=false directAttackDisable=false recoveryOwnership=postBoarding",
     ITW_CLASH_GTFOVersion
 ];
 
