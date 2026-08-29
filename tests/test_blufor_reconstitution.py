@@ -139,3 +139,60 @@ def test_bootstrap_accepts_the_symmetric_runtime_versions():
     assert "if (_patchVersion != 5" in bootstrap
     assert "if (_gtfoVersion != 2" in bootstrap
     assert "if (_gtfoBookkeepingVersion != 2" in bootstrap
+
+
+def test_field_vehicle_staging_obeys_shared_echelon_policy():
+    dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
+
+    assert "ITW_CLASH_DualHALCheckbookVersion = 3;" in dual
+    assert "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn" in dual
+
+    echelon = dual[
+        dual.index("ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {"):
+        dual.index("ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {")
+    ]
+    assert '"INTERSTITIAL"' in echelon
+    assert 'ITW_TYPE_VEH_TANK,ITW_TYPE_VEH_APC' in echelon
+    assert '"REAR"' in echelon
+    assert '"FORWARD"' in echelon
+    assert "ITW_CLASH_Generation_fnc_Resolve" in echelon
+    assert '"field-interstitial-unresolved-native-origin"' in echelon
+    assert '"field-rear-unresolved-native-origin"' in echelon
+
+    staging = dual[
+        dual.index("ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {"):
+        dual.index("ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {")
+    ]
+    assert "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn" in staging
+    assert 'side _crewGroup,_mode,getPosATL _veh' not in staging
+
+
+def test_armored_recovery_uses_forward_fob_but_native_hal_gorest_executes_movement():
+    policy = mission("ITW_CLASH_VehicleEchelonPolicy.sqf")
+    init = mission("init.sqf")
+
+    assert "ITW_CLASH_VehicleEchelonPolicyVersion = 1;" in policy
+    assert "ITW_CLASH_VehicleEchelon_fnc_IsArmoredCombatGroup" in policy
+    assert 'ITW_TYPE_VEH_TANK' in policy
+    assert 'ITW_TYPE_VEH_APC' in policy
+    assert 'isKindOf "Tank"' in policy
+    assert 'isPlayer _x' in policy
+    assert "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn" in policy
+    assert '"ITW_CLASH_GTFO_GroupRestDecoy"' in policy
+
+    # C.L.A.S.H. supplies only the rally geography. Native HAL still owns the
+    # actual withdrawal/rest movement and recovery lifecycle.
+    assert "ITW_CLASH_VehicleEchelon_fnc_NativeGoRest = HAL_GoRest;" in policy
+    assert "_this call ITW_CLASH_VehicleEchelon_fnc_NativeGoRest" in policy
+    assert "addWaypoint" not in policy
+    assert "doMove" not in policy
+    assert "moveTo" not in policy
+    assert "armorRecovery=forward" in policy
+    assert "bothSides=true" in policy
+
+    load = 'call compile preprocessFileLineNumbers\n                    "ITW_CLASH_VehicleEchelonPolicy.sqf"'
+    force = 'call compile preprocessFileLineNumbers "ITW_CLASH_ForceGeneration.sqf"'
+    start = '[] execVM "ITW_Start.sqf"'
+    assert "ITW_CLASH_VehicleEchelonPolicy.sqf" in init
+    assert load in init
+    assert init.index(force) < init.index("ITW_CLASH_VehicleEchelonPolicy.sqf") < init.index(start)
