@@ -276,3 +276,52 @@ def test_shared_commander_fallbacks_resolve_a_and_b():
     ]
     assert "ITW_CLASH_GTFO_fnc_SetPersistentConstraints" in cancel
     assert 'ITW_CLASH_HALHQ getVariable ["RydHQ_Exhausted"' not in cancel
+
+
+def test_commander_parity_is_one_master_layer_not_behavior_specific_blufor_patches():
+    parity = mission("ITW_CLASH_CommanderParity.sqf")
+    init = mission("init.sqf")
+    attack = mission("ITW_Attack.sqf")
+
+    assert "ITW_CLASH_CommanderParityVersion = 1;" in parity
+    assert "Single authority layer" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForSide" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_GlobalPrefixForSide" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_IsPlayerGroup" in parity
+    assert "sections=anchor" in parity
+    assert "playerExcluded=true" in parity
+
+    assert not (MISSION / "ITW_CLASH_FriendlyAnchorParity.sqf").exists()
+    forbidden = [
+        path.name
+        for path in MISSION.glob("ITW_CLASH_*.sqf")
+        if "bluefor" in path.name.lower() and "fix" in path.name.lower()
+    ]
+    assert forbidden == []
+
+    assert "ITW_CLASH_CommanderParity.sqf" in init
+    assert "ITW_CLASH_FriendlyAnchorParity.sqf" not in init
+    assert init.index("ITW_CLASH_DualHALCheckbookHardening.sqf") < init.index(
+        "ITW_CLASH_CommanderParity.sqf"
+    )
+
+    assert "ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill" in attack
+    assert "ITW_CLASH_CommanderParity_Anchor_fnc_AcknowledgeRefill" in attack
+    assert "ITW_CLASH_FriendlyAnchor" not in attack
+
+
+def test_commander_parity_anchor_section_mirrors_six_man_ai_doctrine_only():
+    parity = mission("ITW_CLASH_CommanderParity.sqf")
+
+    assert "ITW_CLASH_CommanderParity_AnchorGroups = createHashMap;" in parity
+    assert "ITW_CLASH_CommanderParity_AnchorRefills = createHashMap;" in parity
+    assert 'missionNamespace getVariable ["ITW_CLASH_MinAnchorSoldiers",6]' in parity
+    assert "ITW_CLASH_DualHALBLUFORGroups" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_IsPlayerGroup" in parity
+    assert "ITW_CLASH_SOF_fnc_IsSOF" in parity
+    assert "HAL_GoDef" in parity
+    assert "RYD_Spawn" in parity
+    assert "ITW_CLASH_CommanderParity_Anchor_fnc_RequestRefill" in parity
+    assert "ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill" in parity
+    assert "ITW_CLASH_CommanderParity_Anchor_fnc_AcknowledgeRefill" in parity
