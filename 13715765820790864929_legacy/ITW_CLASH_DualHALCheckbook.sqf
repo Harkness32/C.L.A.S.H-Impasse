@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 4;
+ITW_CLASH_DualHALCheckbookVersion = 5;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -1136,6 +1136,9 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
 
         call ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles;
         call ITW_CLASH_DualHAL_fnc_SyncIncluded;
+        if (!isNil "ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints") then {
+            call ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints;
+        };
 
         for "_i" from ((count ITW_CLASH_CheckbookAssets) - 1) to 0 step -1 do {
             private _entry = ITW_CLASH_CheckbookAssets#_i;
