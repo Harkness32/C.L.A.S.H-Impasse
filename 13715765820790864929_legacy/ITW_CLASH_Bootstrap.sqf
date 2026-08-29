@@ -213,7 +213,7 @@ private _gtfoRequired = [
     "ITW_CLASH_fnc_CancelWithdrawals"
 ];
 private _gtfoMissing = _gtfoRequired select {isNil _x};
-if (_gtfoVersion != 3 || {_gtfoMissing isNotEqualTo []}) exitWith {
+if (_gtfoVersion != 4 || {_gtfoMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "gtfo-bridge-validation-failed version=%1 missing=%2",
         _gtfoVersion,
@@ -258,7 +258,7 @@ private _gtfoBookkeepingRequired = [
     "ITW_CLASH_fnc_StartWithdrawal"
 ];
 private _gtfoBookkeepingMissing = _gtfoBookkeepingRequired select {isNil _x};
-if (_gtfoBookkeepingVersion != 2 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
+if (_gtfoBookkeepingVersion != 3 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "gtfo-bookkeeping-validation-failed version=%1 missing=%2",
         _gtfoBookkeepingVersion,
