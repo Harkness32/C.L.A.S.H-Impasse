@@ -1,7 +1,7 @@
 #include "defines.hpp"
 
 if (!isServer) exitWith {false};
-ITW_CLASH_GTFOBookkeepingVersion = 2;
+ITW_CLASH_GTFOBookkeepingVersion = 3;
 
 /*
     GTFO does not cancel HAL tactics. This patch removes only stale task-list
@@ -22,6 +22,11 @@ ITW_CLASH_GTFO_fnc_RetirePreviousTaskState = {
     private _hq = grpNull;
     if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
         _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+    };
+    if (isNull _hq && {
+        !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+    }) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
     };
     if (isNull _hq && {
         !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
@@ -164,7 +169,7 @@ ITW_CLASH_fnc_StartWithdrawal = {
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-bookkeeping-ready | version=%1 staleDefenseRetire=true commanderAware=true forwardFOB=true tacticalWrites=false",
+    "CLASH BOOT | gtfo-bookkeeping-ready | version=%1 staleDefenseRetire=true commanderAware=true symmetricCommanderFallback=true forwardFOB=true tacticalWrites=false",
     ITW_CLASH_GTFOBookkeepingVersion
 ];
 
