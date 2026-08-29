@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestStrikeStarted",fal
 
 ITW_CLASH_PlayerTaskRequestStrikeStarted = true;
 ITW_CLASH_PlayerTaskRequestStrikeReady = false;
-ITW_CLASH_PlayerTaskRequestStrikeVersion = 1;
+ITW_CLASH_PlayerTaskRequestStrikeVersion = 3;
 ITW_CLASH_PlayerTaskRequestStrikeSerial = 0;
 ITW_CLASH_PlayerStrikePollInterval = missionNamespace getVariable [
     "ITW_CLASH_PlayerStrikePollInterval",2
@@ -104,6 +104,69 @@ ITW_CLASH_PlayerTaskRequestStrike_fnc_CombatIneffective = {
     _nominal >= 4 && {_current <= floor (_nominal * 0.25)}
 };
 
+ITW_CLASH_PlayerTaskRequestStrike_fnc_TrackingObject = {
+    params ["_targetGroup","_requestType"];
+    if (isNull _targetGroup) exitWith {objNull};
+
+    if (_requestType in ["STRIKE_LIGHT_ARMOR","STRIKE_HEAVY_ARMOR"]) then {
+        private _vehicles = [];
+        {
+            if (!alive _x) then {continue};
+            private _vehicle = vehicle _x;
+            if (_vehicle != _x && {alive _vehicle} && {canFire _vehicle}) then {
+                _vehicles pushBackUnique _vehicle;
+            };
+        } forEach units _targetGroup;
+        if (_vehicles isEqualTo []) exitWith {objNull};
+
+        private _leaderVehicle = vehicle leader _targetGroup;
+        if (_leaderVehicle in _vehicles) exitWith {_leaderVehicle};
+        _vehicles#0
+    } else {
+        private _leader = leader _targetGroup;
+        if (!isNull _leader && {alive _leader}) exitWith {vehicle _leader};
+
+        private _alive = units _targetGroup select {alive _x};
+        if (_alive isEqualTo []) exitWith {objNull};
+        vehicle (_alive#0)
+    }
+};
+
+ITW_CLASH_PlayerTaskRequestStrike_fnc_TaskPresentation = {
+    params ["_targetGroup","_requestType"];
+
+    switch (_requestType) do {
+        case "STRIKE_HEAVY_ARMOR": {
+            [
+                "Destroy Heavy Armor",
+                "HAL has designated a heavy armor target. The task marker follows HAL's latest known position. Destroy or render the assigned combat vehicles ineffective. Dismounted surviving crews are not part of the armor STRIKE objective."
+            ]
+        };
+        case "STRIKE_LIGHT_ARMOR": {
+            [
+                "Destroy Light Armor",
+                "HAL has designated a light armor target. The task marker follows HAL's latest known position. Destroy or render the assigned combat vehicles ineffective. Dismounted surviving crews are not part of the armor STRIKE objective."
+            ]
+        };
+        default {
+            private _hasMountedVehicle = (units _targetGroup findIf {
+                alive _x && {vehicle _x != _x}
+            }) >= 0;
+            if (_hasMountedVehicle) then {
+                [
+                    "Destroy Soft Target",
+                    "HAL has designated a soft target formation. The task marker follows HAL's latest known position. Destroy the assigned formation or reduce it below meaningful combat effectiveness."
+                ]
+            } else {
+                [
+                    "Destroy Squad",
+                    "HAL has designated an enemy squad. The task marker follows HAL's latest known position. Destroy the squad or reduce it below meaningful combat effectiveness."
+                ]
+            }
+        };
+    }
+};
+
 ITW_CLASH_PlayerTaskRequestStrike_fnc_ReleaseReservation = {
     params ["_targetGroup","_jobId",["_reason","release"]];
     if (isNull _targetGroup) exitWith {false};
@@ -192,6 +255,37 @@ ITW_CLASH_PlayerTaskRequestStrike_fnc_Monitor = {
             [_jobId,"COMPLETED","target-combat-ineffective"] call
                 ITW_CLASH_PlayerTaskRequestStrike_fnc_Finish;
         };
+
+        // Update only from HAL-owned knowledge. If HAL loses this contact,
+        // leave the task at the last legitimate known position rather than
+        // leaking the target's real position through the task framework.
+        private _hq = _job getOrDefault ["hq",grpNull];
+        private _taskId = _job getOrDefault ["taskId",""];
+        private _requestType = _job getOrDefault ["requestType","STRIKE_SOFT"];
+        private _halKnows = !isNull _hq && {
+            _targetGroup in ([_hq] call ITW_CLASH_PlayerTaskRequestStrike_fnc_KnownGroups)
+        };
+        if (_halKnows && {_taskId isNotEqualTo ""}) then {
+            private _trackingTarget = [
+                _targetGroup,_requestType
+            ] call ITW_CLASH_PlayerTaskRequestStrike_fnc_TrackingObject;
+            if (!isNull _trackingTarget && {alive _trackingTarget}) then {
+                private _newPosition = getPosATL _trackingTarget;
+                private _oldPosition = _job getOrDefault ["targetPosition",[]];
+                if (_oldPosition isEqualTo [] || {
+                    _newPosition distance2D _oldPosition >= 5
+                }) then {
+                    [_taskId,_newPosition] call BIS_fnc_taskSetDestination;
+                    _job set ["target",_trackingTarget];
+                    _job set ["targetPosition",+_newPosition];
+                    _job set ["lastTrackedAt",time];
+                    ITW_CLASH_PlayerJobs set [_jobId,_job];
+                    ["target-tracked",[
+                        _jobId,groupId _targetGroup,_requestType,_newPosition
+                    ]] call ITW_CLASH_PlayerTaskRequestStrike_fnc_Log;
+                };
+            };
+        };
     };
 };
 
@@ -263,6 +357,9 @@ ITW_CLASH_PlayerTaskRequestStrike_fnc_Request = {
         case "STRIKE_LIGHT_ARMOR": {"Light Armor"};
         default {"Soft Targets"};
     };
+    private _presentation = [_targetGroup,_requestType] call
+        ITW_CLASH_PlayerTaskRequestStrike_fnc_TaskPresentation;
+    _presentation params ["_taskTitle","_taskDescription"];
     private _taskId = "ITW_" + _jobId;
     private _roster = [_group] call ITW_CLASH_PlayerTasks_fnc_HumanRoster;
     private _nominalThreat = [_targetGroup,_requestType] call
@@ -307,12 +404,9 @@ ITW_CLASH_PlayerTaskRequestStrike_fnc_Request = {
         _players,
         _taskId,
         [
-            format [
-                "HAL has designated a %1 target of opportunity. Last confirmed position is marked. Destroy or render the assigned combat vehicles ineffective. Dismounted surviving crews are not part of an armor STRIKE objective. HAL retains normal battlefield authority; other friendly forces may engage the same enemy.",
-                toLowerANSI _label
-            ],
-            "HAL Strike: " + _label,
-            ""
+            _taskDescription + " HAL retains normal battlefield authority; other friendly forces may engage the same enemy.",
+            _taskTitle,
+            _taskTitle
         ],
         _targetPosition,
         "ASSIGNED",
@@ -371,7 +465,7 @@ ITW_CLASH_PlayerTaskRequestStrike_fnc_Request = {
 
     ITW_CLASH_PlayerTaskRequestStrikeReady = true;
     diag_log format [
-        "CLASH BOOT | player-task-request-strike-ready | version=%1 halKnownGroups=true halEnemyTaxonomy=true nativeNearestThreatHeuristic=true duplicatePlayerReservation=true aiCombatUnblocked=true liveTracking=false rewardAuthorizationOnly=true",
+        "CLASH BOOT | player-task-request-strike-ready | version=%1 halKnownGroups=true halEnemyTaxonomy=true nativeNearestThreatHeuristic=true duplicatePlayerReservation=true aiCombatUnblocked=true halKnowledgeTracking=true lastKnownFreeze=true rewardAuthorizationOnly=true",
         ITW_CLASH_PlayerTaskRequestStrikeVersion
     ];
 };
