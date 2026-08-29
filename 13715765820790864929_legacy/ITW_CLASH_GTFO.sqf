@@ -31,6 +31,54 @@ ITW_CLASH_GTFO_fnc_Log = {
     };
 };
 
+ITW_CLASH_GTFO_fnc_SetPersistentConstraints = {
+    params ["_group",["_enabled",true]];
+    if (isNull _group) exitWith {false};
+
+    private _hq = grpNull;
+    if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+        _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+    };
+    private _isPlayerCommander = (
+        !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+    );
+    if (isNull _hq && {
+        !_isPlayerCommander && {
+            !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
+        }
+    }) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+    };
+    if (isNull _hq) exitWith {false};
+
+    private _prefix = if (_isPlayerCommander) then {"RydHQB_"} else {"RydHQ_"};
+    {
+        _x params ["_suffix","_hqName"];
+        private _globalName = _prefix + _suffix;
+        private _global = +(missionNamespace getVariable [_globalName,[]]);
+        if (_enabled) then {
+            _global pushBackUnique _group;
+        } else {
+            _global = _global - [_group];
+        };
+        missionNamespace setVariable [_globalName,_global];
+
+        private _hqList = +(_hq getVariable [_hqName,[]]);
+        if (_enabled) then {
+            _hqList pushBackUnique _group;
+        } else {
+            _hqList = _hqList - [_group];
+        };
+        _hq setVariable [_hqName,_hqList];
+    } forEach [
+        ["NoDef","RydHQ_NoDef"],
+        ["NoAttack","RydHQ_NoAttack"],
+        ["NoRecon","RydHQ_NoRecon"],
+        ["Exhausted","RydHQ_Exhausted"]
+    ];
+    true
+};
+
 ITW_CLASH_GTFO_fnc_RefreshCorridor = {
     if (isNil "ITW_CLASH_fnc_GetActiveObjectives" || {
         isNil "ITW_CLASH_fnc_GetSupportCorridorSpawn"
@@ -120,33 +168,15 @@ ITW_CLASH_GTFO_fnc_RefreshCorridor = {
 };
 
 ITW_CLASH_GTFO_fnc_ApplyConstraints = {
-    if (isNull ITW_CLASH_HALHQ) exitWith {false};
-
     private _gtfo = ITW_CLASH_ManagedGroups select {
         !isNull _x && {
             _x getVariable ["ITW_CLASH_GTFO",false]
         }
     };
 
-    private _noDef = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoDef",[]]);
-    private _noAttack = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoAttack",[]]);
-    private _noRecon = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoRecon",[]]);
-    private _exhausted = +(ITW_CLASH_HALHQ getVariable ["RydHQ_Exhausted",[]]);
-
     {
-        _noDef pushBackUnique _x;
-        _noAttack pushBackUnique _x;
-        _noRecon pushBackUnique _x;
-        _exhausted pushBackUnique _x;
+        [_x,true] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
     } forEach _gtfo;
-
-    ITW_CLASH_HALHQ setVariable ["RydHQ_NoDef",_noDef];
-    ITW_CLASH_HALHQ setVariable ["RydHQ_NoAttack",_noAttack];
-    ITW_CLASH_HALHQ setVariable ["RydHQ_NoRecon",_noRecon];
-    ITW_CLASH_HALHQ setVariable ["RydHQ_Exhausted",_exhausted];
-    RydHQ_NoDef = +_noDef;
-    RydHQ_NoAttack = +_noAttack;
-    RydHQ_NoRecon = +_noRecon;
 
     private _signature = str (_gtfo apply {
         [
@@ -329,16 +359,10 @@ ITW_CLASH_fnc_OrderWithdrawal = {
     };
 
     if (!isNull _hq) then {
-        private _exhausted = +(_hq getVariable ["RydHQ_Exhausted",[]]);
-        private _wasMissing = !(_group in _exhausted);
-        _exhausted pushBackUnique _group;
-        _hq setVariable ["RydHQ_Exhausted",_exhausted];
-
-        {
-            private _arr = +(_hq getVariable [_x,[]]);
-            _arr pushBackUnique _group;
-            _hq setVariable [_x,_arr];
-        } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+        private _wasMissing = !(
+            _group in (_hq getVariable ["RydHQ_Exhausted",[]])
+        );
+        [_group,true] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
 
         if (_isEnemyManaged) then {
             call ITW_CLASH_GTFO_fnc_ApplyConstraints;
