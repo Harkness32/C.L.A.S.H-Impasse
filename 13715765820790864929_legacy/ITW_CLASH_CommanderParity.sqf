@@ -471,6 +471,22 @@ ITW_CLASH_CommanderParity_Anchor_fnc_ApplyCommanderDoctrine = {
     true
 };
 
+
+/*
+    Public parity surface used by shared source.
+
+    ITW_Attack does not know that Commander B currently needs an anchor shim; it
+    asks the parity layer whether this side has refill demand. This keeps the
+    shared spawner from depending on a behavior-specific BLUFOR implementation.
+*/
+ITW_CLASH_CommanderParity_fnc_NextAnchorRefill = {
+    call ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill
+};
+
+ITW_CLASH_CommanderParity_fnc_AcknowledgeAnchorRefill = {
+    _this call ITW_CLASH_CommanderParity_Anchor_fnc_AcknowledgeRefill
+};
+
 ITW_CLASH_CommanderParity_Anchor_fnc_Audit = {
     if (
         !isServer
