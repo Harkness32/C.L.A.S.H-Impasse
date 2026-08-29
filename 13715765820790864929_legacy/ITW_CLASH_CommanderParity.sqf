@@ -28,7 +28,7 @@ ITW_CLASH_CommanderParity_AnchorReady = false;
       1. Objective anchors / six-man point defense for Commander B.
 
     Future parity corrections must extend this file rather than introducing
-    GTFO_BlueforFix, Recon_BlueforFix, Anchor_BlueforFix, etc.
+    behavior-specific side-fix files.
 */
 
 ITW_CLASH_CommanderParity_fnc_Log = {
