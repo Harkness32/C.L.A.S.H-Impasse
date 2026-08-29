@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_AirOpsFixStarted",false]) exitWith {};
 ITW_CLASH_CASEVAC_AirOpsFixStarted = true;
-ITW_CLASH_CASEVAC_AirOpsFixVersion = 2;
+ITW_CLASH_CASEVAC_AirOpsFixVersion = 3;
 
 // CASEVAC itself is loaded asynchronously. Wait for the function surface before
 // correcting the air-operations contract:
@@ -21,15 +21,29 @@ waitUntil {
 };
 
 ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
-    params ["_seatCount","_spawnInfo"];
+    params ["_seatCount","_spawnInfo",["_recoverySide",sideUnknown]];
     if (_spawnInfo isEqualTo []) exitWith {[]};
-    if (isNil "ITW_AtkReconstitutionTransportContext") exitWith {[]};
-    if (ITW_AtkReconstitutionTransportContext isEqualTo []) exitWith {[]};
+    if (_recoverySide == sideUnknown) then {
+        _recoverySide = missionNamespace getVariable ["ITW_EnemySide",east];
+    };
 
-    ITW_AtkReconstitutionTransportContext params [
+    private _context = [];
+    if (!isNil "ITW_AtkReconstitutionTransportContexts") then {
+        _context = ITW_AtkReconstitutionTransportContexts getOrDefault [
+            toUpperANSI str _recoverySide,[]
+        ];
+    };
+    if (_context isEqualTo []) then {
+        _context = missionNamespace getVariable [
+            "ITW_AtkReconstitutionTransportContext",[]
+        ];
+    };
+    if (_context isEqualTo []) exitWith {[]};
+
+    _context params [
         "_transport","_dualVeh","_crewTypes","_unitTypes","_side"
     ];
-    if (!isNil "ITW_EnemySide" && {_side != ITW_EnemySide}) exitWith {[]};
+    if (_side != _recoverySide) exitWith {[]};
 
     // CASEVAC is emergency logistics, not another tactical air package. Select
     // any configured transport-capable helicopter that can still pay its normal
@@ -120,7 +134,8 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
             typeOf (_result#0),
             _baseIndex,
             _spawnSource,
-            _seatCount
+            _seatCount,
+            _recoverySide
         ]] call ITW_CLASH_CASEVAC_fnc_Log;
     };
     _result
@@ -174,6 +189,6 @@ ITW_CLASH_CASEVAC_fnc_RunExtraction = {
 };
 
 diag_log format [
-    "CLASH BOOT | casevac-air-ops-fix-ready | version=%1 explicitLZ=true capBypass=true tickets=true",
+    "CLASH BOOT | casevac-air-ops-fix-ready | version=%1 explicitLZ=true capBypass=true tickets=true symmetricSides=true",
     ITW_CLASH_CASEVAC_AirOpsFixVersion
 ];
