@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPhase0Started",false]) exitWith {};
 
 ITW_CLASH_ReconPhase0Started = true;
-ITW_CLASH_ReconPhase0Version = 3;
+ITW_CLASH_ReconPhase0Version = 4;
 ITW_CLASH_ReconPollInterval = 2;
 ITW_CLASH_ReconActiveGroups = createHashMap;
 
@@ -341,7 +341,15 @@ ITW_CLASH_Recon_fnc_EndMission = {
         private _group = _this param [0,grpNull];
         private _destination = _this param [1,[]];
         private _hq = _this param [3,grpNull];
-        if (isNull _hq) then {
+        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}) then {
+            _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+        };
+        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForSide"}) then {
+            _hq = [side _group] call ITW_CLASH_fnc_GetCommanderForSide;
+        };
+        if (isNull _hq && {
+            !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
+        }) then {
             _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
         };
 
@@ -365,7 +373,15 @@ ITW_CLASH_Recon_fnc_EndMission = {
         private _group = _this param [0,grpNull];
         private _destination = _this param [1,[]];
         private _hq = _this param [3,grpNull];
-        if (isNull _hq) then {
+        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}) then {
+            _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+        };
+        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForSide"}) then {
+            _hq = [side _group] call ITW_CLASH_fnc_GetCommanderForSide;
+        };
+        if (isNull _hq && {
+            !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
+        }) then {
             _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
         };
 
@@ -386,7 +402,7 @@ ITW_CLASH_Recon_fnc_EndMission = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true spawning=false requisition=false reveal=false",
+        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true commanderAware=true spawning=false requisition=false reveal=false",
         ITW_CLASH_ReconPhase0Version
     ];
 };
