@@ -161,7 +161,13 @@ ITW_AtkReconstitutionTransitManager = {
                         _group,_requestId,_objectiveIndex,_archetype,_lineage,_queuedAt
                     ] call ITW_CLASH_fnc_AcknowledgeReconstitution;
                 };
-                if (!isNil "ITW_EnemyGroupCallback") then {[_group] call ITW_EnemyGroupCallback};
+                if (
+                    !isNil "ITW_EnemySide"
+                    && {side _group == ITW_EnemySide}
+                    && {!isNil "ITW_EnemyGroupCallback"}
+                ) then {
+                    [_group] call ITW_EnemyGroupCallback
+                };
                 if (!_accepted) then {[_group,false] spawn ITW_AtkEngageInfantry};
 
                 if (!isNil "ITW_CLASH_fnc_Log") then {
@@ -250,7 +256,7 @@ private _finalized = ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_Compil
 ITW_CLASH_ReconstitutionTransitFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true preInit=true vehicleOwnershipGate=true lifecycleRelease=true forwardFOBFallback=true",
+        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 authoritativeState=true preInit=true vehicleOwnershipGate=true lifecycleRelease=true forwardFOBFallback=true sideAwareHandoff=true",
         ITW_CLASH_ReconstitutionTransitFixVersion,
         ITW_CLASH_ReconstitutionHandoffBuffer
     ];
