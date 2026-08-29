@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GTFORuntimeStarted",false]) exitWith {};
 ITW_CLASH_GTFORuntimeStarted = true;
-ITW_CLASH_GTFORuntimeVersion = 3;
+ITW_CLASH_GTFORuntimeVersion = 4;
 ITW_CLASH_GTFO_ArrivalRadius = 160;
 ITW_CLASH_GTFO_RestRestartGrace = 90;
 ITW_CLASH_GTFO_RestRestartProgress = 25;
@@ -53,6 +53,11 @@ ITW_CLASH_GTFO_fnc_GetCommander = {
     private _hq = grpNull;
     if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
         _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+    };
+    if (isNull _hq && {
+        !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+    }) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
     };
     if (isNull _hq && {
         !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
@@ -472,7 +477,7 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true explicitGoRestRestart=true commanderAware=true bluforTracked=true staleHALRoles=true busyStallGrace=%2 busyProgress=%3 constraintPoll=2 arrivalRadius=%4 nativeRestTelemetry=true",
+    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true explicitGoRestRestart=true commanderAware=true symmetricCommanderFallback=true bluforTracked=true staleHALRoles=true busyStallGrace=%2 busyProgress=%3 constraintPoll=2 arrivalRadius=%4 nativeRestTelemetry=true",
     ITW_CLASH_GTFORuntimeVersion,
     ITW_CLASH_GTFO_RestRestartGrace,
     ITW_CLASH_GTFO_RestRestartProgress,
