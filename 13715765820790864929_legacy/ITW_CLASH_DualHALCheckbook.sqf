@@ -128,6 +128,21 @@ ITW_CLASH_DualHAL_fnc_RegisterGroup = {
     _group setVariable ["ITW_CLASH_Authority","HAL_FIELD"];
     _group setVariable ["ITW_CLASH_AuthorityReason",_reason];
 
+    // Preserve the native Impasse formation template before attrition so
+    // side-symmetric reconstitution can rebuild the original squad.
+    if ((_group getVariable ["ITW_CLASH_Archetype",[]]) isEqualTo []) then {
+        private _archetype = (units _group) apply {toLowerANSI typeOf _x};
+        if (_archetype isNotEqualTo []) then {
+            _group setVariable ["ITW_CLASH_Archetype",+_archetype];
+        };
+    };
+    if ((_group getVariable ["ITW_CLASH_Lineage",""]) isEqualTo "") then {
+        _group setVariable [
+            "ITW_CLASH_Lineage",
+            [_group] call ITW_CLASH_DualHAL_fnc_GroupId
+        ];
+    };
+
     if (_slot == "B") then {
         ITW_CLASH_DualHALBLUFORGroups pushBackUnique _group;
     } else {
