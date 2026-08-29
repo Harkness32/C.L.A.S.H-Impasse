@@ -158,7 +158,7 @@ private _patchRequired = [
     "ITW_CLASH_fnc_AuditAnchors"
 ];
 private _patchMissing = _patchRequired select {isNil _x};
-if (_patchVersion != 4 || {_patchMissing isNotEqualTo []}) exitWith {
+if (_patchVersion != 5 || {_patchMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "runtime-patch-validation-failed version=%1 missing=%2",
         _patchVersion,
@@ -212,7 +212,7 @@ private _gtfoRequired = [
     "ITW_CLASH_fnc_CancelWithdrawals"
 ];
 private _gtfoMissing = _gtfoRequired select {isNil _x};
-if (_gtfoVersion != 1 || {_gtfoMissing isNotEqualTo []}) exitWith {
+if (_gtfoVersion != 2 || {_gtfoMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "gtfo-bridge-validation-failed version=%1 missing=%2",
         _gtfoVersion,
