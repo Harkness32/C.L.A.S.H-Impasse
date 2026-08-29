@@ -5,9 +5,10 @@ if (missionNamespace getVariable ["ITW_CLASH_CommanderParityStarted",false]) exi
     missionNamespace getVariable ["ITW_CLASH_CommanderParityReady",false]
 };
 
-ITW_CLASH_CommanderParity_AnchorParityStarted = true;
-ITW_CLASH_CommanderParity_AnchorParityReady = false;
+ITW_CLASH_CommanderParityStarted = true;
+ITW_CLASH_CommanderParityReady = false;
 ITW_CLASH_CommanderParityVersion = 1;
+ITW_CLASH_CommanderParity_AnchorReady = false;
 
 /*
     C.L.A.S.H. Commander Parity
@@ -689,7 +690,7 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Audit = {
 };
 
 [] spawn {
-    scriptName "ITW_CLASH_CommanderParity_AnchorParity";
+    scriptName "ITW_CLASH_CommanderParity";
     private _deadline = diag_tickTime + 600;
     waitUntil {
         sleep 0.25;
@@ -704,10 +705,11 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Audit = {
         diag_log "CLASH BOOT | commander-parity-timeout | native HAL defense retained";
     };
 
-    ITW_CLASH_CommanderParity_AnchorParityReady = true;
+    ITW_CLASH_CommanderParity_AnchorReady = true;
+    ITW_CLASH_CommanderParityReady = true;
     diag_log format [
         "CLASH BOOT | commander-parity-ready | version=%1 sections=anchor minimum=%2 playerExcluded=true sofExcluded=true refill=impasse-friendly nativeHALDefense=true",
-        ITW_CLASH_CommanderParity_AnchorParityVersion,
+        ITW_CLASH_CommanderParityVersion,
         missionNamespace getVariable ["ITW_CLASH_MinAnchorSoldiers",6]
     ];
 
