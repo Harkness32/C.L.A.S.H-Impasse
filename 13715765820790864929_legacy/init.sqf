@@ -163,20 +163,20 @@ if (isServer) then {
                 && {_playerArtilleryLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true commanderParity=%1 capabilityAPI=v2 forceGeneration=%2 halLogistics=%3 playerTransport=%4 playerTasks=%5 playerGarage=%6 playerArtillery=%7 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%8",
-                    _commanderParityLoaded,
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7 commanderParity=%8",
                     _forceGenerationReady,
                     _halLogisticsLoaded,
                     _playerTransportLoaded,
                     _playerTasksLoaded,
                     _playerGarageLoaded,
                     _playerArtilleryLoaded,
-                    missionNamespace getVariable ["ITW_ParamCLASHObserver",-1]
+                    missionNamespace getVariable ["ITW_ParamCLASHObserver",-1],
+                    _commanderParityLoaded
                 ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 commanderParity=%2 capabilityAPI=%3 forceGeneration=%4 halLogistics=%5 playerTransport=%6 playerTasks=%7 playerGarage=%8 playerArtillery=%9 runtime candidate blocked",
-                    _dualHALHardened,_commanderParityLoaded,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 commanderParity=%9 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded,_commanderParityLoaded
                 ];
             };
         } else {
