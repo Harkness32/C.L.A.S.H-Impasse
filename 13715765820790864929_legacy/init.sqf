@@ -71,6 +71,16 @@ if (isServer) then {
             if (_checkbookAPIReady isEqualTo true && {fileExists "ITW_CLASH_ForceGeneration.sqf"}) then {
                 _forceGenerationReady = call compile preprocessFileLineNumbers "ITW_CLASH_ForceGeneration.sqf";
             };
+            private _vehicleEchelonLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {
+                fileExists "ITW_CLASH_VehicleEchelonPolicy.sqf"
+            }) then {
+                _vehicleEchelonLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_VehicleEchelonPolicy.sqf";
+            } else {
+                diag_log "CLASH BOOT | vehicle-echelon-policy-missing-or-prereq-failed | native field staging/recovery retained";
+            };
+
             private _halLogisticsLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
                 _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
