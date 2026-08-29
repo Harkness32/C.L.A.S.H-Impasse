@@ -109,6 +109,9 @@ ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate = {
         if (isNull _group) exitWith {false};
 
         (_group getVariable ["Busy" + str _group,false])
+        || {(_group getVariable ["ITW_CLASH_PlayerTaskRequestActiveJobId",""]) isNotEqualTo ""}
+        || {(_group getVariable ["ITW_CLASH_PlayerStrikeJobId",""]) isNotEqualTo ""}
+        || {(_group getVariable ["ITW_CLASH_PlayerReconJobId",""]) isNotEqualTo ""}
         || {(_group getVariable ["ITW_CLASH_PlayerAmmoJobId",""]) isNotEqualTo ""}
         || {(_group getVariable ["ITW_CLASH_PlayerArtilleryJobId",""]) isNotEqualTo ""}
         || {(_group getVariable ["ITW_CLASH_PlayerNativeJobId",""]) isNotEqualTo ""}
