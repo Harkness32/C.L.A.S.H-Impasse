@@ -87,7 +87,7 @@ def test_gtfo_bookkeeping_and_runtime_are_commander_aware_for_blufor():
     runtime = mission("ITW_CLASH_GTFO_Runtime.sqf")
 
     assert "ITW_CLASH_GTFOBookkeepingVersion = 3;" in bookkeeping
-    assert "ITW_CLASH_fnc_GetCommanderForGroup" in bookkeeping
+    assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup" in bookkeeping
     assert "ITW_CLASH_GTFO_fnc_SetPersistentConstraints" in bookkeeping
 
     assert "ITW_CLASH_GTFORuntimeVersion = 4;" in runtime
