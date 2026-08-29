@@ -41,7 +41,9 @@ ITW_CLASH_GroundMEDEVAC_fnc_Eligible = {
     private _survivors = units _group select {alive _x};
     if (_survivors findIf {vehicle _x != _x} >= 0) exitWith {[false,[]]};
 
-    private _spawnInfo = [_originalObjective] call ITW_CLASH_GroundMEDEVAC_fnc_GetGroundSpawn;
+    private _spawnInfo = [
+        _originalObjective,side _group
+    ] call ITW_CLASH_GroundMEDEVAC_fnc_GetGroundSpawn;
     if (_spawnInfo isEqualTo []) exitWith {[false,[]]};
     private _pickupInfo = [_group,_destination] call ITW_CLASH_GroundMEDEVAC_fnc_FindRoadPickup;
     if (_pickupInfo isEqualTo []) exitWith {[false,[]]};
@@ -63,7 +65,9 @@ ITW_CLASH_GroundMEDEVAC_fnc_Dispatch = {
     if (isNull _group) exitWith {false};
 
     private _survivors = units _group select {alive _x};
-    private _vehicleInfo = [count _survivors,_spawnInfo] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle;
+    private _vehicleInfo = [
+        count _survivors,_spawnInfo,side _group
+    ] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle;
     if (_vehicleInfo isEqualTo []) exitWith {
         _group setVariable ["ITW_CLASH_GroundMEDEVAC_RetryAt",time + ITW_CLASH_GroundMEDEVAC_AirFallbackDelay];
         ["deferred",[_id,_lineage,"no-ground-vehicle-available"]] call ITW_CLASH_GroundMEDEVAC_fnc_Log;
