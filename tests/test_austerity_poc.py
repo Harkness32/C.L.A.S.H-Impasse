@@ -15,8 +15,9 @@ def test_austerity_poc_rewards_completed_player_hal_jobs_with_1000_cash():
     assert "ITW_CLASH_AusterityTaskReward = 1000;" in server
     assert "ITW_CLASH_AusterityCash = createHashMap;" in server
     assert "ITW_CLASH_AusterityRewardedJobs = createHashMap;" in server
-    assert "ITW_CLASH_Austerity_fnc_RecordEventBase" in server
-    assert 'if (_type == "JOB_COMPLETED")' in server
+    assert 'scriptName "ITW_CLASH_AusterityRewardObserver"' in server
+    assert 'getOrDefault ["state",""]' in server
+    assert '== "COMPLETED"' in server
     assert 'getOrDefault ["participants",[]]' in server
     assert '"hal-task-completed:" + _jobId' in server
     assert "PLAYER_TASK_REWARD_AUTHORIZED" not in server
