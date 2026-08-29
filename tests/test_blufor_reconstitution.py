@@ -306,8 +306,8 @@ def test_commander_parity_is_one_master_layer_not_behavior_specific_blufor_patch
         "ITW_CLASH_CommanderParity.sqf"
     )
 
-    assert "ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill" in attack
-    assert "ITW_CLASH_CommanderParity_Anchor_fnc_AcknowledgeRefill" in attack
+    assert "ITW_CLASH_CommanderParity_fnc_NextAnchorRefill" in attack
+    assert "ITW_CLASH_CommanderParity_fnc_AcknowledgeAnchorRefill" in attack
     assert "ITW_CLASH_FriendlyAnchor" not in attack
 
 
@@ -323,5 +323,5 @@ def test_commander_parity_anchor_section_mirrors_six_man_ai_doctrine_only():
     assert "HAL_GoDef" in parity
     assert "RYD_Spawn" in parity
     assert "ITW_CLASH_CommanderParity_Anchor_fnc_RequestRefill" in parity
-    assert "ITW_CLASH_CommanderParity_Anchor_fnc_NextRefill" in parity
-    assert "ITW_CLASH_CommanderParity_Anchor_fnc_AcknowledgeRefill" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_NextAnchorRefill" in parity
+    assert "ITW_CLASH_CommanderParity_fnc_AcknowledgeAnchorRefill" in parity
