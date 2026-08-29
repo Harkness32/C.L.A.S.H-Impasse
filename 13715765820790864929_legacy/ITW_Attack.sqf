@@ -17,7 +17,8 @@ ITW_AtkTeammatesJoinWave = []; // array of  [player,array of teammates that didn
 ITW_AtkReconstitutionQueue = [];
 ITW_AtkReconstitutionNextId = 0;
 ITW_AtkReconstitutionTransits = [];
-ITW_AtkReconstitutionTransportContext = [];
+ITW_AtkReconstitutionTransportContext = []; // legacy enemy-side alias
+ITW_AtkReconstitutionTransportContexts = createHashMap; // symmetric side-keyed contexts
 ITW_AtkReconstitutionTransitManagerStarted = false;
 ITW_AtkReconstitutionTransportWait = 120;
 
@@ -26,7 +27,8 @@ ITW_AtkQueueReconstitution = {
         ["_archetype",[]],
         ["_objectiveIndex",-1],
         ["_lineage",""],
-        ["_origin",[0,0,0]]
+        ["_origin",[0,0,0]],
+        ["_side",sideUnknown]
     ];
     if (!isServer || {_archetype isEqualTo []}) exitWith {""};
 
@@ -39,6 +41,10 @@ ITW_AtkQueueReconstitution = {
         count _classes != count _archetype
     }) exitWith {""};
 
+    if (_side == sideUnknown) then {
+        _side = missionNamespace getVariable ["ITW_EnemySide",east];
+    };
+
     ITW_AtkReconstitutionNextId = ITW_AtkReconstitutionNextId + 1;
     private _requestId = format ["RC%1",ITW_AtkReconstitutionNextId];
     ITW_AtkReconstitutionQueue pushBack [
@@ -47,7 +53,8 @@ ITW_AtkQueueReconstitution = {
         _objectiveIndex,
         _lineage,
         +_origin,
-        time
+        time,
+        _side
     ];
 
     if (!isNil "ITW_CLASH_fnc_Log") then {
@@ -56,17 +63,25 @@ ITW_AtkQueueReconstitution = {
             _lineage,
             _objectiveIndex,
             count _classes,
-            count ITW_AtkReconstitutionQueue
+            count ITW_AtkReconstitutionQueue,
+            _side
         ]] call ITW_CLASH_fnc_Log;
     };
     _requestId
 };
 
 ITW_AtkNextReconstitution = {
-    if (!isServer || {
-        ITW_AtkReconstitutionQueue isEqualTo []
-    }) exitWith {[]};
-    ITW_AtkReconstitutionQueue deleteAt 0
+    params [["_side",sideUnknown]];
+    if (!isServer || {ITW_AtkReconstitutionQueue isEqualTo []}) exitWith {[]};
+    if (_side == sideUnknown) exitWith {ITW_AtkReconstitutionQueue deleteAt 0};
+
+    private _enemySide = missionNamespace getVariable ["ITW_EnemySide",east];
+    private _index = ITW_AtkReconstitutionQueue findIf {
+        private _requestSide = _x param [6,_enemySide];
+        _requestSide == _side
+    };
+    if (_index < 0) exitWith {[]};
+    ITW_AtkReconstitutionQueue deleteAt _index
 };
 
 ITW_AtkDispatchReconstitutionTransport = {
@@ -697,10 +712,14 @@ ITW_AtkManager = {
             false
         } forEach _vehArray; 
         ITW_AirVehsDef set [_whichSide,[_attackVehAir,_dualVehAir,_transportAir]];
+        private _reconstitutionContext = [
+            +_transport,+_dualVeh,+_crewTypes,+_unitTypes,_side
+        ];
+        ITW_AtkReconstitutionTransportContexts set [
+            toUpperANSI str _side,_reconstitutionContext
+        ];
         if (!_isFriendly) then {
-            ITW_AtkReconstitutionTransportContext = [
-                +_transport,+_dualVeh,+_crewTypes,+_unitTypes,_side
-            ];
+            ITW_AtkReconstitutionTransportContext = +_reconstitutionContext;
         };
 
         private _ownedObjCnt = {_isFriendly == _x call ITW_ObjContestedOwnerIsFriendly} count (ITW_Zones#_zoneIndex);
@@ -768,10 +787,14 @@ ITW_AtkManager = {
             private _activeAiCnt = {alive _x} count (units _side);
 
             //// C.L.A.S.H. cap-exempt squad reconstitution ////
-            if (!_isFriendly && {
-                ITW_AtkReconstitutionQueue isNotEqualTo []
-            }) then {
-                private _request = call ITW_AtkNextReconstitution;
+            private _hasSideReconstitution = ITW_AtkReconstitutionQueue findIf {
+                private _requestSide = _x param [
+                    6,missionNamespace getVariable ["ITW_EnemySide",east]
+                ];
+                _requestSide == _side
+            };
+            if (_hasSideReconstitution >= 0) then {
+                private _request = [_side] call ITW_AtkNextReconstitution;
                 if (_request isNotEqualTo []) then {
                     _request params [
                         "_requestId",
@@ -779,7 +802,8 @@ ITW_AtkManager = {
                         "_requestedObjective",
                         "_lineage",
                         "_origin",
-                        "_queuedAt"
+                        "_queuedAt",
+                        ["_requestSide",_side]
                     ];
 
                     private _targetObjective = -1;
@@ -793,7 +817,12 @@ ITW_AtkManager = {
                     }) then {
                         {
                             private _objectiveIndex = _x;
-                            if !([_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly) then {
+                            private _ownedByRequestSide = if (_requestSide == ITW_PlayerSide) then {
+                                [_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly
+                            } else {
+                                !([_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly)
+                            };
+                            if (_ownedByRequestSide) then {
                                 private _objectivePos = (
                                     ITW_Objectives#_objectiveIndex
                                 )#ITW_OBJ_POS;
@@ -820,7 +849,8 @@ ITW_AtkManager = {
                                     "ITW_ZoneIndex",
                                     -1
                                 ],
-                                "no-enemy-held-active-objective"
+                                "no-side-held-active-objective",
+                                    _requestSide
                             ]] call ITW_CLASH_fnc_Log;
                         };
                     } else {
@@ -943,7 +973,12 @@ ITW_AtkManager = {
                 private _squad = [];
                 while {
                     _activeAiCnt < _maxAiRightNow && {
-                        ITW_AtkReconstitutionQueue isEqualTo []
+                        (ITW_AtkReconstitutionQueue findIf {
+                            private _requestSide = _x param [
+                                6,missionNamespace getVariable ["ITW_EnemySide",east]
+                            ];
+                            _requestSide == _side
+                        }) < 0
                     }
                 } do {
                    _spawnPos = [_homeSpawnPt,0,25,1,0,0,0,[],[[0,0,0],[0,0,0]]] call BIS_fnc_findSafePos;
