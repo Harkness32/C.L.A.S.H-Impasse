@@ -1108,6 +1108,64 @@ ITW_AtkManager = {
                         _refillObjective = call ITW_CLASH_fnc_NextAnchorRefill;
                     };
                 };
+                // Friendly-side parity: consume the same Impasse infantry
+                // production for objective-anchor refill demand. Human groups
+                // never enter this path; the parity layer publishes AI demand.
+                if (_isFriendly && {
+                    _newSquads isNotEqualTo [] && {
+                        !isNil "ITW_CLASH_FriendlyAnchor_fnc_NextRefill" && {
+                            !isNil "ITW_CLASH_FriendlyAnchor_fnc_AcknowledgeRefill"
+                        }
+                    }
+                }) then {
+                    private _friendlyRefillObjective = call
+                        ITW_CLASH_FriendlyAnchor_fnc_NextRefill;
+                    while {
+                        _newSquads isNotEqualTo [] && {
+                            _friendlyRefillObjective >= 0
+                        }
+                    } do {
+                        private _obj = ITW_Objectives#_friendlyRefillObjective;
+                        private _units = _newSquads deleteAt 0;
+                        {ALLOW_DAMAGE(_x,true)} forEach _units;
+
+                        private _group = createGroup [_side,false];
+                        _units joinSilent _group;
+                        _group deleteGroupWhenEmpty true;
+                        _group setVariable ["itwInitGrp",true];
+                        _group setVariable [
+                            "ITW_CLASH_FriendlyAnchorRefillObjective",
+                            _friendlyRefillObjective
+                        ];
+                        _group setVariable [
+                            "ITW_CLASH_DualHALObjectiveAffinity",
+                            _friendlyRefillObjective
+                        ];
+                        _group setVariable [
+                            "ITW_CLASH_AssignedObjective",
+                            _friendlyRefillObjective
+                        ];
+
+                        [_group,_obj] call ITW_AtkAddInfantryGroup;
+                        if (isNull _group) then {
+                            _friendlyRefillObjective = call
+                                ITW_CLASH_FriendlyAnchor_fnc_NextRefill;
+                            continue;
+                        };
+                        VAR_SET_OBJ_IDX(_group,_friendlyRefillObjective);
+                        ITW_DELETE_WAYPOINTS(_group);
+                        [
+                            _group,_friendlyRefillObjective
+                        ] call ITW_CLASH_FriendlyAnchor_fnc_AcknowledgeRefill;
+                        _group setVariable ["itwInitGrp",nil];
+                        [_group] call _fnGroupsCallback;
+
+                        YIELD_CPU;
+                        _friendlyRefillObjective = call
+                            ITW_CLASH_FriendlyAnchor_fnc_NextRefill;
+                    };
+                };
+
             };
 
             //// Spawn Vehicles ////
