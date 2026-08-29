@@ -119,7 +119,7 @@ if (_infLoaded) then {
             (missionNamespace getVariable [
                 "ITW_CLASH_InfantryAuthorityAllocationFixVersion",
                 -1
-            ]) == 1 && {
+            ]) == 2 && {
                 !isNil "ITW_CLASH_InfantryAuthorityAllocationFix_fnc_SetAffinity"
             }
         };
