@@ -153,3 +153,51 @@ def test_request_router_allows_immediate_requery_when_no_job_is_assigned():
     assert "PlayerTaskRequestNextAt" not in handler
     assert "PlayerTaskRequestCooldown" not in handler
     assert "ITW_CLASH_PlayerTaskRequests_fnc_HasActiveJob" in handler
+
+
+def test_request_router_uses_shared_active_lease_and_inflight_claim():
+    text = _text("ITW_CLASH_PlayerTaskRequests.sqf")
+    handler = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {",
+        "[] spawn {",
+    )
+
+    assert "ITW_CLASH_PlayerTaskRequestActiveJobId" in text
+    assert "ITW_CLASH_PlayerTaskRequestClaimUntil" in handler
+    assert "active-lease-acquired" in handler
+    assert "ITW_CLASH_PlayerTaskRequests_fnc_WatchActiveLease" in text
+    assert "ITW_CLASH_PlayerTaskRequests_fnc_ReleaseActiveLease" in text
+    assert "sharedActiveLease=true" in text
+    assert "oneActiveJob=true" in text
+
+
+def test_request_death_event_fails_all_active_player_requested_jobs_for_participant():
+    text = _text("ITW_CLASH_PlayerTaskRequests.sqf")
+
+    assert 'addMissionEventHandler [' in text
+    assert '"EntityKilled"' in text
+    assert "getPlayerUID _killed" in text
+    assert '(_job getOrDefault ["origin",""]) != "PLAYER_REQUEST"' in text
+    assert '(_x param [0,""]) == _uid' in text
+    assert '"assigned-player-killed"' in text
+    assert "ITW_CLASH_PlayerTaskRequests_fnc_FailMatchedJob" in text
+    assert "ITW_CLASH_PlayerTaskRequestStrike_fnc_Finish" in text
+    assert "ITW_CLASH_PlayerTaskRequestRecon_fnc_Finish" in text
+    assert "ITW_CLASH_PlayerArtillery_fnc_FinishJob" in text
+    assert "deathFailsTask=true" in text
+
+
+def test_active_lease_reconciles_visible_task_to_terminal_backend_state():
+    text = _text("ITW_CLASH_PlayerTaskRequests.sqf")
+    watch = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequests_fnc_WatchActiveLease = {",
+        "ITW_CLASH_PlayerTaskRequests_fnc_FailMatchedJob = {",
+    )
+
+    assert '["COMPLETED","FAILED","CANCELED"]' in watch
+    assert "BIS_fnc_taskSetState" in watch
+    assert 'case "COMPLETED": {"SUCCEEDED"}' in watch
+    assert 'case "CANCELED": {"CANCELED"}' in watch
+    assert 'default {"FAILED"}' in watch
