@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPhase0Started",false]) exitWith {};
 
 ITW_CLASH_ReconPhase0Started = true;
-ITW_CLASH_ReconPhase0Version = 4;
+ITW_CLASH_ReconPhase0Version = 5;
 ITW_CLASH_ReconPollInterval = 2;
 ITW_CLASH_ReconActiveGroups = createHashMap;
 
@@ -348,6 +348,11 @@ ITW_CLASH_Recon_fnc_EndMission = {
             _hq = [side _group] call ITW_CLASH_fnc_GetCommanderForSide;
         };
         if (isNull _hq && {
+            !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+        }) then {
+            _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
+        };
+        if (isNull _hq && {
             !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
         }) then {
             _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
@@ -380,6 +385,11 @@ ITW_CLASH_Recon_fnc_EndMission = {
             _hq = [side _group] call ITW_CLASH_fnc_GetCommanderForSide;
         };
         if (isNull _hq && {
+            !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}
+        }) then {
+            _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
+        };
+        if (isNull _hq && {
             !isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}
         }) then {
             _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
@@ -402,7 +412,7 @@ ITW_CLASH_Recon_fnc_EndMission = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true commanderAware=true spawning=false requisition=false reveal=false",
+        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true commanderAware=true symmetricCommanderFallback=true spawning=false requisition=false reveal=false",
         ITW_CLASH_ReconPhase0Version
     ];
 };
