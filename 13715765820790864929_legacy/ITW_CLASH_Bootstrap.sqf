@@ -257,7 +257,7 @@ private _gtfoBookkeepingRequired = [
     "ITW_CLASH_fnc_StartWithdrawal"
 ];
 private _gtfoBookkeepingMissing = _gtfoBookkeepingRequired select {isNil _x};
-if (_gtfoBookkeepingVersion != 1 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
+if (_gtfoBookkeepingVersion != 2 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "gtfo-bookkeeping-validation-failed version=%1 missing=%2",
         _gtfoBookkeepingVersion,
