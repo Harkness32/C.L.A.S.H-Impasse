@@ -1271,6 +1271,13 @@ ITW_CLASH_fnc_AuditWithdrawals = {
         if (isNull _group || {
             ({alive _x} count units _group) == 0
         }) then {
+            if (!isNull _group) then {
+                private _restDecoy = _group getVariable [
+                    "ITW_CLASH_GTFO_GroupRestDecoy",objNull
+                ];
+                if (!isNull _restDecoy) then {deleteVehicle _restDecoy};
+                _group setVariable ["ITW_CLASH_GTFO_GroupRestDecoy",nil];
+            };
             ITW_CLASH_Withdrawals deleteAt _id;
             ["withdrawal-failed",[
                 _id,
@@ -1332,8 +1339,14 @@ ITW_CLASH_fnc_AuditWithdrawals = {
                     _credit,
                     _lineage,
                     _survivors,
-                    count _archetype
+                    count _archetype,
+                    side _group
                 ]] call ITW_CLASH_fnc_Log;
+                private _restDecoy = _group getVariable [
+                    "ITW_CLASH_GTFO_GroupRestDecoy",objNull
+                ];
+                if (!isNull _restDecoy) then {deleteVehicle _restDecoy};
+                _group setVariable ["ITW_CLASH_GTFO_GroupRestDecoy",nil];
                 {deleteVehicle _x} forEach units _group;
                 deleteGroup _group;
                 continue;
@@ -1396,6 +1409,11 @@ ITW_CLASH_fnc_CancelWithdrawals = {
             if (!isNull _group) then {
                 _group setVariable ["ITW_CLASH_Withdrawing",nil];
                 _group setVariable ["ITW_CLASH_WithdrawalDestination",nil];
+                private _restDecoy = _group getVariable [
+                    "ITW_CLASH_GTFO_GroupRestDecoy",objNull
+                ];
+                if (!isNull _restDecoy) then {deleteVehicle _restDecoy};
+                _group setVariable ["ITW_CLASH_GTFO_GroupRestDecoy",nil];
                 _group setVariable ["RydHQ_MIA",nil];
                 _group setVariable ["Break",false];
                 _group enableAttack true;
