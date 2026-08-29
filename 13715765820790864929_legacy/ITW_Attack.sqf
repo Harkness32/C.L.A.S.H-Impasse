@@ -817,12 +817,10 @@ ITW_AtkManager = {
                     }) then {
                         {
                             private _objectiveIndex = _x;
-                            private _ownedByRequestSide = if (_requestSide == ITW_PlayerSide) then {
+                            private _activeFrontObjective = !(
                                 [_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly
-                            } else {
-                                !([_objectiveIndex] call ITW_ObjContestedOwnerIsFriendly)
-                            };
-                            if (_ownedByRequestSide) then {
+                            );
+                            if (_activeFrontObjective) then {
                                 private _objectivePos = (
                                     ITW_Objectives#_objectiveIndex
                                 )#ITW_OBJ_POS;
@@ -849,38 +847,31 @@ ITW_AtkManager = {
                                     "ITW_ZoneIndex",
                                     -1
                                 ],
-                                "no-side-held-active-objective",
+                                "no-active-front-objective",
                                     _requestSide
                             ]] call ITW_CLASH_fnc_Log;
                         };
                     } else {
-                        private _corridor = [
-                            _targetObjective
-                        ] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
+                        private _corridor = [];
+                        if (!isNil "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn") then {
+                            _corridor = [
+                                _targetObjective,_requestSide
+                            ] call ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn;
+                        };
                         if (_corridor isEqualTo []) then {
                             ITW_AtkReconstitutionQueue pushBack _request;
                             if (!isNil "ITW_CLASH_fnc_Log") then {
                                 ["reconstitution-deferred",[
                                     _requestId,_lineage,_targetObjective,
                                     missionNamespace getVariable ["ITW_ZoneIndex",-1],
-                                    "no-support-corridor"
+                                    "no-side-forward-fob",
+                                    _requestSide
                                 ]] call ITW_CLASH_fnc_Log;
                             };
                         } else {
                             private _supportBase = _corridor#3;
                             private _stagingPos = +(_corridor#0);
                             private _spawnSource = _corridor#2;
-                            if (_supportBase >= 0 && {
-                                _supportBase < count ITW_Objectives
-                            }) then {
-                                private _vehSpawn = +(
-                                    ITW_Objectives#_supportBase#ITW_OBJ_V_SPAWN
-                                );
-                                if (_vehSpawn isNotEqualTo []) then {
-                                    _stagingPos = _vehSpawn;
-                                    _spawnSource = _spawnSource + "-vehicle-staging";
-                                };
-                            };
                             private _spawnPos = [
                                 _stagingPos,0,35,1,0,0,0,[],[_stagingPos,_stagingPos]
                             ] call BIS_fnc_findSafePos;
