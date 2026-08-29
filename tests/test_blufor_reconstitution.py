@@ -86,11 +86,11 @@ def test_gtfo_bookkeeping_and_runtime_are_commander_aware_for_blufor():
     bookkeeping = mission("ITW_CLASH_GTFO_Bookkeeping.sqf")
     runtime = mission("ITW_CLASH_GTFO_Runtime.sqf")
 
-    assert "ITW_CLASH_GTFOBookkeepingVersion = 2;" in bookkeeping
+    assert "ITW_CLASH_GTFOBookkeepingVersion = 3;" in bookkeeping
     assert "ITW_CLASH_fnc_GetCommanderForGroup" in bookkeeping
     assert "ITW_CLASH_GTFO_fnc_SetPersistentConstraints" in bookkeeping
 
-    assert "ITW_CLASH_GTFORuntimeVersion = 3;" in runtime
+    assert "ITW_CLASH_GTFORuntimeVersion = 4;" in runtime
     assert "ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal" in runtime
     assert 'getVariable ["ITW_CLASH_DualHALManaged",false]' in runtime
     assert "ITW_CLASH_GTFO_fnc_GetCommander" in runtime
@@ -137,14 +137,14 @@ def test_blufor_reconstitution_handoff_returns_to_commander_b_not_enemy_callback
 def test_bootstrap_accepts_the_symmetric_runtime_versions():
     bootstrap = mission("ITW_CLASH_Bootstrap.sqf")
     assert "if (_patchVersion != 5" in bootstrap
-    assert "if (_gtfoVersion != 2" in bootstrap
-    assert "if (_gtfoBookkeepingVersion != 2" in bootstrap
+    assert "if (_gtfoVersion != 4" in bootstrap
+    assert "if (_gtfoBookkeepingVersion != 3" in bootstrap
 
 
 def test_field_vehicle_staging_obeys_shared_echelon_policy():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_DualHALCheckbookVersion = 3;" in dual
+    assert "ITW_CLASH_DualHALCheckbookVersion = 5;" in dual
     assert "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn" in dual
 
     echelon = dual[
@@ -196,3 +196,83 @@ def test_armored_recovery_uses_forward_fob_but_native_hal_gorest_executes_moveme
     assert "ITW_CLASH_VehicleEchelonPolicy.sqf" in init
     assert load in init
     assert init.index(force) < init.index("ITW_CLASH_VehicleEchelonPolicy.sqf") < init.index(start)
+
+
+def test_late_recovery_overrides_preserve_side_symmetric_contexts():
+    air = mission("ITW_CLASH_CASEVAC_AirOpsFix.sqf")
+    ground_policy = mission("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+
+    assert "ITW_CLASH_CASEVAC_AirOpsFixVersion = 3;" in air
+    assert '["_recoverySide",sideUnknown]' in air
+    assert "ITW_AtkReconstitutionTransportContexts" in air
+    assert "toUpperANSI str _recoverySide" in air
+    assert "_side != _recoverySide" in air
+    assert "_side != ITW_EnemySide" not in air
+    assert "symmetricSides=true" in air
+
+    assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 2;" in ground_policy
+    assert '["_recoverySide",sideUnknown]' in ground_policy
+    assert "ITW_AtkReconstitutionTransportContexts" in ground_policy
+    assert "toUpperANSI str _recoverySide" in ground_policy
+    assert "_side != _recoverySide" in ground_policy
+    assert "_side != ITW_EnemySide" not in ground_policy
+    assert "symmetricSides=true" in ground_policy
+
+
+def test_shared_infantry_hardening_covers_both_hal_registries():
+    authority = mission("ITW_CLASH_InfantryAuthority.sqf")
+    allocation = mission("ITW_CLASH_InfantryAuthorityAllocationFix.sqf")
+    dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
+
+    assert "ITW_CLASH_InfantryAuthorityVersion = 4;" in authority
+    assert "ITW_CLASH_DualHALBLUFORGroups" in authority
+    assert "ITW_CLASH_DualHALOPFORExtraGroups" in authority
+    assert "ITW_CLASH_InfantryAuthorityGarrisonsBySide" in authority
+    assert '"RydHQB_"' in authority
+    assert "garrisonConstraintsBothSides=true" in authority
+
+    assert "ITW_CLASH_InfantryAuthorityAllocationFixVersion = 2;" in allocation
+    assert "ITW_CLASH_DualHALBLUFORGroups" in allocation
+    assert "ITW_CLASH_DualHALOPFORExtraGroups" in allocation
+    assert "ITW_CLASH_DualHALObjectiveAffinity" in allocation
+    assert "dualHAL=true" in allocation
+
+    assert "ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints" in dual
+    assert "symmetricInfantryRoles=true" in dual
+
+
+def test_transport_settle_blocks_same_frame_hal_adoption_on_both_sides():
+    guard = mission("ITW_CLASH_LogisticsGuard.sqf")
+    dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
+
+    assert "ITW_CLASH_LogisticsHandoffVersion = 3;" in guard
+    assert "ITW_PlayerSide" in guard
+    assert "ITW_EnemySide" in guard
+    assert "side _grp != ITW_EnemySide" not in guard
+    assert 'findIf {isPlayer _x}' in guard
+    assert "symmetricTransportSettle=true" in guard
+
+    should_own = dual[
+        dual.index("ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup = {"):
+        dual.index("ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter = {")
+    ]
+    assert 'ITW_CLASH_ReeligibleAt' in should_own
+
+
+def test_shared_commander_fallbacks_resolve_a_and_b():
+    gtfo = mission("ITW_CLASH_GTFO.sqf")
+    runtime = mission("ITW_CLASH_GTFO_Runtime.sqf")
+    bookkeeping = mission("ITW_CLASH_GTFO_Bookkeeping.sqf")
+    recon = mission("ITW_CLASH_ReconObserver.sqf")
+    field = mission("ITW_CLASH_FieldHardening.sqf")
+
+    for source in [gtfo, runtime, bookkeeping, recon, field]:
+        assert "ITW_CLASH_BLUFORHQ" in source
+        assert "ITW_CLASH_HALHQ" in source
+
+    cancel = gtfo[
+        gtfo.index("ITW_CLASH_fnc_CancelWithdrawals = {"):
+        gtfo.index("diag_log format [", gtfo.index("ITW_CLASH_fnc_CancelWithdrawals = {"))
+    ]
+    assert "ITW_CLASH_GTFO_fnc_SetPersistentConstraints" in cancel
+    assert 'ITW_CLASH_HALHQ getVariable ["RydHQ_Exhausted"' not in cancel
