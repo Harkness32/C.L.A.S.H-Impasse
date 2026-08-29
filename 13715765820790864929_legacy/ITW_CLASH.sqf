@@ -1277,6 +1277,9 @@ ITW_CLASH_fnc_AuditWithdrawals = {
                 ];
                 if (!isNull _restDecoy) then {deleteVehicle _restDecoy};
                 _group setVariable ["ITW_CLASH_GTFO_GroupRestDecoy",nil];
+                if (!isNil "ITW_CLASH_GTFO_fnc_SetPersistentConstraints") then {
+                    [_group,false] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
+                };
             };
             ITW_CLASH_Withdrawals deleteAt _id;
             ["withdrawal-failed",[
@@ -1347,6 +1350,9 @@ ITW_CLASH_fnc_AuditWithdrawals = {
                 ];
                 if (!isNull _restDecoy) then {deleteVehicle _restDecoy};
                 _group setVariable ["ITW_CLASH_GTFO_GroupRestDecoy",nil];
+                if (!isNil "ITW_CLASH_GTFO_fnc_SetPersistentConstraints") then {
+                    [_group,false] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
+                };
                 {deleteVehicle _x} forEach units _group;
                 deleteGroup _group;
                 continue;
@@ -1414,6 +1420,9 @@ ITW_CLASH_fnc_CancelWithdrawals = {
                 ];
                 if (!isNull _restDecoy) then {deleteVehicle _restDecoy};
                 _group setVariable ["ITW_CLASH_GTFO_GroupRestDecoy",nil];
+                if (!isNil "ITW_CLASH_GTFO_fnc_SetPersistentConstraints") then {
+                    [_group,false] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
+                };
                 _group setVariable ["RydHQ_MIA",nil];
                 _group setVariable ["Break",false];
                 _group enableAttack true;
