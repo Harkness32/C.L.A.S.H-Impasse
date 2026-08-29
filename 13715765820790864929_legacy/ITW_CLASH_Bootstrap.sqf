@@ -213,7 +213,7 @@ private _gtfoRequired = [
     "ITW_CLASH_fnc_CancelWithdrawals"
 ];
 private _gtfoMissing = _gtfoRequired select {isNil _x};
-if (_gtfoVersion != 2 || {_gtfoMissing isNotEqualTo []}) exitWith {
+if (_gtfoVersion != 3 || {_gtfoMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "gtfo-bridge-validation-failed version=%1 missing=%2",
         _gtfoVersion,
