@@ -2,7 +2,7 @@
 
 if (!isServer) exitWith {false};
 
-ITW_CLASH_GTFOVersion = 1;
+ITW_CLASH_GTFOVersion = 2;
 if (isNil "ITW_CLASH_GTFO_Corridor") then {ITW_CLASH_GTFO_Corridor = []};
 if (isNil "ITW_CLASH_GTFO_CorridorSignature") then {ITW_CLASH_GTFO_CorridorSignature = ""};
 if (isNil "ITW_CLASH_GTFO_ConstraintSignature") then {ITW_CLASH_GTFO_ConstraintSignature = ""};
@@ -279,10 +279,15 @@ ITW_CLASH_fnc_OrderWithdrawal = {
     params ["_group","_destination","_egressObjective","_source"];
     if (!isServer || {isNull _group}) exitWith {false};
 
-    // A failed recovery returns tactical authority to HAL. This is a direct
-    // bridge handback, not a fresh Impasse spawn/registration decision.
-    if (_group getVariable ["ITW_CLASH_GTFO",false] && {
-        !(_group getVariable ["ITW_CLASH_Managed",false])
+    private _isEnemyManaged = _group getVariable ["ITW_CLASH_Managed",false];
+
+    // A failed OPFOR recovery returns tactical authority to the original HAL
+    // pilot. BLUFOR groups remain under Commander B throughout recovery, so
+    // never convert them into the enemy managed-group ledger here.
+    if (_isEnemyManaged && {
+        _group getVariable ["ITW_CLASH_GTFO",false] && {
+            !(_group getVariable ["ITW_CLASH_Managed",false])
+        }
     }) then {
         [_group] call ITW_CLASH_GTFO_fnc_ResumeHAL;
     };
@@ -291,20 +296,56 @@ ITW_CLASH_fnc_OrderWithdrawal = {
         _group setVariable ["ITW_CLASH_GTFO_Destination",+_destination];
         _group setVariable ["ITW_CLASH_GTFO_EgressObjective",_egressObjective];
         _group setVariable ["ITW_CLASH_GTFO_Source",_source];
+    _group setVariable ["ITW_CLASH_WithdrawalSide",side _group];
+
+        private _restDecoy = _group getVariable [
+            "ITW_CLASH_GTFO_GroupRestDecoy",objNull
+        ];
+        if (isNull _restDecoy) then {
+            _restDecoy = createVehicle [
+                "Land_HelipadEmpty_F",_destination,[],0,"CAN_COLLIDE"
+            ];
+            _restDecoy hideObjectGlobal true;
+            _restDecoy enableSimulationGlobal false;
+            _restDecoy allowDamage false;
+            _group setVariable [
+                "ITW_CLASH_GTFO_GroupRestDecoy",_restDecoy
+            ];
+        } else {
+            _restDecoy setPosATL _destination;
+        };
     };
 
-    if (!isNull ITW_CLASH_HALHQ) then {
-        private _exhausted = +(ITW_CLASH_HALHQ getVariable ["RydHQ_Exhausted",[]]);
+    private _hq = grpNull;
+    if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+        _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+    };
+    if (isNull _hq && {_isEnemyManaged}) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+    };
+
+    if (!isNull _hq) then {
+        private _exhausted = +(_hq getVariable ["RydHQ_Exhausted",[]]);
         private _wasMissing = !(_group in _exhausted);
         _exhausted pushBackUnique _group;
-        ITW_CLASH_HALHQ setVariable ["RydHQ_Exhausted",_exhausted];
-        call ITW_CLASH_GTFO_fnc_ApplyConstraints;
+        _hq setVariable ["RydHQ_Exhausted",_exhausted];
+
+        {
+            private _arr = +(_hq getVariable [_x,[]]);
+            _arr pushBackUnique _group;
+            _hq setVariable [_x,_arr];
+        } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+
+        if (_isEnemyManaged) then {
+            call ITW_CLASH_GTFO_fnc_ApplyConstraints;
+        };
 
         if (_wasMissing) then {
             ["hal-exhaustion-reasserted",[
                 [_group] call ITW_CLASH_fnc_GroupId,
                 _egressObjective,
-                _source
+                _source,
+                side _group
             ]] call ITW_CLASH_GTFO_fnc_Log;
         };
     };
@@ -336,12 +377,26 @@ ITW_CLASH_fnc_StartWithdrawal = {
             _group getVariable ["ITW_CLASH_Withdrawing",false]
         }
     }) exitWith {false};
-    if !(_group getVariable ["ITW_CLASH_Managed",false]) exitWith {false};
+    private _enemyManaged = _group getVariable ["ITW_CLASH_Managed",false];
+    private _friendlyManaged = (
+        !isNil "ITW_PlayerSide"
+        && {side _group == ITW_PlayerSide}
+        && {_group getVariable ["ITW_CLASH_DualHALManaged",false]}
+        && {((units _group) findIf {isPlayer _x}) < 0}
+    );
+    if (!_enemyManaged && {!_friendlyManaged}) exitWith {false};
 
-    private _objectiveIndex = _group getVariable [
-        "ITW_CLASH_AssignedObjective",
-        VAR_GET_OBJ_IDX(_group)
-    ];
+    private _objectiveIndex = if (_friendlyManaged) then {
+        _group getVariable [
+            "ITW_CLASH_DualHALObjectiveAffinity",
+            VAR_GET_OBJ_IDX(_group)
+        ]
+    } else {
+        _group getVariable [
+            "ITW_CLASH_AssignedObjective",
+            VAR_GET_OBJ_IDX(_group)
+        ]
+    };
     private _archetype = [_group] call ITW_CLASH_fnc_GetArchetype;
     if (_archetype isEqualTo []) exitWith {
         ["withdrawal-rejected",[
@@ -354,15 +409,31 @@ ITW_CLASH_fnc_StartWithdrawal = {
 
     private _id = [_group] call ITW_CLASH_fnc_GroupId;
     private _lineage = _group getVariable ["ITW_CLASH_Lineage",_id];
-    private _corridor = call ITW_CLASH_GTFO_fnc_RefreshCorridor;
     private _destination = [];
     private _egressObjective = -1;
     private _source = "unresolved";
-    if (_corridor isNotEqualTo []) then {
-        _destination = +(_corridor#0);
-        _egressObjective = _corridor#1;
-        _source = "gtfo-" + (_corridor#2);
+
+    if (_friendlyManaged && {
+        !isNil "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn"
+    }) then {
+        private _forward = [
+            _objectiveIndex,side _group
+        ] call ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn;
+        if (_forward isNotEqualTo []) then {
+            _destination = +(_forward#0);
+            _egressObjective = _forward#1;
+            _source = "gtfo-blufor-" + (_forward#2);
+        };
     } else {
+        private _corridor = call ITW_CLASH_GTFO_fnc_RefreshCorridor;
+        if (_corridor isNotEqualTo []) then {
+            _destination = +(_corridor#0);
+            _egressObjective = _corridor#1;
+            _source = "gtfo-" + (_corridor#2);
+        };
+    };
+
+    if (_destination isEqualTo []) then {
         private _fallback = [
             _group,
             _objectiveIndex
@@ -478,7 +549,7 @@ ITW_CLASH_fnc_CancelWithdrawals = {
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-hal-withdrawal-ready | version=%1 bridgeOnly=true nativeGoRest=true restDecoy=true directMove=false directBlue=false directAttackDisable=false recoveryOwnership=postBoarding",
+    "CLASH BOOT | gtfo-hal-withdrawal-ready | version=%1 bridgeOnly=true nativeGoRest=true groupRestDecoy=true bluforReconstitution=true directMove=false directBlue=false directAttackDisable=false recoveryOwnership=postBoarding",
     ITW_CLASH_GTFOVersion
 ];
 
