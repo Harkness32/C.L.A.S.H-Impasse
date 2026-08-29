@@ -1168,7 +1168,7 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
 };
 
 diag_log format [
-    "CLASH BOOT | dual-hal-checkbook-loaded | version=%1 compatibilityLayer=true impasse=checkbook hal=commander",
+    "CLASH BOOT | dual-hal-checkbook-loaded | version=%1 compatibilityLayer=true impasse=checkbook hal=commander echelonFieldVehicles=true symmetricTransportSettle=true symmetricInfantryRoles=true",
     ITW_CLASH_DualHALCheckbookVersion
 ];
 
