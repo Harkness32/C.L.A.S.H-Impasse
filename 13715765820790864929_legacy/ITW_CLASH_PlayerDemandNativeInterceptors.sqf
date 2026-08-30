@@ -255,8 +255,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
 
         private _nativeResult = true;
         private _nativeResultDefined = !(isNil {
-            _nativeResult = _this call
-                ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase;
+            _nativeResult = _this call ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase;
         });
 
         if (_nativeToken isNotEqualTo "" && {!isNull _targetGroup}) then {
