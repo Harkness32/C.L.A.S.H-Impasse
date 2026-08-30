@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixStarted",f
     missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixReady",false]
 };
 ITW_CLASH_ReconstitutionDispatchFixStarted = true;
-ITW_CLASH_ReconstitutionDispatchFixVersion = 5;
+ITW_CLASH_ReconstitutionDispatchFixVersion = 6;
 ITW_CLASH_ReconstitutionDispatchFixReady = false;
 
 // Resolve the exact active objective's attack-source forward FOB. Prefer the
@@ -194,7 +194,14 @@ ITW_AtkDispatchReconstitutionTransport = {
         private _type = _x#ITW_VEH_TYPE;
         if (_preferAir) then {ITW_VEH_IS_AIR(_type)} else {ITW_VEH_IS_LAND(_type)}
     };
-    private _ordered = _preferred + (_candidates - _preferred);
+    private _fallback = _candidates - _preferred;
+    _preferred = [_preferred,[],{
+        _x#ITW_VEH_REQD_TICKETS
+    },"ASCEND"] call BIS_fnc_sortBy;
+    _fallback = [_fallback,[],{
+        _x#ITW_VEH_REQD_TICKETS
+    },"ASCEND"] call BIS_fnc_sortBy;
+    private _ordered = _preferred + _fallback;
 
     private _dispatched = false;
     for "_candidateIndex" from 0 to ((count _ordered) - 1) do {
@@ -309,7 +316,7 @@ private _finalized = _beginFinalized && _dispatchFinalized;
 ITW_CLASH_ReconstitutionDispatchFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true sideContexts=true capExemptCrew=true lifecycleReserved=true preInit=true",
+        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true sideContexts=true capExemptCrew=true lifecycleReserved=true costEfficientLiftOrder=true preInit=true",
         ITW_CLASH_ReconstitutionDispatchFixVersion
     ];
 } else {

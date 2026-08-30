@@ -246,7 +246,7 @@ def test_transport_settle_blocks_same_frame_hal_adoption_on_both_sides():
     guard = mission("ITW_CLASH_LogisticsGuard.sqf")
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_LogisticsHandoffVersion = 3;" in guard
+    assert "ITW_CLASH_LogisticsHandoffVersion = 4;" in guard
     assert "ITW_PlayerSide" in guard
     assert "ITW_EnemySide" in guard
     assert "side _grp != ITW_EnemySide" not in guard
@@ -334,3 +334,63 @@ def test_commander_parity_anchor_section_mirrors_six_man_ai_doctrine_only():
     assert "ITW_CLASH_CommanderParity_Anchor_fnc_RequestRefill" in parity
     assert "ITW_CLASH_CommanderParity_fnc_NextAnchorRefill" in parity
     assert "ITW_CLASH_CommanderParity_fnc_AcknowledgeAnchorRefill" in parity
+
+
+
+def test_reconstitution_physical_dismount_is_direct_hal_handoff_boundary():
+    transit = mission("ITW_CLASH_ReconstitutionTransitFix.sqf")
+
+    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 5;" in transit
+    assert '"ITW_CLASH_ReconstitutionTransitPoll",2' in transit
+    assert "ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership" in transit
+    assert "_aliveUnits orderGetIn false;" in transit
+    assert "_aliveUnits allowGetIn false;" in transit
+    assert "VEHINFO_CARGO_GRPS" in transit
+    assert "private _dismountHandoff = _physicalDismount" in transit
+    assert "private _shouldHandoff = _nearHandoff || {_dismountHandoff};" in transit
+    assert "(units _group select {alive _x}) allowGetIn true;" in transit
+    assert "physicalDismountHandoff=true" in transit
+
+
+def test_reconstitution_transport_dismount_does_not_fall_into_generic_walking_limbo():
+    transit = mission("ITW_CLASH_ReconstitutionTransitFix.sqf")
+
+    # Walking is now only the no-transport fallback. A real transport unload
+    # remains in the transport lifecycle until direct HAL handoff succeeds.
+    transport_dismount = transit.split(
+        'private _physicalDismount = _state isEqualTo "transport"', 1
+    )[1].split(
+        'if (_state isEqualTo "waiting-transport"', 1
+    )[0]
+    assert 'ITW_CLASH_TransitState",_state' not in transport_dismount
+    assert '"reconstitution-transport-interrupted"' not in transit
+    assert "ITW_CLASH_Reconstitution_fnc_OrderWalkingTransit" in transit
+    assert '[_group,_objectiveIndex,"transport-unavailable"] call' in transit
+    assert "[_group,false] spawn ITW_AtkEngageInfantry;" not in transit
+
+
+def test_reconstitution_guard_repairs_stale_assignment_without_per_second_log_spam():
+    guard = mission("ITW_CLASH_LogisticsGuard.sqf")
+
+    assert "ITW_CLASH_LogisticsHandoffVersion = 4;" in guard
+    assert "ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership" in guard
+    assert '"ITW_CLASH_ReconstitutionUnassignLogAt",time + 15' in guard
+    assert "reconstitutionDismountReconcile=true" in guard
+
+
+def test_reconstitution_dispatch_prefers_cheaper_valid_lift_within_route_mode():
+    dispatch = mission("ITW_CLASH_ReconstitutionDispatchFix.sqf")
+
+    assert "ITW_CLASH_ReconstitutionDispatchFixVersion = 6;" in dispatch
+    assert "private _fallback = _candidates - _preferred;" in dispatch
+    assert dispatch.count("_x#ITW_VEH_REQD_TICKETS") >= 4
+    assert "costEfficientLiftOrder=true" in dispatch
+
+
+def test_reconstitution_transit_failure_distinguishes_combat_loss_from_lifecycle_loss():
+    transit = mission("ITW_CLASH_ReconstitutionTransitFix.sqf")
+
+    assert '"combat-loss-after-dismount"' in transit
+    assert '"combat-loss-in-transit"' in transit
+    assert '"transport-loss-with-cargo"' in transit
+    assert '"group-object-lost-in-transit"' in transit
