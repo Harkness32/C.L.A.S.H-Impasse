@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandAmmoValidityHardeningSt
 
 ITW_CLASH_PlayerDemandAmmoValidityHardeningStarted = true;
 ITW_CLASH_PlayerDemandAmmoValidityHardeningReady = false;
-ITW_CLASH_PlayerDemandAmmoValidityHardeningVersion = 1;
+ITW_CLASH_PlayerDemandAmmoValidityHardeningVersion = 2;
 
 ITW_CLASH_PlayerDemandAmmoValidity_fnc_GroupNeedsAmmo = {
     params ["_hq","_group"];
@@ -78,11 +78,14 @@ ITW_CLASH_PlayerDemandAmmoValidity_fnc_GroupNeedsAmmo = {
         if (isNull _hq || {isNull _target} || {isNull _targetGroup}) exitWith {false};
         if (!alive _target) exitWith {false};
 
-        // OPEN demand yields to an already-native-owned assignment. During a
-        // player reservation, ASupportedG is intentionally not authority and
-        // may be rewritten by SitRep or touched by a same-cycle native scan.
+        // ASupportedG is native planning bookkeeping, not proof that an
+        // executor owns this request. Native AI execution is tracked explicitly
+        // by the GoAmmoSupp interceptor; otherwise validity is the recipient's
+        // direct HAL-equivalent ammunition condition.
         if (_state == "OPEN" && {
-            _targetGroup in (_hq getVariable ["RydHQ_ASupportedG",[]])
+            (_targetGroup getVariable [
+                "ITW_CLASH_NativeAmmoExecution",""
+            ]) isNotEqualTo ""
         }) exitWith {false};
 
         [_hq,_targetGroup] call
@@ -91,7 +94,7 @@ ITW_CLASH_PlayerDemandAmmoValidity_fnc_GroupNeedsAmmo = {
 
     ITW_CLASH_PlayerDemandAmmoValidityHardeningReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-ammo-validity-hardening-ready | version=%1 reservedValidity=direct-native-equivalent hollowNotRequired=true",
+        "CLASH BOOT | player-demand-ammo-validity-hardening-ready | version=%1 reservedValidity=direct-native-equivalent openValidity=direct-need-or-native-executor supportedArrayNotAuthority=true hollowNotRequired=true",
         ITW_CLASH_PlayerDemandAmmoValidityHardeningVersion
     ];
 };

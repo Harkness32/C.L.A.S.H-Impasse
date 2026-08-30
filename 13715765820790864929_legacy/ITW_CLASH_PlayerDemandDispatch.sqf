@@ -696,6 +696,9 @@ ITW_CLASH_PlayerDemand_fnc_OnAmmoDemand = {
         private _targetGroup = [_target] call ITW_CLASH_PlayerDemand_fnc_TargetGroup;
         if (isNull _targetGroup || {_targetGroup in _seenGroups}) then {continue};
         _seenGroups pushBack _targetGroup;
+        if ((_targetGroup getVariable [
+            "ITW_CLASH_NativeAmmoExecution",""
+        ]) isNotEqualTo "") then {continue};
         private _key = "LOGISTICS_AMMO|" + str _targetGroup;
         private _existing = [_key] call ITW_CLASH_PlayerDemand_fnc_FindBySourceKey;
         if (_existing isEqualTo "" && {

@@ -1165,11 +1165,15 @@ ITW_CLASH_PlayerRepairClasses = +va_pRepairClasses;
 ITW_CLASH_EnemyRepairClasses = +va_eRepairClasses;
 ITW_CLASH_PlayerAmmoHeloClasses = va_pHeliClasses select {
     private _class = if (_x isEqualType []) then {_x#0} else {_x};
-    getNumber (configFile >> "CfgVehicles" >> _class >> "transportAmmo") > 100
+    private _cfg = configFile >> "CfgVehicles" >> _class;
+    getNumber (_cfg >> "transportAmmo") > 100
+    || {getNumber (_cfg >> "slingLoadMaxCargoMass") > 0}
 };
 ITW_CLASH_EnemyAmmoHeloClasses = va_eHeliClasses select {
     private _class = if (_x isEqualType []) then {_x#0} else {_x};
-    getNumber (configFile >> "CfgVehicles" >> _class >> "transportAmmo") > 100
+    private _cfg = configFile >> "CfgVehicles" >> _class;
+    getNumber (_cfg >> "transportAmmo") > 100
+    || {getNumber (_cfg >> "slingLoadMaxCargoMass") > 0}
 };
 ITW_CLASH_CapabilityPoolsReady = true;
 

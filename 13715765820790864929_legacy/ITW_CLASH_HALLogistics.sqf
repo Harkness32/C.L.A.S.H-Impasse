@@ -3,8 +3,11 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 2;
+ITW_CLASH_HALLogisticsVersion = 3;
 ITW_CLASH_HALLogisticsReady = false;
+ITW_CLASH_LogisticsBootstrapInterval = missionNamespace getVariable [
+    "ITW_CLASH_LogisticsBootstrapInterval",25
+];
 
 ITW_CLASH_HALLogistics_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -15,12 +18,35 @@ ITW_CLASH_HALLogistics_fnc_Log = {
     };
 };
 
+ITW_CLASH_HALLogistics_fnc_ProviderVehicle = {
+    params ["_group"];
+    if (isNull _group) exitWith {objNull};
+    private _leader = leader _group;
+    if (isNull _leader) exitWith {objNull};
+
+    private _veh = assignedVehicle _leader;
+    if (isNull _veh && {(units _group findIf {isPlayer _x}) >= 0}) then {
+        private _current = vehicle _leader;
+        if (_current != _leader) then {_veh = _current};
+    };
+    _veh
+};
+
 ITW_CLASH_HALLogistics_fnc_UsableGroups = {
     params ["_groups"];
     _groups select {
-        !isNull _x && {{alive _x} count units _x > 0} && {
-            private _veh = vehicle leader _x;
-            !isNull _veh && {alive _veh} && {canMove _veh}
+        private _group = _x;
+        if (isNull _group || {{alive _x} count units _group <= 0}) then {
+            false
+        } else {
+            private _veh = [_group] call
+                ITW_CLASH_HALLogistics_fnc_ProviderVehicle;
+            !isNull _veh
+            && {alive _veh}
+            && {canMove _veh}
+            && {fuel _veh > 0.2}
+            && {!(_group getVariable ["Busy" + str _group,false])}
+            && {!(_group getVariable ["Unable",false])}
         }
     }
 };
@@ -47,7 +73,57 @@ ITW_CLASH_HALLogistics_fnc_Request = {
         _reply getOrDefault ["reason","invalid-result"],
         _reply getOrDefault ["requestId",""]
     ]] call ITW_CLASH_HALLogistics_fnc_Log;
+
+    if ((_reply getOrDefault ["status",""]) == "APPROVED") then {
+        private _kind = switch (toUpperANSI _capability) do {
+            case "LOGISTICS_AMMO";
+            case "LOGISTICS_PACKAGE_AMMO": {"AMMO"};
+            case "LOGISTICS_FUEL": {"FUEL"};
+            case "LOGISTICS_REPAIR": {"REPAIR"};
+            default {""};
+        };
+        if (_kind isNotEqualTo "") then {
+            [_hq,_kind,format [
+                "%1/%2",_capability,_reply getOrDefault ["reason","provided"]
+            ]] call ITW_CLASH_HALLogistics_fnc_KickNative;
+        };
+    };
     _reply
+};
+
+ITW_CLASH_HALLogistics_fnc_KickNative = {
+    params ["_hq","_kind",["_reason","capability-provided"]];
+    if (isNull _hq) exitWith {false};
+    _kind = toUpperANSI _kind;
+    if !(_kind in ["AMMO","FUEL","REPAIR"]) exitWith {false};
+
+    private _pendingKey = "ITW_CLASH_LogisticsNativeRecheckPending_" + _kind;
+    if (_hq getVariable [_pendingKey,false]) exitWith {false};
+    _hq setVariable [_pendingKey,true];
+
+    [_hq,_kind,_reason,_pendingKey] spawn {
+        params ["_hq","_kind","_reason","_pendingKey"];
+        sleep 0.25;
+        if (isNull _hq) exitWith {};
+
+        ["native-recheck",[
+            _hq getVariable ["RydHQ_CodeSign","?"],
+            _kind,_reason,
+            count (_hq getVariable ["RydHQ_Hollow",[]]),
+            count (_hq getVariable ["RydHQ_Dried",[]]),
+            count (_hq getVariable ["RydHQ_damaged",[]])
+        ]] call ITW_CLASH_HALLogistics_fnc_Log;
+
+        switch (_kind) do {
+            case "AMMO": {[_hq] call HAL_SuppAmmo};
+            case "FUEL": {[_hq] call HAL_SuppFuel};
+            case "REPAIR": {[_hq] call HAL_SuppRep};
+        };
+        if (!isNull _hq) then {
+            _hq setVariable [_pendingKey,false];
+        };
+    };
+    true
 };
 
 ITW_CLASH_HALLogistics_fnc_Evaluate = {
@@ -160,9 +236,52 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
 
     ITW_CLASH_HALLogisticsReady = true;
     diag_log format [
-        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true",
+        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true nativeEligibilityParity=true postProvisionRecheck=true zeroProviderBootstrap=true",
         ITW_CLASH_HALLogisticsVersion
     ];
+};
+
+[] spawn {
+    scriptName "ITW_CLASH_HALLogisticsZeroProviderBootstrap";
+    waitUntil {
+        sleep 1;
+        missionNamespace getVariable ["ITW_CLASH_HALLogisticsReady",false]
+        && {missionNamespace getVariable ["ITW_CLASH_HALReady",false]}
+        && {!isNil "ITW_CLASH_fnc_GetCommanderForSide"}
+    };
+
+    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
+        private _sides = [];
+        if (!isNil "ITW_PlayerSide") then {_sides pushBackUnique ITW_PlayerSide};
+        if (!isNil "ITW_EnemySide") then {_sides pushBackUnique ITW_EnemySide};
+
+        {
+            private _hq = [_x] call ITW_CLASH_fnc_GetCommanderForSide;
+            if (isNull _hq) then {continue};
+
+            private _support = +(_hq getVariable ["RydHQ_Support",[]]);
+            private _drops = +(_hq getVariable ["RydHQ_AmmoDrop",[]]);
+
+            if (_support isEqualTo []) then {
+                ["bootstrap-pulse",[
+                    _hq getVariable ["RydHQ_CodeSign","?"],
+                    "GROUND",count _support,count _drops
+                ]] call ITW_CLASH_HALLogistics_fnc_Log;
+                [_hq] call HAL_SuppFuel;
+                [_hq] call HAL_SuppRep;
+            };
+
+            if ((_support + _drops) isEqualTo []) then {
+                ["bootstrap-pulse",[
+                    _hq getVariable ["RydHQ_CodeSign","?"],
+                    "AMMO",count _support,count _drops
+                ]] call ITW_CLASH_HALLogistics_fnc_Log;
+                [_hq] call HAL_SuppAmmo;
+            };
+        } forEach _sides;
+
+        sleep ITW_CLASH_LogisticsBootstrapInterval;
+    };
 };
 
 // Shared lifecycle is loaded here because Checkbook API and ForceGeneration are
