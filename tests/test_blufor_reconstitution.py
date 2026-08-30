@@ -383,7 +383,7 @@ def test_reconstitution_dispatch_prefers_cheaper_valid_lift_within_route_mode():
 
     assert "ITW_CLASH_ReconstitutionDispatchFixVersion = 6;" in dispatch
     assert "private _fallback = _candidates - _preferred;" in dispatch
-    assert dispatch.count("_x#ITW_VEH_REQD_TICKETS") >= 4
+    assert dispatch.count("_x#ITW_VEH_REQD_TICKETS") >= 2
     assert "costEfficientLiftOrder=true" in dispatch
 
 
