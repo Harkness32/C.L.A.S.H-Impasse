@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exitWith {false};
 
-ITW_CLASH_PlayerTransportNativeBridgeVersion = 6;
+ITW_CLASH_PlayerTransportNativeBridgeVersion = 7;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
@@ -39,6 +39,120 @@ ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier = {
     (units _group findIf {
         alive _x && {vehicle _x == _carrier}
     }) >= 0
+};
+
+ITW_CLASH_PlayerTransport_fnc_IsPlayerCarrier = {
+    params ["_carrier"];
+    if (isNull _carrier) exitWith {false};
+    private _pilot = currentPilot _carrier;
+    !isNull _pilot && {isPlayer _pilot}
+};
+
+/*
+    ITW's player vehicle actions are already the canonical UI for ejecting or
+    parachuting allied cargo. Native ITW boarding normally owns the
+    ITW_transportGroups membership and the per-group unload thread. HAL_SCargo
+    bypasses that loader, so C.L.A.S.H. mirrors only this player-facing state and
+    invokes ITW's native paradrop routine when the player presses the existing
+    action. HAL retains all waypoint and transport-order authority.
+*/
+ITW_CLASH_PlayerTransport_fnc_UnregisterITWPassengerState = {
+    params ["_group","_carrier",["_reason","physical-unlink"]];
+    if (isNull _carrier) exitWith {false};
+
+    private _groups = +(_carrier getVariable ["ITW_transportGroups",[]]);
+    private _hadGroup = _group in _groups;
+    if (_hadGroup) then {
+        _groups = _groups - [_group];
+        _carrier setVariable ["ITW_transportGroups",_groups,true];
+    };
+    _group setVariable ["ITW_CLASH_PlayerTransportNativeCarrier",nil];
+
+    if (_groups isEqualTo []) then {
+        _carrier setVariable ["ITW_AllyCrewEject",false,true];
+    };
+
+    if (_hadGroup) then {
+        ["itw-player-transport-state-cleared",[
+            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+            typeOf _carrier,_reason,count _groups
+        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    };
+    _hadGroup
+};
+
+ITW_CLASH_PlayerTransport_fnc_MonitorITWPassengerControl = {
+    params ["_group","_carrier","_contractId"];
+    scriptName "ITW_CLASH_PlayerTransportITWPassengerControl";
+    if (isNull _group || {isNull _carrier}) exitWith {};
+
+    private _triggered = false;
+    waitUntil {
+        sleep 0.2;
+        if (isNull _group || {isNull _carrier}) exitWith {true};
+
+        private _contract = _group getVariable [
+            "ITW_CLASH_PlayerTransportContract",createHashMap
+        ];
+        if !(_contract isEqualType createHashMap && {count _contract > 0}) exitWith {true};
+        if ((_contract getOrDefault ["id",""]) isNotEqualTo _contractId) exitWith {true};
+        if !([_group,_carrier] call ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier) exitWith {true};
+
+        if (_carrier getVariable ["ITW_AllyCrewEject",false]) exitWith {
+            _triggered = true;
+            true
+        };
+        false
+    };
+
+    if (!_triggered || {isNull _group} || {isNull _carrier}) exitWith {};
+
+    private _paradrop = ITW_ELEVATION_GT(_carrier,15);
+    if (_paradrop) then {
+        [_carrier,_group] call ITW_AllyParadropCargo;
+        [units _group,leader _group] remoteExec ["doFollow",leader _group];
+    } else {
+        {
+            if (alive _x && {vehicle _x == _carrier}) then {
+                moveOut _x;
+                sleep 2;
+            };
+        } forEach units _group;
+    };
+
+    _carrier setVariable ["ITW_AllyEntryTimeout",time + 30];
+    [_group,_carrier,if (_paradrop) then {"player-parachute"} else {"player-eject"}] call
+        ITW_CLASH_PlayerTransport_fnc_UnregisterITWPassengerState;
+
+    ["itw-player-transport-command-executed",[
+        _contractId,
+        [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+        typeOf _carrier,
+        if (_paradrop) then {"PARADROP"} else {"EJECT"}
+    ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+};
+
+ITW_CLASH_PlayerTransport_fnc_RegisterITWPassengerState = {
+    params ["_group","_carrier","_contractId"];
+    if (isNull _group || {isNull _carrier}) exitWith {false};
+    if !([_carrier] call ITW_CLASH_PlayerTransport_fnc_IsPlayerCarrier) exitWith {false};
+
+    private _groups = +(_carrier getVariable ["ITW_transportGroups",[]]);
+    private _already = _group in _groups;
+    _groups pushBackUnique _group;
+    _carrier setVariable ["ITW_transportGroups",_groups,true];
+    _group setVariable ["ITW_CLASH_PlayerTransportNativeCarrier",_carrier];
+
+    if (!_already) then {
+        ["itw-player-transport-state-registered",[
+            _contractId,
+            [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
+            typeOf _carrier,count _groups
+        ]] call ITW_CLASH_PlayerTransport_fnc_Log;
+        [_group,_carrier,_contractId] spawn
+            ITW_CLASH_PlayerTransport_fnc_MonitorITWPassengerControl;
+    };
+    true
 };
 
 /*
@@ -170,6 +284,10 @@ ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {
         true
     };
 
+    if (!isNull _carrier) then {
+        [_group,_carrier,"contract-end"] call
+            ITW_CLASH_PlayerTransport_fnc_UnregisterITWPassengerState;
+    };
     _group setVariable ["ITW_CLASH_PlayerTransportEndDeferredContractId",nil];
     if (!isNil "ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock") then {
         [_group] call ITW_CLASH_PlayerTransport_fnc_ClearRetaskLock;
@@ -250,6 +368,8 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
             _contract set ["embarkedAt",time];
             _contract set ["expiresAt",time + ITW_CLASH_PlayerTransportContractLifetime];
             _group setVariable ["ITW_CLASH_PlayerTransportContract",_contract];
+            [_group,_carrier,_contractId] call
+                ITW_CLASH_PlayerTransport_fnc_RegisterITWPassengerState;
             ["hal-contract-embarked",[
                 _contractId,
                 [_group] call ITW_CLASH_PlayerTransport_fnc_GroupId,
@@ -390,7 +510,7 @@ private _managerFinal = ["ITW_AllyLoadIntoVehManager"] call SKL_fnc_CompileFinal
 private _loadFinal = ["ITW_AllyLoadGrpIntoVeh"] call SKL_fnc_CompileFinal;
 
 diag_log format [
-    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=false ambientProximityFerry=false unsolicitedPlayerPickup=false collisionSuppression=true proximityCreatesHALJob=false contractEndUnlockSeparated=true retaskLockReconciled=true",
+    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=false ambientProximityFerry=false unsolicitedPlayerPickup=false collisionSuppression=true proximityCreatesHALJob=false contractEndUnlockSeparated=true retaskLockReconciled=true itwPassengerStateBridge=true nativePlayerParadrop=true",
     ITW_CLASH_PlayerTransportNativeBridgeVersion,_managerFinal,_loadFinal
 ];
 _managerFinal && _loadFinal
