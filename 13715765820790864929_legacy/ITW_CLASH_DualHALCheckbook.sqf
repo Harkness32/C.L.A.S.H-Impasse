@@ -806,13 +806,33 @@ ITW_CLASH_Checkbook_fnc_GetCrewTypes = {
     } else {
         call FACTION_UNIT_FALLBACK_SUBF_OPF
     };
-    private _unitTypes = ([_factions,["Crewman","Diver"],true,_fallback] call FactionUnits) apply {
+    private _rawUnitTypes = ([_factions,["Crewman","Diver"],true,_fallback] call FactionUnits) apply {
         toLowerANSI _x
     };
-    private _crewTypes = ([
+    private _rawCrewTypes = ([
         _factions,["Crewman"],false,call FACTION_UNIT_FALLBACK_ROLE_REQ
     ] call FactionUnits) apply {toLowerANSI _x};
+    private _validManClass = {
+        params ["_class"];
+        _class isEqualType "" && {
+            _class isNotEqualTo "" && {
+                isClass (configFile >> "CfgVehicles" >> _class) && {
+                    _class isKindOf "CAManBase"
+                }
+            }
+        }
+    };
+    private _unitTypes = _rawUnitTypes select {[_x] call _validManClass};
+    private _crewTypes = _rawCrewTypes select {[_x] call _validManClass};
     if (_crewTypes isEqualTo []) then {_crewTypes = +_unitTypes};
+    if (
+        count _unitTypes != count _rawUnitTypes
+        || {count _crewTypes != count _rawCrewTypes}
+    ) then {
+        ["crew-pool-sanitized",[
+            _side,count _unitTypes,count _rawUnitTypes,count _crewTypes,count _rawCrewTypes
+        ]] call ITW_CLASH_DualHAL_fnc_Log;
+    };
     [_crewTypes,_unitTypes]
 };
 

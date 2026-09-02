@@ -517,10 +517,34 @@ ITW_AtkManager = {
     
     private _side      = if (_isFriendly) then {west} else {ITW_EnemySide};
     private _fallback  = if (_isFriendly) then {FACTION_UNIT_FALLBACK_SUBF_BLU} else {FACTION_UNIT_FALLBACK_SUBF_OPF};
-    private _unitTypes =   ([_factions,["Crewman","Diver"],true,call _fallback] call FactionUnits) apply {toLowerANSI _x};
-    private _crewTypes =   ([_factions,["Crewman"],false,call FACTION_UNIT_FALLBACK_ROLE_REQ] call FactionUnits) apply {toLowerANSI _x};
-    private _missleTypes = ([_factions,["MissileSpecialist"],false,call FACTION_UNIT_FALLBACK_ROLE_REQ] call FactionUnits) apply {toLowerANSI _x};
-    if (_crewTypes isEqualTo []) then {_crewTypes = _unitTypes};
+    private _validManClass = {
+        params ["_class"];
+        _class isEqualType "" && {
+            _class isNotEqualTo "" && {
+                isClass (configFile >> "CfgVehicles" >> _class) && {
+                    _class isKindOf "CAManBase"
+                }
+            }
+        }
+    };
+    private _rawUnitTypes = ([_factions,["Crewman","Diver"],true,call _fallback] call FactionUnits) apply {toLowerANSI _x};
+    private _rawCrewTypes = ([_factions,["Crewman"],false,call FACTION_UNIT_FALLBACK_ROLE_REQ] call FactionUnits) apply {toLowerANSI _x};
+    private _rawMissileTypes = ([_factions,["MissileSpecialist"],false,call FACTION_UNIT_FALLBACK_ROLE_REQ] call FactionUnits) apply {toLowerANSI _x};
+    private _unitTypes = _rawUnitTypes select {[_x] call _validManClass};
+    private _crewTypes = _rawCrewTypes select {[_x] call _validManClass};
+    private _missleTypes = _rawMissileTypes select {[_x] call _validManClass};
+    if (
+        count _unitTypes != count _rawUnitTypes
+        || {count _crewTypes != count _rawCrewTypes}
+        || {count _missleTypes != count _rawMissileTypes}
+    ) then {
+        diag_log format [
+            "CLASH SPAWN | sanitized-faction-unit-pool | side=%1 unit=%2/%3 crew=%4/%5 missile=%6/%7",
+            _side,count _unitTypes,count _rawUnitTypes,count _crewTypes,count _rawCrewTypes,
+            count _missleTypes,count _rawMissileTypes
+        ];
+    };
+    if (_crewTypes isEqualTo []) then {_crewTypes = +_unitTypes};
 
     private _squadNames = [];// array of squadNames (order is identical to ITW_AllySquadTypes
     private _squadTypes = [];    // array of [unitClass,unitClass,...]
@@ -1403,6 +1427,31 @@ ITW_AtkUnitToGroup = {
     params ["_grp","_unitTypes","_aiSpawnPt",["_allowDamage",true]];
     if (!isServer) exitWith {diag_log "Error Pos: ITW_AtkUnitToGroup called on client not server";objNull};
     if (isNull _grp) exitWith {diag_log "Error Pos: ITW_AtkUnitToGroup called with a null group at start";objNull};
+
+    private _rawUnitTypes = +_unitTypes;
+    _unitTypes = _unitTypes select {
+        _x isEqualType "" && {
+            _x isNotEqualTo "" && {
+                isClass (configFile >> "CfgVehicles" >> _x) && {
+                    _x isKindOf "CAManBase"
+                }
+            }
+        }
+    };
+    if (_unitTypes isEqualTo []) exitWith {
+        diag_log format [
+            "CLASH SPAWN | rejected-invalid-unit-pool | side=%1 grp=%2 raw=%3",
+            side _grp,_grp,_rawUnitTypes
+        ];
+        objNull
+    };
+    if (count _unitTypes != count _rawUnitTypes) then {
+        diag_log format [
+            "CLASH SPAWN | sanitized-unit-pool-at-create | side=%1 grp=%2 valid=%3 raw=%4",
+            side _grp,_grp,_unitTypes,_rawUnitTypes
+        ];
+    };
+
     private _fnStartTime = time;
     private _skill = if (GRP_IS_FRIENDLY(_grp)) then {ITW_ParamFriendlySquadSkill} else {ITW_ParamDifficulty};
     private _hasWeapon = false;
@@ -2039,47 +2088,105 @@ ITW_AtkAirDropVeh = {
 };
 
 ITW_AtkSpawnVeh = {
-    // returns vehicle object or objNull if spawning failed, damage is not allowed on vehicle
     params ["_vehArrayItem","_crewTypes","_unitTypes","_side","_spawnPt",["_vehArrayIndex",ITW_VEH_CLASSES]];
     if (isNil "_vehArrayItem") exitWith {objNull};
+
+    private _pool = if (_vehArrayIndex >= 0) then {
+        if (_vehArrayIndex >= count _vehArrayItem) then {[]} else {_vehArrayItem#_vehArrayIndex}
+    } else {_vehArrayItem};
+    if !(_pool isEqualType []) exitWith {objNull};
+    if (_pool isEqualTo []) exitWith {
+        diag_log format ["CLASH SPAWN | rejected-empty-vehicle-pool | side=%1 rawDef=%2",_side,_vehArrayItem];
+        objNull
+    };
+
+    private _vehTypeTxtr = selectRandom _pool;
+    private _vehType = if (_vehTypeTxtr isEqualType []) then {
+        if (_vehTypeTxtr isEqualTo []) then {""} else {_vehTypeTxtr#0}
+    } else {_vehTypeTxtr};
+    if !(_vehType isEqualType "") exitWith {objNull};
+    if (_vehType isEqualTo "") exitWith {
+        diag_log format ["CLASH SPAWN | rejected-empty-vehicle-type | side=%1 rawDef=%2",_side,_vehArrayItem];
+        objNull
+    };
+    private _vehCfg = configFile >> "CfgVehicles" >> _vehType;
+    if !(isClass _vehCfg) exitWith {
+        diag_log format ["CLASH SPAWN | rejected-missing-vehicle-class | side=%1 class=%2",_side,_vehType];
+        objNull
+    };
+
+    private _validManClass = {
+        params ["_class"];
+        _class isEqualType "" && {
+            _class isNotEqualTo "" && {
+                isClass (configFile >> "CfgVehicles" >> _class) && {
+                    _class isKindOf "CAManBase"
+                }
+            }
+        }
+    };
+    _crewTypes = _crewTypes select {[_x] call _validManClass};
+    _unitTypes = _unitTypes select {[_x] call _validManClass};
+    if (_unitTypes isEqualTo []) then {_unitTypes = +_crewTypes};
+    if (_crewTypes isEqualTo []) then {_crewTypes = +_unitTypes};
+    if (_unitTypes isEqualTo [] || {_crewTypes isEqualTo []}) exitWith {
+        diag_log format ["CLASH SPAWN | rejected-no-valid-crew-pool | side=%1 vehicle=%2",_side,_vehType];
+        objNull
+    };
+
     private _veh = objNull;
-    private _vehTypeTxtr = if (_vehArrayIndex >= 0) then {selectRandom (_vehArrayItem#_vehArrayIndex)} else {selectRandom _vehArrayItem};
-    if (!isNil "_vehTypeTxtr") then {
-        private _vehType = if (typeName _vehTypeTxtr == "ARRAY") then {_vehTypeTxtr#0} else {_vehTypeTxtr};
-        private _vehCfg = configFile >> "CfgVehicles" >> _vehType;
-        if (isNil "_vehCfg") exitWith {};
-        // try using the defined vehicle crew type
-        private _vehCrew = toLowerANSI getText (_vehCfg >> "crew");
-        private _vehCrewTypes = if (_vehCrew in _crewTypes || {_vehCrew in _unitTypes}) then {[_vehCrew]} else {
-            // special case for TIOW
-            if (isClass (configfile >> "CfgPatches" >> "TIOWSpaceMarines")) then {
-                private _isMarineVehicle = _veh isKindOf "TIOW_SM_Rhino_UM";
-                private _ut = if (_isMarineVehicle) then {_unitTypes select {_x isKindOf "TIOWSpaceMarine_Base"}} else {_unitTypes select {!(_x isKindOf "TIOWSpaceMarine_Base")}};
-                if (_ut isEqualTo []) then {_ut = _unitTypes};
-                _ut
+    private _vehCrew = toLowerANSI getText (_vehCfg >> "crew");
+    private _vehCrewTypes = if (
+        _vehCrew isNotEqualTo "" && {
+            _vehCrew in _crewTypes || {_vehCrew in _unitTypes}
+        }
+    ) then {[_vehCrew]} else {
+        if (isClass (configfile >> "CfgPatches" >> "TIOWSpaceMarines")) then {
+            private _isMarineVehicle = _vehType isKindOf "TIOW_SM_Rhino_UM";
+            private _ut = if (_isMarineVehicle) then {
+                _unitTypes select {_x isKindOf "TIOWSpaceMarine_Base"}
             } else {
-                if (_vehType isKindOf "Air") then {_crewTypes} else {_unitTypes};
+                _unitTypes select {!(_x isKindOf "TIOWSpaceMarine_Base")}
             };
-        };
-        private _crewCount = [_vehType, false] call BIS_fnc_crewCount;
-        private _units = [];
-        private _crewGrp = createGroup [_side,false];   
-        if (_vehType isKindOf "Air") then {  
-            private _pilot = if (_crewCount > 0) then {[_crewGrp,_vehCrewTypes,_spawnPt,true] call ITW_AtkUnitToGroup} else {objNull};
-            _crewCount = _crewCount - 1;
-            // with "FLY" option, it will spawn in at 50m elevation
-            _veh = [_vehTypeTxtr,_spawnPt,"FLY",_pilot] call ITW_VehCreateVehicle;
+            if (_ut isEqualTo []) then {_ut = +_unitTypes};
+            _ut
         } else {
-            private _landSpawn = +_spawnPt;
-            _landSpawn set [2,_landSpawn#2 + 4];     
-            _veh = [_vehTypeTxtr,_landSpawn] call ITW_VehCreateVehicle;
+            if (_vehType isKindOf "Air") then {+_crewTypes} else {+_unitTypes}
         };
+    };
+
+    private _crewCount = [_vehType,false] call BIS_fnc_crewCount;
+    private _expectedCrewCount = _crewCount;
+    private _units = [];
+    private _crewGrp = createGroup [_side,false];
+    private _crewFailed = false;
+
+    if (_vehType isKindOf "Air") then {
+        private _pilot = objNull;
+        if (_crewCount > 0) then {
+            _pilot = [_crewGrp,_vehCrewTypes,_spawnPt,true] call ITW_AtkUnitToGroup;
+            if (isNull _pilot) then {_crewFailed = true};
+            _crewCount = _crewCount - 1;
+        };
+        if (!_crewFailed) then {
+            _veh = [_vehTypeTxtr,_spawnPt,"FLY",_pilot] call ITW_VehCreateVehicle;
+        };
+    } else {
+        private _landSpawn = +_spawnPt;
+        _landSpawn set [2,_landSpawn#2 + 4];
+        _veh = [_vehTypeTxtr,_landSpawn] call ITW_VehCreateVehicle;
+    };
+
+    if (!_crewFailed && {!isNull _veh}) then {
         ALLOW_DAMAGE(_veh,false);
-        
         for "_i" from 1 to _crewCount do {
+            if (_crewFailed) then {continue};
             private _unit = [_crewGrp,_vehCrewTypes,_spawnPt,true] call ITW_AtkUnitToGroup;
+            if (isNull _unit) then {
+                _crewFailed = true;
+                continue
+            };
             _units pushBack _unit;
-            // _unit moveInAny _veh    didn't always work with RHS tanks, with this code I've seen it take 20 tries to get the unit into the vehicle
             private _success = false;
             private _cnt = 50;
             while {!_success && {_cnt > 0}} do {
@@ -2087,12 +2194,30 @@ ITW_AtkSpawnVeh = {
                 _cnt = _cnt - 1;
                 if (!_success) then {YIELD_CPU};
             };
+            if (!_success) then {_crewFailed = true};
         };
+    };
+
+    if (
+        _crewFailed
+        || {isNull _veh}
+        || {_expectedCrewCount > 0 && {count units _crewGrp < _expectedCrewCount}}
+    ) then {
+        diag_log format [
+            "CLASH SPAWN | vehicle-crew-transaction-aborted | side=%1 vehicle=%2 expected=%3 created=%4",
+            _side,_vehType,_expectedCrewCount,count units _crewGrp
+        ];
+        {deleteVehicle _x} forEach units _crewGrp;
+        if (!isNull _veh) then {deleteVehicle _veh};
+        if (!isNull _crewGrp) then {deleteGroup _crewGrp};
+        _veh = objNull;
+    } else {
         {_x setRank "SERGEANT";_x setSkill ["courage",1]} forEach _units;
         private _driver = driver _veh;
-        _driver setRank "LIEUTENANT";
-        [_driver,"CARELESS"] call ITW_FncSetUnitBehavior;
-                
+        if (!isNull _driver) then {
+            _driver setRank "LIEUTENANT";
+            [_driver,"CARELESS"] call ITW_FncSetUnitBehavior;
+        };
         _crewGrp allowFleeing 0;
         _crewGrp deleteGroupWhenEmpty true;
         ITW_AtkNewVehSpawned = true;

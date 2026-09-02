@@ -40,7 +40,7 @@ def test_ground_medevac_doctrine_gates_are_explicit():
         "ITW_CLASH_GroundMEDEVAC_EnemyClearance = 700;",
         "ITW_CLASH_GroundMEDEVAC_InboundAbortClearance = 500;",
         "ITW_CLASH_GroundMEDEVAC_ObjectiveClearance = 500;",
-        "ITW_CLASH_GroundMEDEVAC_MinEgressDistance = 900;",
+        "ITW_CLASH_GroundMEDEVAC_MinEgressDistance = 400;",
         "ITW_CLASH_GroundMEDEVAC_MaxPreferredEgressDistance = 3500;",
         "ITW_CLASH_GroundMEDEVAC_RallyOffset = 30;",
     ]

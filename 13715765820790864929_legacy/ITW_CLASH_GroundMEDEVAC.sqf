@@ -7,14 +7,14 @@ ITW_CLASH_GroundMEDEVAC_Version = 2;
 
 // Ground MEDEVAC is a middle-tier extraction: safer/cheaper geography gets a
 // road vehicle, long/air-only withdrawals remain CASEVAC candidates, and squads
-// already near the rear continue walking.
+// within the final 400 m of the rear destination continue walking.
 ITW_CLASH_GroundMEDEVAC_MaxConcurrent = 2;
 ITW_CLASH_GroundMEDEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_GroundMEDEVAC_MinDisengageDistance = 500;
 ITW_CLASH_GroundMEDEVAC_EnemyClearance = 700;
 ITW_CLASH_GroundMEDEVAC_InboundAbortClearance = 500;
 ITW_CLASH_GroundMEDEVAC_ObjectiveClearance = 500;
-ITW_CLASH_GroundMEDEVAC_MinEgressDistance = 900;
+ITW_CLASH_GroundMEDEVAC_MinEgressDistance = 400;
 ITW_CLASH_GroundMEDEVAC_MaxPreferredEgressDistance = 3500;
 ITW_CLASH_GroundMEDEVAC_PickupLeadDistance = 150;
 ITW_CLASH_GroundMEDEVAC_RoadSearchRadius = 250;

@@ -46,6 +46,9 @@ jobs:
           tests/test_player_logistics_provider_compat.py
           tests/test_player_task_sling_transport.py
           tests/test_hal_logistics_fulfillment_hardening.py
+          tests/test_spawn_type_guard.py
+          tests/test_ground_medevac.py
+          tests/test_casevac.py
           tests/test_front_routing_phase0.py
           tests/test_player_artillery_tasking.py
           tests/test_player_artillery_side_marker.py

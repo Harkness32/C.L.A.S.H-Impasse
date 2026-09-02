@@ -21,7 +21,7 @@ def test_casevac_requires_real_disengagement_before_dispatch():
     assert "ITW_CLASH_CASEVAC_MinDisengageDistance = 500;" in source
     assert "ITW_CLASH_CASEVAC_EnemyClearance = 650;" in source
     assert "ITW_CLASH_CASEVAC_ObjectiveClearance = 500;" in source
-    assert "ITW_CLASH_CASEVAC_MinEgressDistance = 1000;" in source
+    assert "ITW_CLASH_CASEVAC_MinEgressDistance = 400;" in source
     assert "_moved < ITW_CLASH_CASEVAC_MinDisengageDistance" in source
     assert "_enemyDistance < ITW_CLASH_CASEVAC_EnemyClearance" in source
     assert "_objectiveClearance < ITW_CLASH_CASEVAC_ObjectiveClearance" in source
