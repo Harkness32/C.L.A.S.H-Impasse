@@ -438,8 +438,8 @@ else
 
 		if not (_counter == 0) then 
 			{
-			_posX = ((position _unit) select 0) + (random 100) -  50;
-			_posY = ((position _unit) select 1) + (random 100) -  50;
+			_posX = ((position _Trg) select 0) + (random 100) -  50;
+			_posY = ((position _Trg) select 1) + (random 100) -  50;
 
 			_isWater = surfaceIsWater [_posX,_posY];
 

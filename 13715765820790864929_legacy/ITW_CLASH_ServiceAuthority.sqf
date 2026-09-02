@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceAuthorityStarted = true;
-ITW_CLASH_ServiceAuthorityVersion = 3;
+ITW_CLASH_ServiceAuthorityVersion = 2;
 ITW_CLASH_ServiceAuthorityReady = false;
 
 if (
@@ -246,17 +246,6 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
         _this call ITW_CLASH_ServiceAuthority_fnc_StageFieldVehicleLifecycleBase
     };
 
-    // Field transports can be handed to HAL in the same scheduler slice that
-    // SitRep rebuilds tactical arrays. Reassert the lease-backed quarantine
-    // synchronously so a transport cannot briefly become attack/defense/recon
-    // eligible before the one-second stability watcher runs.
-    if (_result && {_transportDeployment} && {!isNull _group} && {
-        !isNil "ITW_CLASH_ServiceStability_fnc_EnsureQuarantine"
-    }) then {
-        [_group,"impasse-handoff-immediate"] call
-            ITW_CLASH_ServiceStability_fnc_EnsureQuarantine;
-    };
-
     // The suppressed native Impasse writer disarms DUAL only when this exact
     // deployment is DUAL-as-transport. Reproduce that per-deployment policy.
     if (_result && {!isNull _veh} && {
@@ -282,7 +271,7 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
 
 ITW_CLASH_ServiceAuthorityReady = true;
 diag_log format [
-    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true sharedVehDefImmutable=true dualDeploymentAware=true idempotentRegistration=true immediateTransportQuarantine=true",
+    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true sharedVehDefImmutable=true dualDeploymentAware=true idempotentRegistration=true",
     ITW_CLASH_ServiceAuthorityVersion
 ];
 true
