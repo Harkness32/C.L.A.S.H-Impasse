@@ -172,7 +172,7 @@ def test_player_artillery_deployment_is_vehicle_sized_and_fail_closed() -> None:
 def test_clash_snips_native_impasse_ambient_player_ferry() -> None:
     bridge = source("ITW_CLASH_PlayerTransportNativeBridge.sqf")
 
-    assert "ITW_CLASH_PlayerTransportNativeBridgeVersion = 6;" in bridge
+    assert "ITW_CLASH_PlayerTransportNativeBridgeVersion = 7;" in bridge
     manager = bridge.split("ITW_AllyLoadIntoVehManager = {", 1)[1].split(
         "ITW_AllyLoadGrpIntoVeh = ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh;",
         1,
