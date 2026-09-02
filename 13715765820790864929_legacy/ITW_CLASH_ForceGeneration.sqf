@@ -345,6 +345,7 @@ ITW_CLASH_Generation_fnc_RegisterAsset = {
     _veh setVariable ["ITW_CLASH_GenerationCapability",_capability,true];
     _group setVariable ["ITW_CLASH_CheckbookAsset",true];
     _group setVariable ["ITW_CLASH_CheckbookRequest",_requestId];
+    _group setVariable ["ITW_CLASH_GenerationCapability",_capability];
     _group setVariable ["START" + str _group,getPosATL _veh];
 
     if !([_group,"checkbook-" + toLowerANSI _capability] call ITW_CLASH_DualHAL_fnc_RegisterGroup) exitWith {false};

@@ -5,6 +5,35 @@ private ["_HQ","_rep","_noenemy","_repS","_repSG","_damaged","_Sdamaged","_Ldama
 	
 _HQ = _this select 0;
 
+_providerVehicle = {
+	params ["_subject"];
+	if (!isNil "ITW_CLASH_HALLogistics_fnc_ProviderVehicle") exitWith
+		{
+		[_subject] call ITW_CLASH_HALLogistics_fnc_ProviderVehicle
+		};
+
+	private _unit = objNull;
+	if (typeName _subject == "GROUP") then
+		{
+		if (!isNull _subject) then {_unit = leader _subject}
+		}
+	else
+		{
+		if (typeName _subject == "OBJECT") then {_unit = _subject}
+		};
+	if (isNull _unit) exitWith {objNull};
+	assignedVehicle _unit
+};
+
+_providerCapability = {
+	params ["_veh"];
+	if (isNull _veh) exitWith {""};
+	toUpperANSI (_veh getVariable [
+		"ITW_CLASH_ServiceCapability",
+		_veh getVariable ["ITW_CLASH_GenerationCapability",""]
+	])
+};
+
 _rep = RHQ_Rep + RYD_WS_rep - RHQs_Rep;
 _noenemy = true;
 
@@ -14,7 +43,9 @@ _repSG = [];
 	{
 	if not (_x in _repS) then
 		{
-		if ((toLower (typeOf (assignedvehicle _x))) in _rep) then 
+		private _provider = [_x] call _providerVehicle;
+		private _declared = [_provider] call _providerCapability;
+		if ((!isNull _provider && {(toLower (typeOf _provider)) in _rep}) || {_declared == "LOGISTICS_REPAIR"}) then 
 			{
 			_repS pushBack _x;
 			if not ((group _x) in (_repSG + (_HQ getVariable ["RydHQ_SpecForG",[]]) + (_HQ getVariable ["RydHQ_CargoOnly",[]]))) then 
@@ -65,7 +96,7 @@ _HQ setVariable ["RydHQ_damaged",_damaged];
 _rtrs = [];
 
 	{
-	_rt = assignedVehicle (leader _x);
+	_rt = [_x] call _providerVehicle;
 
 	if not (isNull _rt) then
 		{
@@ -101,14 +132,15 @@ _a = 0;
 for [{_a = 500},{_a <= 44000},{_a = _a + 500}] do
 	{
 		{
-		_rtr = assignedvehicle (leader _x);
+		_rtr = [_x] call _providerVehicle;
 
 		for [{_b = 0},{_b < (count _Sdamaged)},{_b = _b + 1}] do 
 			{
 			_SDunit = _Sdamaged select _b;
 
 				{
-				if ((_SDunit distance (assignedvehicle (leader _x))) < 300) exitwith 
+				private _nearProvider = [_x] call _providerVehicle;
+				if (!isNull _nearProvider && {(_SDunit distance _nearProvider) < 300}) exitwith 
 					{
 					if not ((group _SDunit) in (_HQ getVariable ["RydHQ_RSupportedG",[]])) then 
 						{
@@ -184,13 +216,14 @@ _Dunits = +_damaged;
 for [{_a = 500},{_a < 10000},{_a = _a + 500}] do
 	{
 		{
-		_rtr = assignedvehicle (leader _x);
+		_rtr = [_x] call _providerVehicle;
 		for [{_b = 0},{_b < (count _damaged)},{_b = _b + 1}] do 
 			{
 			_Dunit = _damaged select _b;
 
 				{
-				if ((_Dunit distance (assignedvehicle (leader _x))) < 400) exitwith 
+				private _nearProvider = [_x] call _providerVehicle;
+				if (!isNull _nearProvider && {(_Dunit distance _nearProvider) < 400}) exitwith 
 					{
 					if not ((group _Dunit) in (_HQ getVariable ["RydHQ_RSupportedG",[]])) then 
 						{

@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 5;
+ITW_CLASH_HALLogisticsVersion = 6;
 ITW_CLASH_HALLogisticsReady = false;
 
 // NR6 HAL ships explicit ACE logistics workarounds but leaves them disabled by
@@ -36,15 +36,64 @@ ITW_CLASH_HALLogistics_fnc_Log = {
 };
 
 ITW_CLASH_HALLogistics_fnc_ProviderVehicle = {
-    params ["_group"];
-    if (isNull _group) exitWith {objNull};
-    private _leader = leader _group;
-    if (isNull _leader) exitWith {objNull};
+    params ["_subject"];
 
-    private _veh = assignedVehicle _leader;
-    if (isNull _veh && {(units _group findIf {isPlayer _x}) >= 0}) then {
-        private _current = vehicle _leader;
-        if (_current != _leader) then {_veh = _current};
+    // HAL normally discovers support providers through assignedVehicle. Impasse
+    // physically seats generated crews with moveInAny, and players may manually
+    // enter a valid provider, so assignedVehicle can be null/stale while the
+    // actual service platform is occupied. Preserve native HAL semantics for
+    // ordinary AI and promote the physical vehicle only for humans or explicit
+    // C.L.A.S.H. service / Checkbook groups.
+    private _group = grpNull;
+    private _unit = objNull;
+    if (typeName _subject == "GROUP") then {
+        _group = _subject;
+        if (!isNull _group) then {_unit = leader _group};
+    } else {
+        if (typeName _subject == "OBJECT") then {
+            _unit = _subject;
+            if (!isNull _unit) then {_group = group _unit};
+        };
+    };
+    if (isNull _unit) exitWith {objNull};
+
+    private _assigned = assignedVehicle _unit;
+    private _physical = vehicle _unit;
+    private _veh = _assigned;
+    private _human = !isNull _group && {
+        (units _group findIf {isPlayer _x}) >= 0
+    };
+    private _clashOwned = !isNull _group && {
+        _group getVariable ["ITW_CLASH_ServiceAsset",false]
+        || {_group getVariable ["ITW_CLASH_CheckbookAsset",false]}
+    };
+
+    if ((_human || {_clashOwned}) && {
+        _physical != _unit
+    } && {
+        isNull _assigned || {_assigned != _physical}
+    }) then {
+        _veh = _physical;
+        if (!isNull _group) then {
+            private _nextLog = _group getVariable [
+                "ITW_CLASH_LogisticsProviderFallbackLogAt",0
+            ];
+            if (time >= _nextLog) then {
+                _group setVariable [
+                    "ITW_CLASH_LogisticsProviderFallbackLogAt",time + 30
+                ];
+                ["provider-physical-vehicle-fallback",[
+                    if (!isNil "ITW_CLASH_DualHAL_fnc_GroupId") then {
+                        [_group] call ITW_CLASH_DualHAL_fnc_GroupId
+                    } else {
+                        groupId _group
+                    },
+                    typeOf _physical,
+                    if (isNull _assigned) then {"<none>"} else {typeOf _assigned},
+                    _clashOwned,_human
+                ]] call ITW_CLASH_HALLogistics_fnc_Log;
+            };
+        };
     };
     _veh
 };
@@ -253,7 +302,7 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
 
     ITW_CLASH_HALLogisticsReady = true;
     diag_log format [
-        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true nativeEligibilityParity=true postProvisionRecheck=true zeroProviderBootstrap=true aceConditionalMagic=true aceMagicHeal=false",
+        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true nativeEligibilityParity=true postProvisionRecheck=true zeroProviderBootstrap=true physicalServiceProviderFallback=true declaredCapabilityAdmission=true aceConditionalMagic=true aceMagicHeal=false",
         ITW_CLASH_HALLogisticsVersion
     ];
 };

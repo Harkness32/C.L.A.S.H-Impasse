@@ -14,29 +14,32 @@ _HQ = _this select 0;
     ammo-drop groups to fall back to their actual current vehicle.
 */
 _providerVehicle = {
-	params ["_group"];
-	if (isNull _group) exitWith {objNull};
-	private _leader = leader _group;
-	if (isNull _leader) exitWith {objNull};
-	private _veh = assignedVehicle _leader;
-	if (isNull _veh && {(units _group findIf {isPlayer _x}) >= 0}) then
+	params ["_subject"];
+	if (!isNil "ITW_CLASH_HALLogistics_fnc_ProviderVehicle") exitWith
 		{
-		private _current = vehicle _leader;
-		if (_current != _leader) then
-			{
-			_veh = _current;
-			private _nextLog = _group getVariable ["ITW_CLASH_PlayerAmmoVehicleFallbackLogAt",0];
-			if (time >= _nextLog) then
-				{
-				_group setVariable ["ITW_CLASH_PlayerAmmoVehicleFallbackLogAt",time + 30];
-				diag_log format [
-					"CLASH PLAYER LOGISTICS | provider-current-vehicle-fallback | group=%1 vehicle=%2",
-					groupId _group,typeOf _veh
-				];
-				};
-			}
+		[_subject] call ITW_CLASH_HALLogistics_fnc_ProviderVehicle
 		};
-	_veh
+
+	private _unit = objNull;
+	if (typeName _subject == "GROUP") then
+		{
+		if (!isNull _subject) then {_unit = leader _subject}
+		}
+	else
+		{
+		if (typeName _subject == "OBJECT") then {_unit = _subject}
+		};
+	if (isNull _unit) exitWith {objNull};
+	assignedVehicle _unit
+};
+
+_providerCapability = {
+	params ["_veh"];
+	if (isNull _veh) exitWith {""};
+	toUpperANSI (_veh getVariable [
+		"ITW_CLASH_ServiceCapability",
+		_veh getVariable ["ITW_CLASH_GenerationCapability",""]
+	])
 };
 
 _ammo = RHQ_Ammo + RYD_WS_ammo - RHQs_Ammo;
@@ -49,7 +52,9 @@ _ammoSG = [];
 	{
 	if not (_x in _ammoS) then
 		{
-		if ((toLower (typeOf (assignedvehicle _x))) in _ammo) then 
+		private _provider = [_x] call _providerVehicle;
+		private _declared = [_provider] call _providerCapability;
+		if ((!isNull _provider && {(toLower (typeOf _provider)) in _ammo}) || {_declared == "LOGISTICS_AMMO"}) then 
 			{
 			_ammoS pushBack _x;
 
