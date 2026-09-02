@@ -132,3 +132,32 @@ def test_boats_are_restored_to_bounded_surface_water_or_rejected_atomically():
     assert service_load in logistics
     assert sea_load in logistics
     assert logistics.index(service_load) < logistics.index(sea_load)
+
+
+
+def test_air_transport_quarantine_preserves_hal_air_identity_and_is_immediate():
+    stability = mission("ITW_CLASH_ServiceStability.sqf")
+    authority = mission("ITW_CLASH_ServiceAuthority.sqf")
+
+    assert "ITW_CLASH_ServiceStabilityVersion = 2;" in stability
+    quarantine = stability.split(
+        "ITW_CLASH_ServiceStability_fnc_EnsureQuarantine = {", 1
+    )[1].split("ITW_CLASH_ServiceStability_fnc_RetireBase", 1)[0]
+    assert 'forEach ["RydHQ_CargoG","RydHQ_CargoOnly"];' in quarantine
+    assert '_veh isKindOf "Air"' in quarantine
+    assert 'getVariable ["RydHQ_AirG",[]]' in quarantine
+    assert '_hq setVariable ["RydHQ_AirG",_air];' in quarantine
+    assert '_changed pushBack "RydHQ_AirG";' in quarantine
+    assert "transportAirMembership=true" in stability
+
+    assert "ITW_CLASH_ServiceAuthorityVersion = 3;" in authority
+    handoff = authority.split(
+        "ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {", 1
+    )[1].split("ITW_CLASH_ServiceAuthorityReady = true;", 1)[0]
+    immediate = '[_group,"impasse-handoff-immediate"] call'
+    assert immediate in handoff
+    assert "ITW_CLASH_ServiceStability_fnc_EnsureQuarantine" in handoff
+    assert handoff.index(immediate) < handoff.index(
+        'if (_result && {!isNull _veh} && {'
+    )
+    assert "immediateTransportQuarantine=true" in authority

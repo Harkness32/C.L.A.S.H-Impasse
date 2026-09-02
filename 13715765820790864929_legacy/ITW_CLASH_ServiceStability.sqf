@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceStabilityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceStabilityStarted = true;
-ITW_CLASH_ServiceStabilityVersion = 1;
+ITW_CLASH_ServiceStabilityVersion = 2;
 ITW_CLASH_ServiceStabilityReady = false;
 ITW_CLASH_ServiceReactivationBusy = false;
 
@@ -85,6 +85,19 @@ ITW_CLASH_ServiceStability_fnc_EnsureQuarantine = {
                 _changed pushBack _name;
             };
         } forEach ["RydHQ_CargoG","RydHQ_CargoOnly"];
+
+        // HAL's post-pickup air/LZ path keys on RydHQ_AirG. HQ SitRep rebuilds
+        // can drop that membership while leaving CargoG intact, producing a
+        // carrier that can perform pickup but loses its air-specific delivery
+        // transition. Keep air identity as part of the transport quarantine.
+        if (!isNull _veh && {_veh isKindOf "Air"}) then {
+            private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
+            if !(_group in _air) then {
+                _air pushBackUnique _group;
+                _hq setVariable ["RydHQ_AirG",_air];
+                _changed pushBack "RydHQ_AirG";
+            };
+        };
     };
 
     if (_changed isNotEqualTo []) then {
@@ -394,7 +407,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
 
 ITW_CLASH_ServiceStabilityReady = true;
 diag_log format [
-    "CLASH BOOT | service-stability-ready | version=%1 idleAtHomeClosed=true quarantineReconciled=true reconExecutionGuard=true virtualEntitlement=true nativeCountAuthority=true",
+    "CLASH BOOT | service-stability-ready | version=%1 idleAtHomeClosed=true quarantineReconciled=true transportAirMembership=true reconExecutionGuard=true virtualEntitlement=true nativeCountAuthority=true",
     ITW_CLASH_ServiceStabilityVersion
 ];
 true
