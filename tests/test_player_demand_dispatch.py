@@ -416,7 +416,7 @@ def test_demand_dispatch_parenthesizes_negated_getvariable_booleans():
 
 
 def test_native_ammo_execution_preserves_scheduled_context():
-    text = mission("ITW_CLASH_PlayerDemandNativeInterceptors.sqf")
+    text = (MISSION / "ITW_CLASH_PlayerDemandNativeInterceptors.sqf").read_text(encoding="utf-8")
     wrapper = text.split("HAL_GoAmmoSupp = {", 1)[1].split(
         "ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase", 1
     )[0]

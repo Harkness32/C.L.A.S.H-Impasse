@@ -254,8 +254,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
         };
 
         // Preserve HAL's scheduled environment. Native GoAmmoSupp sleeps/waits.
-        private _nativeResult = _this call
-            ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase;
+        private _nativeResult = _this call ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase;
 
         if (_nativeToken isNotEqualTo "" && {!isNull _targetGroup}) then {
             if ((_targetGroup getVariable [
