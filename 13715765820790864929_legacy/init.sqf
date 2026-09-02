@@ -85,6 +85,22 @@ if (isServer) then {
             if (_checkbookAPIReady isEqualTo true && {fileExists "ITW_CLASH_ForceGeneration.sqf"}) then {
                 _forceGenerationReady = call compile preprocessFileLineNumbers "ITW_CLASH_ForceGeneration.sqf";
             };
+            // Phase-0 front routing is intentionally shadow-only. It derives
+            // side-symmetric primary/alternate FOB lanes from the live Impasse
+            // graph and publishes the commander's current selection without
+            // changing any spawn or tactical movement authority.
+            private _frontRoutingLoaded = false;
+            if (
+                _forceGenerationReady isEqualTo true
+                && {_commanderParityLoaded isEqualTo true}
+                && {fileExists "ITW_CLASH_FrontRouting.sqf"}
+            ) then {
+                _frontRoutingLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_FrontRouting.sqf";
+            } else {
+                diag_log "CLASH BOOT | front-routing-missing-or-prereq-failed | fixed Impasse generation graph retained";
+            };
+
             private _vehicleEchelonLoaded = false;
             if (_forceGenerationReady isEqualTo true && {
                 fileExists "ITW_CLASH_VehicleEchelonPolicy.sqf"
