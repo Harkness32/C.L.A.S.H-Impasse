@@ -3,18 +3,25 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 4;
+ITW_CLASH_HALLogisticsVersion = 5;
 ITW_CLASH_HALLogisticsReady = false;
 
 // NR6 HAL ships explicit ACE logistics workarounds but leaves them disabled by
-// default. C.L.A.S.H. enables the native HAL toggles before RydHQInit consumes
-// them so support vehicles actually service ACE-managed ammo/fuel/repair state.
-// Keep MagicHeal off: C.L.A.S.H. owns casualty extraction/reconstitution and
-// must not silently heal away medical demand.
-missionNamespace setVariable ["RydxHQ_MagicRepair",true,true];
-missionNamespace setVariable ["RydxHQ_MagicRearm",true,true];
-missionNamespace setVariable ["RydxHQ_MagicRefuel",true,true];
+// default. Enable them only when ACE itself is present. This preserves native
+// HAL/vanilla support behavior on non-ACE missions while making ACE-managed
+// repair/rearm/refuel complete when the support vehicle reaches its recipient.
+// Keep MagicHeal off even under ACE: C.L.A.S.H. owns casualty extraction and
+// reconstitution, and automatic healing would erase medical demand.
+ITW_CLASH_ACEActive = isClass (configFile >> "CfgPatches" >> "ace_main");
+missionNamespace setVariable ["ITW_CLASH_ACEActive",ITW_CLASH_ACEActive,true];
+missionNamespace setVariable ["RydxHQ_MagicRepair",ITW_CLASH_ACEActive,true];
+missionNamespace setVariable ["RydxHQ_MagicRearm",ITW_CLASH_ACEActive,true];
+missionNamespace setVariable ["RydxHQ_MagicRefuel",ITW_CLASH_ACEActive,true];
 missionNamespace setVariable ["RydxHQ_MagicHeal",false,true];
+diag_log format [
+    "CLASH BOOT | ace-logistics-workaround | ace=%1 repair=%1 rearm=%1 refuel=%1 heal=false",
+    ITW_CLASH_ACEActive
+];
 ITW_CLASH_LogisticsBootstrapInterval = missionNamespace getVariable [
     "ITW_CLASH_LogisticsBootstrapInterval",25
 ];
@@ -246,7 +253,7 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
 
     ITW_CLASH_HALLogisticsReady = true;
     diag_log format [
-        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true nativeEligibilityParity=true postProvisionRecheck=true zeroProviderBootstrap=true aceMagicRepair=true aceMagicRearm=true aceMagicRefuel=true aceMagicHeal=false",
+        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true nativeEligibilityParity=true postProvisionRecheck=true zeroProviderBootstrap=true aceConditionalMagic=true aceMagicHeal=false",
         ITW_CLASH_HALLogisticsVersion
     ];
 };

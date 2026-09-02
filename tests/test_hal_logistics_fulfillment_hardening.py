@@ -12,7 +12,7 @@ def mission(name: str) -> str:
 def test_logistics_rechecks_native_hal_after_checkbook_fulfills_capacity():
     text = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_HALLogisticsVersion = 4;" in text
+    assert "ITW_CLASH_HALLogisticsVersion = 5;" in text
     assert "ITW_CLASH_HALLogistics_fnc_KickNative" in text
     assert '"native-recheck"' in text
     assert 'case "AMMO": {[_hq] call HAL_SuppAmmo};' in text
@@ -80,14 +80,14 @@ def test_open_player_ammo_demand_uses_real_native_execution_not_supported_bookke
 
 
 
-def test_hal_native_ace_logistics_workarounds_are_enabled_without_magic_heal():
+def test_hal_native_ace_logistics_workarounds_follow_ace_presence_without_magic_heal():
     text = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert 'missionNamespace setVariable ["RydxHQ_MagicRepair",true,true];' in text
-    assert 'missionNamespace setVariable ["RydxHQ_MagicRearm",true,true];' in text
-    assert 'missionNamespace setVariable ["RydxHQ_MagicRefuel",true,true];' in text
+    assert 'isClass (configFile >> "CfgPatches" >> "ace_main")' in text
+    assert 'missionNamespace setVariable ["ITW_CLASH_ACEActive",ITW_CLASH_ACEActive,true];' in text
+    assert 'missionNamespace setVariable ["RydxHQ_MagicRepair",ITW_CLASH_ACEActive,true];' in text
+    assert 'missionNamespace setVariable ["RydxHQ_MagicRearm",ITW_CLASH_ACEActive,true];' in text
+    assert 'missionNamespace setVariable ["RydxHQ_MagicRefuel",ITW_CLASH_ACEActive,true];' in text
     assert 'missionNamespace setVariable ["RydxHQ_MagicHeal",false,true];' in text
-    assert "aceMagicRepair=true" in text
-    assert "aceMagicRearm=true" in text
-    assert "aceMagicRefuel=true" in text
+    assert "aceConditionalMagic=true" in text
     assert "aceMagicHeal=false" in text
