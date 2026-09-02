@@ -111,20 +111,23 @@ def test_hal_scargo_is_the_only_physical_executor_for_hal_transport_contracts():
     assert "halSCargoSoleExecutor=true observerOnly=true" in authority
 
 
-def test_native_proximity_ferry_is_one_way_and_never_manufactures_a_hal_job():
+def test_native_proximity_ferry_is_disabled_and_never_manufactures_a_hal_job():
     bridge = mission("ITW_CLASH_PlayerTransportNativeBridge.sqf")
-    assert '"native-proximity-suppressed-hal-busy-carrier"' in bridge
-    assert '"native-proximity-skipped-hal-contract"' in bridge
-    assert '"native-proximity-itw-ferry"' in bridge
-    assert '"halJobManufactured",false' in bridge
-    assert '"halContract",false' in bridge
-    contract_filter = bridge.index('if (count _contract > 0) then {')
-    native_state = bridge.index('_grp setVariable ["ITW_getInState",0];')
-    native_obj = bridge.index("VAR_SET_OBJ_IDX(_grp,_closestObj#ITW_OBJ_INDEX);")
-    native_wp = bridge.index("ITW_DELETE_WAYPOINTS(_grp);")
-    assert contract_filter < native_state
-    assert contract_filter < native_obj
-    assert contract_filter < native_wp
+    manager_start = bridge.index("ITW_AllyLoadIntoVehManager = {")
+    manager_end = bridge.index(
+        "ITW_AllyLoadGrpIntoVeh = ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh;",
+        manager_start,
+    )
+    manager = bridge[manager_start:manager_end]
+
+    assert '"native-proximity-ferry-disabled"' in manager
+    assert '"hal-scargo-sole-dispatch"' in manager
+    assert '"no-unsolicited-player-pickup"' in manager
+    assert "forEach vehicles" not in manager
+    assert "ITW_ObjGetNearest" not in manager
+    assert "ITW_reservedGroups" not in manager
+    assert "spawn ITW_AllyLoadGrpIntoVeh" not in manager
+
     acquire_start = bridge.index("ITW_CLASH_PlayerTransport_fnc_Acquire =")
     acquire_end = bridge.index("ITW_CLASH_PlayerTransport_fnc_ThrottleLog", acquire_start)
     acquire = bridge[acquire_start:acquire_end]

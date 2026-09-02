@@ -101,7 +101,12 @@ def test_ferry_authority_wraps_native_physical_lifecycle() -> None:
     authority = source("ITW_CLASH_PlayerTransportAuthority.sqf")
     assert '"ITW_CLASH_AuthorityHold",true' in authority
     assert '"ITW_CLASH_TransportPhysicalUnloadPending",false' in authority
-    assert "ITW_CLASH_DualHAL_fnc_RegisterGroup" in authority
+    release_start = authority.index("ITW_CLASH_PlayerTransport_fnc_Release =")
+    release_end = authority.index("// Observe HAL's actual cargo request", release_start)
+    release = authority[release_start:release_end]
+    assert 'setVariable ["ITW_CLASH_AuthorityHold",nil]' in release
+    assert 'setVariable ["Unable",_group getVariable ["ITW_CLASH_TransportPreviousUnable",false],true]' in release
+    assert 'setVariable ["BUnable",_group getVariable ["ITW_CLASH_TransportPreviousBUnable",false],true]' in release
 
 
 def test_native_high_command_is_gated_under_clash() -> None:

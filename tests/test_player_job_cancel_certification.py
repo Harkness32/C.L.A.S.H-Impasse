@@ -28,7 +28,7 @@ def test_seaguard_is_projection_only_and_cannot_clobber_service_home():
 def test_embarked_hal_contract_defers_unlock_until_physical_unlink():
     bridge = source("ITW_CLASH_PlayerTransportNativeBridge.sqf")
 
-    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 5;' in bridge
+    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 6;' in bridge
     assert 'ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier' in bridge
     assert 'alive _x && {vehicle _x == _carrier}' in bridge
     assert '"hal-contract-end-deferred-embarked"' in bridge
