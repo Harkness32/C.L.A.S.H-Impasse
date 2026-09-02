@@ -105,3 +105,16 @@ def test_casevac_rear_handoff_never_deletes_loaded_survivors():
     assert '"rear-absorption-timeout"' in source
     assert '_heli land "GET OUT";' in source
     assert '_x action ["GetOut",_heli];' in source
+
+
+def test_casevac_claims_group_before_spawn_can_yield():
+    source = text("ITW_CLASH_CASEVAC.sqf")
+    dispatch = source.split("ITW_CLASH_CASEVAC_fnc_Dispatch = {", 1)[1].split(
+        "[] spawn {", 1
+    )[0]
+
+    assert "ITW_CLASH_CASEVAC_Version = 3;" in source
+    claim = '_group setVariable ["ITW_CLASH_CASEVAC_State","air-spawning"];'
+    spawn = "] call ITW_CLASH_CASEVAC_fnc_SpawnHeli;"
+    assert dispatch.index(claim) < dispatch.index(spawn)
+    assert dispatch.count('_group setVariable ["ITW_CLASH_CASEVAC_State",nil];') >= 2

@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GroundMEDEVAC_Started",false]) exitWith {};
 ITW_CLASH_GroundMEDEVAC_Started = true;
-ITW_CLASH_GroundMEDEVAC_Version = 2;
+ITW_CLASH_GroundMEDEVAC_Version = 3;
 
 // Ground MEDEVAC is a middle-tier extraction: safer/cheaper geography gets a
 // road vehicle, long/air-only withdrawals remain CASEVAC candidates, and squads

@@ -63,12 +63,20 @@ ITW_CLASH_GroundMEDEVAC_fnc_Dispatch = {
         "_egressDistance","_spawnInfo","_pickupInfo"
     ];
     if (isNull _group) exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "") exitWith {false};
+
+    // Claim both arbitration gates before vehicle creation can yield.
+    _group setVariable ["ITW_CLASH_GroundMEDEVAC_State","ground-spawning"];
+    _group setVariable ["ITW_CLASH_CASEVAC_State","ground-spawning"];
 
     private _survivors = units _group select {alive _x};
     private _vehicleInfo = [
         count _survivors,_spawnInfo,side _group
     ] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle;
     if (_vehicleInfo isEqualTo []) exitWith {
+        _group setVariable ["ITW_CLASH_GroundMEDEVAC_State",nil];
+        _group setVariable ["ITW_CLASH_CASEVAC_State",nil];
         _group setVariable ["ITW_CLASH_GroundMEDEVAC_RetryAt",time + ITW_CLASH_GroundMEDEVAC_AirFallbackDelay];
         ["deferred",[_id,_lineage,"no-ground-vehicle-available"]] call ITW_CLASH_GroundMEDEVAC_fnc_Log;
         false

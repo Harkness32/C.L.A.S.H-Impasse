@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_Started",false]) exitWith {};
 
 ITW_CLASH_CASEVAC_Started = true;
-ITW_CLASH_CASEVAC_Version = 2;
+ITW_CLASH_CASEVAC_Version = 3;
 ITW_CLASH_CASEVAC_MaxConcurrent = 2;
 ITW_CLASH_CASEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_CASEVAC_MinDisengageDistance = 500;
@@ -680,11 +680,16 @@ ITW_CLASH_CASEVAC_fnc_Dispatch = {
         "_objectiveClearance","_egressDistance","_lz"
     ];
     if (isNull _group) exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {false};
+
+    // Claim before spawning; vehicle/crew creation can yield.
+    _group setVariable ["ITW_CLASH_CASEVAC_State","air-spawning"];
 
     private _spawnInfo = [
         _originalObjective,side _group
     ] call ITW_CLASH_CASEVAC_fnc_GetAirSpawn;
     if (_spawnInfo isEqualTo []) exitWith {
+        _group setVariable ["ITW_CLASH_CASEVAC_State",nil];
         _group setVariable ["ITW_CLASH_CASEVAC_RetryAt",time + 15];
         false
     };
@@ -694,6 +699,7 @@ ITW_CLASH_CASEVAC_fnc_Dispatch = {
         count _survivors,_spawnInfo,side _group
     ] call ITW_CLASH_CASEVAC_fnc_SpawnHeli;
     if (_heliInfo isEqualTo []) exitWith {
+        _group setVariable ["ITW_CLASH_CASEVAC_State",nil];
         _group setVariable ["ITW_CLASH_CASEVAC_RetryAt",time + 15];
         false
     };

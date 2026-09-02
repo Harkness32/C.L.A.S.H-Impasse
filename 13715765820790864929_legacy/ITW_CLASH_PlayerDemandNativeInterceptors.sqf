@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 6;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 7;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -253,10 +253,9 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
             ]] call ITW_CLASH_PlayerDemand_fnc_Log;
         };
 
-        private _nativeResult = true;
-        private _nativeResultDefined = !(isNil {
-            _nativeResult = _this call ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase;
-        });
+        // Preserve HAL's scheduled environment. Native GoAmmoSupp sleeps/waits.
+        private _nativeResult = _this call
+            ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase;
 
         if (_nativeToken isNotEqualTo "" && {!isNull _targetGroup}) then {
             if ((_targetGroup getVariable [
@@ -270,7 +269,8 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
             ]] call ITW_CLASH_PlayerDemand_fnc_Log;
         };
 
-        if (_nativeResultDefined) then {_nativeResult}
+        if (isNil "_nativeResult") exitWith {};
+        _nativeResult
     };
 
     ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase = HAL_GoMedSupp;

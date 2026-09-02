@@ -184,3 +184,19 @@ def test_ground_failure_restores_physical_foot_withdrawal():
     assert "_dismountDeadline = time + 8" in source
     assert "moveOut _" not in source
     assert "ITW_CLASH_GroundMEDEVAC_RetryCooldown = 120;" in source
+
+def test_ground_medevac_claims_both_arbitration_gates_before_spawn_can_yield():
+    main = text("ITW_CLASH_GroundMEDEVAC.sqf")
+    manager = text("ITW_CLASH_GroundMEDEVAC_Manager.sqf")
+    dispatch = manager.split("ITW_CLASH_GroundMEDEVAC_fnc_Dispatch = {", 1)[1].split(
+        "// Air/ground arbitration.", 1
+    )[0]
+
+    assert "ITW_CLASH_GroundMEDEVAC_Version = 3;" in main
+    ground_claim = '_group setVariable ["ITW_CLASH_GroundMEDEVAC_State","ground-spawning"];'
+    air_gate = '_group setVariable ["ITW_CLASH_CASEVAC_State","ground-spawning"];'
+    spawn = "] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle;"
+    assert dispatch.index(ground_claim) < dispatch.index(spawn)
+    assert dispatch.index(air_gate) < dispatch.index(spawn)
+    assert '_group setVariable ["ITW_CLASH_GroundMEDEVAC_State",nil];' in dispatch
+    assert '_group setVariable ["ITW_CLASH_CASEVAC_State",nil];' in dispatch

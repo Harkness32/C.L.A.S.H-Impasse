@@ -171,7 +171,7 @@ def test_armored_recovery_uses_forward_fob_but_native_hal_gorest_executes_moveme
     policy = mission("ITW_CLASH_VehicleEchelonPolicy.sqf")
     init = mission("init.sqf")
 
-    assert "ITW_CLASH_VehicleEchelonPolicyVersion = 1;" in policy
+    assert "ITW_CLASH_VehicleEchelonPolicyVersion = 2;" in policy
     assert "ITW_CLASH_VehicleEchelon_fnc_IsArmoredCombatGroup" in policy
     assert 'ITW_TYPE_VEH_TANK' in policy
     assert 'ITW_TYPE_VEH_APC' in policy
@@ -394,3 +394,13 @@ def test_reconstitution_transit_failure_distinguishes_combat_loss_from_lifecycle
     assert '"combat-loss-in-transit"' in transit
     assert '"transport-loss-with-cargo"' in transit
     assert '"group-object-lost-in-transit"' in transit
+
+
+def test_vehicle_echelon_wrapper_is_nil_safe_for_native_gorest():
+    policy = mission("ITW_CLASH_VehicleEchelonPolicy.sqf")
+    block = policy.split("HAL_GoRest = {", 1)[1].split(
+        "ITW_CLASH_VehicleEchelonPolicyReady = true;", 1
+    )[0]
+
+    assert "ITW_CLASH_VehicleEchelonPolicyVersion = 2;" in policy
+    assert 'if (isNil "_result") exitWith {};' in block

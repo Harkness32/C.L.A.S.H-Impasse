@@ -413,3 +413,15 @@ def test_demand_dispatch_parenthesizes_negated_getvariable_booleans():
     assert '!(_group getVariable ["ITW_CLASH_AuthorityHold",false])' in text
     assert '!(missionNamespace getVariable ["ITW_CLASH_HALReady",false])' in text
     assert re.search(r"!\s*[_A-Za-z]\w*\s+getVariable", text) is None
+
+
+def test_native_ammo_execution_preserves_scheduled_context():
+    text = mission("ITW_CLASH_PlayerDemandNativeInterceptors.sqf")
+    wrapper = text.split("HAL_GoAmmoSupp = {", 1)[1].split(
+        "ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase", 1
+    )[0]
+
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 7;" in text
+    assert "ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase" in wrapper
+    assert "isNil {" not in wrapper
+    assert 'if (isNil "_nativeResult") exitWith {};' in wrapper
