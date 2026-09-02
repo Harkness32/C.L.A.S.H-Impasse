@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exitWith {false};
 
-ITW_CLASH_PlayerTransportNativeBridgeVersion = 5;
+ITW_CLASH_PlayerTransportNativeBridgeVersion = 6;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
@@ -356,117 +356,33 @@ ITW_CLASH_PlayerTransport_fnc_ThrottleLog = {
 };
 
 ITW_AllyLoadIntoVehManager = {
-    scriptName "ITW_AllyLoadIntoVehManager_CLASH";
-    while {!ITW_GameOver} do {
-        {
-            private _veh = _x;
-            private _pilot = currentPilot _veh;
-            if (!isPlayer _pilot && {units group _pilot findIf {isPlayer _x} == -1}) then {continue};
-            if (side _pilot != ITW_PlayerSide) then {continue};
-            if (speed _veh > 5) then {continue};
-            private _vPos = getPosATL _veh;
-            private _isWater = surfaceIsWater _vPos;
-            if (_isWater && {_vPos#2 > 4.5}) then {continue};
-            if (!_isWater && {!(isTouchingGround _veh) && {_vPos#2 > 2}}) then {continue};
-            if (!canMove _veh || {fuel _veh == 0}) then {continue};
-            if (isPlayer _pilot && {_veh getVariable ["ITW_BlockAllyEntry",false]}) then {continue};
-            if !(_veh getVariable ["ITW_reservedGroups",[]] isEqualTo []) then {continue};
-            if (_veh getVariable ["ITW_AllyEntryTimeout",0] > time) then {continue};
-            if (_veh getVariable ["ITW_AllyCrewEject",false]) then {continue};
-            if (_veh getVariable ["SKL_BFC_running",false]) then {continue};
+    scriptName "ITW_AllyLoadIntoVehManager_CLASH_DISABLED";
 
-            private _pilotGroup = group _pilot;
-            private _halOccupied = !isNull _pilotGroup && {
-                _pilotGroup getVariable ["Busy" + str _pilotGroup,false] || {
-                    (_pilotGroup getVariable ["ITW_CLASH_PlayerNativeJobId",""]) isNotEqualTo ""
-                } || {
-                    (_pilotGroup getVariable ["ITW_CLASH_PlayerAmmoJobId",""]) isNotEqualTo ""
-                } || {
-                    (_pilotGroup getVariable ["ITW_CLASH_PlayerArtilleryJobId",""]) isNotEqualTo ""
-                }
-            };
-            if (_halOccupied) then {
-                [_veh,"ITW_CLASH_ProximityBusyLogAt","native-proximity-suppressed-hal-busy-carrier",[
-                    if (isNull _pilotGroup) then {"<null>"} else {
-                        [_pilotGroup] call ITW_CLASH_PlayerTransport_fnc_GroupId
-                    },typeOf _veh,"hal-job-active"
-                ],15] call ITW_CLASH_PlayerTransport_fnc_ThrottleLog;
-                continue
-            };
+    /*
+        Native Impasse proximity ferry is intentionally disabled under C.L.A.S.H.
 
-            private _emptySeats = if (_veh getVariable ["ITW_BlockAllyCrew",true]) then {
-                {isNull (_x#5) && {_x#2 >= 0}} count fullCrew [_veh,"",true]
-            } else {
-                {isNull (_x#5) && {_x#2 >= 0 || {!(_x#3 isEqualTo [])}}} count fullCrew [_veh,"",true]
-            };
-            if (_emptySeats == 0) then {continue};
+        Baseline Impasse scans player-crewed transports parked near a FOB,
+        automatically selects nearby infantry, orders them aboard, and then asks
+        the player to carry them within TRANSPORT_DROP_MAX_DIST of an objective.
+        That creates unsolicited transport jobs outside HAL's employment
+        authority and conflicts directly with the explicit HAL transport menu.
 
-            if (isPlayer _pilot && {speed _veh > 6 && {
-                _veh getVariable ["ITW_ForceAllyEntry",false] && {ITW_ELEVATION(_vPos) > 6}
-            }}) then {
-                _veh setVariable ["ITW_ForceAllyEntry",false,true];
-            };
+        HAL_SCargo remains the sole commander transport executor. Existing
+        native loading code is preserved below for compatibility with any
+        already-established/explicit lifecycle, but this ambient scanner never
+        manufactures a pickup from player proximity.
+    */
+    ["native-proximity-ferry-disabled",[
+        "hal-scargo-sole-dispatch",
+        "no-unsolicited-player-pickup",
+        TRANSPORT_DROP_MAX_DIST
+    ]] call ITW_CLASH_PlayerTransport_fnc_Log;
 
-            private _objType = if (isPlayer _pilot && {
-                _veh getVariable ["ITW_ForceAllyEntry",false]
-            }) then {ITW_OWNER_ENEMY} else {ITW_OWNER_CONTESTED};
-            private _closestObj = [_vPos,ITW_OWNER_CONTESTED,_objType] call ITW_ObjGetNearest;
-            if (_closestObj#ITW_OBJ_POS distance _veh < 1000) then {continue};
-
-            private _onFootAllies = [];
-            {
-                private _grp = _x;
-                private _leader = leader _grp;
-                if (
-                    !(_grp getVariable ["ITW_Garrison",false])
-                    && {!(_grp getVariable ["itwInitGrp",false])}
-                    && {vehicle _leader == _leader}
-                    && {_leader distance _veh < 250}
-                    && {isNull getAttackTarget _leader}
-                    && {!fleeing _leader}
-                    && {_grp getVariable ["ITW_getInState",-1] == -1}
-                ) then {
-                    private _contract = [_grp] call ITW_CLASH_PlayerTransport_fnc_GetContract;
-                    if (count _contract > 0) then {
-                        [_veh,"ITW_CLASH_ProximityContractLogAt","native-proximity-skipped-hal-contract",[
-                            [_grp] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-                            typeOf _veh,_contract getOrDefault ["id",""],
-                            "hal-scargo-owns-physical-execution"
-                        ],15] call ITW_CLASH_PlayerTransport_fnc_ThrottleLog;
-                    } else {
-                        _onFootAllies pushBack [leader _grp distance _veh,_grp];
-                    };
-                };
-            } forEach ITW_AllyGroups;
-            if (_onFootAllies isEqualTo []) then {continue};
-
-            _onFootAllies sort true;
-            private _groupsToLoad = [];
-            {
-                private _grp = _x#1;
-                private _grpSize = count units _grp;
-                if (_grpSize > _emptySeats) then {continue};
-                _emptySeats = _emptySeats - _grpSize;
-                _groupsToLoad pushBack _grp;
-                VAR_SET_OBJ_IDX(_grp,_closestObj#ITW_OBJ_INDEX);
-                _grp setVariable ["ITW_getInState",0];
-                ITW_DELETE_WAYPOINTS(_grp);
-                ["native-proximity-itw-ferry",[
-                    [_grp] call ITW_CLASH_PlayerTransport_fnc_GroupId,
-                    typeOf _veh,"halContract",false,"halJobManufactured",false
-                ]] call ITW_CLASH_PlayerTransport_fnc_Log;
-            } forEach _onFootAllies;
-
-            if !(_groupsToLoad isEqualTo []) then {
-                _veh setVariable ["ITW_reservedGroups",_groupsToLoad];
-                [_veh,_groupsToLoad] spawn ITW_AllyLoadGrpIntoVeh;
-            };
-        } forEach vehicles;
-        sleep 8;
-        while {LV_PAUSE} do {sleep 5};
+    waitUntil {
+        sleep 30;
+        missionNamespace getVariable ["ITW_GameOver",false]
     };
 };
-
 ITW_AllyLoadGrpIntoVeh = ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh;
 
 ITW_CLASH_AllyTransportFinalizationWindow = false;
@@ -474,7 +390,7 @@ private _managerFinal = ["ITW_AllyLoadIntoVehManager"] call SKL_fnc_CompileFinal
 private _loadFinal = ["ITW_AllyLoadGrpIntoVeh"] call SKL_fnc_CompileFinal;
 
 diag_log format [
-    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=true collisionSuppression=true proximityCreatesHALJob=false contractEndUnlockSeparated=true retaskLockReconciled=true",
+    "CLASH BOOT | player-transport-native-bridge-ready | version=%1 manager=%2 loader=%3 halPhysicalExecutor=true nativeITWFerryPreserved=false ambientProximityFerry=false unsolicitedPlayerPickup=false collisionSuppression=true proximityCreatesHALJob=false contractEndUnlockSeparated=true retaskLockReconciled=true",
     ITW_CLASH_PlayerTransportNativeBridgeVersion,_managerFinal,_loadFinal
 ];
 _managerFinal && _loadFinal
