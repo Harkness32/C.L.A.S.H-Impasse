@@ -43,8 +43,13 @@ jobs:
           tests/test_player_job_state_hardening.py
           tests/test_player_job_cancel_certification.py
           tests/test_player_logistics_provider_compat.py
+          tests/test_hal_logistics_fulfillment_hardening.py
+          tests/test_player_artillery_tasking.py
+          tests/test_player_artillery_side_marker.py
           tests/test_player_demand_dispatch.py
           tests/test_player_demand_native_takeover_policy.py
           tests/test_player_task_requests.py
           tests/test_player_task_request_native_contract.py
           tests/test_player_task_request_strike_recon.py
+          tests/test_player_task_request_strike_classifier_v2.py
+          tests/test_blufor_reconstitution.py

@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GroundMEDEVAC_Started",false]) exitWith {};
 ITW_CLASH_GroundMEDEVAC_Started = true;
-ITW_CLASH_GroundMEDEVAC_Version = 1;
+ITW_CLASH_GroundMEDEVAC_Version = 2;
 
 // Ground MEDEVAC is a middle-tier extraction: safer/cheaper geography gets a
 // road vehicle, long/air-only withdrawals remain CASEVAC candidates, and squads
@@ -46,17 +46,29 @@ ITW_CLASH_GroundMEDEVAC_fnc_Log = {
 };
 
 ITW_CLASH_GroundMEDEVAC_fnc_GetGroundSpawn = {
-    params [["_objectiveIndex",-1]];
-    if (isNil "ITW_CLASH_fnc_GetSupportCorridorSpawn") exitWith {[]};
+    params [["_objectiveIndex",-1],["_side",sideUnknown]];
+    if (_side == sideUnknown) then {
+        _side = missionNamespace getVariable ["ITW_EnemySide",east];
+    };
 
-    private _corridor = [_objectiveIndex] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
-    if (_corridor isEqualTo []) exitWith {[]};
-    _corridor params ["_spawnPos","_ignoredObjective","_source","_baseIndex"];
+    private _resolved = [];
+    if (!isNil "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn") then {
+        _resolved = [
+            _objectiveIndex,_side
+        ] call ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn;
+    };
 
-    // Ground MEDEVAC only uses an actual local land attack-from corridor. Air
-    // and absolute-home fallbacks remain CASEVAC/walking territory; otherwise
-    // a rescue truck could be asked to cross half the map just to reach the LZ.
-    if ((_source find "support-corridor-land") != 0) exitWith {[]};
+    if (_resolved isEqualTo []) then {
+        // Legacy OPFOR fallback while the symmetric generation graph is binding.
+        if (
+            isNil "ITW_CLASH_fnc_GetSupportCorridorSpawn"
+            || {!isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide}}
+        ) exitWith {[]};
+        _resolved = [_objectiveIndex] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
+    };
+    if (_resolved isEqualTo []) exitWith {[]};
+    _resolved params ["_spawnPos","_ignoredObjective","_source","_baseIndex"];
+
     if (_spawnPos isEqualTo [] || {surfaceIsWater _spawnPos}) exitWith {[]};
 
     private _spawn = +_spawnPos;
@@ -97,15 +109,13 @@ ITW_CLASH_GroundMEDEVAC_fnc_FindRoadPickup = {
     _pickup set [2,0];
     if (surfaceIsWater _pickup) exitWith {[]};
 
-    private _hostileNearPickup = -1;
-    if (!isNil "ITW_PlayerSide") then {
-        _hostileNearPickup = allUnits findIf {
-            alive _x && {
-                side _x == ITW_PlayerSide && {
-                    _x distance2D _pickup < (ITW_CLASH_GroundMEDEVAC_EnemyClearance - 100)
-                }
+    private _groupSide = side _group;
+    private _hostileNearPickup = allUnits findIf {
+        alive _x && {
+            (_groupSide getFriend (side _x)) < 0.6 && {
+                _x distance2D _pickup < (ITW_CLASH_GroundMEDEVAC_EnemyClearance - 100)
             }
-        };
+        }
     };
     if (_hostileNearPickup >= 0) exitWith {[]};
 
@@ -159,17 +169,29 @@ ITW_CLASH_GroundMEDEVAC_fnc_IsMedicalVehDef = {
 };
 
 ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle = {
-    params ["_seatCount","_spawnInfo"];
-    if (_spawnInfo isEqualTo [] || {
-        isNil "ITW_AtkReconstitutionTransportContext" || {
-            ITW_AtkReconstitutionTransportContext isEqualTo []
-        }
-    }) exitWith {[]};
+    params ["_seatCount","_spawnInfo",["_recoverySide",sideUnknown]];
+    if (_spawnInfo isEqualTo []) exitWith {[]};
+    if (_recoverySide == sideUnknown) then {
+        _recoverySide = missionNamespace getVariable ["ITW_EnemySide",east];
+    };
 
-    ITW_AtkReconstitutionTransportContext params [
+    private _context = [];
+    if (!isNil "ITW_AtkReconstitutionTransportContexts") then {
+        _context = ITW_AtkReconstitutionTransportContexts getOrDefault [
+            toUpperANSI str _recoverySide,[]
+        ];
+    };
+    if (_context isEqualTo []) then {
+        _context = missionNamespace getVariable [
+            "ITW_AtkReconstitutionTransportContext",[]
+        ];
+    };
+    if (_context isEqualTo []) exitWith {[]};
+
+    _context params [
         "_transport","_dualVeh","_crewTypes","_unitTypes","_side"
     ];
-    if (!isNil "ITW_EnemySide" && {_side != ITW_EnemySide}) exitWith {[]};
+    if (_side != _recoverySide) exitWith {[]};
 
     // Emergency ground evacuation may exceed Impasse's normal concurrent
     // vehicle ceiling, just like CASEVAC. Tickets remain mandatory and counts

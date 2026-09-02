@@ -158,7 +158,7 @@ private _patchRequired = [
     "ITW_CLASH_fnc_AuditAnchors"
 ];
 private _patchMissing = _patchRequired select {isNil _x};
-if (_patchVersion != 4 || {_patchMissing isNotEqualTo []}) exitWith {
+if (_patchVersion != 5 || {_patchMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "runtime-patch-validation-failed version=%1 missing=%2",
         _patchVersion,
@@ -202,6 +202,7 @@ private _gtfoRequired = [
     "ITW_CLASH_GTFO_fnc_Log",
     "ITW_CLASH_GTFO_fnc_RefreshCorridor",
     "ITW_CLASH_GTFO_fnc_ApplyConstraints",
+    "ITW_CLASH_GTFO_fnc_SetPersistentConstraints",
     "ITW_CLASH_GTFO_fnc_ResumeHAL",
     "ITW_CLASH_GTFO_fnc_RecoveryOwned",
     "ITW_CLASH_fnc_ClassifyGroup",
@@ -212,7 +213,7 @@ private _gtfoRequired = [
     "ITW_CLASH_fnc_CancelWithdrawals"
 ];
 private _gtfoMissing = _gtfoRequired select {isNil _x};
-if (_gtfoVersion != 1 || {_gtfoMissing isNotEqualTo []}) exitWith {
+if (_gtfoVersion != 4 || {_gtfoMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "gtfo-bridge-validation-failed version=%1 missing=%2",
         _gtfoVersion,
@@ -257,7 +258,7 @@ private _gtfoBookkeepingRequired = [
     "ITW_CLASH_fnc_StartWithdrawal"
 ];
 private _gtfoBookkeepingMissing = _gtfoBookkeepingRequired select {isNil _x};
-if (_gtfoBookkeepingVersion != 1 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
+if (_gtfoBookkeepingVersion != 3 || {_gtfoBookkeepingMissing isNotEqualTo []}) exitWith {
     ITW_CLASH_BootstrapFailure = format [
         "gtfo-bookkeeping-validation-failed version=%1 missing=%2",
         _gtfoBookkeepingVersion,
@@ -278,6 +279,7 @@ if (!isNil "SKL_fnc_CompileFinal") then {
         "ITW_CLASH_GTFO_fnc_Log",
         "ITW_CLASH_GTFO_fnc_RefreshCorridor",
         "ITW_CLASH_GTFO_fnc_ApplyConstraints",
+        "ITW_CLASH_GTFO_fnc_SetPersistentConstraints",
         "ITW_CLASH_GTFO_fnc_ResumeHAL",
         "ITW_CLASH_GTFO_fnc_RecoveryOwned",
         "ITW_CLASH_GTFO_fnc_RetirePreviousTaskState",

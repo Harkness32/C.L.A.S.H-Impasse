@@ -18,7 +18,7 @@ def source(path: Path) -> str:
 def test_hal_logistics_wrappers_preserve_defined_native_results_and_default_nil() -> None:
     text = source(MISSION / "ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_HALLogisticsVersion = 2;" in text
+    assert "ITW_CLASH_HALLogisticsVersion = 3;" in text
     assert text.count("private _result = true;") == 3
     assert text.count("private _nativeResult = _this call") == 3
     assert text.count('if !(isNil "_nativeResult") then {_result = _nativeResult};') == 3

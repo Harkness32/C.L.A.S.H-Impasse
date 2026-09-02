@@ -1,7 +1,7 @@
 #include "defines.hpp"
 
 if (!isServer) exitWith {false};
-ITW_CLASH_GTFOBookkeepingVersion = 1;
+ITW_CLASH_GTFOBookkeepingVersion = 3;
 
 /*
     GTFO does not cancel HAL tactics. This patch removes only stale task-list
@@ -19,12 +19,19 @@ ITW_CLASH_GTFO_fnc_RetirePreviousTaskState = {
     _group setVariable ["Defending",false];
 
     private _removedFrom = [];
-    if (!isNull ITW_CLASH_HALHQ) then {
+    private _hq = if (
+        isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
+    ) then {
+        grpNull
+    } else {
+        [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup
+    };
+    if (!isNull _hq) then {
         {
             private _listName = _x;
-            private _before = +(ITW_CLASH_HALHQ getVariable [_listName,[]]);
+            private _before = +(_hq getVariable [_listName,[]]);
             if (_group in _before) then {
-                ITW_CLASH_HALHQ setVariable [_listName,_before - [_group]];
+                _hq setVariable [_listName,_before - [_group]];
                 _removedFrom pushBack _listName;
             };
         } forEach [
@@ -141,13 +148,21 @@ ITW_CLASH_fnc_StartWithdrawal = {
         _group getVariable ["ITW_CLASH_GTFO",false]
     }) then {
         [_group] call ITW_CLASH_GTFO_fnc_RetirePreviousTaskState;
-        call ITW_CLASH_GTFO_fnc_ApplyConstraints;
+        if (!isNil "ITW_CLASH_GTFO_fnc_SetPersistentConstraints") then {
+            [_group,true] call ITW_CLASH_GTFO_fnc_SetPersistentConstraints;
+        };
+        if (
+            !isNil "ITW_EnemySide"
+            && {side _group == ITW_EnemySide}
+        ) then {
+            call ITW_CLASH_GTFO_fnc_ApplyConstraints;
+        };
     };
     _result
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-bookkeeping-ready | version=%1 staleDefenseRetire=true forwardFOB=true tacticalWrites=false",
+    "CLASH BOOT | gtfo-bookkeeping-ready | version=%1 staleDefenseRetire=true commanderAware=true symmetricCommanderFallback=true forwardFOB=true tacticalWrites=false",
     ITW_CLASH_GTFOBookkeepingVersion
 ];
 

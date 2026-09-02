@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_Started",false]) exitWith {};
 
 ITW_CLASH_CASEVAC_Started = true;
-ITW_CLASH_CASEVAC_Version = 1;
+ITW_CLASH_CASEVAC_Version = 2;
 ITW_CLASH_CASEVAC_MaxConcurrent = 2;
 ITW_CLASH_CASEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_CASEVAC_MinDisengageDistance = 500;
@@ -21,7 +21,7 @@ ITW_CLASH_CASEVAC_SmokeClass = "SmokeShell";
 ITW_CLASH_CASEVAC_Active = createHashMap;
 
 diag_log format [
-    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6",
+    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6 symmetricSides=true",
     ITW_CLASH_CASEVAC_Version,
     ITW_CLASH_CASEVAC_MaxConcurrent,
     ITW_CLASH_CASEVAC_MinDisengageDistance,
@@ -39,12 +39,13 @@ ITW_CLASH_CASEVAC_fnc_Log = {
 
 ITW_CLASH_CASEVAC_fnc_GetNearestEnemyDistance = {
     params ["_group"];
-    if (isNull _group || {isNil "ITW_PlayerSide"}) exitWith {1e10};
+    if (isNull _group) exitWith {1e10};
     private _members = (units _group) select {alive _x};
     if (_members isEqualTo []) exitWith {0};
 
+    private _groupSide = side _group;
     private _enemyUnits = allUnits select {
-        alive _x && {side _x == ITW_PlayerSide}
+        alive _x && {(_groupSide getFriend (side _x)) < 0.6}
     };
     if (_enemyUnits isEqualTo []) exitWith {1e10};
 
@@ -98,43 +99,53 @@ ITW_CLASH_CASEVAC_fnc_FindLZ = {
     if (count _lz < 3) then {_lz pushBack 0};
     _lz set [2,0];
 
-    if (!isNil "ITW_PlayerSide") then {
-        private _hostileNearLz = allUnits findIf {
-            alive _x && {
-                side _x == ITW_PlayerSide && {
-                    _x distance2D _lz < (ITW_CLASH_CASEVAC_EnemyClearance - 100)
-                }
+    private _groupSide = side _group;
+    private _hostileNearLz = allUnits findIf {
+        alive _x && {
+            (_groupSide getFriend (side _x)) < 0.6 && {
+                _x distance2D _lz < (ITW_CLASH_CASEVAC_EnemyClearance - 100)
             }
-        };
-        if (_hostileNearLz >= 0) exitWith {[]};
+        }
     };
+    if (_hostileNearLz >= 0) exitWith {[]};
     _lz
 };
 
 ITW_CLASH_CASEVAC_fnc_GetAirSpawn = {
-    params [["_objectiveIndex",-1]];
+    params [["_objectiveIndex",-1],["_side",sideUnknown]];
     if (isNil "ITW_Objectives" || {isNil "ITW_Bases"}) exitWith {[]};
     if (_objectiveIndex < 0 || {_objectiveIndex >= count ITW_Objectives}) exitWith {[]};
-
-    private _objective = ITW_Objectives#_objectiveIndex;
-    private _attacks = _objective#ITW_OBJ_ATTACKS;
-    private _baseIndex = BASE_INDEX_NONE;
-    private _source = "casevac-air-support";
-
-    if (count _attacks > ITW_ATTACK_AIR_E) then {
-        _baseIndex = _attacks#ITW_ATTACK_AIR_E;
+    if (_side == sideUnknown) then {
+        _side = missionNamespace getVariable ["ITW_EnemySide",east];
     };
 
-    if (_baseIndex == BASE_INDEX_NONE && {
-        !isNil "ITW_CLASH_fnc_GetSupportCorridorSpawn"
-    }) then {
-        private _corridor = [_objectiveIndex] call ITW_CLASH_fnc_GetSupportCorridorSpawn;
-        if (_corridor isNotEqualTo []) then {
-            _baseIndex = _corridor#3;
-            _source = "casevac-support-corridor-fallback";
+    private _objective = ITW_Objectives#_objectiveIndex;
+    private _reference = +(_objective#ITW_OBJ_POS);
+    if (!isNil "ITW_CLASH_Generation_fnc_Resolve") then {
+        private _resolved = [
+            _side,"CASEVAC","FORWARD_AIR",_reference
+        ] call ITW_CLASH_Generation_fnc_Resolve;
+        if (_resolved isEqualType createHashMap && {
+            (_resolved getOrDefault ["status",""]) == "RESOLVED"
+        }) exitWith {
+            [
+                +(_resolved getOrDefault ["origin",[]]),
+                _resolved getOrDefault ["forwardBase",-1],
+                "casevac-" + (_resolved getOrDefault ["source","generation-node"])
+            ]
         };
     };
 
+    private _attacks = _objective#ITW_OBJ_ATTACKS;
+    private _baseIndex = BASE_INDEX_NONE;
+    private _source = "casevac-air-support";
+    private _slot = if (
+        !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide}
+    ) then {ITW_ATTACK_AIR_F} else {ITW_ATTACK_AIR_E};
+
+    if (count _attacks > _slot) then {
+        _baseIndex = _attacks#_slot;
+    };
     if (_baseIndex < 0 || {_baseIndex >= count ITW_Bases}) exitWith {[]};
 
     private _spawn = +(ITW_Bases#_baseIndex#ITW_BASE_A_SPAWN);
@@ -155,15 +166,29 @@ ITW_CLASH_CASEVAC_fnc_GetAirSpawn = {
 };
 
 ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
-    params ["_seatCount","_spawnInfo"];
+    params ["_seatCount","_spawnInfo",["_recoverySide",sideUnknown]];
     if (_spawnInfo isEqualTo []) exitWith {[]};
-    if (isNil "ITW_AtkReconstitutionTransportContext") exitWith {[]};
-    if (ITW_AtkReconstitutionTransportContext isEqualTo []) exitWith {[]};
+    if (_recoverySide == sideUnknown) then {
+        _recoverySide = missionNamespace getVariable ["ITW_EnemySide",east];
+    };
 
-    ITW_AtkReconstitutionTransportContext params [
+    private _context = [];
+    if (!isNil "ITW_AtkReconstitutionTransportContexts") then {
+        _context = ITW_AtkReconstitutionTransportContexts getOrDefault [
+            toUpperANSI str _recoverySide,[]
+        ];
+    };
+    if (_context isEqualTo []) then {
+        _context = missionNamespace getVariable [
+            "ITW_AtkReconstitutionTransportContext",[]
+        ];
+    };
+    if (_context isEqualTo []) exitWith {[]};
+
+    _context params [
         "_transport","_dualVeh","_crewTypes","_unitTypes","_side"
     ];
-    if (!isNil "ITW_EnemySide" && {_side != ITW_EnemySide}) exitWith {[]};
+    if (_side != _recoverySide) exitWith {[]};
 
     private _candidates = (_transport + _dualVeh) select {
         (_x#ITW_VEH_TYPE) == ITW_TYPE_VEH_HELI && {
@@ -657,7 +682,7 @@ ITW_CLASH_CASEVAC_fnc_Dispatch = {
     if (isNull _group) exitWith {false};
 
     private _spawnInfo = [
-        _originalObjective
+        _originalObjective,side _group
     ] call ITW_CLASH_CASEVAC_fnc_GetAirSpawn;
     if (_spawnInfo isEqualTo []) exitWith {
         _group setVariable ["ITW_CLASH_CASEVAC_RetryAt",time + 15];
@@ -666,7 +691,7 @@ ITW_CLASH_CASEVAC_fnc_Dispatch = {
 
     private _survivors = units _group select {alive _x};
     private _heliInfo = [
-        count _survivors,_spawnInfo
+        count _survivors,_spawnInfo,side _group
     ] call ITW_CLASH_CASEVAC_fnc_SpawnHeli;
     if (_heliInfo isEqualTo []) exitWith {
         _group setVariable ["ITW_CLASH_CASEVAC_RetryAt",time + 15];

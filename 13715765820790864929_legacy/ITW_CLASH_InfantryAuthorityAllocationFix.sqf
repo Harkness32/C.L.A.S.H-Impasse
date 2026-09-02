@@ -2,7 +2,7 @@
 
 if (!isServer) exitWith {false};
 
-ITW_CLASH_InfantryAuthorityAllocationFixVersion = 1;
+ITW_CLASH_InfantryAuthorityAllocationFixVersion = 2;
 ITW_CLASH_AllocationDriftMargin = 150;
 ITW_CLASH_AllocationDriftCooldown = 0;
 
@@ -49,6 +49,9 @@ ITW_CLASH_InfantryAuthorityAllocationFix_fnc_SetAffinity = {
     }) exitWith {false};
 
     _group setVariable ["ITW_CLASH_AssignedObjective",_newObjective];
+    if (_group getVariable ["ITW_CLASH_DualHALManaged",false]) then {
+        _group setVariable ["ITW_CLASH_DualHALObjectiveAffinity",_newObjective];
+    };
     VAR_SET_OBJ_IDX(_group,_newObjective);
 
     if (!isNil "ITW_CLASH_InfantryAuthority_fnc_Log") then {
@@ -77,17 +80,39 @@ ITW_CLASH_fnc_AuditAllocations = {
     private _heldObjectives = call ITW_CLASH_fnc_GetHeldObjectives;
     private _heldIndices = _heldObjectives apply {_x#0};
     private _allocations = [];
+    private _managedGroups = +ITW_CLASH_ManagedGroups;
+    if (!isNil "ITW_CLASH_DualHALBLUFORGroups") then {
+        {_managedGroups pushBackUnique _x} forEach +ITW_CLASH_DualHALBLUFORGroups;
+    };
+    if (!isNil "ITW_CLASH_DualHALOPFORExtraGroups") then {
+        {_managedGroups pushBackUnique _x} forEach +ITW_CLASH_DualHALOPFORExtraGroups;
+    };
 
     {
         private _group = _x;
-        if (!isNull _group && {
-            _group getVariable ["ITW_CLASH_Managed",false]
-        }) then {
+        private _managed = !isNull _group && {
+            _group getVariable ["ITW_CLASH_Managed",false] || {
+                _group getVariable ["ITW_CLASH_DualHALManaged",false]
+            }
+        };
+        if (_managed) then {
             private _id = [_group] call ITW_CLASH_fnc_GroupId;
-            private _assignedObjective = _group getVariable [
-                "ITW_CLASH_AssignedObjective",
-                VAR_GET_OBJ_IDX(_group)
-            ];
+            private _assignedObjective = if (
+                _group getVariable ["ITW_CLASH_DualHALManaged",false]
+            ) then {
+                _group getVariable [
+                    "ITW_CLASH_DualHALObjectiveAffinity",
+                    _group getVariable [
+                        "ITW_CLASH_AssignedObjective",
+                        VAR_GET_OBJ_IDX(_group)
+                    ]
+                ]
+            } else {
+                _group getVariable [
+                    "ITW_CLASH_AssignedObjective",
+                    VAR_GET_OBJ_IDX(_group)
+                ]
+            };
             private _waypointIndex = currentWaypoint _group;
             private _waypointCount = count waypoints _group;
             private _hasWaypoint = _waypointCount > 0 && {
@@ -115,9 +140,19 @@ ITW_CLASH_fnc_AuditAllocations = {
             private _assignedValid = _assignedObjective in _activeIndices && {
                 !isNull _assignedFlag
             };
-            private _affinityMutable = (
+            private _legacyFielded = (
                 [_group] call ITW_CLASH_InfantryAuthority_fnc_IsManagedFielded
+            );
+            private _dualFielded = (
+                _group getVariable ["ITW_CLASH_DualHALManaged",false]
             ) && {
+                ((units _group) findIf {isPlayer _x}) < 0
+            } && {
+                isNil "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved" || {
+                    !([_group] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved)
+                }
+            };
+            private _affinityMutable = (_legacyFielded || {_dualFielded}) && {
                 !(_group getVariable ["ITW_CLASH_Withdrawing",false]) && {
                     (_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isEqualTo "" && {
                         (_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isEqualTo ""
@@ -177,8 +212,13 @@ ITW_CLASH_fnc_AuditAllocations = {
             ) then {
                 "anchor"
             } else {
-                if (!isNull ITW_CLASH_HALHQ && {
-                    _group in (ITW_CLASH_HALHQ getVariable ["RydHQ_DefRes",[]])
+                private _hq = if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+                    [_group] call ITW_CLASH_fnc_GetCommanderForGroup
+                } else {
+                    grpNull
+                };
+                if (!isNull _hq && {
+                    _group in (_hq getVariable ["RydHQ_DefRes",[]])
                 }) then {
                     "reserve"
                 } else {
@@ -222,11 +262,16 @@ ITW_CLASH_fnc_AuditAllocations = {
                 ) then {
                     "anchor"
                 } else {
-                    if (!isNull ITW_CLASH_HALHQ && {
-                        _group in (ITW_CLASH_HALHQ getVariable ["RydHQ_DefRes",[]])
-                    }) then {
-                        "reserve"
-                    } else {
+                    private _hq = if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+                    [_group] call ITW_CLASH_fnc_GetCommanderForGroup
+                } else {
+                    grpNull
+                };
+                if (!isNull _hq && {
+                    _group in (_hq getVariable ["RydHQ_DefRes",[]])
+                }) then {
+                    "reserve"
+                } else {
                         "main"
                     }
                 };
@@ -243,7 +288,7 @@ ITW_CLASH_fnc_AuditAllocations = {
                 _role
             ];
         };
-    } forEach +ITW_CLASH_ManagedGroups;
+    } forEach _managedGroups;
 
     private _coverage = [];
     {
@@ -253,9 +298,19 @@ ITW_CLASH_fnc_AuditAllocations = {
             if (_objectiveIndex in _heldIndices) then {"held"} else {"recovery"},
             {
                 !isNull _x && {
-                    (_x getVariable ["ITW_CLASH_AssignedObjective",-1]) == _objectiveIndex
+                    private _affinity = if (
+                        _x getVariable ["ITW_CLASH_DualHALManaged",false]
+                    ) then {
+                        _x getVariable [
+                            "ITW_CLASH_DualHALObjectiveAffinity",
+                            _x getVariable ["ITW_CLASH_AssignedObjective",-1]
+                        ]
+                    } else {
+                        _x getVariable ["ITW_CLASH_AssignedObjective",-1]
+                    };
+                    _affinity == _objectiveIndex
                 }
-            } count ITW_CLASH_ManagedGroups,
+            } count _managedGroups,
             {
                 (_x#3) == _objectiveIndex
             } count _allocations
@@ -276,7 +331,7 @@ ITW_CLASH_fnc_AuditAllocations = {
 };
 
 diag_log format [
-    "CLASH BOOT | infantry-allocation-authority-ready | version=%1 driftRelease=false unassignedAdoption=true waypointDriftAffinity=true anchorAffinityStable=true",
+    "CLASH BOOT | infantry-allocation-authority-ready | version=%1 driftRelease=false unassignedAdoption=true waypointDriftAffinity=true anchorAffinityStable=true dualHAL=true",
     ITW_CLASH_InfantryAuthorityAllocationFixVersion
 ];
 

@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 5;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 6;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -230,7 +230,47 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
         if (!_providerHuman && {!isNull _hq} && {!isNull _target}) then {
             if ([_hq,_target] call ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo) exitWith {};
         };
-        _this call ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase
+
+        private _targetGroup = if (isNull _target) then {grpNull} else {
+            [_target] call ITW_CLASH_PlayerDemand_fnc_TargetGroup
+        };
+        private _nativeToken = "";
+        if (!_providerHuman && {!isNull _targetGroup}) then {
+            _nativeToken = format [
+                "NATIVE-AMMO-%1-%2",
+                round (diag_tickTime * 1000),
+                [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId
+            ];
+            _targetGroup setVariable [
+                "ITW_CLASH_NativeAmmoExecution",_nativeToken
+            ];
+            ["native-ai-execution-started",[
+                _nativeToken,
+                [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId,
+                if (isNull _providerGroup) then {"<null>"} else {
+                    [_providerGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId
+                }
+            ]] call ITW_CLASH_PlayerDemand_fnc_Log;
+        };
+
+        private _nativeResult = true;
+        private _nativeResultDefined = !(isNil {
+            _nativeResult = _this call ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase;
+        });
+
+        if (_nativeToken isNotEqualTo "" && {!isNull _targetGroup}) then {
+            if ((_targetGroup getVariable [
+                "ITW_CLASH_NativeAmmoExecution",""
+            ]) == _nativeToken) then {
+                _targetGroup setVariable ["ITW_CLASH_NativeAmmoExecution",nil];
+            };
+            ["native-ai-execution-ended",[
+                _nativeToken,
+                [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId
+            ]] call ITW_CLASH_PlayerDemand_fnc_Log;
+        };
+
+        if (_nativeResultDefined) then {_nativeResult}
     };
 
     ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase = HAL_GoMedSupp;
@@ -252,7 +292,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
 
     ITW_CLASH_PlayerDemandNativeInterceptorsReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true callScopedNativeExclusion=true sameCycleRaceGuard=true specialistExecutionOwnership=true nativeFailOpen=true",
+        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true nativeAmmoExecutionMarker=true callScopedNativeExclusion=true sameCycleRaceGuard=true specialistExecutionOwnership=true nativeFailOpen=true",
         ITW_CLASH_PlayerDemandNativeInterceptorsVersion
     ];
 

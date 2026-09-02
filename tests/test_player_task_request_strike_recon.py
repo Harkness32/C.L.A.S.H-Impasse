@@ -69,10 +69,20 @@ def test_strike_uses_native_nearest_known_threat_heuristic_after_class_filter():
     assert "rating" not in selector.lower()
 
 
-def test_strike_is_fixed_marker_observer_and_reward_authorization_only():
+def test_strike_tracks_hal_known_target_and_reward_authorization_only():
     text = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+    monitor = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_Monitor = {",
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_SelectTarget = {",
+    )
 
     assert '["targetPosition",+_targetPosition]' in text
+    assert "BIS_fnc_taskSetDestination" in monitor
+    assert "ITW_CLASH_PlayerTaskRequestStrike_fnc_KnownGroups" in monitor
+    assert "_halKnows" in monitor
+    assert '["targetPosition",+_newPosition]' in monitor
+    assert '"target-tracked"' in monitor
     assert '"PLAYER_TASK_REWARD_AUTHORIZED"' in text
     assert '["rewardClass","STRIKE"]' in text
     assert "setPos" not in text
@@ -144,3 +154,46 @@ def test_recon_task_uses_frozen_last_known_marker_and_authorizes_reward_only_on_
     assert '["rewardClass","RECON"]' in text
     assert "setMarkerPos" not in text
     assert "addScore" not in text
+
+
+def test_armor_strike_completion_counts_combat_vehicles_not_dismounted_crew():
+    text = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+    threat = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_ThreatCount = {",
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_CombatIneffective = {",
+    )
+
+    assert 'if (_requestType in ["STRIKE_LIGHT_ARMOR","STRIKE_HEAVY_ARMOR"]) then {' in threat
+    assert "alive _vehicle" in threat
+    assert "canFire _vehicle" in threat
+    assert "count _vehicles" in threat
+    assert "} else {" in threat
+    assert "{alive _x} count units _targetGroup" in threat
+    assert "Dismounted surviving crews are not part of the armor STRIKE objective." in text
+
+
+def test_strike_task_presentation_uses_destroy_labels_and_last_known_tracking_language():
+    text = _text("ITW_CLASH_PlayerTaskRequestStrike.sqf")
+    presentation = _block(
+        text,
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_TaskPresentation = {",
+        "ITW_CLASH_PlayerTaskRequestStrike_fnc_ReleaseReservation = {",
+    )
+
+    assert '"Destroy Squad"' in presentation
+    assert '"Destroy Soft Target"' in presentation
+    assert '"Destroy Light Armor"' in presentation
+    assert '"Destroy Heavy Armor"' in presentation
+    assert "latest known position" in presentation
+    assert "Dismounted surviving crews are not part of the armor STRIKE objective." in presentation
+
+    task_create = _block(
+        text,
+        "private _players = units _group select {isPlayer _x};",
+        '["target-selected",[',
+    )
+    assert "_taskTitle" in task_create
+    assert "_taskDescription" in task_create
+    assert "true" in task_create
+    assert '"destroy"' in task_create

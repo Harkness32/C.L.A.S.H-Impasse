@@ -5,8 +5,22 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestArtilleryStarted",
 
 ITW_CLASH_PlayerTaskRequestArtilleryStarted = true;
 ITW_CLASH_PlayerTaskRequestArtilleryReady = false;
-ITW_CLASH_PlayerTaskRequestArtilleryVersion = 1;
+ITW_CLASH_PlayerTaskRequestArtilleryVersion = 2;
 ITW_CLASH_PlayerTaskRequestArtillerySerial = 0;
+
+// The map presentation and the backend mission-credit envelope are separate
+// contracts. The player aims at the red 150 m radius target area; realistic
+// dispersion is still accepted out to 250 m for mission validation.
+ITW_CLASH_PlayerArtilleryAimRadius = missionNamespace getVariable [
+    "ITW_CLASH_PlayerArtilleryAimRadius",150
+];
+ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius = missionNamespace getVariable [
+    "ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius",250
+];
+// PlayerArtilleryTasks v1 uses MissionRadius when it creates the task text and
+// stores targetRadius. Rebind that legacy variable to the visual/aim contract;
+// impact validation below uses its own explicit acceptance radius.
+ITW_CLASH_PlayerArtilleryMissionRadius = ITW_CLASH_PlayerArtilleryAimRadius;
 
 ITW_CLASH_PlayerTaskRequestArtillery_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -15,6 +29,137 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Log = {
     } else {
         diag_log format ["CLASH TASK REQUEST ARTILLERY | %1 | %2",_event,_payload];
     };
+};
+
+// Preserve the proven PlayerArtilleryTasks executor. This wrapper only stamps
+// the two-radius contract onto each job after the native-compatible NewJob
+// path has built it.
+ITW_CLASH_PlayerTaskRequestArtillery_fnc_NewJobBase =
+    ITW_CLASH_PlayerArtillery_fnc_NewJob;
+ITW_CLASH_PlayerArtillery_fnc_NewJob = {
+    private _jobId = _this call
+        ITW_CLASH_PlayerTaskRequestArtillery_fnc_NewJobBase;
+    if (_jobId isEqualType "" && {_jobId isNotEqualTo ""}) then {
+        private _job = ITW_CLASH_PlayerJobs getOrDefault [_jobId,createHashMap];
+        if (count _job > 0) then {
+            _job set ["targetRadius",ITW_CLASH_PlayerArtilleryAimRadius];
+            _job set [
+                "impactAcceptanceRadius",
+                ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius
+            ];
+            ITW_CLASH_PlayerJobs set [_jobId,_job];
+        };
+    };
+    _jobId
+};
+
+// Send the fixed target center and visual radius to each participant. The
+// client draws a local marker, so no global/JIP marker state is introduced.
+ITW_CLASH_PlayerTaskRequestArtillery_fnc_PushClientAssignmentBase =
+    ITW_CLASH_PlayerArtillery_fnc_PushClientAssignment;
+ITW_CLASH_PlayerArtillery_fnc_PushClientAssignment = {
+    params ["_group","_jobId","_vehicle","_allowedMagazines"];
+    private _job = ITW_CLASH_PlayerJobs getOrDefault [_jobId,createHashMap];
+    if (count _job == 0) exitWith {
+        _this call ITW_CLASH_PlayerTaskRequestArtillery_fnc_PushClientAssignmentBase
+    };
+
+    private _targetPosition = +(_job getOrDefault ["targetPosition",[]]);
+    private _targetRadius = _job getOrDefault [
+        "targetRadius",ITW_CLASH_PlayerArtilleryAimRadius
+    ];
+    private _owners = [];
+    {
+        if (isPlayer _x) then {_owners pushBackUnique (owner _x)};
+    } forEach units _group;
+    {
+        [
+            _jobId,_vehicle,_allowedMagazines,
+            _targetPosition,_targetRadius
+        ] remoteExecCall [
+            "ITW_CLASH_PlayerTaskClient_fnc_AssignArtilleryJob",_x
+        ];
+    } forEach _owners;
+    true
+};
+
+// PlayerArtilleryTasks v1 used targetRadius for both visual intent and impact
+// credit. Keep every existing ownership/reporting check, but classify impacts
+// against the wider 250 m acceptance envelope instead.
+ITW_CLASH_PlayerTaskRequestArtillery_fnc_ReportImpactRemoteBase =
+    ITW_CLASH_PlayerArtillery_fnc_ReportImpactRemote;
+ITW_CLASH_PlayerArtillery_fnc_ReportImpactRemote = {
+    params [
+        "_reporter","_jobId","_vehicle","_shotId","_magazine","_impactPosition"
+    ];
+    private _job = [
+        _reporter,_jobId,_vehicle
+    ] call ITW_CLASH_PlayerArtillery_fnc_ValidateRemoteReport;
+    if (count _job == 0) exitWith {false};
+    if !(_shotId in (_job getOrDefault ["shotIds",[]])) exitWith {false};
+    if (_shotId in (_job getOrDefault ["resolvedShotIds",[]])) exitWith {
+        false
+    };
+    if !(_impactPosition isEqualType [] && {count _impactPosition >= 2}) exitWith {
+        false
+    };
+
+    private _resolved = +(_job getOrDefault ["resolvedShotIds",[]]);
+    _resolved pushBack _shotId;
+    _job set ["resolvedShotIds",_resolved];
+    private _roundsResolved = (_job getOrDefault ["roundsResolved",0]) + 1;
+    _job set ["roundsResolved",_roundsResolved];
+
+    private _targetPosition = _job getOrDefault ["targetPosition",[]];
+    private _aimRadius = _job getOrDefault [
+        "targetRadius",ITW_CLASH_PlayerArtilleryAimRadius
+    ];
+    private _acceptanceRadius = _job getOrDefault [
+        "impactAcceptanceRadius",
+        ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius
+    ];
+    private _impactDistance = if (_targetPosition isEqualTo []) then {-1} else {
+        _impactPosition distance2D _targetPosition
+    };
+    private _onTarget = (
+        _impactDistance >= 0
+        && {_impactDistance <= _acceptanceRadius}
+    );
+    if (_onTarget) then {
+        _job set [
+            "roundsOnTarget",
+            (_job getOrDefault ["roundsOnTarget",0]) + 1
+        ];
+    };
+    _job set ["targetRadius",_aimRadius];
+    _job set ["impactAcceptanceRadius",_acceptanceRadius];
+    ITW_CLASH_PlayerJobs set [_jobId,_job];
+
+    ["ARTILLERY_ROUND_IMPACT",createHashMapFromArray [
+        ["jobId",_jobId],
+        ["magazine",_magazine],
+        ["position",+_impactPosition],
+        ["onTarget",_onTarget],
+        ["distance",_impactDistance],
+        ["aimRadius",_aimRadius],
+        ["acceptanceRadius",_acceptanceRadius],
+        ["resolved",_roundsResolved]
+    ]] call ITW_CLASH_PlayerTasks_fnc_RecordEvent;
+
+    private _authorized = _job getOrDefault ["authorizedRounds",0];
+    private _fired = _job getOrDefault ["roundsFired",0];
+    if (_fired >= _authorized && {_roundsResolved >= _authorized}) then {
+        private _hits = _job getOrDefault ["roundsOnTarget",0];
+        private _required = _job getOrDefault ["requiredImpacts",1];
+        if (_hits >= _required) then {
+            [_jobId,"COMPLETED","validated-impact-pattern"] call
+                ITW_CLASH_PlayerArtillery_fnc_FinishJob;
+        } else {
+            [_jobId,"FAILED","insufficient-impacts-in-acceptance-area"] call
+                ITW_CLASH_PlayerArtillery_fnc_FinishJob;
+        };
+    };
+    true
 };
 
 ITW_CLASH_PlayerTaskRequestArtillery_fnc_EligibleVehicle = {
@@ -201,12 +346,19 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
         typeOf (vehicle _target),
         _targetPosition,
         _authorized,
-        _magazines
+        _magazines,
+        ITW_CLASH_PlayerArtilleryAimRadius,
+        ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius
     ]] call ITW_CLASH_PlayerTaskRequestArtillery_fnc_Log;
 
     [
         "MATCHED",
-        format ["HAL fire mission assigned. %1 HE rounds authorized.",_authorized],
+        format [
+            "HAL fire mission assigned. %1 HE rounds authorized. Aim inside the red %2 m radius; impacts out to %3 m count for mission validation.",
+            _authorized,
+            ITW_CLASH_PlayerArtilleryAimRadius,
+            ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius
+        ],
         _jobId
     ] call ITW_CLASH_PlayerTaskRequests_fnc_Result
 };
@@ -255,8 +407,10 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
 
     ITW_CLASH_PlayerTaskRequestArtilleryReady = true;
     diag_log format [
-        "CLASH BOOT | player-task-request-artillery-ready | version=%1 nativeKnownTargets=true nativeCFFTakenReservation=true existingExecutor=true subscriptionRequired=false capabilityAtRequest=true",
-        ITW_CLASH_PlayerTaskRequestArtilleryVersion
+        "CLASH BOOT | player-task-request-artillery-ready | version=%1 nativeKnownTargets=true nativeCFFTakenReservation=true existingExecutor=true subscriptionRequired=false capabilityAtRequest=true aimRadius=%2 impactAcceptanceRadius=%3 redTargetArea=true",
+        ITW_CLASH_PlayerTaskRequestArtilleryVersion,
+        ITW_CLASH_PlayerArtilleryAimRadius,
+        ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius
     ];
 };
 

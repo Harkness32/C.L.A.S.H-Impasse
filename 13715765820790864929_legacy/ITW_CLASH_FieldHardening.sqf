@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_FieldHardeningStarted",false]) exitWith {};
 
 ITW_CLASH_FieldHardeningStarted = true;
-ITW_CLASH_FieldHardeningVersion = 1;
+ITW_CLASH_FieldHardeningVersion = 3;
 ITW_CLASH_GTFO_BusyStallGrace = 90;
 ITW_CLASH_GTFO_BusyStallProgress = 25;
 ITW_CLASH_GTFO_BusyStallLogCooldown = 60;
@@ -402,7 +402,13 @@ ITW_CLASH_FieldHardening_fnc_IsCombatUnit = {
                     waypointSpeed [_group,_wpIndex],waypointPosition [_group,_wpIndex]
                 ]
             };
-            private _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+            private _hq = if (
+                isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
+            ) then {
+                grpNull
+            } else {
+                [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup
+            };
             private _membership = [];
             {
                 private _name = _x;
@@ -434,6 +440,6 @@ ITW_CLASH_FieldHardening_fnc_IsCombatUnit = {
 };
 
 diag_log format [
-    "CLASH BOOT | field-hardening-ready | version=%1 reconNilGuard=true casevacAbortCleanup=true reconstitutionAssignmentRepair=true aceContactFilter=true gtfoBusyObserver=true",
+    "CLASH BOOT | field-hardening-ready | version=%1 reconNilGuard=true casevacAbortCleanup=true reconstitutionAssignmentRepair=true aceContactFilter=true gtfoBusyObserver=true commanderAwareDiagnostics=true symmetricCommanderFallback=true",
     ITW_CLASH_FieldHardeningVersion
 ];

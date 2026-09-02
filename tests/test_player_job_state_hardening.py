@@ -15,6 +15,9 @@ def test_authoritative_job_gate_is_channel_specific_and_busy_aware() -> None:
     assert "ITW_CLASH_PlayerTasks_fnc_CanAcceptJob" in hardening
     assert "ITW_CLASH_PlayerTasks_fnc_HasActiveJob" in hardening
     assert '"Busy" + str _group' in hardening
+    assert "ITW_CLASH_PlayerTaskRequestActiveJobId" in hardening
+    assert "ITW_CLASH_PlayerStrikeJobId" in hardening
+    assert "ITW_CLASH_PlayerReconJobId" in hardening
     assert "ITW_CLASH_PlayerAmmoJobId" in hardening
     assert "ITW_CLASH_PlayerArtilleryJobId" in hardening
     assert "ITW_CLASH_PlayerNativeJobId" in hardening

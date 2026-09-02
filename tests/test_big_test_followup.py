@@ -22,7 +22,7 @@ def test_bootstrap_defers_and_finalizes_affinity_only_allocation_audit():
 def test_allocation_drift_repairs_affinity_without_releasing_hal_infantry():
     allocation = mission("ITW_CLASH_InfantryAuthorityAllocationFix.sqf")
 
-    assert "ITW_CLASH_InfantryAuthorityAllocationFixVersion = 1" in allocation
+    assert "ITW_CLASH_InfantryAuthorityAllocationFixVersion = 2" in allocation
     assert 'VAR_SET_OBJ_IDX(_group,_newObjective);' in allocation
     assert '"unassigned-adopted"' in allocation
     assert '"invalid-affinity-repaired"' in allocation

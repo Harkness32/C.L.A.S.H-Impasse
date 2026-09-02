@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 2;
+ITW_CLASH_DualHALCheckbookVersion = 5;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -91,6 +91,7 @@ ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup = {
     if (isNull _group || {isNil "ITW_PlayerSide"}) exitWith {false};
     if (side _group != ITW_PlayerSide) exitWith {false};
     if ([_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup) exitWith {false};
+    if (time < (_group getVariable ["ITW_CLASH_ReeligibleAt",0])) exitWith {false};
     if ([_group] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved) exitWith {false};
     if (_group == ITW_CLASH_BLUFORHQ) exitWith {false};
     if (((units _group) findIf {!(_x isKindOf "Logic") && {!(_x isKindOf "VirtualMan_F")}}) < 0) exitWith {false};
@@ -128,6 +129,21 @@ ITW_CLASH_DualHAL_fnc_RegisterGroup = {
     _group setVariable ["ITW_CLASH_Authority","HAL_FIELD"];
     _group setVariable ["ITW_CLASH_AuthorityReason",_reason];
 
+    // Preserve the native Impasse formation template before attrition so
+    // side-symmetric reconstitution can rebuild the original squad.
+    if ((_group getVariable ["ITW_CLASH_Archetype",[]]) isEqualTo []) then {
+        private _archetype = (units _group) apply {toLowerANSI typeOf _x};
+        if (_archetype isNotEqualTo []) then {
+            _group setVariable ["ITW_CLASH_Archetype",+_archetype];
+        };
+    };
+    if ((_group getVariable ["ITW_CLASH_Lineage",""]) isEqualTo "") then {
+        _group setVariable [
+            "ITW_CLASH_Lineage",
+            [_group] call ITW_CLASH_DualHAL_fnc_GroupId
+        ];
+    };
+
     if (_slot == "B") then {
         ITW_CLASH_DualHALBLUFORGroups pushBackUnique _group;
     } else {
@@ -157,7 +173,13 @@ ITW_CLASH_DualHAL_fnc_SyncIncluded = {
         ITW_CLASH_DualHALBLUFORGroups = ITW_CLASH_DualHALBLUFORGroups select {
             !isNull _x && {{alive _x} count units _x > 0}
         };
-        private _blu = +ITW_CLASH_DualHALBLUFORGroups;
+        // Keep the durable registry intact, but expose only groups whose
+        // current lifecycle belongs to HAL. A boarded CASEVAC/MEDEVAC group
+        // temporarily disappears from Included and automatically returns if
+        // recovery aborts and the lifecycle markers clear.
+        private _blu = ITW_CLASH_DualHALBLUFORGroups select {
+            [_x] call ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup
+        };
         ITW_CLASH_BLUFORHQ setVariable ["RydHQ_Included",_blu];
         RydHQB_Included = +_blu;
     };
@@ -480,6 +502,94 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
     true
 };
 
+ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
+    params ["_vehInfo"];
+    if !(_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) exitWith {[]};
+
+    private _veh = _vehInfo#VEHINFO_VEH;
+    private _crewGroup = _vehInfo#VEHINFO_CREW_GRP;
+    if (isNull _veh || {isNull _crewGroup}) exitWith {[]};
+
+    private _vehType = _vehInfo#VEHINFO_TYPE;
+    private _class = typeOf _veh;
+    private _artilleryClasses = if (
+        !isNil "ITW_PlayerSide" && {side _crewGroup == ITW_PlayerSide}
+    ) then {
+        missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryClasses",[]]
+    } else {
+        missionNamespace getVariable ["ITW_CLASH_EnemyArtilleryClasses",[]]
+    };
+    private _isArtillery = _class in _artilleryClasses;
+
+    private _profile = if (_isArtillery) then {
+        "INTERSTITIAL"
+    } else {
+        if (_vehType in [ITW_TYPE_VEH_TANK,ITW_TYPE_VEH_APC]) then {
+            "REAR"
+        } else {
+            "FORWARD"
+        }
+    };
+
+    if (_profile == "FORWARD") exitWith {
+        [
+            side _crewGroup,
+            if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"},
+            getPosATL _veh
+        ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn
+    };
+
+    if (!isNil "ITW_CLASH_Generation_fnc_Resolve") then {
+        private _resolved = [
+            side _crewGroup,
+            if (_isArtillery) then {"ARTILLERY"} else {"FIELD_ARMOR"},
+            _profile,
+            getPosATL _veh
+        ] call ITW_CLASH_Generation_fnc_Resolve;
+        if (_resolved isEqualType createHashMap && {
+            (_resolved getOrDefault ["status",""]) == "RESOLVED"
+        }) exitWith {
+            private _baseIndex = if (_profile == "REAR") then {
+                _resolved getOrDefault ["rearBase",-1]
+            } else {
+                _resolved getOrDefault ["forwardBase",-1]
+            };
+            [
+                +(_resolved getOrDefault ["origin",[]]),
+                _baseIndex,
+                _resolved getOrDefault ["objective",-1],
+                format [
+                    "field-%1-%2",
+                    toLowerANSI _profile,
+                    _resolved getOrDefault ["source","generation-node"]
+                ]
+            ]
+        };
+    };
+
+    // Never deliberately fall artillery back into a protected FOB when the
+    // interstitial geometry cannot be resolved. Preserve its native physical
+    // origin and let HAL own tactical employment from there.
+    if (_isArtillery) exitWith {
+        [
+            getPosATL _veh,
+            -1,
+            VAR_GET_OBJ_IDX(_crewGroup),
+            "field-interstitial-unresolved-native-origin"
+        ]
+    };
+
+    // Rear armor resolution should normally be available once ForceGeneration
+    // is live. Fail open to native field position instead of moving heavy armor
+    // forward in violation of the echelon contract.
+    [
+        getPosATL _veh,
+        -1,
+        VAR_GET_OBJ_IDX(_crewGroup),
+        "field-rear-unresolved-native-origin"
+    ]
+};
+
 ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     params ["_vehInfo",["_teleportToAttackPos",false],["_populateObjectives",false]];
     if !(_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) exitWith {false};
@@ -493,8 +603,8 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
 
     private _mode = if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"};
     private _spawnInfo = [
-        side _crewGroup,_mode,getPosATL _veh
-    ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn;
+        _vehInfo
+    ] call ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn;
     if (_spawnInfo isEqualTo []) exitWith {false};
     _spawnInfo params ["_spawn","_baseIndex","_objectiveIndex","_source"];
 
@@ -1026,6 +1136,9 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
 
         call ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles;
         call ITW_CLASH_DualHAL_fnc_SyncIncluded;
+        if (!isNil "ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints") then {
+            call ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints;
+        };
 
         for "_i" from ((count ITW_CLASH_CheckbookAssets) - 1) to 0 step -1 do {
             private _entry = ITW_CLASH_CheckbookAssets#_i;
@@ -1055,7 +1168,7 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
 };
 
 diag_log format [
-    "CLASH BOOT | dual-hal-checkbook-loaded | version=%1 compatibilityLayer=true impasse=checkbook hal=commander",
+    "CLASH BOOT | dual-hal-checkbook-loaded | version=%1 compatibilityLayer=true impasse=checkbook hal=commander echelonFieldVehicles=true symmetricTransportSettle=true symmetricInfantryRoles=true",
     ITW_CLASH_DualHALCheckbookVersion
 ];
 

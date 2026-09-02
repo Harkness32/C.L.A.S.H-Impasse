@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -402,3 +403,13 @@ def test_native_support_source_has_the_call_scoped_exclusion_seams_we_depend_on(
     assert 'RydHQ_ExMedic' in med
     assert 'RydHQ_Wounded' in med
     assert 'RydHQ_SupportedG' in med
+
+
+def test_demand_dispatch_parenthesizes_negated_getvariable_booleans():
+    text = (MISSION / "ITW_CLASH_PlayerDemandDispatch.sqf").read_text(encoding="utf-8")
+
+    # In SQF, ! binds before getVariable.  "!_group getVariable [...]" tries
+    # to negate the Group object and aborts the caller before task finalization.
+    assert '!(_group getVariable ["ITW_CLASH_AuthorityHold",false])' in text
+    assert '!(missionNamespace getVariable ["ITW_CLASH_HALReady",false])' in text
+    assert re.search(r"!\s*[_A-Za-z]\w*\s+getVariable", text) is None

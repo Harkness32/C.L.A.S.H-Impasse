@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPhase0Started",false]) exitWith {};
 
 ITW_CLASH_ReconPhase0Started = true;
-ITW_CLASH_ReconPhase0Version = 3;
+ITW_CLASH_ReconPhase0Version = 5;
 ITW_CLASH_ReconPollInterval = 2;
 ITW_CLASH_ReconActiveGroups = createHashMap;
 
@@ -341,8 +341,10 @@ ITW_CLASH_Recon_fnc_EndMission = {
         private _group = _this param [0,grpNull];
         private _destination = _this param [1,[]];
         private _hq = _this param [3,grpNull];
-        if (isNull _hq) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+        if (isNull _hq && {
+            !isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
+        }) then {
+            _hq = [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup;
         };
 
         private _admission = [_group] call
@@ -365,8 +367,10 @@ ITW_CLASH_Recon_fnc_EndMission = {
         private _group = _this param [0,grpNull];
         private _destination = _this param [1,[]];
         private _hq = _this param [3,grpNull];
-        if (isNull _hq) then {
-            _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+        if (isNull _hq && {
+            !isNil "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup"
+        }) then {
+            _hq = [_group] call ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup;
         };
 
         private _admission = [_group] call
@@ -386,7 +390,7 @@ ITW_CLASH_Recon_fnc_EndMission = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true spawning=false requisition=false reveal=false",
+        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true commanderAware=true symmetricCommanderFallback=true spawning=false requisition=false reveal=false",
         ITW_CLASH_ReconPhase0Version
     ];
 };

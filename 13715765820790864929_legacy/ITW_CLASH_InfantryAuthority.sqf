@@ -1,7 +1,7 @@
 #include "defines.hpp"
 
 if (!isServer) exitWith {false};
-ITW_CLASH_InfantryAuthorityVersion = 2;
+ITW_CLASH_InfantryAuthorityVersion = 4;
 
 /*
     Persistent infantry authority doctrine
@@ -211,30 +211,24 @@ ITW_CLASH_fnc_ObserveLifecycle = {
 };
 
 ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints = {
-    if (isNull ITW_CLASH_HALHQ) exitWith {false};
+    private _candidates = +ITW_CLASH_ManagedGroups;
+    if (!isNil "ITW_CLASH_DualHALBLUFORGroups") then {
+        {_candidates pushBackUnique _x} forEach +ITW_CLASH_DualHALBLUFORGroups;
+    };
+    if (!isNil "ITW_CLASH_DualHALOPFORExtraGroups") then {
+        {_candidates pushBackUnique _x} forEach +ITW_CLASH_DualHALOPFORExtraGroups;
+    };
 
-    // Remove only the compatibility constraints this layer wrote on the previous
-    // pass. Anchors, GTFO and any native/manual NoAttack/NoRecon entries survive.
-    private _previousGarrisons = missionNamespace getVariable [
-        "ITW_CLASH_InfantryAuthorityGarrisons",
-        []
-    ];
-    private _noAttack = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoAttack",[]]);
-    private _noRecon = +(ITW_CLASH_HALHQ getVariable ["RydHQ_NoRecon",[]]);
-    _noAttack = _noAttack - _previousGarrisons;
-    _noRecon = _noRecon - _previousGarrisons;
-
+    private _currentBySide = createHashMap;
     private _garrisons = [];
     private _sofGarrisonsIgnored = [];
 
     {
         private _group = _x;
         if (isNull _group || {!(_group getVariable ["ITW_Garrison",false])}) then {continue};
+        if (((units _group) findIf {isPlayer _x}) >= 0) then {continue};
         if (_group getVariable ["ITW_CLASH_GTFO",false]) then {continue};
 
-        // SOF doctrine outranks a stale/broad Impasse garrison marker. SOF stays
-        // available to HAL for recon/direct action and can never become a static
-        // objective holder through this compatibility constraint.
         private _isSOF = !isNil "ITW_CLASH_SOF_fnc_IsSOF" && {
             [_group] call ITW_CLASH_SOF_fnc_IsSOF
         };
@@ -243,29 +237,73 @@ ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints = {
             continue;
         };
 
+        private _key = toUpperANSI str (side _group);
+        private _sideGarrisons = _currentBySide getOrDefault [_key,[]];
+        _sideGarrisons pushBackUnique _group;
+        _currentBySide set [_key,_sideGarrisons];
         _garrisons pushBackUnique _group;
-        _noAttack pushBackUnique _group;
-        _noRecon pushBackUnique _group;
-    } forEach +ITW_CLASH_ManagedGroups;
+    } forEach _candidates;
 
+    private _previousBySide = missionNamespace getVariable [
+        "ITW_CLASH_InfantryAuthorityGarrisonsBySide",
+        createHashMap
+    ];
+    if !(_previousBySide isEqualType createHashMap) then {
+        _previousBySide = createHashMap;
+    };
+
+    private _sides = [];
+    if (!isNil "ITW_PlayerSide") then {_sides pushBackUnique ITW_PlayerSide};
+    if (!isNil "ITW_EnemySide") then {_sides pushBackUnique ITW_EnemySide};
+
+    {
+        private _side = _x;
+        private _key = toUpperANSI str _side;
+        private _previous = _previousBySide getOrDefault [_key,[]];
+        private _current = _currentBySide getOrDefault [_key,[]];
+
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership") then {
+            [
+                _side,
+                ["NoAttack","NoRecon"],
+                _previous,
+                _current
+            ] call ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership;
+        };
+    } forEach _sides;
+
+    missionNamespace setVariable [
+        "ITW_CLASH_InfantryAuthorityGarrisonsBySide",
+        _currentBySide
+    ];
     missionNamespace setVariable [
         "ITW_CLASH_InfantryAuthorityGarrisons",
         +_garrisons
     ];
-    ITW_CLASH_HALHQ setVariable ["RydHQ_NoAttack",_noAttack];
-    ITW_CLASH_HALHQ setVariable ["RydHQ_NoRecon",_noRecon];
-    RydHQ_NoAttack = +_noAttack;
-    RydHQ_NoRecon = +_noRecon;
 
     private _signature = str [
-        _garrisons apply {[_x] call ITW_CLASH_fnc_GroupId},
-        _sofGarrisonsIgnored apply {[_x] call ITW_CLASH_fnc_GroupId}
+        _garrisons apply {
+            [
+                [_x] call ITW_CLASH_fnc_GroupId,
+                side _x
+            ]
+        },
+        _sofGarrisonsIgnored apply {
+            [
+                [_x] call ITW_CLASH_fnc_GroupId,
+                side _x
+            ]
+        }
     ];
     if (_signature != missionNamespace getVariable ["ITW_CLASH_InfantryRoleSignature",""]) then {
         ITW_CLASH_InfantryRoleSignature = _signature;
         ["roles",[
-            ["garrison-hal-defensive",_garrisons apply {[_x] call ITW_CLASH_fnc_GroupId}],
-            ["sof-garrison-ignored",_sofGarrisonsIgnored apply {[_x] call ITW_CLASH_fnc_GroupId}]
+            ["garrison-hal-defensive",_garrisons apply {
+                [[_x] call ITW_CLASH_fnc_GroupId,side _x]
+            }],
+            ["sof-garrison-ignored",_sofGarrisonsIgnored apply {
+                [[_x] call ITW_CLASH_fnc_GroupId,side _x]
+            }]
         ]] call ITW_CLASH_InfantryAuthority_fnc_Log;
     };
     true
@@ -278,7 +316,7 @@ ITW_CLASH_fnc_ApplyObjectiveDoctrine = {
 };
 
 diag_log format [
-    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true garrisonConstraintsSelfCleaning=true supportSpecialistsHAL=true transportHandoff=true impasseTacticalWritersSuppressed=true defendPhasePersistent=true",
+    "CLASH BOOT | infantry-authority-ready | version=%1 allFieldedInfantry=true subAll=false legacyAdmissionCap=false objectiveAffinityOnly=true garrisonsHAL=true garrisonConstraintsSelfCleaning=true garrisonConstraintsBothSides=true symmetricCommanderFallback=true supportSpecialistsHAL=true transportHandoff=true impasseTacticalWritersSuppressed=true defendPhasePersistent=true",
     ITW_CLASH_InfantryAuthorityVersion
 ];
 

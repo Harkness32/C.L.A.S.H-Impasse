@@ -4,13 +4,13 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_LogisticsGuardStarted",false]) exitWith {};
 
 ITW_CLASH_LogisticsGuardStarted = true;
-ITW_CLASH_LogisticsHandoffVersion = 2;
+ITW_CLASH_LogisticsHandoffVersion = 4;
 ITW_CLASH_WithdrawalArrivalRadius = 150;
 ITW_CLASH_WithdrawalWaypointRadius = 100;
 ITW_CLASH_PostTransportSettle = 30;
 
 diag_log format [
-    "CLASH BOOT | logistics-guard-ready | version=%1 egress=%2 waypoint=%3 settle=%4",
+    "CLASH BOOT | logistics-guard-ready | version=%1 egress=%2 waypoint=%3 settle=%4 symmetricTransportSettle=true reconstitutionDismountReconcile=true unassignLogThrottle=15",
     ITW_CLASH_LogisticsHandoffVersion,
     ITW_CLASH_WithdrawalArrivalRadius,
     ITW_CLASH_WithdrawalWaypointRadius,
@@ -53,18 +53,48 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                 (_transitUnits findIf {vehicle _x != _x}) < 0
             };
             private _assigned = assignedVehicles _grp;
-            if (_liveState in ["transport","walking"] && {
-                _transitOnFoot && {_assigned isNotEqualTo []}
-            }) then {
-                {unassignVehicle _x} forEach _transitUnits;
-                if (!isNil "ITW_CLASH_fnc_Log") then {
-                    ["reconstitution-transport-unassigned",[
-                        _entry#1,
-                        _entry#4,
-                        _liveState,
-                        count _transitUnits,
-                        count _assigned
-                    ]] call ITW_CLASH_fnc_Log;
+            if (_liveState in ["transport","walking"] && {_transitOnFoot}) then {
+                private _managedCargo = -1;
+                if (!isNil "ITW_ManagedVehs") then {
+                    _managedCargo = ITW_ManagedVehs findIf {
+                        count _x > VEHINFO_CARGO_GRPS && {
+                            _grp in (_x#VEHINFO_CARGO_GRPS)
+                        }
+                    };
+                };
+                if (_assigned isNotEqualTo [] || {_managedCargo >= 0}) then {
+                    private _beforeAssigned = count _assigned;
+                    private _reconciled = if (!isNil
+                        "ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership"
+                    ) then {
+                        [_grp] call
+                            ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership
+                    } else {
+                        {unassignVehicle _x} forEach _transitUnits;
+                        [count assignedVehicles _grp,0,true]
+                    };
+                    _reconciled params [
+                        "_afterAssigned","_clearedCargoLinks","_attempted"
+                    ];
+                    private _nextLog = _grp getVariable [
+                        "ITW_CLASH_ReconstitutionUnassignLogAt",0
+                    ];
+                    if (_attempted && {time >= _nextLog} && {
+                        !isNil "ITW_CLASH_fnc_Log"
+                    }) then {
+                        _grp setVariable [
+                            "ITW_CLASH_ReconstitutionUnassignLogAt",time + 15
+                        ];
+                        ["reconstitution-transport-unassigned",[
+                            _entry#1,
+                            _entry#4,
+                            _liveState,
+                            count _transitUnits,
+                            _beforeAssigned,
+                            _afterAssigned,
+                            _clearedCargoLinks
+                        ]] call ITW_CLASH_fnc_Log;
+                    };
                 };
             };
 
@@ -179,12 +209,20 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
     // on the same frame their transport finishes unloading. Watch for the
     // physical in-vehicle -> on-foot transition, then use C.L.A.S.H.'s existing
     // re-eligibility cooldown while Impasse finishes its own cargo bookkeeping.
-    if (!isNil "ITW_EnemySide") then {
+    private _supportedSides = [];
+    if (!isNil "ITW_PlayerSide") then {_supportedSides pushBackUnique ITW_PlayerSide};
+    if (!isNil "ITW_EnemySide") then {_supportedSides pushBackUnique ITW_EnemySide};
+    if (_supportedSides isNotEqualTo []) then {
         {
             private _grp = _x;
-            if (isNull _grp || {side _grp != ITW_EnemySide}) then {continue};
+            if (isNull _grp || {!(side _grp in _supportedSides)}) then {continue};
+            if (((units _grp) findIf {isPlayer _x}) >= 0) then {continue};
+            if (!isNil "ITW_CLASH_fnc_IsCommanderGroup" && {
+                [_grp] call ITW_CLASH_fnc_IsCommanderGroup
+            }) then {continue};
             if (_grp getVariable ["ITW_CLASH_ReconstitutionTransit",false]) then {continue};
             if (_grp getVariable ["ITW_CLASH_Managed",false]) then {continue};
+            if (_grp getVariable ["ITW_CLASH_DualHALManaged",false]) then {continue};
             if (_grp getVariable ["ITW_CLASH_Withdrawing",false]) then {continue};
 
             private _aliveUnits = (units _grp) select {alive _x};
@@ -206,7 +244,8 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                             str _grp,
                             VAR_GET_OBJ_IDX(_grp),
                             ITW_CLASH_PostTransportSettle,
-                            count _aliveUnits
+                            count _aliveUnits,
+                            side _grp
                         ]] call ITW_CLASH_fnc_Log;
                     };
 
@@ -220,7 +259,8 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                             ["transport-handoff-ready",[
                                 str _grp,
                                 VAR_GET_OBJ_IDX(_grp),
-                                count ((units _grp) select {alive _x})
+                                count ((units _grp) select {alive _x}),
+                                side _grp
                             ]] call ITW_CLASH_fnc_Log;
                         };
                     };

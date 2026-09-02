@@ -5,8 +5,26 @@ ITW_CLASH_PlayerTaskClientStarted = true;
 ITW_CLASH_PlayerTaskClientReady = false;
 ITW_CLASH_ClientArtilleryJobs = createHashMap;
 
+ITW_CLASH_PlayerTaskClient_fnc_ArtilleryMarkerName = {
+    params ["_jobId"];
+    "ITW_CLASH_ARTY_RADIUS_" + ((_jobId splitString "-") joinString "_")
+};
+
+ITW_CLASH_PlayerTaskClient_fnc_DeleteArtilleryTargetArea = {
+    params ["_entry"];
+    if !(_entry isEqualType createHashMap) exitWith {false};
+    private _markerName = _entry getOrDefault ["targetAreaMarker",""];
+    if (_markerName isNotEqualTo "") then {
+        deleteMarkerLocal _markerName;
+    };
+    true
+};
+
 ITW_CLASH_PlayerTaskClient_fnc_AssignArtilleryJob = {
-    params ["_jobId","_vehicle","_allowedMagazines"];
+    params [
+        "_jobId","_vehicle","_allowedMagazines",
+        ["_targetPosition",[]],["_targetRadius",150]
+    ];
     if (
         isRemoteExecuted
         && {remoteExecutedOwner != 2}
@@ -16,13 +34,39 @@ ITW_CLASH_PlayerTaskClient_fnc_AssignArtilleryJob = {
         || {_jobId isEqualTo ""}
         || {isNull _vehicle}
         || {!(_allowedMagazines isEqualType [])}
+        || {!(_targetPosition isEqualType [])}
+        || {!(_targetRadius isEqualType 0)}
     ) exitWith {false};
+
+    private _existing = ITW_CLASH_ClientArtilleryJobs getOrDefault [
+        _jobId,createHashMap
+    ];
+    if (count _existing > 0) then {
+        [_existing] call
+            ITW_CLASH_PlayerTaskClient_fnc_DeleteArtilleryTargetArea;
+    };
+
+    private _markerName = "";
+    if (count _targetPosition >= 2 && {_targetRadius > 0}) then {
+        _markerName = [_jobId] call
+            ITW_CLASH_PlayerTaskClient_fnc_ArtilleryMarkerName;
+        deleteMarkerLocal _markerName;
+        private _marker = createMarkerLocal [_markerName,_targetPosition];
+        _marker setMarkerShapeLocal "ELLIPSE";
+        _marker setMarkerBrushLocal "Border";
+        _marker setMarkerColorLocal "ColorRed";
+        _marker setMarkerSizeLocal [_targetRadius,_targetRadius];
+        _marker setMarkerAlphaLocal 0.9;
+    };
 
     ITW_CLASH_ClientArtilleryJobs set [
         _jobId,
         createHashMapFromArray [
             ["vehicle",_vehicle],
             ["allowedMagazines",+_allowedMagazines],
+            ["targetPosition",+_targetPosition],
+            ["targetRadius",_targetRadius],
+            ["targetAreaMarker",_markerName],
             ["ehId",-1]
         ]
     ];
@@ -45,6 +89,7 @@ ITW_CLASH_PlayerTaskClient_fnc_ClearArtilleryJob = {
     if (!isNull _vehicle && {_ehId >= 0}) then {
         _vehicle removeEventHandler ["Fired",_ehId];
     };
+    [_entry] call ITW_CLASH_PlayerTaskClient_fnc_DeleteArtilleryTargetArea;
     if (!isNull _vehicle && {
         (_vehicle getVariable ["ITW_CLASH_ClientArtilleryJobId",""])
         == _jobId
@@ -148,6 +193,8 @@ ITW_CLASH_PlayerTaskClient_fnc_InstallArtilleryEH = {
             ];
             private _vehicle = _entry getOrDefault ["vehicle",objNull];
             if (isNull _vehicle) then {
+                [_entry] call
+                    ITW_CLASH_PlayerTaskClient_fnc_DeleteArtilleryTargetArea;
                 ITW_CLASH_ClientArtilleryJobs deleteAt _jobId;
             } else {
                 if (local _vehicle) then {
@@ -169,7 +216,7 @@ ITW_CLASH_PlayerTaskClient_fnc_InstallArtilleryEH = {
 
 if (isServer) exitWith {
     ITW_CLASH_PlayerTaskClientReady = true;
-    diag_log "CLASH PLAYER TASK CLIENT | ready | hosted artillery impact observer | server HAL toggle bridge retained";
+    diag_log "CLASH PLAYER TASK CLIENT | ready | hosted artillery impact observer | red artillery target-area marker | server HAL toggle bridge retained";
     true
 };
 
@@ -207,7 +254,7 @@ if (isServer) exitWith {
     };
 
     ITW_CLASH_PlayerTaskClientReady = true;
-    diag_log "CLASH PLAYER TASK CLIENT | ready | native HAL toggle bridged | artillery impact observer ready";
+    diag_log "CLASH PLAYER TASK CLIENT | ready | native HAL toggle bridged | artillery impact observer ready | red target-area marker ready";
 };
 
 true

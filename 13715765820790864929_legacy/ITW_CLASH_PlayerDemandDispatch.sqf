@@ -696,6 +696,9 @@ ITW_CLASH_PlayerDemand_fnc_OnAmmoDemand = {
         private _targetGroup = [_target] call ITW_CLASH_PlayerDemand_fnc_TargetGroup;
         if (isNull _targetGroup || {_targetGroup in _seenGroups}) then {continue};
         _seenGroups pushBack _targetGroup;
+        if ((_targetGroup getVariable [
+            "ITW_CLASH_NativeAmmoExecution",""
+        ]) isNotEqualTo "") then {continue};
         private _key = "LOGISTICS_AMMO|" + str _targetGroup;
         private _existing = [_key] call ITW_CLASH_PlayerDemand_fnc_FindBySourceKey;
         if (_existing isEqualTo "" && {
@@ -828,7 +831,7 @@ ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand = {
         private _willing = _subscriptions isNotEqualTo [];
         private _occupied = [_group] call ITW_CLASH_PlayerTasks_fnc_HasActiveJob;
         private _dispatchable = _willing && {!_occupied} && {
-            !_group getVariable ["ITW_CLASH_AuthorityHold",false]
+            !(_group getVariable ["ITW_CLASH_AuthorityHold",false])
         };
         private _nativeExecutable = _willing && {!_occupied} && {
             [_group] call ITW_CLASH_PlayerTasks_fnc_HasNativeExecutableSubscription
@@ -914,7 +917,7 @@ ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand = {
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep ITW_CLASH_PlayerDemandPoll;
-        if (!missionNamespace getVariable ["ITW_CLASH_HALReady",false]) then {continue};
+        if (!(missionNamespace getVariable ["ITW_CLASH_HALReady",false])) then {continue};
 
         {
             private _demandId = _x;

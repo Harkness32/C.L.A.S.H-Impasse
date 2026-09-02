@@ -131,3 +131,33 @@ def test_native_deny_cancels_artillery_job() -> None:
     assert "ITW_CLASH_PlayerArtillery_fnc_CancelGroupJobBase" in text
     assert '"ITW_CLASH_PlayerArtilleryJobCancel",true,true' in text
     assert '[_jobId,"CANCELED","player-denied-task"]' in text
+
+
+def test_artillery_visual_radius_and_impact_acceptance_are_separate_contracts() -> None:
+    text = source("ITW_CLASH_PlayerTaskRequestArtillery.sqf")
+
+    assert '"ITW_CLASH_PlayerArtilleryAimRadius",150' in text
+    assert '"ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius",250' in text
+    assert "ITW_CLASH_PlayerArtilleryMissionRadius = ITW_CLASH_PlayerArtilleryAimRadius" in text
+    assert '["targetRadius",ITW_CLASH_PlayerArtilleryAimRadius]' in text
+    assert '"impactAcceptanceRadius"' in text
+    assert "_impactDistance <= _acceptanceRadius" in text
+    assert '["aimRadius",_aimRadius]' in text
+    assert '["acceptanceRadius",_acceptanceRadius]' in text
+    assert "insufficient-impacts-in-acceptance-area" in text
+
+
+def test_artillery_clients_draw_and_clean_red_target_radius() -> None:
+    server = source("ITW_CLASH_PlayerTaskRequestArtillery.sqf")
+    client = source("ITW_CLASH_PlayerTaskClient.sqf")
+
+    assert "_targetPosition,_targetRadius" in server
+    assert '"ITW_CLASH_PlayerTaskClient_fnc_AssignArtilleryJob",_x' in server
+    assert 'createMarkerLocal [_markerName,_targetPosition]' in client
+    assert 'setMarkerShapeLocal "ELLIPSE"' in client
+    assert 'setMarkerBrushLocal "Border"' in client
+    assert 'setMarkerColorLocal "ColorRed"' in client
+    assert 'setMarkerSizeLocal [_targetRadius,_targetRadius]' in client
+    assert 'setMarkerAlphaLocal 0.9' in client
+    assert "deleteMarkerLocal _markerName" in client
+    assert "ITW_CLASH_PlayerTaskClient_fnc_ClearArtilleryJob" in client

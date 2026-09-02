@@ -23,6 +23,9 @@ def test_hal_transport_audio_is_passive_and_restores_native_boarding_cues():
     assert '["bEnd",_carrier] remoteExec ["ITW_AllyRadioMsg",_nearbyPlayers];' in audio
     assert 'localize "STR_ITW_ALLY_WeAreBoarding"' in audio
     assert 'localize "STR_ITW_ALLY_WeAreIn"' in audio
+    assert 'remoteExecCall ["systemChat",_pilot]' in audio
+    assert 'isPlayer _pilot' in audio
+    assert 'remoteExec ["sideChat",_pilot]' not in audio
     assert 'assignedVehicle _x == _carrier || {vehicle _x == _carrier}' in audio
     assert '_state == "HAL_ASSIGNED"' in audio
     assert '_state == "EMBARKED"' in audio

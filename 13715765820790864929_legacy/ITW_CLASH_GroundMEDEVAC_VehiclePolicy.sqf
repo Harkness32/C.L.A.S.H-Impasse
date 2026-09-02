@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GroundMEDEVAC_VehiclePolicyStarted",false]) exitWith {};
 ITW_CLASH_GroundMEDEVAC_VehiclePolicyStarted = true;
-ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 1;
+ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 2;
 
 /*
     Ground MEDEVAC vehicle policy
@@ -180,17 +180,29 @@ ITW_CLASH_GroundMEDEVAC_fnc_RankVehicleVariants = {
 };
 
 ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle = {
-    params ["_seatCount","_spawnInfo"];
-    if (_spawnInfo isEqualTo [] || {
-        isNil "ITW_AtkReconstitutionTransportContext" || {
-            ITW_AtkReconstitutionTransportContext isEqualTo []
-        }
-    }) exitWith {[]};
+    params ["_seatCount","_spawnInfo",["_recoverySide",sideUnknown]];
+    if (_spawnInfo isEqualTo []) exitWith {[]};
+    if (_recoverySide == sideUnknown) then {
+        _recoverySide = missionNamespace getVariable ["ITW_EnemySide",east];
+    };
 
-    ITW_AtkReconstitutionTransportContext params [
+    private _context = [];
+    if (!isNil "ITW_AtkReconstitutionTransportContexts") then {
+        _context = ITW_AtkReconstitutionTransportContexts getOrDefault [
+            toUpperANSI str _recoverySide,[]
+        ];
+    };
+    if (_context isEqualTo []) then {
+        _context = missionNamespace getVariable [
+            "ITW_AtkReconstitutionTransportContext",[]
+        ];
+    };
+    if (_context isEqualTo []) exitWith {[]};
+
+    _context params [
         "_transport","_dualVeh","_crewTypes","_unitTypes","_side"
     ];
-    if (!isNil "ITW_EnemySide" && {_side != ITW_EnemySide}) exitWith {[]};
+    if (_side != _recoverySide) exitWith {[]};
 
     // The active faction's live Impasse pool remains authoritative. Ground
     // recovery may exceed the concurrent vehicle count cap, but never tickets.
@@ -204,7 +216,7 @@ ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle = {
     private _ranked = [_seatCount,_candidates] call ITW_CLASH_GroundMEDEVAC_fnc_RankVehicleVariants;
     if (_ranked isEqualTo []) exitWith {
         ["vehicle-policy-fallback",[_seatCount,"no-ranked-variant"]] call ITW_CLASH_GroundMEDEVAC_fnc_Log;
-        [_seatCount,_spawnInfo] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle_Base
+        [_seatCount,_spawnInfo,_recoverySide] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle_Base
     };
 
     _spawnInfo params ["_spawnPos","_baseIndex","_spawnSource"];
@@ -288,7 +300,7 @@ ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle = {
 
     if (_result isEqualTo []) exitWith {
         ["vehicle-policy-fallback",[_seatCount,"ranked-spawns-failed"]] call ITW_CLASH_GroundMEDEVAC_fnc_Log;
-        [_seatCount,_spawnInfo] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle_Base
+        [_seatCount,_spawnInfo,_recoverySide] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle_Base
     };
 
     ["vehicle-selected",_selectedMeta] call ITW_CLASH_GroundMEDEVAC_fnc_Log;
@@ -300,7 +312,7 @@ ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle = {
 };
 
 diag_log format [
-    "CLASH BOOT | ground-medevac-vehicle-policy-ready | version=%1 routing=capability-score lightMax=%2 mediumMax=%3 factionPool=true",
+    "CLASH BOOT | ground-medevac-vehicle-policy-ready | version=%1 routing=capability-score lightMax=%2 mediumMax=%3 factionPool=true symmetricSides=true",
     ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion,
     ITW_CLASH_GroundMEDEVAC_LightMaxSurvivors,
     ITW_CLASH_GroundMEDEVAC_MediumMaxSurvivors
