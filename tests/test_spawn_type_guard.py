@@ -31,18 +31,18 @@ def test_unit_creation_rejects_bad_pool_before_global_create_semaphore():
 def test_vehicle_spawn_validates_class_and_never_inherits_blank_cfg_crew():
     attack = text("ITW_Attack.sqf")
     spawn = attack.split("ITW_AtkSpawnVeh = {", 1)[1].split("ITW_AtkVehRemoveMagazines = {", 1)[0]
-    assert '"rejected-empty-vehicle-type"' in spawn
-    assert '"rejected-missing-vehicle-class"' in spawn
+    assert "rejected-empty-vehicle-type" in spawn
+    assert "rejected-missing-vehicle-class" in spawn
     assert "if !(isClass _vehCfg)" in spawn
     assert '_vehCrew isNotEqualTo ""' in spawn
-    assert '"rejected-no-valid-crew-pool"' in spawn
+    assert "rejected-no-valid-crew-pool" in spawn
 
 
 def test_vehicle_and_crew_spawn_is_atomic():
     attack = text("ITW_Attack.sqf")
     spawn = attack.split("ITW_AtkSpawnVeh = {", 1)[1].split("ITW_AtkVehRemoveMagazines = {", 1)[0]
     assert "private _crewFailed = false;" in spawn
-    assert '"vehicle-crew-transaction-aborted"' in spawn
+    assert "vehicle-crew-transaction-aborted" in spawn
     assert "_expectedCrewCount > 0" in spawn
     assert "{deleteVehicle _x} forEach units _crewGrp;" in spawn
     assert "deleteVehicle _veh" in spawn

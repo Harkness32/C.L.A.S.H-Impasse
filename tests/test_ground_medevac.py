@@ -48,9 +48,11 @@ def test_ground_medevac_doctrine_gates_are_explicit():
         assert token in source
 
 
-def test_ground_medevac_requires_local_land_corridor_and_roadside_pickup():
+def test_ground_medevac_requires_forward_fob_land_spawn_and_roadside_pickup():
     source = ground_text()
-    assert '(_source find "support-corridor-land") != 0' in source
+    assert "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn" in source
+    assert 'surfaceIsWater _spawnPos' in source
+    assert 'ITW_OBJ_V_SPAWN' in source
     assert "nearRoads ITW_CLASH_GroundMEDEVAC_RoadSearchRadius" in source
     assert "BIS_fnc_nearestPosition" in source
     assert "ITW_CLASH_GroundMEDEVAC_RallyOffset" in source
