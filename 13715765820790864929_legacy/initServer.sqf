@@ -227,7 +227,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                 private _wpType = _wp#1;
                 private _wpDistance = (_snapshot#13)#1;
                 private _touching = (_snapshot#11)#1;
-                private _vehSpeed = abs ((_snapshot#7)#1);
+                private _vehSpeed = abs ((_snapshot#6)#1);
                 if (
                     _phase == "DELIVERY"
                     && {_wpType == "MOVE"}
