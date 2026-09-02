@@ -12,7 +12,7 @@ def mission(name: str) -> str:
 def test_logistics_rechecks_native_hal_after_checkbook_fulfills_capacity():
     text = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_HALLogisticsVersion = 3;" in text
+    assert "ITW_CLASH_HALLogisticsVersion = 4;" in text
     assert "ITW_CLASH_HALLogistics_fnc_KickNative" in text
     assert '"native-recheck"' in text
     assert 'case "AMMO": {[_hq] call HAL_SuppAmmo};' in text
@@ -77,3 +77,17 @@ def test_open_player_ammo_demand_uses_real_native_execution_not_supported_bookke
     assert "native-ai-execution-started" in intercept
     assert "native-ai-execution-ended" in intercept
     assert 'setVariable ["ITW_CLASH_NativeAmmoExecution",nil]' in intercept
+
+
+
+def test_hal_native_ace_logistics_workarounds_are_enabled_without_magic_heal():
+    text = mission("ITW_CLASH_HALLogistics.sqf")
+
+    assert 'missionNamespace setVariable ["RydxHQ_MagicRepair",true,true];' in text
+    assert 'missionNamespace setVariable ["RydxHQ_MagicRearm",true,true];' in text
+    assert 'missionNamespace setVariable ["RydxHQ_MagicRefuel",true,true];' in text
+    assert 'missionNamespace setVariable ["RydxHQ_MagicHeal",false,true];' in text
+    assert "aceMagicRepair=true" in text
+    assert "aceMagicRearm=true" in text
+    assert "aceMagicRefuel=true" in text
+    assert "aceMagicHeal=false" in text
