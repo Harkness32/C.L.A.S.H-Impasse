@@ -91,3 +91,9 @@ def test_impasse_aircraft_driver_is_restored_as_crew_group_leader():
             [_driver,"CARELESS"] call ITW_FncSetUnitBehavior;
             _crewGrp selectLeader _driver;'''
     assert needle in text
+
+
+def test_impasse_aircraft_driver_leadership_is_restored_in_both_air_paths():
+    text = mission("ITW_Attack.sqf")
+    assert text.count("_crewGrp selectLeader _driver;") == 2
+    assert text.count('"aircraft-driver-leader-restored"') == 2

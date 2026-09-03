@@ -2010,6 +2010,8 @@ ITW_AtkSwitchToAirVeh = {
         private _driver = driver _veh;
         _driver setRank "LIEUTENANT";
         [_driver,"CARELESS"] call ITW_FncSetUnitBehavior;
+        _crewGrp selectLeader _driver;
+        diag_log format ["CLASH SPAWN | aircraft-driver-leader-restored | vehicle=%1 group=%2 leaderIsDriver=%3",typeOf _veh,str _crewGrp,(leader _crewGrp) isEqualTo _driver];
         { _x addCuratorEditableObjects [[_veh], false]; } forEach allCurators;
                
         // update the vehicle info
@@ -2217,6 +2219,8 @@ ITW_AtkSpawnVeh = {
         if (!isNull _driver) then {
             _driver setRank "LIEUTENANT";
             [_driver,"CARELESS"] call ITW_FncSetUnitBehavior;
+            _crewGrp selectLeader _driver;
+            diag_log format ["CLASH SPAWN | aircraft-driver-leader-restored | vehicle=%1 group=%2 leaderIsDriver=%3",typeOf _veh,str _crewGrp,(leader _crewGrp) isEqualTo _driver];
         };
         _crewGrp allowFleeing 0;
         _crewGrp deleteGroupWhenEmpty true;
