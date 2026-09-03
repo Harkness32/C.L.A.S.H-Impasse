@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 8;
+ITW_CLASH_HALLogisticsVersion = 9;
 ITW_CLASH_HALLogisticsReady = false;
 
 // NR6 HAL ships explicit ACE logistics workarounds but leaves them disabled by
@@ -313,12 +313,37 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
             _ammoBoxes = _ammoBoxes select {!isNull _x && {alive _x}};
             _hq setVariable ["RydHQ_AmmoBoxes",_ammoBoxes];
 
+            // Busy/committed support is unavailable for a second task, but it
+            // is not missing inventory. Provision only while at least one HAL
+            // ammo demand remains outside ASupportedG/Boxed.
+            private _blocked = (
+                +(_hq getVariable ["RydHQ_ASupportedG",[]])
+                + (_hq getVariable ["RydHQ_Boxed",[]])
+            );
+            private _openDemand = false;
+            {
+                private _targetGroup = if (_x isKindOf "Man") then {
+                    group _x
+                } else {
+                    private _commander = effectiveCommander _x;
+                    if (isNull _commander) then {grpNull} else {group _commander}
+                };
+                if (
+                    isNull _targetGroup
+                    || {!(_targetGroup in _blocked)}
+                ) exitWith {_openDemand = true};
+            } forEach _demand;
+
+            if (!_openDemand) exitWith {true};
+
             if (_groundAmmo isEqualTo []) then {
-                [_hq,"LOGISTICS_AMMO","GROUND"] call ITW_CLASH_HALLogistics_fnc_Request;
+                [_hq,"LOGISTICS_AMMO","GROUND"] call
+                    ITW_CLASH_HALLogistics_fnc_Request;
             };
 
-            // Build the package first so a freshly purchased ammo helicopter can
-            // leave the generation node already carrying HAL's own AmmoBox.
+            // Build a package only for an actually open demand. The box is a
+            // reservation, not a conserved stock item, but speculative package
+            // purchases while all recipients are already committed are waste.
             if (_ammoBoxes isEqualTo []) then {
                 [_hq,"LOGISTICS_PACKAGE_AMMO","AIR"] call
                     ITW_CLASH_HALLogistics_fnc_Request;
@@ -326,10 +351,9 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
                 _ammoBoxes = _ammoBoxes select {!isNull _x && {alive _x}};
             };
 
-            // Provision capacity here, but do not physically bind a box to an
-            // aircraft yet. SuppAmmo has not selected the recipient/exact box.
-            // Exact pre-sling now happens at the annotated GoAmmoSupp dispatch
-            // seam, after player-demand arbitration and before native execution.
+            // Provision air capacity here, but do not physically bind a box to
+            // an aircraft yet. Exact pre-sling happens only after HAL selects the
+            // provider, target and exact reserved box.
             if (_airAmmo isEqualTo []) then {
                 [_hq,"LOGISTICS_AMMO","AIR"] call
                     ITW_CLASH_HALLogistics_fnc_Request;

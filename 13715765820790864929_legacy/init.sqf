@@ -149,6 +149,16 @@ if (isServer) then {
                 diag_log "CLASH BOOT | ammo-dispatch-missing-or-prereq-failed | native ammo dispatch retained";
             };
 
+            private _thunderRunLoaded = false;
+            if (_ammoDispatchLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_ThunderRun.sqf"
+            }) then {
+                _thunderRunLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_ThunderRun.sqf";
+            } else {
+                diag_log "CLASH BOOT | thunder-run-missing-or-prereq-failed | native ammo air delivery retained";
+            };
+
             private _playerGarageLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
                 _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";

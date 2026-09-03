@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 8;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 9;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -232,20 +232,67 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
 
         // Existing PlayerTaskSupport owns the already-capable human provider
         // fast path. Demand-first takeover is for HAL-selected AI providers.
+        private _playerTakeover = false;
         if (!_providerHuman && {!isNull _hq} && {!isNull _target}) then {
-            if ([_hq,_target,_supportedWritten] call
-                ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo) exitWith {
-                // TakeAmmo already reverses only the ASupportedG write that this
-                // dispatch provenance owns. Return the still-intact HAL package
-                // reservation without clearing the new player-demand owner.
-                [_hq,_target,_box,_dispatchContext,"player-demand-takeover",false] call
-                    ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch;
-                false
-            };
+            _playerTakeover = [_hq,_target,_supportedWritten] call
+                ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo;
+        };
+        if (_playerTakeover) exitWith {
+            // TakeAmmo already reverses only the ASupportedG write that this
+            // dispatch provenance owns. Return the still-intact HAL package
+            // reservation without clearing the new player-demand owner.
+            [_hq,_target,_box,_dispatchContext,"player-demand-takeover",false] call
+                ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch;
+            false
         };
 
+        // Only managed AI service aircraft enter C.L.A.S.H. air doctrine.
+        // Unmanaged HAL aircraft remain fail-open to native behavior.
+        private _thunderEligible = false;
+        if (
+            !_providerHuman
+            && {_drop}
+            && {!isNull _box}
+            && {!isNull _vehicle}
+            && {_vehicle isKindOf "Helicopter"}
+            && {missionNamespace getVariable ["ITW_CLASH_ThunderRunReady",false]}
+        ) then {
+            _thunderEligible = [
+                _vehicle,_target,_box,_hq,_providerHuman
+            ] call ITW_CLASH_ThunderRun_fnc_IsEligible;
+        };
+
+        private _airDecision = createHashMap;
+        private _airDecisionState = "NORMAL";
+        if (_thunderEligible) then {
+            _airDecision = [_vehicle,_target,_hq] call
+                ITW_CLASH_ThunderRun_fnc_Classify;
+            _airDecisionState = _airDecision getOrDefault ["state","NORMAL"];
+        };
+
+        if (_airDecisionState == "AIR_DENIED") exitWith {
+            [_hq,_target,_box,_dispatchContext,"air-denied"] call
+                ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch;
+            ["air-denied",[
+                _dispatchContext getOrDefault ["source","UNKNOWN"],
+                typeOf _vehicle,
+                _airDecision getOrDefault ["reason","unknown"],
+                _airDecision getOrDefault ["aaDistance",1e12],
+                _airDecision getOrDefault ["airDistance",1e12]
+            ]] call ITW_CLASH_ThunderRun_fnc_Log;
+            false
+        };
+
+        private _thunderRunStarted = false;
+        if (_airDecisionState in ["CONTESTED","HOT"]) then {
+            _thunderRunStarted = [
+                _this,_dispatchContext,_airDecision
+            ] call ITW_CLASH_ThunderRun_fnc_Start;
+        };
+        if (_thunderRunStarted) exitWith {true};
+
         // Normal AI air logistics keeps HAL's native sling execution, but the
-        // physical attachment is now delayed until the exact provider, target,
+        // physical attachment is delayed until the exact provider, target,
         // and exact reserved box are known.
         if (
             !_providerHuman
@@ -318,7 +365,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
 
     ITW_CLASH_PlayerDemandNativeInterceptorsReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true nativeAmmoExecutionMarker=true callScopedNativeExclusion=true sameCycleRaceGuard=true preDispatchReconcile=true explicitDispatchProvenance=true exactBoxSling=true specialistExecutionOwnership=true nativeFailOpen=true",
+        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true nativeAmmoExecutionMarker=true callScopedNativeExclusion=true sameCycleRaceGuard=true preDispatchReconcile=true explicitDispatchProvenance=true exactBoxSling=true thunderRunRouter=true specialistExecutionOwnership=true nativeFailOpen=true",
         ITW_CLASH_PlayerDemandNativeInterceptorsVersion
     ];
 

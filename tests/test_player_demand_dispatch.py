@@ -421,7 +421,7 @@ def test_native_ammo_execution_preserves_scheduled_context():
         "ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase", 1
     )[0]
 
-    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 8;" in text
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 9;" in text
     assert "ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase" in wrapper
     assert "isNil {" not in wrapper
     assert 'if (isNil "_nativeResult") exitWith {};' in wrapper

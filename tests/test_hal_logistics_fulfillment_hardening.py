@@ -12,7 +12,7 @@ def mission(name: str) -> str:
 def test_logistics_rechecks_native_hal_after_checkbook_fulfills_capacity():
     text = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_HALLogisticsVersion = 8;" in text
+    assert "ITW_CLASH_HALLogisticsVersion = 9;" in text
     assert "ITW_CLASH_HALLogistics_fnc_KickNative" in text
     assert '"native-recheck"' in text
     assert 'case "AMMO": {[_hq] call HAL_SuppAmmo};' in text
@@ -77,7 +77,7 @@ def test_open_player_ammo_demand_uses_real_native_execution_not_supported_bookke
     )[0]
     assert "ITW_CLASH_NativeAmmoExecution" in publish
 
-    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 8;" in intercept
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 9;" in intercept
     assert "native-ai-execution-started" in intercept
     assert "native-ai-execution-ended" in intercept
     assert 'setVariable ["ITW_CLASH_NativeAmmoExecution",nil]' in intercept
@@ -163,3 +163,44 @@ def test_ai_air_ammo_provider_is_preloaded_only_after_exact_dispatch_is_known():
     assert '_vehicle isKindOf "Helicopter"' in intercept
     assert "_preloadedSling = (getSlingLoad _unit) isEqualTo _ammoBox;" in go
     assert "RydxHQ_SlingDrop or {_preloadedSling}" in go
+
+
+def test_thunder_run_uses_hal_intelligence_native_drop_and_existing_lifecycle():
+    thunder = mission("ITW_CLASH_ThunderRun.sqf")
+    intercept = mission("ITW_CLASH_PlayerDemandNativeInterceptors.sqf")
+    logistics = mission("ITW_CLASH_HALLogistics.sqf")
+
+    assert "ITW_CLASH_ThunderRunVersion = 1;" in thunder
+    assert '"THUNDER RUN INITIATED"' in thunder
+    assert "RYD_AmmoDrop" in thunder
+    assert "B_Parachute_02_F" not in thunder
+    assert "RYD_PointToSecDst" in thunder
+    assert '"RydHQ_AAthreat"' in thunder
+    assert '"RydHQ_Airthreat"' in thunder
+    assert '"RydHQ_KnEnemiesG"' in thunder
+    assert '"ITW_CLASH_ThunderRunActive"' in thunder
+    assert "ITW_CLASH_Service_fnc_Retire" in thunder
+    assert "_box allowDamage false" in thunder
+    assert '"POPUP"' in thunder
+    assert '"RELEASE"' in thunder
+    assert '"EGRESS"' in thunder
+    assert '"RTB"' in thunder
+    assert "forceWeaponFire" in thunder
+    assert "shotcm" in thunder
+
+    wrapper = intercept.split("HAL_GoAmmoSupp = {", 1)[1].split(
+        "ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase", 1
+    )[0]
+    assert wrapper.index("ITW_CLASH_ThunderRun_fnc_Classify") < wrapper.index(
+        "ITW_CLASH_HALLogistics_fnc_PrimeExactAmmoSling"
+    )
+    assert 'if (_airDecisionState == "AIR_DENIED") exitWith {' in wrapper
+    assert "ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch" in wrapper
+    assert "_providerHuman" in wrapper
+    assert "thunderRunRouter=true" in intercept
+
+    ammo = logistics.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
+    assert "private _openDemand = false;" in ammo
+    assert '"RydHQ_ASupportedG"' in ammo
+    assert '"RydHQ_Boxed"' in ammo
+    assert "if (!_openDemand) exitWith {true};" in ammo
