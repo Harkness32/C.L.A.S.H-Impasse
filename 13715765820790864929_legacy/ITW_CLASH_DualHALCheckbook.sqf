@@ -115,6 +115,59 @@ ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter = {
     _supported
 };
 
+ITW_CLASH_DualHAL_fnc_MarkVehicleCrew = {
+    params ["_group","_veh",["_source","vehicle"]];
+    if (isNull _group) exitWith {false};
+    _group setVariable ["ITW_CLASH_VehicleCrewGroup",true];
+    _group setVariable ["ITW_CLASH_CrewVehicle",_veh];
+    _group setVariable ["ITW_CLASH_CrewSource",_source];
+    {
+        _x setVariable ["ITW_CLASH_VehicleCrewUnit",true];
+    } forEach units _group;
+    true
+};
+
+ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine = {
+    params ["_group",["_enabled",true],["_source","transport"]];
+    if (isNull _group) exitWith {false};
+
+    private _suffixes = ["CargoOnly","NoAttack","NoRecon","NoDef"];
+    if (_enabled) then {
+        _group setVariable ["ITW_CLASH_HALTransportOnly",true];
+        _group setVariable ["ITW_CLASH_HALTransportDoctrineSource",_source];
+
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,_suffixes,true] call
+                ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        } else {
+            private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+            if (!isNull _hq) then {
+                {
+                    private _name = "RydHQ_" + _x;
+                    private _arr = +(_hq getVariable [_name,[]]);
+                    _arr pushBackUnique _group;
+                    _hq setVariable [_name,_arr];
+                } forEach _suffixes;
+            };
+        };
+
+        private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+        if (!isNull _hq) then {
+            private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
+            _cargo pushBackUnique _group;
+            _hq setVariable ["RydHQ_CargoG",_cargo];
+        };
+    } else {
+        _group setVariable ["ITW_CLASH_HALTransportOnly",nil];
+        _group setVariable ["ITW_CLASH_HALTransportDoctrineSource",nil];
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,_suffixes,false] call
+                ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        };
+    };
+    true
+};
+
 ITW_CLASH_DualHAL_fnc_RegisterGroup = {
     params ["_group",["_reason","fielded"]];
     if (isNull _group || {[_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup}) exitWith {false};
@@ -663,28 +716,24 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     _veh setVariable ["ITW_CLASH_DualHALManaged",true];
 
     private _role = _vehInfo#VEHINFO_ROLE;
-    if (_role in [ITW_VEH_ROLE_TRANSPORT,ITW_VEH_ROLE_DUAL]) then {
+    private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
+    private _transportDeployment = _role == ITW_VEH_ROLE_TRANSPORT || {
+        _role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}
+    };
+
+    [_crewGroup,_veh,"impasse-field"] call ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+
+    if (_transportDeployment) then {
+        [_crewGroup,true,"impasse-field"] call
+            ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+    };
+
+    if (_veh isKindOf "Air") then {
         private _hq = [_crewGroup] call ITW_CLASH_fnc_GetCommanderForGroup;
         if (!isNull _hq) then {
-            private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
-            _cargo pushBackUnique _crewGroup;
-            _hq setVariable ["RydHQ_CargoG",_cargo];
-
-            private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-            _cargoOnly pushBackUnique _crewGroup;
-            _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
-
-            {
-                private _arr = +(_hq getVariable [_x,[]]);
-                _arr pushBackUnique _crewGroup;
-                _hq setVariable [_x,_arr];
-            } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
-
-            if (_veh isKindOf "Air") then {
-                private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
-                _air pushBackUnique _crewGroup;
-                _hq setVariable ["RydHQ_AirG",_air];
-            };
+            private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
+            _air pushBackUnique _crewGroup;
+            _hq setVariable ["RydHQ_AirG",_air];
         };
     };
 
@@ -736,6 +785,18 @@ ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {
         VAR_SET_OBJ_IDX(_crewGroup,-1);
         [_crewGroup,"managed-vehicle-migration"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
         _veh setVariable ["ITW_CLASH_DualHALManaged",true];
+        [_crewGroup,_veh,"managed-vehicle-migration"] call
+            ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+
+        private _role = _vehInfo#VEHINFO_ROLE;
+        private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
+        if (
+            _role == ITW_VEH_ROLE_TRANSPORT
+            || {_role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}}
+        ) then {
+            [_crewGroup,true,"managed-vehicle-migration"] call
+                ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+        };
 
         private _vehDef = _veh getVariable ["ITW_VehDef",[]];
         [_veh,_vehDef,"managed-vehicle-migration"] call ITW_CLASH_DualHAL_fnc_TrackAsset;
@@ -852,19 +913,10 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
 
     [_crewGroup,"checkbook-transport"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
 
-    private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
-    _cargo pushBackUnique _crewGroup;
-    _hq setVariable ["RydHQ_CargoG",_cargo];
-
-    private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-    _cargoOnly pushBackUnique _crewGroup;
-    _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
-
-    {
-        private _arr = +(_hq getVariable [_x,[]]);
-        _arr pushBackUnique _crewGroup;
-        _hq setVariable [_x,_arr];
-    } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+    [_crewGroup,_veh,"checkbook-transport"] call
+        ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    [_crewGroup,true,"checkbook-transport"] call
+        ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
 
     if (_veh isKindOf "Air") then {
         private _air = +(_hq getVariable ["RydHQ_AirG",[]]);

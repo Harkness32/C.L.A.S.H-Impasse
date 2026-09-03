@@ -76,6 +76,16 @@ if (isServer) then {
                 diag_log "CLASH BOOT | commander-parity-missing-or-prereq-failed | Commander B parity extensions unavailable";
             };
 
+            private _crewRemnantCleanupLoaded = false;
+            if (_commanderParityLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_CrewRemnantCleanup.sqf"
+            }) then {
+                _crewRemnantCleanupLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_CrewRemnantCleanup.sqf";
+            } else {
+                diag_log "CLASH BOOT | crew-remnant-cleanup-missing-or-prereq-failed | orphan vehicle crews remain native";
+            };
+
             private _checkbookAPIReady = false;
             if (_dualHALHardened isEqualTo true && {fileExists "ITW_CLASH_CheckbookAPI.sqf"}) then {
                 _checkbookAPIReady = call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf";
@@ -170,6 +180,7 @@ if (isServer) then {
             if (
                 _dualHALHardened isEqualTo true
                 && {_commanderParityLoaded isEqualTo true}
+                && {_crewRemnantCleanupLoaded isEqualTo true}
                 && {_checkbookAPIReady isEqualTo true}
                 && {_forceGenerationReady isEqualTo true}
                 && {_halLogisticsLoaded isEqualTo true}
@@ -179,7 +190,7 @@ if (isServer) then {
                 && {_playerArtilleryLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7 commanderParity=%8",
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7 commanderParity=%8 crewRemnantCleanup=%9",
                     _forceGenerationReady,
                     _halLogisticsLoaded,
                     _playerTransportLoaded,
@@ -187,12 +198,13 @@ if (isServer) then {
                     _playerGarageLoaded,
                     _playerArtilleryLoaded,
                     missionNamespace getVariable ["ITW_ParamCLASHObserver",-1],
-                    _commanderParityLoaded
+                    _commanderParityLoaded,
+                    _crewRemnantCleanupLoaded
                 ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 commanderParity=%9 runtime candidate blocked",
-                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded,_commanderParityLoaded
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 commanderParity=%9 crewRemnantCleanup=%10 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded,_commanderParityLoaded,_crewRemnantCleanupLoaded
                 ];
             };
         } else {

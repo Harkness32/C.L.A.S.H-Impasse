@@ -350,15 +350,21 @@ ITW_CLASH_Generation_fnc_RegisterAsset = {
 
     if !([_group,"checkbook-" + toLowerANSI _capability] call ITW_CLASH_DualHAL_fnc_RegisterGroup) exitWith {false};
 
-    private _noAttack = +(_hq getVariable ["RydHQ_NoAttack",[]]);
-    _noAttack pushBackUnique _group;
-    _hq setVariable ["RydHQ_NoAttack",_noAttack];
-    private _noRecon = +(_hq getVariable ["RydHQ_NoRecon",[]]);
-    _noRecon pushBackUnique _group;
-    _hq setVariable ["RydHQ_NoRecon",_noRecon];
-    private _noDef = +(_hq getVariable ["RydHQ_NoDef",[]]);
-    _noDef pushBackUnique _group;
-    _hq setVariable ["RydHQ_NoDef",_noDef];
+    if (!isNil "ITW_CLASH_DualHAL_fnc_MarkVehicleCrew") then {
+        [_group,_veh,"checkbook-" + toLowerANSI _capability] call
+            ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    };
+
+    if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+        [_group,["NoAttack","NoRecon","NoDef"],true] call
+            ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+    } else {
+        {
+            private _arr = +(_hq getVariable [_x,[]]);
+            _arr pushBackUnique _group;
+            _hq setVariable [_x,_arr];
+        } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+    };
 
     switch (_capability) do {
         case "ARTILLERY": {

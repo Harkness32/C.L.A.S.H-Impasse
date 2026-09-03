@@ -63,6 +63,13 @@ ITW_CLASH_Service_fnc_MarkTrackerReleased = {
 ITW_CLASH_Service_fnc_RemoveHALOwnership = {
     params ["_group"];
     if (isNull _group) exitWith {false};
+    if (
+        _group getVariable ["ITW_CLASH_HALTransportOnly",false]
+        && {!isNil "ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine"}
+    ) then {
+        [_group,false,"service-storage"] call
+            ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+    };
     private _hq = if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
         [_group] call ITW_CLASH_fnc_GetCommanderForGroup
     } else {grpNull};

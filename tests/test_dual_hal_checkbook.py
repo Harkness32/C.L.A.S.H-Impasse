@@ -256,3 +256,69 @@ def test_one_zero_hardening_still_has_single_runtime_scheduler():
 
     assert 'execVM "ITW_CLASH_OneZeroHardening.sqf"' not in init
     assert 'execVM "ITW_CLASH_OneZeroHardening.sqf"' in bridge
+
+
+def test_transport_doctrine_is_durable_across_hal_sitrep_and_dual_is_deployment_aware():
+    dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
+    parity = mission("ITW_CLASH_CommanderParity.sqf")
+
+    assert "ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine" in dual
+    assert '["CargoOnly","NoAttack","NoRecon","NoDef"]' in dual
+    assert "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership" in dual
+    assert 'missionNamespace setVariable [_globalName,_global];' in parity
+
+    stage = dual.split("ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {", 1)[1].split(
+        "ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {", 1
+    )[0]
+    assert "VEHINFO_IS_DUAL_AS_TRANSPORT" in stage
+    assert "_transportDeployment" in stage
+    assert "_role == ITW_VEH_ROLE_TRANSPORT" in stage
+    assert "_role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}" in stage
+
+    migrate = dual.split("ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {", 1)[1].split(
+        "ITW_CLASH_Checkbook_fnc_GetZonesOwned = {", 1
+    )[0]
+    assert "ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine" in migrate
+    assert "VEHINFO_IS_DUAL_AS_TRANSPORT" in migrate
+
+    register = dual.split("ITW_CLASH_Checkbook_fnc_RegisterTransport = {", 1)[1].split(
+        "ITW_CLASH_Checkbook_fnc_RequestTransport = {", 1
+    )[0]
+    assert "ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine" in register
+    assert "ITW_CLASH_DualHAL_fnc_MarkVehicleCrew" in register
+
+
+def test_generated_support_constraints_are_projected_into_hal_globals():
+    force = mission("ITW_CLASH_ForceGeneration.sqf")
+    register = force.split("ITW_CLASH_Generation_fnc_RegisterAsset = {", 1)[1].split(
+        "ITW_CLASH_Generation_fnc_Provider = {", 1
+    )[0]
+
+    assert '["NoAttack","NoRecon","NoDef"]' in register
+    assert "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership" in register
+    assert "ITW_CLASH_DualHAL_fnc_MarkVehicleCrew" in register
+
+
+def test_orphan_vehicle_crew_is_quarantined_then_cleaned_without_touching_infantry_remnants():
+    cleanup = mission("ITW_CLASH_CrewRemnantCleanup.sqf")
+    init = mission("init.sqf")
+
+    assert "ITW_CLASH_CrewRemnantCleanupVersion = 1;" in cleanup
+    assert '"ITW_CLASH_VehicleCrewGroup",false' in cleanup
+    assert '"ITW_CLASH_VehicleCrewUnit",false' in cleanup
+    assert "ITW_CLASH_CrewRemnantMaxSurvivors" in cleanup
+    assert "ITW_CLASH_CrewRemnantMaxSurvivors,2" not in cleanup
+    assert '"ITW_CLASH_CrewRemnantMaxSurvivors",2' in cleanup
+    assert "isNull _veh || {!alive _veh} || {!canMove _veh}" in cleanup
+    assert 'setVariable ["Unable",true,true]' in cleanup
+    assert 'setVariable ["ITW_CLASH_ExcludeHAL",true]' in cleanup
+    assert "ITW_CLASH_Service_fnc_RemoveHALOwnership" in cleanup
+    assert "ITW_CLASH_CrewRemnantPlayerRadius" in cleanup
+    assert "{deleteVehicle _x} forEach _survivors;" in cleanup
+
+    # Generic one-man infantry is intentionally not deleted; cleanup requires
+    # explicit vehicle-crew provenance.
+    assert 'getVariable ["ITW_CLASH_VehicleCrewGroup",false]' in cleanup
+
+    assert '"ITW_CLASH_CrewRemnantCleanup.sqf"' in init
+    assert "crewRemnantCleanup=" in init
