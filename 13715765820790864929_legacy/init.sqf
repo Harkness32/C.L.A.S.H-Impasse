@@ -219,6 +219,16 @@ if (isServer) then {
         ];
     };
 
+    if (fileExists "ITW_CLASH_HALParadrop.sqf") then {
+        private _halParadropLoaded = call compile preprocessFileLineNumbers
+            "ITW_CLASH_HALParadrop.sqf";
+        if !(_halParadropLoaded isEqualTo true) then {
+            diag_log "CLASH BOOT | hal-paradrop-load-failed | native HAL landing retained";
+        };
+    } else {
+        diag_log "CLASH BOOT | hal-paradrop-missing | native HAL landing retained";
+    };
+
     // Temporary hosted-test comms are intentionally observer-only and load
     // synchronously so recovery/recon state transitions can be mirrored without
     // wrapping any C.L.A.S.H. or HAL authority function.
