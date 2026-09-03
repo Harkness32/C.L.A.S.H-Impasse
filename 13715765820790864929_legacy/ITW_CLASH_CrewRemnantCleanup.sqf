@@ -9,7 +9,7 @@ ITW_CLASH_CrewRemnantPlayerRadius = missionNamespace getVariable [
     "ITW_CLASH_CrewRemnantPlayerRadius",300
 ];
 ITW_CLASH_CrewRemnantMaxSurvivors = missionNamespace getVariable [
-    "ITW_CLASH_CrewRemnantMaxSurvivors",2
+    "ITW_CLASH_CrewRemnantMaxSurvivors",4
 ];
 
 ITW_CLASH_CrewRemnant_fnc_Log = {

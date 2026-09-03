@@ -308,7 +308,7 @@ def test_orphan_vehicle_crew_is_quarantined_then_cleaned_without_touching_infant
     assert '"ITW_CLASH_VehicleCrewUnit",false' in cleanup
     assert "ITW_CLASH_CrewRemnantMaxSurvivors" in cleanup
     assert "ITW_CLASH_CrewRemnantMaxSurvivors,2" not in cleanup
-    assert '"ITW_CLASH_CrewRemnantMaxSurvivors",2' in cleanup
+    assert '"ITW_CLASH_CrewRemnantMaxSurvivors",4' in cleanup
     assert "isNull _veh || {!alive _veh} || {!canMove _veh}" in cleanup
     assert 'setVariable ["Unable",true,true]' in cleanup
     assert 'setVariable ["ITW_CLASH_ExcludeHAL",true]' in cleanup
