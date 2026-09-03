@@ -12,7 +12,7 @@ def mission(name: str) -> str:
 def test_logistics_rechecks_native_hal_after_checkbook_fulfills_capacity():
     text = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_HALLogisticsVersion = 9;" in text
+    assert "ITW_CLASH_HALLogisticsVersion = 10;" in text
     assert "ITW_CLASH_HALLogistics_fnc_KickNative" in text
     assert '"native-recheck"' in text
     assert 'case "AMMO": {[_hq] call HAL_SuppAmmo};' in text
@@ -77,7 +77,7 @@ def test_open_player_ammo_demand_uses_real_native_execution_not_supported_bookke
     )[0]
     assert "ITW_CLASH_NativeAmmoExecution" in publish
 
-    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 9;" in intercept
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 10;" in intercept
     assert "native-ai-execution-started" in intercept
     assert "native-ai-execution-ended" in intercept
     assert 'setVariable ["ITW_CLASH_NativeAmmoExecution",nil]' in intercept
@@ -206,4 +206,28 @@ def test_thunder_run_uses_hal_intelligence_native_drop_and_existing_lifecycle():
     assert "private _openDemand = false;" in ammo
     assert '"RydHQ_ASupportedG"' in ammo
     assert '"RydHQ_Boxed"' in ammo
-    assert "if (!_openDemand) exitWith {true};" in ammo
+    assert "if (_openDemandCount <= 0) exitWith {true};" in ammo
+    assert "ITW_CLASH_ThunderRun_fnc_CommittedCapacity" in ammo
+    assert "_effectiveAirCapacity < _openDemandCount" in ammo
+
+    assert "ITW_CLASH_ThunderRunVersion = 2;" in thunder
+    assert "ITW_CLASH_ThunderRun_fnc_Dispose" in thunder
+    assert "ITW_CLASH_ThunderRun_fnc_Handback" in thunder
+    assert '"DoNotPlan"' in thunder
+    assert '"LEADER PLANNED"' in thunder
+    assert "ITW_CLASH_ThunderRunStagedBoxes" in thunder
+    assert '"reaper-crate"' in thunder
+    assert "ITW_CLASH_ThunderRunIPRadius" in thunder
+    assert '"ip-crossed"' in thunder
+    assert "ITW_CLASH_ThunderRun_fnc_FireCountermeasure" in thunder
+    assert "ITW_CLASH_ThunderRunCountermeasureFireOverride" in thunder
+    assert "ITW_CLASH_ThunderRunCalibrationSamples" in thunder
+    assert '"release-calibration"' in thunder
+    assert '"CLASH_ThunderRun_Inherited"' in thunder
+    assert "ITW_CLASH_ThunderRun_fnc_ResolveAlternateDZ" in thunder
+    assert "ITW_CLASH_ThunderRunAlternateDZResolver" in thunder
+    assert "ITW_CLASH_ThunderRun_fnc_ClearASupported" not in thunder.split(
+        '["crate-release"', 1
+    )[0].split('ITW_CLASH_ThunderRun_fnc_Run = {', 1)[1].split(
+        '["crate-release"', 1
+    )[0]

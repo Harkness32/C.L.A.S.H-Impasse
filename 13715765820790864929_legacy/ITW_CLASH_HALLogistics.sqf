@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 9;
+ITW_CLASH_HALLogisticsVersion = 10;
 ITW_CLASH_HALLogisticsReady = false;
 
 // NR6 HAL ships explicit ACE logistics workarounds but leaves them disabled by
@@ -320,7 +320,7 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
                 +(_hq getVariable ["RydHQ_ASupportedG",[]])
                 + (_hq getVariable ["RydHQ_Boxed",[]])
             );
-            private _openDemand = false;
+            private _openDemandCount = 0;
             {
                 private _targetGroup = if (_x isKindOf "Man") then {
                     group _x
@@ -331,10 +331,12 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
                 if (
                     isNull _targetGroup
                     || {!(_targetGroup in _blocked)}
-                ) exitWith {_openDemand = true};
+                ) then {
+                    _openDemandCount = _openDemandCount + 1
+                };
             } forEach _demand;
 
-            if (!_openDemand) exitWith {true};
+            if (_openDemandCount <= 0) exitWith {true};
 
             if (_groundAmmo isEqualTo []) then {
                 [_hq,"LOGISTICS_AMMO","GROUND"] call
@@ -354,10 +356,28 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
             // Provision air capacity here, but do not physically bind a box to
             // an aircraft yet. Exact pre-sling happens only after HAL selects the
             // provider, target and exact reserved box.
-            if (_airAmmo isEqualTo []) then {
+            private _availableAir = count _airAmmo;
+            private _committedSoon = if (
+                missionNamespace getVariable ["ITW_CLASH_ThunderRunReady",false]
+                && {!isNil "ITW_CLASH_ThunderRun_fnc_CommittedCapacity"}
+            ) then {
+                [_hq,missionNamespace getVariable [
+                    "ITW_CLASH_ThunderRunDemandPatience",420
+                ]] call ITW_CLASH_ThunderRun_fnc_CommittedCapacity
+            } else {
+                0
+            };
+            private _effectiveAirCapacity = _availableAir + _committedSoon;
+
+            if (_effectiveAirCapacity < _openDemandCount) then {
                 [_hq,"LOGISTICS_AMMO","AIR"] call
                     ITW_CLASH_HALLogistics_fnc_Request;
             };
+            ["ammo-air-capacity",[
+                _hq getVariable ["RydHQ_CodeSign","?"],
+                _openDemandCount,_availableAir,_committedSoon,
+                _effectiveAirCapacity
+            ]] call ITW_CLASH_HALLogistics_fnc_Log;
             true
         };
         case "FUEL": {

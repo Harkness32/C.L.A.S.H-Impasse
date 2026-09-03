@@ -421,7 +421,23 @@ def test_native_ammo_execution_preserves_scheduled_context():
         "ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase", 1
     )[0]
 
-    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 9;" in text
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 10;" in text
     assert "ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase" in wrapper
     assert "isNil {" not in wrapper
     assert 'if (isNil "_nativeResult") exitWith {};' in wrapper
+
+
+def test_thunder_run_air_denial_uses_shared_disposition_not_bare_reconcile():
+    text = (MISSION / "ITW_CLASH_PlayerDemandNativeInterceptors.sqf").read_text(
+        encoding="utf-8"
+    )
+    wrapper = text.split("HAL_GoAmmoSupp = {", 1)[1].split(
+        "ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase", 1
+    )[0]
+    denied = wrapper.split('if (_airDecisionState == "AIR_DENIED") exitWith {', 1)[1].split(
+        "private _thunderRunStarted", 1
+    )[0]
+
+    assert "ITW_CLASH_ThunderRun_fnc_NewState" in denied
+    assert "ITW_CLASH_ThunderRun_fnc_Dispose" in denied
+    assert "ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch" not in denied

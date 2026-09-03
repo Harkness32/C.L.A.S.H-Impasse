@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 9;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 10;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -271,8 +271,10 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
         };
 
         if (_airDecisionState == "AIR_DENIED") exitWith {
-            [_hq,_target,_box,_dispatchContext,"air-denied"] call
-                ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch;
+            private _denyState = [
+                _this,_dispatchContext,_airDecision
+            ] call ITW_CLASH_ThunderRun_fnc_NewState;
+            [_denyState,"AIR_DENIED"] call ITW_CLASH_ThunderRun_fnc_Dispose;
             ["air-denied",[
                 _dispatchContext getOrDefault ["source","UNKNOWN"],
                 typeOf _vehicle,
@@ -365,7 +367,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
 
     ITW_CLASH_PlayerDemandNativeInterceptorsReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true nativeAmmoExecutionMarker=true callScopedNativeExclusion=true sameCycleRaceGuard=true preDispatchReconcile=true explicitDispatchProvenance=true exactBoxSling=true thunderRunRouter=true specialistExecutionOwnership=true nativeFailOpen=true",
+        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true nativeAmmoExecutionMarker=true callScopedNativeExclusion=true sameCycleRaceGuard=true preDispatchReconcile=true explicitDispatchProvenance=true exactBoxSling=true thunderRunRouter=true thunderRunSingleDisposition=true specialistExecutionOwnership=true nativeFailOpen=true",
         ITW_CLASH_PlayerDemandNativeInterceptorsVersion
     ];
 
