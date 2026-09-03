@@ -19,9 +19,9 @@ def test_service_crews_are_exempt_without_replacing_native_impasse_cap_math():
 def test_service_lifecycle_virtualizes_only_after_observed_hal_return():
     service = mission("ITW_CLASH_ServiceLifecycle.sqf")
     assert "ITW_CLASH_ServicePassiveReturnMonitor" in service
-    assert '"hal-return-observed"' in service
+    assert '"hal-return-zone-entered"' in service
     assert '[_i,"hal-returned-home"] call ITW_CLASH_Service_fnc_Retire;' in service
-    assert "abs speed _veh < 2" in service
+    assert "abs speed _veh < 2" not in service
     assert "passiveHALReturn=true" in service
     assert "clashOrdersRTB=false" in service
     assert "halOwnsLiveDisposition=true" in service
@@ -33,7 +33,7 @@ def test_service_lifecycle_virtualizes_only_after_observed_hal_return():
 
 def test_virtual_reactivation_is_capacity_safe_and_free_for_paid_entitlement():
     stability = mission("ITW_CLASH_ServiceStability.sqf")
-    assert "ITW_CLASH_ServiceStabilityVersion = 4;" in stability
+    assert "ITW_CLASH_ServiceStabilityVersion = 5;" in stability
     assert 'set ["state","AVAILABLE"]' in stability
     assert "(_vehDef#ITW_VEH_COUNT) >= (_vehDef#ITW_VEH_MAX)" in stability
     assert "ITW_VEH_COUNT_INCR(_vehDef);" in stability
@@ -47,7 +47,7 @@ def test_virtual_reactivation_is_capacity_safe_and_free_for_paid_entitlement():
 def test_latest_air_quarantine_patch_is_unwound():
     stability = mission("ITW_CLASH_ServiceStability.sqf")
     authority = mission("ITW_CLASH_ServiceAuthority.sqf")
-    assert "ITW_CLASH_ServiceAuthorityVersion = 2;" in authority
+    assert "ITW_CLASH_ServiceAuthorityVersion = 3;" in authority
     assert "impasse-handoff-immediate" not in authority
     assert "immediateTransportQuarantine=true" not in authority
     quarantine = stability.split(
@@ -64,8 +64,35 @@ def test_latest_air_quarantine_patch_is_unwound():
 
 def test_virtual_transport_reactivation_chooses_best_capacity_fit_not_first_pool_entry():
     stability = mission("ITW_CLASH_ServiceStability.sqf")
-    assert "ITW_CLASH_ServiceStabilityVersion = 4;" in stability
+    assert "ITW_CLASH_ServiceStabilityVersion = 5;" in stability
     assert "ITW_CLASH_ServiceCapacity_fnc_ScoreClass" in stability
     assert '"TRANSPORT_POOL"' in stability
     assert "private _eligibleIndices = [];" in stability
     assert "transportBestFit=true" in stability
+
+
+def test_service_storage_is_any_friendly_base_area_not_exact_home_point():
+    service = mission("ITW_CLASH_ServiceLifecycle.sqf")
+    assert "ITW_CLASH_ServiceLifecycleVersion = 3;" in service
+    assert "ITW_CLASH_Service_fnc_StorageZone" in service
+    assert "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices" in service
+    assert "nearest-friendly-base-zone" in service
+    assert '"ITW_CLASH_ServiceRTBLandRadius",150' in service
+    assert '"ITW_CLASH_ServiceRTBAirRadius",300' in service
+    assert '"ITW_CLASH_ServiceIdleGrace",10' in service
+    assert "anyFriendlyBaseStorage=true" in service
+    assert "areaTrigger=true" in service
+    assert "landingNotRequired=true" in service
+
+
+def test_logistics_capabilities_are_virtualized_and_reused():
+    service = mission("ITW_CLASH_ServiceLifecycle.sqf")
+    stability = mission("ITW_CLASH_ServiceStability.sqf")
+    authority = mission("ITW_CLASH_ServiceAuthority.sqf")
+    wrappers = service.split("ITW_CLASH_Service_fnc_InstallProviderWrappers = {",1)[1].split(
+        "call ITW_CLASH_Service_fnc_InstallProviderWrappers;",1
+    )[0]
+    for capability in ["LOGISTICS_AMMO","LOGISTICS_FUEL","LOGISTICS_REPAIR"]:
+        assert f'"{capability}"' in wrappers
+    assert "logisticsVirtualization=true" in authority
+    assert "logisticsReuse=true" in stability
