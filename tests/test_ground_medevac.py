@@ -200,3 +200,10 @@ def test_ground_medevac_claims_both_arbitration_gates_before_spawn_can_yield():
     assert dispatch.index(air_gate) < dispatch.index(spawn)
     assert '_group setVariable ["ITW_CLASH_GroundMEDEVAC_State",nil];' in dispatch
     assert '_group setVariable ["ITW_CLASH_CASEVAC_State",nil];' in dispatch
+
+
+def test_ground_medevac_uses_shared_modular_capacity_estimator():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 3;" in policy
+    assert "ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats" in policy
+    assert "sharedCapacityEstimator=true" in policy
