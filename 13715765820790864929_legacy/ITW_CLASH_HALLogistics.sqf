@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 6;
+ITW_CLASH_HALLogisticsVersion = 7;
 ITW_CLASH_HALLogisticsReady = false;
 
 // NR6 HAL ships explicit ACE logistics workarounds but leaves them disabled by
@@ -117,6 +117,68 @@ ITW_CLASH_HALLogistics_fnc_UsableGroups = {
     }
 };
 
+ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling = {
+    params ["_hq",["_preferred",objNull]];
+    if (isNull _hq) exitWith {false};
+
+    private _boxes = +(_hq getVariable ["RydHQ_AmmoBoxes",[]]);
+    _boxes = _boxes select {
+        !isNull _x
+        && {alive _x}
+        && {isNull (_x getVariable ["ITW_CLASH_PreloadedSlingCarrier",objNull])}
+    };
+    if (_boxes isEqualTo []) exitWith {false};
+
+    private _groups = +(_hq getVariable ["RydHQ_AmmoDrop",[]]);
+    private _vehicles = [];
+    {
+        private _veh = [_x] call ITW_CLASH_HALLogistics_fnc_ProviderVehicle;
+        if (
+            !isNull _veh
+            && {_veh isKindOf "Helicopter"}
+            && {alive _veh}
+            && {canMove _veh}
+            && {isNull getSlingLoad _veh}
+            && {!(_x getVariable ["Busy" + str _x,false])}
+            && {!(_x getVariable ["Unable",false])}
+        ) then {
+            _vehicles pushBackUnique _veh;
+        };
+    } forEach _groups;
+
+    if (!isNull _preferred && {
+        _preferred isKindOf "Helicopter"
+        && {alive _preferred}
+        && {canMove _preferred}
+        && {isNull getSlingLoad _preferred}
+    }) then {
+        _vehicles = [_preferred] + (_vehicles - [_preferred]);
+    };
+    if (_vehicles isEqualTo []) exitWith {false};
+
+    private _paired = false;
+    {
+        private _veh = _x;
+        private _boxIndex = _boxes findIf {_veh canSlingLoad _x};
+        if (_boxIndex < 0) then {continue};
+        private _box = _boxes#_boxIndex;
+
+        if (_veh setSlingLoad _box) then {
+            _veh setVariable ["ITW_CLASH_PreloadedAmmoBox",_box,true];
+            _box setVariable ["ITW_CLASH_PreloadedSlingCarrier",_veh,true];
+            _box setVariable ["ITW_CLASH_LogisticsPackageState","RESERVED",true];
+            _box setVariable ["ITW_CLASH_LogisticsPackageReason","preloaded-ai-sling",true];
+            ["ammo-sling-preloaded",[
+                _hq getVariable ["RydHQ_CodeSign","?"],
+                typeOf _veh,typeOf _box,getPosATL _veh
+            ]] call ITW_CLASH_HALLogistics_fnc_Log;
+            _paired = true;
+            break;
+        };
+    } forEach _vehicles;
+    _paired
+};
+
 ITW_CLASH_HALLogistics_fnc_Request = {
     params ["_hq","_capability","_mode"];
     if (isNull _hq || {isNil "ITW_CLASH_fnc_RequestCapability"}) exitWith {createHashMap};
@@ -221,13 +283,30 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
             if (_groundAmmo isEqualTo []) then {
                 [_hq,"LOGISTICS_AMMO","GROUND"] call ITW_CLASH_HALLogistics_fnc_Request;
             };
-            if (_airAmmo isEqualTo []) then {
-                [_hq,"LOGISTICS_AMMO","AIR"] call ITW_CLASH_HALLogistics_fnc_Request;
-            };
+
+            // Build the package first so a freshly purchased ammo helicopter can
+            // leave the generation node already carrying HAL's own AmmoBox.
             if (_ammoBoxes isEqualTo []) then {
                 [_hq,"LOGISTICS_PACKAGE_AMMO","AIR"] call
                     ITW_CLASH_HALLogistics_fnc_Request;
+                _ammoBoxes = +(_hq getVariable ["RydHQ_AmmoBoxes",[]]);
+                _ammoBoxes = _ammoBoxes select {!isNull _x && {alive _x}};
             };
+
+            private _airReply = createHashMap;
+            if (_airAmmo isEqualTo []) then {
+                _airReply = [_hq,"LOGISTICS_AMMO","AIR"] call
+                    ITW_CLASH_HALLogistics_fnc_Request;
+            };
+            private _preferredAir = if (
+                _airReply isEqualType createHashMap
+                && {(_airReply getOrDefault ["status",""]) == "APPROVED"}
+            ) then {
+                _airReply getOrDefault ["asset",objNull]
+            } else {
+                objNull
+            };
+            [_hq,_preferredAir] call ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling;
             true
         };
         case "FUEL": {
@@ -302,7 +381,7 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
 
     ITW_CLASH_HALLogisticsReady = true;
     diag_log format [
-        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true nativeEligibilityParity=true postProvisionRecheck=true zeroProviderBootstrap=true physicalServiceProviderFallback=true declaredCapabilityAdmission=true aceConditionalMagic=true aceMagicHeal=false",
+        "CLASH BOOT | hal-logistics-ready | version=%1 nativeDemand=true groundAmmo=true ammoHelo=true physicalAmmoPackage=true preloadedAmmoSling=true groundFuel=true groundRepair=true halRecipientAndRouteAuthority=true nativeNilReturnSafe=true nativeEligibilityParity=true postProvisionRecheck=true zeroProviderBootstrap=true physicalServiceProviderFallback=true declaredCapabilityAdmission=true aceConditionalMagic=true aceMagicHeal=false",
         ITW_CLASH_HALLogisticsVersion
     ];
 };

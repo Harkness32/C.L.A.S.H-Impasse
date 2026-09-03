@@ -12,7 +12,7 @@ def mission(name: str) -> str:
 def test_logistics_rechecks_native_hal_after_checkbook_fulfills_capacity():
     text = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_HALLogisticsVersion = 6;" in text
+    assert "ITW_CLASH_HALLogisticsVersion = 7;" in text
     assert "ITW_CLASH_HALLogistics_fnc_KickNative" in text
     assert '"native-recheck"' in text
     assert 'case "AMMO": {[_hq] call HAL_SuppAmmo};' in text
@@ -134,3 +134,28 @@ def test_fuel_and_repair_provider_dispatch_no_longer_require_direct_group_assign
     assert "assignedvehicle (leader _x)" not in repair
     assert fuel.count("[_x] call _providerVehicle") >= 5
     assert repair.count("[_x] call _providerVehicle") >= 5
+
+
+def test_ai_air_ammo_provider_is_preloaded_with_hal_ammo_box_before_dispatch():
+    logistics = mission("ITW_CLASH_HALLogistics.sqf")
+    root = Path(__file__).resolve().parents[1]
+    go = (root / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "GoAmmoSupp.sqf").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling" in logistics
+    assert "setSlingLoad _box" in logistics
+    assert "getSlingLoad _veh" in logistics
+    assert '"ITW_CLASH_PreloadedAmmoBox"' in logistics
+    assert '"ITW_CLASH_PreloadedSlingCarrier"' in logistics
+    assert "preloadedAmmoSling=true" in logistics
+
+    ammo_block = logistics.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
+    assert ammo_block.index('"LOGISTICS_PACKAGE_AMMO","AIR"') < ammo_block.index('"LOGISTICS_AMMO","AIR"')
+    assert '[_hq,_preferredAir] call ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling;' in ammo_block
+
+    assert "_preloadedSling = (getSlingLoad _unit) isEqualTo _ammoBox;" in go
+    assert "RydxHQ_SlingDrop or {_preloadedSling}" in go
+    assert "if not (_preloadedSling) then" in go
+    assert '"UNHOOK"' in go
+    assert '"HOOK"' in go
