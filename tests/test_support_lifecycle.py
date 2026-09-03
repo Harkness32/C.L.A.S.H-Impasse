@@ -33,7 +33,7 @@ def test_service_lifecycle_virtualizes_only_after_observed_hal_return():
 
 def test_virtual_reactivation_is_capacity_safe_and_free_for_paid_entitlement():
     stability = mission("ITW_CLASH_ServiceStability.sqf")
-    assert "ITW_CLASH_ServiceStabilityVersion = 3;" in stability
+    assert "ITW_CLASH_ServiceStabilityVersion = 4;" in stability
     assert 'set ["state","AVAILABLE"]' in stability
     assert "(_vehDef#ITW_VEH_COUNT) >= (_vehDef#ITW_VEH_MAX)" in stability
     assert "ITW_VEH_COUNT_INCR(_vehDef);" in stability
@@ -60,3 +60,12 @@ def test_latest_air_quarantine_patch_is_unwound():
     ]:
         assert tactical_array not in quarantine
     assert 'scriptName "ITW_CLASH_ServiceQuarantineWatch"' not in stability
+
+
+def test_virtual_transport_reactivation_chooses_best_capacity_fit_not_first_pool_entry():
+    stability = mission("ITW_CLASH_ServiceStability.sqf")
+    assert "ITW_CLASH_ServiceStabilityVersion = 4;" in stability
+    assert "ITW_CLASH_ServiceCapacity_fnc_ScoreClass" in stability
+    assert '"TRANSPORT_POOL"' in stability
+    assert "private _eligibleIndices = [];" in stability
+    assert "transportBestFit=true" in stability
