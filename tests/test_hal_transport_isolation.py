@@ -10,7 +10,7 @@ def mission(name: str) -> str:
 
 def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
     text = mission("initServer.sqf")
-    assert "ITW_CLASH_SCargoAirDiagVersion = 10;" in text
+    assert "ITW_CLASH_SCargoAirDiagVersion = 11;" in text
     assert "groupRearmTest=true" in text
     assert '"POST-EMBARK-MOVE-STALLED"' in text
     assert '"carrierInAirG"' in text
@@ -20,9 +20,15 @@ def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
     assert '"tempLZ"' in text
     assert '"nearHelipadCount"' in text
     assert '"nearHelipadDistance"' in text
+    assert '"waypointCount"' in text
+    assert '"leaderIsPilot"' in text
 
     assert '_carrierGroup setCurrentWaypoint [_carrierGroup,_idx];' in text
-    assert '"GROUP-WAYPOINT-REARMED"' in text
+    assert '"GROUP-WAYPOINT-REARM-ISSUED"' in text
+    assert '"GROUP-WAYPOINT-REARM-OBSERVED"' in text
+    assert '_wpHandle setWaypointPosition [_samePos,0];' in text
+    assert '"GROUP-WAYPOINT-POSITION-REWRITE-ISSUED"' in text
+    assert '"GROUP-WAYPOINT-POSITION-REWRITE-OBSERVED"' in text
 
     for forbidden in [
         'land "NONE"',
@@ -71,3 +77,6 @@ def test_combat_diagnostics_resolve_hq_from_observed_group():
     group_fn = text[text.index("ITW_CLASH_Diag_fnc_Group = {"):
                     text.index("ITW_CLASH_Diag_fnc_HQSnapshot = {")]
     assert 'private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;' in group_fn
+    assert 'params ["_otherUnit",["_observerGroup",grpNull]];' in text
+    assert 'private _hq = [_observerGroup] call ITW_CLASH_Diag_fnc_HQ;' in text
+    assert '[_otherUnit,_group] call ITW_CLASH_Diag_fnc_HALContactKnowledge' in text

@@ -74,9 +74,9 @@ ITW_CLASH_Diag_fnc_GroupIds = {
 };
 
 ITW_CLASH_Diag_fnc_HALContactKnowledge = {
-    params ["_otherUnit"];
+    params ["_otherUnit",["_observerGroup",grpNull]];
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_observerGroup] call ITW_CLASH_Diag_fnc_HQ;
     if (isNull _hq || {isNull _otherUnit}) exitWith {
         [["valid",false]]
     };
@@ -335,7 +335,7 @@ ITW_CLASH_Diag_fnc_ContactSide = {
             ]
         },
         [_unit,_otherUnit] call ITW_CLASH_Diag_fnc_Unit,
-        [_otherUnit] call ITW_CLASH_Diag_fnc_HALContactKnowledge,
+        [_otherUnit,_group] call ITW_CLASH_Diag_fnc_HALContactKnowledge,
         [
             [_hq,"RydHQ_AttackAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
             [_hq,"RydHQ_CombatAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
