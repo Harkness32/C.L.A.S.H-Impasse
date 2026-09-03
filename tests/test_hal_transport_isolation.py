@@ -140,3 +140,48 @@ def test_transport_pool_enrollment_does_not_reintroduce_handoff_waypoint_surgery
         "commandMove",
     ]:
         assert forbidden not in stage
+
+
+def test_hal_ai_transport_can_use_native_itw_paradrop_without_classname_doctrine():
+    init = mission("init.sqf")
+    policy = mission("ITW_CLASH_HALParadrop.sqf")
+    attack = mission("ITW_Attack.sqf")
+    ally = mission("ITW_Ally.sqf")
+    go = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "GoAttInf.sqf").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'ITW_CLASH_HALParadropVersion = 1;' in policy
+    assert 'missionNamespace getVariable ["ITW_ParamHelisUnload",50]' in policy
+    assert 'ITW_CLASH_HALParadrop_HeavyCargoSeats' in policy
+    assert 'ITW_CLASH_HALParadrop_HeavyChance' in policy
+    assert 'ITW_CLASH_HALParadrop_ThreatChance' in policy
+    assert 'ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats' in policy
+    assert '_chance > 0 && {_chance < 100}' in policy
+    assert '[_carrier,_cargoGroup] call ITW_AllyParadropCargo;' in policy
+    assert '_carrier land "GET OUT";' in policy
+    assert '_carrier land "NONE";' in policy
+    assert 'classnamesHardcoded=false' in policy
+
+    # Borrow the actual Impasse parachute machinery rather than cloning it.
+    assert 'ITW_AllyParadropCargo = {' in ally
+    assert '[_veh,grpNull,[_grp],[]] call ITW_AtkUnloadAirplane;' in ally
+    assert 'ITW_AtkParachute = {' in attack
+    assert '"Steerable_Parachute_F" createVehicle _pos;' in attack
+
+    # HAL decides at its own attack/dropoff seam. C.L.A.S.H. does not create
+    # a second transport route; the waypoint either invokes paradrop or keeps
+    # native GET OUT landing.
+    assert '[_AV,_NeNMode] call ITW_CLASH_HALParadrop_fnc_ShouldUse' in go
+    assert 'setVariable ["ITW_CLASH_HALParadropCargoGroup",_unitG]' in go
+    assert 'ITW_CLASH_HALParadrop_MinAltitude' in go
+    assert 'spawn ITW_CLASH_HALParadrop_fnc_Execute' in go
+    assert "(vehicle this) land 'GET OUT'" in go
+    assert 'and not (_halParadrop)' in go
+    assert '((units _unitG) findIf {isPlayer _x}) < 0' in go
+    assert '((units _GDV) findIf {isPlayer _x}) < 0' in go
+
+    for hardcoded in ["Huron", "Chinook", "GhostHawk", "LittleBird"]:
+        assert hardcoded not in policy
+
+    assert 'call compile preprocessFileLineNumbers\n            "ITW_CLASH_HALParadrop.sqf"' in init
