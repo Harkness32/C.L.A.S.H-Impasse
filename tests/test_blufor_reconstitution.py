@@ -104,7 +104,7 @@ def test_casevac_and_ground_medevac_use_casualty_side_context_and_enemy_relation
     ground = mission("ITW_CLASH_GroundMEDEVAC.sqf")
     manager = mission("ITW_CLASH_GroundMEDEVAC_Manager.sqf")
 
-    assert "ITW_CLASH_CASEVAC_Version = 3;" in casevac
+    assert "ITW_CLASH_CASEVAC_Version = 4;" in casevac
     assert "ITW_AtkReconstitutionTransportContexts" in casevac
     assert 'toUpperANSI str _recoverySide' in casevac
     assert '(_groupSide getFriend (side _x)) < 0.6' in casevac
@@ -144,7 +144,7 @@ def test_bootstrap_accepts_the_symmetric_runtime_versions():
 def test_field_vehicle_staging_obeys_shared_echelon_policy():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_DualHALCheckbookVersion = 5;" in dual
+    assert "ITW_CLASH_DualHALCheckbookVersion = 6;" in dual
     assert "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn" in dual
 
     echelon = dual[
@@ -210,7 +210,7 @@ def test_late_recovery_overrides_preserve_side_symmetric_contexts():
     assert "_side != ITW_EnemySide" not in air
     assert "symmetricSides=true" in air
 
-    assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 2;" in ground_policy
+    assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 3;" in ground_policy
     assert '["_recoverySide",sideUnknown]' in ground_policy
     assert "ITW_AtkReconstitutionTransportContexts" in ground_policy
     assert "toUpperANSI str _recoverySide" in ground_policy
