@@ -170,7 +170,7 @@ def test_thunder_run_uses_hal_intelligence_native_drop_and_existing_lifecycle():
     intercept = mission("ITW_CLASH_PlayerDemandNativeInterceptors.sqf")
     logistics = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_ThunderRunVersion = 1;" in thunder
+    assert "ITW_CLASH_ThunderRunVersion = 2;" in thunder
     assert '"THUNDER RUN INITIATED"' in thunder
     assert "RYD_AmmoDrop" in thunder
     assert "B_Parachute_02_F" not in thunder
