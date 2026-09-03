@@ -322,3 +322,27 @@ def test_orphan_vehicle_crew_is_quarantined_then_cleaned_without_touching_infant
 
     assert '"ITW_CLASH_CrewRemnantCleanup.sqf"' in init
     assert "crewRemnantCleanup=" in init
+
+
+def test_transport_selection_is_capacity_and_ticket_aware_without_classname_doctrine():
+    policy = mission("ITW_CLASH_ServiceCapacityPolicy.sqf")
+    dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
+
+    assert "ITW_CLASH_ServiceCapacityPolicyVersion = 1;" in policy
+    assert "ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats" in policy
+    assert 'getNumber (_cfg >> "transportSoldier")' in policy
+    assert '"showAsCargo"' in policy
+    assert "ITW_CLASH_ServiceCapacity_ClassCapacityOverrides" in policy
+    assert "ITW_CLASH_ServiceCapacity_ClassScoreAdjustments" in policy
+    assert "ITW_CLASH_ServiceCapacity_ContextScoreAdjustments" in policy
+    assert "_excessSeats * ITW_CLASH_ServiceCapacity_ExcessSeatWeight" in policy
+    assert "_ticketCost * ITW_CLASH_ServiceCapacity_TicketWeight" in policy
+    assert "ITW_CLASH_ServiceCapacity_DualRolePenalty" in policy
+
+    assert "ITW_CLASH_Checkbook_fnc_RankTransportVariants" in dual
+    assert '[_seatCount,_defs,_mode,"TRANSPORT"]' in dual
+    assert "private _spawnDef = +_vehDef;" in dual
+    assert "_spawnDef set [ITW_VEH_CLASSES,[_variant]];" in dual
+
+    for hardcoded in ["Polaris", "MATV", "M-ATV", "Huron", "Chinook", "LittleBird"]:
+        assert hardcoded not in policy
