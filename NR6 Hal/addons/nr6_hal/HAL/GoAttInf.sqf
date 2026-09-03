@@ -524,6 +524,15 @@ if not (isNil "_EDPos") then
 	};
 if (_request) then {_tp = "SAD"};
 _wp = [_gp,_pos,_tp,_beh,"YELLOW",_spd,_sts,_crr,0,_TO] call RYD_WPadd;
+
+// Clear any pickup landing autopilot latch only after HAL has issued the outbound carrier waypoint.
+// HAL remains the sole movement authority; this does not author or alter a waypoint.
+if (not (isNull _AV) and {_AV isKindOf "Air"} and {not (_GDV == _unitG)}) then
+	{
+	(driver _AV) action ["CancelLand",_AV];
+	_AV land "NONE";
+	};
+
 if ((isPlayer (leader _gp)) and ((_GDV == _unitG) or (isNull _GDV))) then {deleteWaypoint _wp};
 
 _posX = _SpX;
