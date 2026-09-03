@@ -8,10 +8,10 @@ def mission(name: str) -> str:
     return (MISSION / name).read_text(encoding="utf-8")
 
 
-def test_air_transport_probe_is_read_only():
+def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
     text = mission("initServer.sqf")
-    assert "ITW_CLASH_SCargoAirDiagVersion = 9;" in text
-    assert "observerOnly=true" in text
+    assert "ITW_CLASH_SCargoAirDiagVersion = 10;" in text
+    assert "groupRearmTest=true" in text
     assert '"POST-EMBARK-MOVE-STALLED"' in text
     assert '"carrierInAirG"' in text
     assert '"cargoInNCrewInfG"' in text
@@ -21,14 +21,18 @@ def test_air_transport_probe_is_read_only():
     assert '"nearHelipadCount"' in text
     assert '"nearHelipadDistance"' in text
 
+    assert '_carrierGroup setCurrentWaypoint [_carrierGroup,_idx];' in text
+    assert '"GROUP-WAYPOINT-REARMED"' in text
+
     for forbidden in [
         'land "NONE"',
         'CancelLand',
         'setDestination',
-        'setCurrentWaypoint',
         'setVariable [_flag,true]',
         'doMove',
         'commandMove',
+        'addWaypoint',
+        'deleteWaypoint',
     ]:
         assert forbidden not in text
 
@@ -58,3 +62,12 @@ def test_transport_injection_records_sitrep_cycle_only():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
     assert '"ITW_CLASH_CheckbookInjectedCycle"' in dual
     assert 'getVariable ["RydHQ_Cyclecount",-1]' in dual
+
+
+def test_combat_diagnostics_resolve_hq_from_observed_group():
+    text = mission("ITW_CLASH_CombatDiagnostics.sqf")
+    assert 'params [["_group",grpNull]];' in text
+    assert '[_group] call ITW_CLASH_fnc_GetCommanderForGroup' in text
+    group_fn = text[text.index("ITW_CLASH_Diag_fnc_Group = {"):
+                    text.index("ITW_CLASH_Diag_fnc_HQSnapshot = {")]
+    assert 'private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;' in group_fn

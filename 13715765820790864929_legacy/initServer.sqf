@@ -1,7 +1,7 @@
-/* Temporary read-only observer for HAL air-transport pickup stalls. */
+/* Temporary diagnostic plus one-shot group-waypoint rearm experiment. */
 if (!isServer) exitWith {};
 
-ITW_CLASH_SCargoAirDiagVersion = 9;
+ITW_CLASH_SCargoAirDiagVersion = 10;
 ITW_CLASH_SCargoAirDiagPoll = 1;
 ITW_CLASH_SCargoAirDiagStallSeconds = 8;
 ITW_CLASH_SCargoAirDiagStates = createHashMap;
@@ -125,7 +125,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
     };
     if !(missionNamespace getVariable ["ITW_CLASH_HALReady",false]) exitWith {};
 
-    diag_log format ["CLASH SCARGO AIR DIAG | ready | version=%1 observerOnly=true",ITW_CLASH_SCargoAirDiagVersion];
+    diag_log format ["CLASH SCARGO AIR DIAG | ready | version=%1 observerOnly=false groupRearmTest=true",ITW_CLASH_SCargoAirDiagVersion];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep ITW_CLASH_SCargoAirDiagPoll;
@@ -142,10 +142,11 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                 if (_allAboard) then {"EMBARKED"} else {"BOARDING"}
             };
             private _key = str _carrier;
-            private _state = ITW_CLASH_SCargoAirDiagStates getOrDefault [_key,["",time,-1e10,-1e10,-1e10]];
-            _state params ["_lastPhase","_phaseSince","_lastSnapshot","_lastNoMove","_lastMoveStall"];
+            private _state = ITW_CLASH_SCargoAirDiagStates getOrDefault [_key,["",time,-1e10,-1e10,-1e10,false]];
+            _state params ["_lastPhase","_phaseSince","_lastSnapshot","_lastNoMove","_lastMoveStall","_rearmSent"];
             if (_phase != _lastPhase) then {
                 _phaseSince = time;
+                _rearmSent = false;
                 diag_log format ["CLASH SCARGO AIR DIAG | phase=%1 | %2",_phase,_snap];
             };
             if (time - _lastSnapshot >= 5) then {
@@ -159,6 +160,25 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
             private _held = time - _phaseSince;
             if (_phase == "EMBARKED" && {_speed < 1} && {_held >= ITW_CLASH_SCargoAirDiagStallSeconds}) then {
                 if (_wpType == "MOVE" && {_wpDistance > 100}) then {
+                    if (!_rearmSent) then {
+                        private _pilot = driver _carrier;
+                        if (isNull _pilot) then {_pilot = assignedDriver _carrier};
+                        private _carrierGroup = if (isNull _pilot) then {grpNull} else {group _pilot};
+                        private _expected = if (isNull _pilot) then {[]} else {expectedDestination _pilot};
+                        private _expectedMode = _expected param [1,""];
+                        if (!isNull _carrierGroup && {_expectedMode == "DoNotPlan"}) then {
+                            private _idx = currentWaypoint _carrierGroup;
+                            private _wps = waypoints _carrierGroup;
+                            if (_idx >= 0 && {_idx < count _wps}) then {
+                                _carrierGroup setCurrentWaypoint [_carrierGroup,_idx];
+                                _rearmSent = true;
+                                diag_log format [
+                                    "CLASH SCARGO AIR DIAG | GROUP-WAYPOINT-REARMED | group=%1 wpIndex=%2 wpType=%3 wpDistance=%4 expectedBefore=%5",
+                                    str _carrierGroup,_idx,_wpType,_wpDistance,_expected
+                                ];
+                            };
+                        };
+                    };
                     if (time - _lastMoveStall >= 5) then {
                         _lastMoveStall = time;
                         diag_log format ["CLASH SCARGO AIR DIAG | POST-EMBARK-MOVE-STALLED | heldSeconds=%1 | %2",round _held,_snap];
@@ -170,7 +190,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                     };
                 };
             };
-            ITW_CLASH_SCargoAirDiagStates set [_key,[_phase,_phaseSince,_lastSnapshot,_lastNoMove,_lastMoveStall]];
+            ITW_CLASH_SCargoAirDiagStates set [_key,[_phase,_phaseSince,_lastSnapshot,_lastNoMove,_lastMoveStall,_rearmSent]];
         } forEach (call ITW_CLASH_SCargoAirDiag_fnc_Carriers);
     };
 };

@@ -51,6 +51,11 @@ ITW_CLASH_Diag_fnc_GroupId = {
 };
 
 ITW_CLASH_Diag_fnc_HQ = {
+    params [["_group",grpNull]];
+    if (!isNull _group && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}) then {
+        private _resolved = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+        if (!isNull _resolved) exitWith {_resolved};
+    };
     if (!isNil "ITW_CLASH_HALHQ" && {!isNull ITW_CLASH_HALHQ}) exitWith {
         ITW_CLASH_HALHQ
     };
@@ -190,7 +195,7 @@ ITW_CLASH_Diag_fnc_Group = {
     params ["_group"];
     if (isNull _group) exitWith {["<null>"]};
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
     private _leader = leader _group;
     private _busyName = "Busy" + str _group;
     private _wp = [_group] call ITW_CLASH_Diag_fnc_Waypoint;
@@ -293,7 +298,7 @@ ITW_CLASH_Diag_fnc_ContactSide = {
     params ["_group","_unit","_otherUnit"];
     if (isNull _group || {isNull _unit} || {isNull _otherUnit}) exitWith {["invalid"]};
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
     private _leader = leader _group;
     private _nearestLeader = if (isNull _leader) then {objNull} else {
         _leader findNearestEnemy _leader
@@ -371,7 +376,7 @@ ITW_CLASH_Diag_fnc_ContactReasons = {
     };
 
     if (_distance <= 75 && {_groupKnowledge < 0.05}) then {
-        private _hq = call ITW_CLASH_Diag_fnc_HQ;
+        private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
         if (!isNull _hq) then {
             private _otherVehicle = vehicle _otherUnit;
             private _otherGroup = group _otherUnit;
