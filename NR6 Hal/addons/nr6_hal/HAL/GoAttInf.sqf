@@ -464,8 +464,8 @@ if (
 	not (isNull _AV)
 	and (_GDV in (_HQ getVariable ["RydHQ_AirG",[]]))
 	and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))
-	and ((units _unitG) findIf {isPlayer _x} < 0)
-	and ((units _GDV) findIf {isPlayer _x} < 0)
+	and (((units _unitG) findIf {isPlayer _x}) < 0)
+	and (((units _GDV) findIf {isPlayer _x}) < 0)
 	and (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false])
 	and not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse")
 ) then
