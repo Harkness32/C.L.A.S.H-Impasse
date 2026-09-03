@@ -60,8 +60,8 @@ def test_ai_transport_virtualizes_only_at_passive_hal_storage_boundary():
     provider_block = life[life.index("ITW_CLASH_Service_fnc_InstallProviderWrappers = {"):
                           life.index("call ITW_CLASH_Service_fnc_InstallProviderWrappers;")]
     assert '"TRANSPORT"' in provider_block
-    assert 'ITW_CLASH_ServiceTransportRetirePlayerRadius = 125;' in life
-    assert '"hal-return-observed"' in life
+    assert '"ITW_CLASH_ServiceTransportRetirePlayerRadius",75' in life
+    assert '"hal-return-zone-entered"' in life
     assert '[_i,"hal-returned-home"] call ITW_CLASH_Service_fnc_Retire;' in life
 
     assert '[_veh,_crewGroup,"TRANSPORT","checkbook-transport"] call' in auth
