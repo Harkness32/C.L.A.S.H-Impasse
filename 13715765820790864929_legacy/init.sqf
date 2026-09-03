@@ -340,6 +340,12 @@ if (isServer) then {
         } else {
             diag_log "CLASH BOOT | gtfo-runtime-missing | core HAL withdrawal bridge remains active without late guards";
         };
+
+        if (fileExists "ITW_CLASH_RemnantEvac.sqf") then {
+            [] execVM "ITW_CLASH_RemnantEvac.sqf";
+        } else {
+            diag_log "CLASH BOOT | remnant-evac-missing | shattered infantry remains HAL-native";
+        };
     };
 };
 
