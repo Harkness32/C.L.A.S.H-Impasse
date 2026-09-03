@@ -8,10 +8,11 @@ def mission(name: str) -> str:
     return (MISSION / name).read_text(encoding="utf-8")
 
 
-def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
+def test_air_transport_probe_is_read_only_during_leader_pilot_spawn_test():
     text = mission("initServer.sqf")
-    assert "ITW_CLASH_SCargoAirDiagVersion = 12;" in text
-    assert "groupRearmTest=true" in text
+    assert "ITW_CLASH_SCargoAirDiagVersion = 13;" in text
+    assert "observerOnly=true" in text
+    assert "leaderPilotSpawnTest=true" in text
     assert '"POST-EMBARK-MOVE-STALLED"' in text
     assert '"carrierInAirG"' in text
     assert '"cargoInNCrewInfG"' in text
@@ -27,12 +28,6 @@ def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
     assert "createHashMapFromArray _snap" in text
     assert 'getOrDefault ["wpDistance",-1]' in text
 
-    assert '_carrierGroup setCurrentWaypoint [_carrierGroup,_idx];' in text
-    assert '"GROUP-WAYPOINT-REARM-ISSUED"' in text
-    assert '"GROUP-WAYPOINT-REARM-OBSERVED"' in text
-    assert '_wpHandle setWaypointPosition [_samePos,0];' in text
-    assert '"GROUP-WAYPOINT-POSITION-REWRITE-ISSUED"' in text
-    assert '"GROUP-WAYPOINT-POSITION-REWRITE-OBSERVED"' in text
 
     for forbidden in [
         'land "NONE"',
@@ -43,6 +38,8 @@ def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
         'commandMove',
         'addWaypoint',
         'deleteWaypoint',
+        'setCurrentWaypoint',
+        'setWaypointPosition',
     ]:
         assert forbidden not in text
 
@@ -86,3 +83,11 @@ def test_combat_diagnostics_resolve_hq_from_observed_group():
     assert 'params ["_otherUnit",["_observerGroup",grpNull]];' in text
     assert 'private _hq = [_observerGroup] call ITW_CLASH_Diag_fnc_HQ;' in text
     assert '[_otherUnit,_group] call ITW_CLASH_Diag_fnc_HALContactKnowledge' in text
+
+
+def test_impasse_aircraft_driver_is_restored_as_crew_group_leader():
+    text = mission("ITW_Attack.sqf")
+    needle = '''_driver setRank "LIEUTENANT";
+            [_driver,"CARELESS"] call ITW_FncSetUnitBehavior;
+            _crewGrp selectLeader _driver;'''
+    assert needle in text

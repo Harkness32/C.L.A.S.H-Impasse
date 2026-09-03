@@ -1,7 +1,7 @@
-/* Temporary diagnostic plus one-shot group-waypoint rearm experiment. */
+/* Temporary read-only observer for HAL air-transport pickup stalls. */
 if (!isServer) exitWith {};
 
-ITW_CLASH_SCargoAirDiagVersion = 12;
+ITW_CLASH_SCargoAirDiagVersion = 13;
 ITW_CLASH_SCargoAirDiagPoll = 1;
 ITW_CLASH_SCargoAirDiagStallSeconds = 8;
 ITW_CLASH_SCargoAirDiagStates = createHashMap;
@@ -134,7 +134,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
     };
     if !(missionNamespace getVariable ["ITW_CLASH_HALReady",false]) exitWith {};
 
-    diag_log format ["CLASH SCARGO AIR DIAG | ready | version=%1 observerOnly=false groupRearmTest=true",ITW_CLASH_SCargoAirDiagVersion];
+    diag_log format ["CLASH SCARGO AIR DIAG | ready | version=%1 observerOnly=true leaderPilotSpawnTest=true",ITW_CLASH_SCargoAirDiagVersion];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep ITW_CLASH_SCargoAirDiagPoll;
@@ -151,12 +151,10 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                 if (_allAboard) then {"EMBARKED"} else {"BOARDING"}
             };
             private _key = str _carrier;
-            private _state = ITW_CLASH_SCargoAirDiagStates getOrDefault [_key,["",time,-1e10,-1e10,-1e10,0,-1e10]];
-            _state params ["_lastPhase","_phaseSince","_lastSnapshot","_lastNoMove","_lastMoveStall","_rearmStage","_rearmIssuedAt"];
+            private _state = ITW_CLASH_SCargoAirDiagStates getOrDefault [_key,["",time,-1e10,-1e10,-1e10]];
+            _state params ["_lastPhase","_phaseSince","_lastSnapshot","_lastNoMove","_lastMoveStall"];
             if (_phase != _lastPhase) then {
                 _phaseSince = time;
-                _rearmStage = 0;
-                _rearmIssuedAt = -1e10;
                 diag_log format ["CLASH SCARGO AIR DIAG | phase=%1 | %2",_phase,_snap];
             };
             if (time - _lastSnapshot >= 5) then {
@@ -171,62 +169,6 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
             private _held = time - _phaseSince;
             if (_phase == "EMBARKED" && {_speed < 1} && {_held >= ITW_CLASH_SCargoAirDiagStallSeconds}) then {
                 if (_wpType == "MOVE" && {_wpDistance > 100}) then {
-                    private _pilot = driver _carrier;
-                    if (isNull _pilot) then {_pilot = assignedDriver _carrier};
-                    private _carrierGroup = if (isNull _pilot) then {grpNull} else {group _pilot};
-                    private _expected = if (isNull _pilot) then {[]} else {expectedDestination _pilot};
-                    private _expectedMode = _expected param [1,""];
-                    if (!isNull _carrierGroup) then {
-                        private _idx = currentWaypoint _carrierGroup;
-                        private _wps = waypoints _carrierGroup;
-                        private _wpCount = count _wps;
-                        private _leaderIsPilot = !isNull (driver _carrier)
-                            && {(leader _carrierGroup) isEqualTo (driver _carrier)};
-
-                        if (_rearmStage == 0 && {_expectedMode == "DoNotPlan"} && {
-                            _idx >= 0 && {_idx < _wpCount}
-                        }) then {
-                            diag_log format [
-                                "CLASH SCARGO AIR DIAG | GROUP-WAYPOINT-REARM-ISSUED | group=%1 wpIndex=%2 wpCount=%3 wpType=%4 wpDistance=%5 leaderIsPilot=%6 leaderExpectedBefore=%7 pilotExpectedBefore=%8",
-                                str _carrierGroup,_idx,_wpCount,_wpType,_wpDistance,_leaderIsPilot,
-                                if (isNull (leader _carrierGroup)) then {[]} else {expectedDestination (leader _carrierGroup)},_expected
-                            ];
-                            _carrierGroup setCurrentWaypoint [_carrierGroup,_idx];
-                            _rearmStage = 1;
-                            _rearmIssuedAt = time;
-                        };
-
-                        if (_rearmStage == 1 && {time - _rearmIssuedAt >= ITW_CLASH_SCargoAirDiagPoll}) then {
-                            diag_log format [
-                                "CLASH SCARGO AIR DIAG | GROUP-WAYPOINT-REARM-OBSERVED | group=%1 wpIndex=%2 wpCount=%3 leaderIsPilot=%4 leaderExpectedAfter=%5 pilotExpectedAfter=%6",
-                                str _carrierGroup,_idx,_wpCount,_leaderIsPilot,
-                                if (isNull (leader _carrierGroup)) then {[]} else {expectedDestination (leader _carrierGroup)},_expected
-                            ];
-                            if (_expectedMode == "DoNotPlan" && {_idx >= 0} && {_idx < _wpCount}) then {
-                                private _wpHandle = [_carrierGroup,_idx];
-                                private _samePos = waypointPosition _wpHandle;
-                                _wpHandle setWaypointPosition [_samePos,0];
-                                diag_log format [
-                                    "CLASH SCARGO AIR DIAG | GROUP-WAYPOINT-POSITION-REWRITE-ISSUED | group=%1 wpIndex=%2 wpCount=%3 leaderIsPilot=%4 leaderExpectedBefore=%5 pilotExpectedBefore=%6",
-                                    str _carrierGroup,_idx,_wpCount,_leaderIsPilot,
-                                    if (isNull (leader _carrierGroup)) then {[]} else {expectedDestination (leader _carrierGroup)},_expected
-                                ];
-                                _rearmStage = 2;
-                                _rearmIssuedAt = time;
-                            } else {
-                                _rearmStage = 3;
-                            };
-                        };
-
-                        if (_rearmStage == 2 && {time - _rearmIssuedAt >= ITW_CLASH_SCargoAirDiagPoll}) then {
-                            diag_log format [
-                                "CLASH SCARGO AIR DIAG | GROUP-WAYPOINT-POSITION-REWRITE-OBSERVED | group=%1 wpIndex=%2 wpCount=%3 leaderIsPilot=%4 leaderExpectedAfter=%5 pilotExpectedAfter=%6",
-                                str _carrierGroup,_idx,_wpCount,_leaderIsPilot,
-                                if (isNull (leader _carrierGroup)) then {[]} else {expectedDestination (leader _carrierGroup)},_expected
-                            ];
-                            _rearmStage = 3;
-                        };
-                    };
                     if (time - _lastMoveStall >= 5) then {
                         _lastMoveStall = time;
                         diag_log format ["CLASH SCARGO AIR DIAG | POST-EMBARK-MOVE-STALLED | heldSeconds=%1 | %2",round _held,_snap];
@@ -238,7 +180,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                     };
                 };
             };
-            ITW_CLASH_SCargoAirDiagStates set [_key,[_phase,_phaseSince,_lastSnapshot,_lastNoMove,_lastMoveStall,_rearmStage,_rearmIssuedAt]];
+            ITW_CLASH_SCargoAirDiagStates set [_key,[_phase,_phaseSince,_lastSnapshot,_lastNoMove,_lastMoveStall]];
         } forEach (call ITW_CLASH_SCargoAirDiag_fnc_Carriers);
     };
 };
