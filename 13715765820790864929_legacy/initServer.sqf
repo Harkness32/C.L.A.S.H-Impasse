@@ -1,7 +1,7 @@
 /* Temporary observer for HAL air-transport pickup stalls. Observer only. */
 if (!isServer) exitWith {};
 
-ITW_CLASH_SCargoAirDiagVersion = 5;
+ITW_CLASH_SCargoAirDiagVersion = 6;
 ITW_CLASH_SCargoAirDiagPoll = 1;
 ITW_CLASH_SCargoAirDiagStallSeconds = 8;
 ITW_CLASH_SCargoAirDiagStates = createHashMap;
@@ -68,6 +68,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
         ["pilotCommand",if (isNull _pilot) then {"<null>"} else {currentCommand _pilot}],
         ["pilotReady",if (isNull _pilot) then {false} else {unitReady _pilot}],
         ["pilotExpected",if (isNull _pilot) then {[]} else {expectedDestination _pilot}],
+        ["lastMoveOR",_carrier getVariable ["LastMoveOR",0]],
         ["pilotAI",if (isNull _pilot) then {[]} else {[
             _pilot checkAIFeature "TARGET",
             _pilot checkAIFeature "AUTOTARGET",
@@ -136,28 +137,21 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                         private _pilot = driver _carrier;
                         if (isNull _pilot) then {_pilot = assignedDriver _carrier};
                         if (!isNull _pilot) then {
-                            private _expectedBefore = expectedDestination _pilot;
-                            private _expectedMode = _expectedBefore param [1,""];
-                            if (_expectedMode == "DoNotPlan") then {
-                                private _carrierGroup = group _pilot;
-                                private _wpIndex = currentWaypoint _carrierGroup;
-                                private _wps = waypoints _carrierGroup;
-                                if (
-                                    !isNull _carrierGroup
-                                    && {_wpIndex >= 0}
-                                    && {_wpIndex < count _wps}
-                                ) then {
-                                    private _wpPos = waypointPosition [_carrierGroup,_wpIndex];
-                                    _carrier land "NONE";
-                                    _pilot action ["CancelLand",_carrier];
-                                    _carrierGroup setCurrentWaypoint [_carrierGroup,_wpIndex];
-                                    _pilot setDestination [_wpPos,"LEADER PLANNED",true];
-                                    _releaseSent = true;
-                                    diag_log format [
-                                        "CLASH SCARGO AIR DIAG | PILOT-PLANNER-REARMED | heldSeconds=%1 before=%2 after=%3 wp=%4",
-                                        round _held,_expectedBefore,expectedDestination _pilot,[_wpIndex,_wpPos]
-                                    ];
-                                };
+                            private _expected = expectedDestination _pilot;
+                            private _expectedMode = _expected param [1,""];
+                            private _carrierGroup = group _pilot;
+                            if (
+                                _expectedMode == "DoNotPlan"
+                                && {!isNull _carrierGroup}
+                            ) then {
+                                private _flag = "InfGetinCheck" + str _carrierGroup;
+                                _carrierGroup setVariable [_flag,true];
+                                _releaseSent = true;
+                                diag_log format [
+                                    "CLASH SCARGO AIR DIAG | HAL-NATIVE-UNSTICK-ARMED | heldSeconds=%1 expected=%2 group=%3 lastMoveOR=%4",
+                                    round _held,_expected,str _carrierGroup,
+                                    _carrier getVariable ["LastMoveOR",0]
+                                ];
                             };
                         };
                     };
