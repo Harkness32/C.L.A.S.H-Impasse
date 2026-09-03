@@ -457,8 +457,43 @@ _tp = "MOVE";
 //if (not (isNull _AV) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]])) and not ((_GDV == _unitG) or (_GDV in (_HQ getVariable ["RydHQ_AirG",[]])))) then {_tp = "UNLOAD"};
 _beh = "AWARE";
 
+_halParadrop = false;
+_halParadropChance = 0;
+_halParadropCapacity = 0;
+if (
+	not (isNull _AV)
+	and (_GDV in (_HQ getVariable ["RydHQ_AirG",[]]))
+	and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))
+	and ((units _unitG) findIf {isPlayer _x} < 0)
+	and ((units _GDV) findIf {isPlayer _x} < 0)
+	and (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false])
+	and not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse")
+) then
+	{
+	private _paraDecision = [_AV,_NeNMode] call ITW_CLASH_HALParadrop_fnc_ShouldUse;
+	_halParadrop = _paraDecision#0;
+	_halParadropChance = _paraDecision#1;
+	_halParadropCapacity = _paraDecision#2;
+	if (_halParadrop) then
+		{
+		_GDV setVariable ["ITW_CLASH_HALParadropCargoGroup",_unitG];
+		_AV flyInHeight (missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]);
+		if not (isNil "ITW_CLASH_HALParadrop_fnc_Log") then
+			{
+			["selected",[
+				typeOf _AV,groupId _unitG,_halParadropCapacity,_halParadropChance,
+				_NeNMode,_halfway,[_posX,_posY]
+			]] call ITW_CLASH_HALParadrop_fnc_Log;
+			}
+		}
+	else
+		{
+		_GDV setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+		};
+	};
+
 _lz = objNull;
-if (not (isNull _AV) and (_GDV in (_HQ getVariable ["RydHQ_AirG",[]]))) then 
+if (not (isNull _AV) and (_GDV in (_HQ getVariable ["RydHQ_AirG",[]])) and not (_halParadrop)) then 
 	{
 	_beh = "STEALTH";
 	if (_HQ getVariable ["RydHQ_LZ",false]) then
@@ -484,7 +519,17 @@ _crr = false;
 if ((_nW == 1) and (isNull _AV)) then {_crr = true};
 if not (isNull _AV) then {_crr = true};
 _sts = ["true","deletewaypoint [(group this), 0];"];
-if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then {_sts = ["true","(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]"]};
+if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then
+	{
+	if (_halParadrop) then
+		{
+		_sts = ["true","private _g = group this; private _v = vehicle this; [_g,_v] spawn ITW_CLASH_HALParadrop_fnc_Execute; deletewaypoint [(group this), 0]"]
+		}
+	else
+		{
+		_sts = ["true","(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]"]
+		}
+	};
 
 _EDPos = _GDV getVariable "RydHQ_EDPos";
 _earlyD = false;
