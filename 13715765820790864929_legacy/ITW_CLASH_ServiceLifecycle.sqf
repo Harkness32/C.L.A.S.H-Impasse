@@ -3,15 +3,25 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceLifecycleStarted",false]) exitWith {true};
 ITW_CLASH_ServiceLifecycleStarted = true;
-ITW_CLASH_ServiceLifecycleVersion = 2;
+ITW_CLASH_ServiceLifecycleVersion = 3;
 ITW_CLASH_ServiceLifecycleReady = false;
 ITW_CLASH_ServicePool = [];
 ITW_CLASH_ServiceSerial = 0;
-ITW_CLASH_ServiceRTBLandRadius = 125;
-ITW_CLASH_ServiceRTBAirRadius = 350;
-ITW_CLASH_ServiceIdleGrace = 25;
-ITW_CLASH_ServiceRetirePlayerRadius = 600;
-ITW_CLASH_ServiceTransportRetirePlayerRadius = 125;
+ITW_CLASH_ServiceRTBLandRadius = missionNamespace getVariable [
+    "ITW_CLASH_ServiceRTBLandRadius",150
+];
+ITW_CLASH_ServiceRTBAirRadius = missionNamespace getVariable [
+    "ITW_CLASH_ServiceRTBAirRadius",300
+];
+ITW_CLASH_ServiceIdleGrace = missionNamespace getVariable [
+    "ITW_CLASH_ServiceIdleGrace",10
+];
+ITW_CLASH_ServiceRetirePlayerRadius = missionNamespace getVariable [
+    "ITW_CLASH_ServiceRetirePlayerRadius",100
+];
+ITW_CLASH_ServiceTransportRetirePlayerRadius = missionNamespace getVariable [
+    "ITW_CLASH_ServiceTransportRetirePlayerRadius",75
+];
 ITW_CLASH_ServiceReuseCooldown = 30;
 
 ITW_CLASH_Service_fnc_Log = {
@@ -158,7 +168,13 @@ ITW_CLASH_Service_fnc_Retire = {
     private _group = _entry getOrDefault ["group",grpNull];
     if (isNull _veh) exitWith {false};
     private _players = allPlayers select {!(_x isKindOf "HeadlessClient_F")};
-    if ((_players findIf {_x distance2D _veh < ITW_CLASH_ServiceRetirePlayerRadius}) >= 0) exitWith {false};
+    private _capability = toUpperANSI (_entry getOrDefault ["capability",""]);
+    private _playerRadius = if (_capability == "TRANSPORT") then {
+        ITW_CLASH_ServiceTransportRetirePlayerRadius
+    } else {
+        ITW_CLASH_ServiceRetirePlayerRadius
+    };
+    if ((_players findIf {_x distance2D _veh < _playerRadius}) >= 0) exitWith {false};
     private _vehDef = _entry getOrDefault ["vehDef",[]];
     if (_vehDef isEqualTo []) then {_vehDef = _veh getVariable ["ITW_VehDef",[]]};
     if (_vehDef isEqualTo []) exitWith {false};
@@ -180,6 +196,45 @@ ITW_CLASH_Service_fnc_Retire = {
     if (!isNull _group && {units _group isEqualTo []}) then {deleteGroup _group};
     ["virtualized",[_poolId,_capability,_class,_reason,_vehDef#ITW_VEH_COUNT]] call ITW_CLASH_Service_fnc_Log;
     true
+};
+
+ITW_CLASH_Service_fnc_StorageZone = {
+    params ["_entry","_veh"];
+    if (isNull _veh) exitWith {[false,[],1e12,0,-1,"none"]};
+
+    private _side = _entry getOrDefault ["side",sideUnknown];
+    private _mode = toUpperANSI (_entry getOrDefault ["mode",[_veh] call ITW_CLASH_Service_fnc_ModeForVehicle]);
+    private _radius = if (_mode == "AIR") then {
+        ITW_CLASH_ServiceRTBAirRadius
+    } else {
+        ITW_CLASH_ServiceRTBLandRadius
+    };
+
+    private _bestPos = +(_entry getOrDefault ["home",getPosATL _veh]);
+    private _bestDistance = if (_bestPos isEqualTo []) then {1e12} else {
+        _veh distance2D _bestPos
+    };
+    private _bestBase = -1;
+    private _method = "home-fallback";
+
+    if (
+        !isNil "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices"
+        && {!isNil "ITW_CLASH_ServiceHome_fnc_BasePoint"}
+    ) then {
+        {
+            private _pos = [_x,_mode] call ITW_CLASH_ServiceHome_fnc_BasePoint;
+            if (_pos isEqualTo []) then {continue};
+            private _dist = _veh distance2D _pos;
+            if (_dist < _bestDistance) then {
+                _bestDistance = _dist;
+                _bestPos = +_pos;
+                _bestBase = _x;
+                _method = "nearest-friendly-base-zone";
+            };
+        } forEach ([_side] call ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices);
+    };
+
+    [_bestDistance <= _radius,+_bestPos,_bestDistance,_radius,_bestBase,_method]
 };
 
 ITW_CLASH_Service_fnc_CurrentWaypoint = {
@@ -275,14 +330,19 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
             private _group = _entry getOrDefault ["group",grpNull];
             if (isNull _group) then {_group = group driver _veh; _entry set ["group",_group]};
             if (isNull _group) then {ITW_CLASH_ServicePool set [_i,_entry]; continue};
-            private _home = +(_entry getOrDefault ["home",getPosATL _veh]);
-            private _radius = if (_veh isKindOf "Air") then {ITW_CLASH_ServiceRTBAirRadius} else {ITW_CLASH_ServiceRTBLandRadius};
-            private _distance = _veh distance2D _home;
             private _busy = _group getVariable ["Busy" + str _group,false];
-            private _cargo = (assignedCargo _veh) isNotEqualTo [] || {(crew _veh findIf {alive _x && {group _x != _group}}) >= 0};
+            private _cargo = (assignedCargo _veh) isNotEqualTo [] || {
+                (crew _veh findIf {alive _x && {group _x != _group}}) >= 0
+            };
 
-            if (_busy || {_cargo} || {_distance > (_radius + 50)}) then {
-                if (_busy || {_cargo} || {_distance > 175}) then {
+            private _zone = [_entry,_veh] call ITW_CLASH_Service_fnc_StorageZone;
+            _zone params [
+                "_inStorageZone","_storagePos","_storageDistance",
+                "_storageRadius","_storageBase","_storageMethod"
+            ];
+
+            if (_busy || {_cargo} || {!_inStorageZone}) then {
+                if (_busy || {_cargo} || {_storageDistance > (_storageRadius + 50)}) then {
                     _entry set ["taskSeen",true];
                     if (_busy || {_cargo}) then {_entry set ["everBusy",true]};
                 };
@@ -296,21 +356,23 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                 continue;
             };
 
-            private _wpInfo = [_group] call ITW_CLASH_Service_fnc_CurrentWaypoint;
-            _wpInfo params ["_wpType","_wpPos"];
-            private _halHomeIntent = _wpType isEqualTo "NONE" || {_wpPos isNotEqualTo [] && {_wpPos distance2D _home <= (_radius + 100)}};
-            private _settled = !_busy && {!_cargo} && {_distance <= _radius && {abs speed _veh < 2} && {_halHomeIntent}};
-            if (!_settled) then {
-                _entry set ["idleSince",-1];
-                ITW_CLASH_ServicePool set [_i,_entry];
-                continue;
-            };
-
+            // Storage is a base AREA, not one exact parking point. HAL can bring
+            // an idle asset into any friendly service zone and C.L.A.S.H. drains
+            // it before trucks/helos stack on the same garage or helipad.
             private _idleSince = _entry getOrDefault ["idleSince",-1];
             if (_idleSince < 0) then {
                 _entry set ["idleSince",time];
                 ITW_CLASH_ServicePool set [_i,_entry];
-                ["hal-return-observed",[_entry getOrDefault ["id","?"],_entry getOrDefault ["capability","?"],typeOf _veh,round _distance,_wpType]] call ITW_CLASH_Service_fnc_Log;
+                ["hal-return-zone-entered",[
+                    _entry getOrDefault ["id","?"],
+                    _entry getOrDefault ["capability","?"],
+                    typeOf _veh,
+                    round _storageDistance,
+                    _storageRadius,
+                    _storageBase,
+                    _storageMethod,
+                    round abs speed _veh
+                ]] call ITW_CLASH_Service_fnc_Log;
                 continue;
             };
             if (time - _idleSince >= ITW_CLASH_ServiceIdleGrace) then {
@@ -323,7 +385,12 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
 
 ITW_CLASH_ServiceLifecycleReady = true;
 diag_log format [
-    "CLASH BOOT | service-lifecycle-ready | version=%1 capExempt=true virtualPool=true passiveHALReturn=true clashOrdersRTB=false halOwnsLiveDisposition=true staleHandoffSanitized=true artilleryPersistent=true",
-    ITW_CLASH_ServiceLifecycleVersion
+    "CLASH BOOT | service-lifecycle-ready | version=%1 capExempt=true virtualPool=true passiveHALReturn=true anyFriendlyBaseStorage=true areaTrigger=true landingNotRequired=true landRadius=%2 airRadius=%3 idleGrace=%4 playerRadius=%5 transportPlayerRadius=%6 clashOrdersRTB=false halOwnsLiveDisposition=true artilleryPersistent=true",
+    ITW_CLASH_ServiceLifecycleVersion,
+    ITW_CLASH_ServiceRTBLandRadius,
+    ITW_CLASH_ServiceRTBAirRadius,
+    ITW_CLASH_ServiceIdleGrace,
+    ITW_CLASH_ServiceRetirePlayerRadius,
+    ITW_CLASH_ServiceTransportRetirePlayerRadius
 ];
 true
