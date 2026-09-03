@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 5;
+ITW_CLASH_DualHALCheckbookVersion = 6;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -15,6 +15,15 @@ ITW_CLASH_DualHALBLUFORGroups = [];
 ITW_CLASH_DualHALOPFORExtraGroups = [];
 ITW_CLASH_CheckbookAssets = [];
 ITW_CLASH_CheckbookRequestSerial = 0;
+
+private _serviceCapacityPolicyLoaded = false;
+if (fileExists "ITW_CLASH_ServiceCapacityPolicy.sqf") then {
+    _serviceCapacityPolicyLoaded = call compile preprocessFileLineNumbers
+        "ITW_CLASH_ServiceCapacityPolicy.sqf";
+};
+if !(_serviceCapacityPolicyLoaded isEqualTo true) then {
+    diag_log "CLASH BOOT | service-capacity-policy-missing | transport selection falls back to legacy order";
+};
 
 ITW_CLASH_DualHAL_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -853,6 +862,37 @@ ITW_CLASH_Checkbook_fnc_SelectTransportDefs = {
     },"ASCEND"] call BIS_fnc_sortBy
 };
 
+ITW_CLASH_Checkbook_fnc_RankTransportVariants = {
+    params ["_side","_mode","_seatCount"];
+    private _defs = [_side,_mode,_seatCount] call
+        ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
+    if (_ranked isEqualTo []) exitWith {[]};
+
+    if (
+        missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]
+        && {!isNil "ITW_CLASH_ServiceCapacity_fnc_RankVariants"}
+    ) exitWith {
+        [_seatCount,_defs,_mode,"TRANSPORT"] call
+            ITW_CLASH_ServiceCapacity_fnc_RankVariants
+    };
+
+    private _fallback = [];
+    {
+        private _vehDef = _x;
+        {
+            private _class = if (_x isEqualType []) then {
+                if (_x isEqualTo []) then {""} else {_x#0}
+            } else {_x};
+            if (_class isEqualTo "") then {continue};
+            _fallback pushBack [
+                0,_vehDef,_x,_class,-1,false,
+                _vehDef#ITW_VEH_REQD_TICKETS,0
+            ];
+        } forEach (_vehDef#ITW_VEH_CLASSES);
+    } forEach _defs;
+    _fallback
+};
+
 ITW_CLASH_Checkbook_fnc_GetCrewTypes = {
     params ["_side"];
     private _friendly = !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide};
@@ -944,7 +984,8 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     if !(_mode in ["AIR","GROUND"]) exitWith {objNull};
 
     private _side = side _requester;
-    private _defs = [_side,_mode,_seatCount] call ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
+    private _ranked = [_side,_mode,_seatCount] call
+        ITW_CLASH_Checkbook_fnc_RankTransportVariants;
     private _requestId = _externalRequestId;
     if (_requestId isEqualTo "") then {
         ITW_CLASH_CheckbookRequestSerial = ITW_CLASH_CheckbookRequestSerial + 1;
@@ -986,8 +1027,13 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     private _result = objNull;
     {
         if (!isNull _result) then {continue};
-        private _vehDef = _x;
-        private _veh = [_vehDef,_crewTypes,_unitTypes,_side,_spawn] call ITW_AtkSpawnVeh;
+        _x params [
+            "_capacityScore","_vehDef","_variant","_class",
+            "_estimatedCapacity","_capacityKnown","_ticketCost","_maxSpeed"
+        ];
+        private _spawnDef = +_vehDef;
+        _spawnDef set [ITW_VEH_CLASSES,[_variant]];
+        private _veh = [_spawnDef,_crewTypes,_unitTypes,_side,_spawn] call ITW_AtkSpawnVeh;
         if (isNull _veh) then {continue};
 
         private _crewGroup = group driver _veh;
@@ -1028,9 +1074,10 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
             _requestId,[_requester] call ITW_CLASH_DualHAL_fnc_GroupId,
             side _requester,_mode,_seatCount,typeOf _veh,_capacity,
             _baseIndex,_objectiveIndex,_spawnSource,
-            _vehDef#ITW_VEH_REQD_TICKETS,_vehDef#ITW_VEH_CURR_TICKETS
+            _vehDef#ITW_VEH_REQD_TICKETS,_vehDef#ITW_VEH_CURR_TICKETS,
+            round _capacityScore,_estimatedCapacity,_maxSpeed
         ]] call ITW_CLASH_DualHAL_fnc_Log;
-    } forEach _defs;
+    } forEach _ranked;
 
     if (isNull _result) then {
         ["checkbook-denied",[
