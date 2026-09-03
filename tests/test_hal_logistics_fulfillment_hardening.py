@@ -199,7 +199,10 @@ def test_thunder_run_uses_hal_intelligence_native_drop_and_existing_lifecycle():
     assert "_providerHuman" in wrapper
     assert "thunderRunRouter=true" in intercept
 
-    ammo = logistics.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
+    evaluate = logistics.split("ITW_CLASH_HALLogistics_fnc_Evaluate = {", 1)[1].split(
+        "[] spawn {", 1
+    )[0]
+    ammo = evaluate.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
     assert "private _openDemand = false;" in ammo
     assert '"RydHQ_ASupportedG"' in ammo
     assert '"RydHQ_Boxed"' in ammo
