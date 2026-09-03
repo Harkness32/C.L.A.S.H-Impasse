@@ -3,12 +3,11 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceAuthorityStarted = true;
-ITW_CLASH_ServiceAuthorityVersion = 2;
+ITW_CLASH_ServiceAuthorityVersion = 3;
 ITW_CLASH_ServiceAuthorityReady = false;
 
 if (
     isNil "ITW_CLASH_Service_fnc_RegisterPhysical"
-    || {isNil "ITW_CLASH_Service_fnc_StageFieldVehicleBase"}
     || {isNil "ITW_CLASH_Checkbook_fnc_RegisterTransport"}
     || {isNil "ITW_CLASH_Generation_fnc_RegisterAsset"}
 ) exitWith {
@@ -236,7 +235,7 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
 
 ITW_CLASH_ServiceAuthorityReady = true;
 diag_log format [
-    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true transportVirtualization=true sharedVehDefImmutable=true idempotentRegistration=true",
+    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true transportVirtualization=true logisticsVirtualization=true sharedVehDefImmutable=true idempotentRegistration=true staleStagePrerequisiteRemoved=true",
     ITW_CLASH_ServiceAuthorityVersion
 ];
 true
