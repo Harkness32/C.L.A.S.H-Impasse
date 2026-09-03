@@ -170,15 +170,8 @@ ITW_CLASH_Service_fnc_RegisterPhysical = {
 
 // Explicit Checkbook transport demand creates the lease before lifecycle-v1's
 // RegisterTransport wrapper calls RegisterPhysical.
+// Transport is deliberately outside ServiceAuthority during the isolation pass.
 ITW_CLASH_ServiceAuthority_fnc_RegisterTransportBase = ITW_CLASH_Checkbook_fnc_RegisterTransport;
-ITW_CLASH_Checkbook_fnc_RegisterTransport = {
-    _this params ["_veh","_crewGroup","_vehDef","_hq","_requestId",["_source","checkbook"]];
-    if (!isNull _veh) then {
-        [_veh,_crewGroup,"TRANSPORT","checkbook-transport"] call
-            ITW_CLASH_ServiceAuthority_fnc_SetLease;
-    };
-    _this call ITW_CLASH_ServiceAuthority_fnc_RegisterTransportBase
-};
 
 // Logistics registration is also an explicit service request. Artillery never
 // receives a service lease and remains persistent/combat-accounted.
@@ -200,78 +193,24 @@ ITW_CLASH_Generation_fnc_RegisterAsset = {
 ITW_CLASH_ServiceAuthority_fnc_StageFieldVehicleLifecycleBase = ITW_CLASH_DualHAL_fnc_StageFieldVehicle;
 ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     params ["_vehInfo",["_teleportToAttackPos",false],["_populateObjectives",false]];
-    if !(_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) exitWith {false};
+    private _result = _this call ITW_CLASH_ServiceAuthority_fnc_StageFieldVehicleLifecycleBase;
 
-    private _veh = _vehInfo#VEHINFO_VEH;
-    private _group = _vehInfo#VEHINFO_CREW_GRP;
-    private _role = _vehInfo#VEHINFO_ROLE;
-    private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
-    private _transportDeployment = _role == ITW_VEH_ROLE_TRANSPORT || {
-        _role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}
-    };
-
-    if (_transportDeployment && {!isNull _veh}) then {
-        [_veh,_group,"TRANSPORT","impasse-handoff"] call
-            ITW_CLASH_ServiceAuthority_fnc_SetLease;
-    };
-
-    private _result = if (_role == ITW_VEH_ROLE_DUAL && {!_dualAsTransport}) then {
-        // Bypass ServiceLifecycle v1's broad DUAL enrollment. Its saved base is
-        // the already-hardened DualHAL handoff. That older base also classified
-        // all DUAL as cargo, so remove only those service-only memberships after
-        // the handoff; HAL can then classify the asset normally as combat-capable.
-        private _handled = _this call ITW_CLASH_Service_fnc_StageFieldVehicleBase;
-        if (_handled && {!isNull _veh}) then {
-            [_veh,_group,"dual-combat-handoff"] call ITW_CLASH_ServiceAuthority_fnc_ClearLease;
-            if (!isNull _group) then {
-                private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-                if (!isNull _hq) then {
-                    {
-                        private _members = +(_hq getVariable [_x,[]]);
-                        _hq setVariable [_x,_members - [_group]];
-                    } forEach [
-                        "RydHQ_CargoG","RydHQ_CargoOnly",
-                        "RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"
-                    ];
-                };
-                _group setVariable ["ITW_CLASH_CapExempt",nil];
-                _group setVariable ["ITW_CLASH_ServiceAsset",nil];
-                _group setVariable ["ITW_CLASH_ServiceCapability",nil];
-            };
-            _veh setVariable ["ITW_CLASH_ServiceAsset",nil,true];
-            _veh setVariable ["ITW_CLASH_ServiceCapability",nil,true];
+    // Preserve native Impasse's per-deployment disarm rule for a DUAL vehicle
+    // explicitly used as transport, without creating a service lease.
+    if (_result && {_vehInfo isEqualType []} && {count _vehInfo > VEHINFO_IS_DUAL_AS_TRANSPORT}) then {
+        private _veh = _vehInfo#VEHINFO_VEH;
+        private _role = _vehInfo#VEHINFO_ROLE;
+        private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
+        if (!isNull _veh && {_role == ITW_VEH_ROLE_DUAL} && {_dualAsTransport}) then {
+            [_veh,0] remoteExec ["setVehicleAmmo",_veh];
         };
-        _handled
-    } else {
-        _this call ITW_CLASH_ServiceAuthority_fnc_StageFieldVehicleLifecycleBase
-    };
-
-    // The suppressed native Impasse writer disarms DUAL only when this exact
-    // deployment is DUAL-as-transport. Reproduce that per-deployment policy.
-    if (_result && {!isNull _veh} && {
-        _role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}
-    }) then {
-        [_veh,0] remoteExec ["setVehicleAmmo",_veh];
-    };
-
-    if (_result) then {
-        ["handoff-classified",[
-            if (isNull _group) then {"<null>"} else {
-                [_group] call ITW_CLASH_DualHAL_fnc_GroupId
-            },
-            if (isNull _veh) then {"<null>"} else {typeOf _veh},
-            _role,_dualAsTransport,
-            if (_transportDeployment) then {
-                if (_role == ITW_VEH_ROLE_DUAL) then {"DUAL_TRANSPORT_LEASE"} else {"PURE_TRANSPORT"}
-            } else {"COMBAT"}
-        ]] call ITW_CLASH_ServiceAuthority_fnc_Log;
     };
     _result
 };
 
 ITW_CLASH_ServiceAuthorityReady = true;
 diag_log format [
-    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true sharedVehDefImmutable=true dualDeploymentAware=true idempotentRegistration=true",
+    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true transportIsolation=true sharedVehDefImmutable=true idempotentRegistration=true",
     ITW_CLASH_ServiceAuthorityVersion
 ];
 true

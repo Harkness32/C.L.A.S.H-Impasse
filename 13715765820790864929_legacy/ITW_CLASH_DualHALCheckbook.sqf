@@ -846,6 +846,9 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     _crewGroup setVariable ["ITW_CLASH_CheckbookAsset",true];
     _crewGroup setVariable ["ITW_CLASH_CheckbookRequest",_requestId];
     _crewGroup setVariable ["START" + str _crewGroup,getPosATL _veh];
+    private _injectCycle = _hq getVariable ["RydHQ_Cyclecount",-1];
+    _crewGroup setVariable ["ITW_CLASH_CheckbookInjectedCycle",_injectCycle];
+    _veh setVariable ["ITW_CLASH_CheckbookInjectedCycle",_injectCycle,true];
 
     [_crewGroup,"checkbook-transport"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
 
@@ -1029,21 +1032,7 @@ ITW_CLASH_Checkbook_fnc_CargoMode = {
 
 ITW_CLASH_DualHAL_fnc_InstallCargoHook = {
     if (missionNamespace getVariable ["ITW_CLASH_CheckbookCargoHookReady",false]) exitWith {true};
-    if (isNil "HAL_SCargo" || {isNil "RYD_Wait"}) exitWith {false};
-
-    // Native RYD_Wait contains one leaked caller-scope reference to _unitG in
-    // its vehicle unstick gate. On cross-group transport legs RYD_Wait's own
-    // _gp is the carrier group while the caller's _unitG is the passenger
-    // group, whose GETIN waypoint is already gone. Bind _unitG to the waited
-    // group so HAL's own LastMoveOR/doMove remedy evaluates its own waypoint.
-    if (isNil "ITW_CLASH_Checkbook_fnc_NativeRYDWait") then {
-        ITW_CLASH_Checkbook_fnc_NativeRYDWait = RYD_Wait;
-        RYD_Wait = {
-            private _unitG = _this param [0,grpNull];
-            _this call ITW_CLASH_Checkbook_fnc_NativeRYDWait
-        };
-        diag_log "CLASH BOOT | ryd-wait-scope-fix-ready | unitG=waited-group nativeUnstick=true";
-    };
+    if (isNil "HAL_SCargo") exitWith {false};
 
     ITW_CLASH_Checkbook_fnc_NativeSCargo = HAL_SCargo;
     HAL_SCargo = {

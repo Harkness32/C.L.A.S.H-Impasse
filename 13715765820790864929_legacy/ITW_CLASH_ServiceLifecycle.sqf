@@ -217,24 +217,12 @@ ITW_CLASH_Service_fnc_InstallProviderWrappers = {
             ITW_CLASH_ServiceNativeProviders set [_x,_native];
             ITW_CLASH_CheckbookProviders set [_x,ITW_CLASH_Service_fnc_Provider];
         };
-    } forEach ["TRANSPORT","LOGISTICS_AMMO","LOGISTICS_FUEL","LOGISTICS_REPAIR"];
+    } forEach ["LOGISTICS_AMMO","LOGISTICS_FUEL","LOGISTICS_REPAIR"];
     true
 };
 
-if (!isNil "ITW_CLASH_Checkbook_fnc_RegisterTransport") then {
-    ITW_CLASH_Service_fnc_RegisterTransportBase = ITW_CLASH_Checkbook_fnc_RegisterTransport;
-    ITW_CLASH_Checkbook_fnc_RegisterTransport = {
-        private _result = _this call ITW_CLASH_Service_fnc_RegisterTransportBase;
-        if (_result) then {
-            _this params ["_veh","_crewGroup"];
-            if (!isNull _crewGroup) then {_crewGroup setVariable ["ITW_CLASH_CapExempt",true]};
-            if (!isNull _veh) then {
-                [_veh,"TRANSPORT",[_veh] call ITW_CLASH_Service_fnc_ModeForVehicle,"checkbook-register"] call ITW_CLASH_Service_fnc_RegisterPhysical;
-            };
-        };
-        _result
-    };
-};
+// AI transport remains outside the service/virtualization pool during the
+// isolation pass. Checkbook provisions it; HAL owns the live asset directly.
 
 if (!isNil "ITW_CLASH_Generation_fnc_RegisterAsset") then {
     ITW_CLASH_Service_fnc_RegisterGeneratedBase = ITW_CLASH_Generation_fnc_RegisterAsset;
@@ -251,29 +239,8 @@ if (!isNil "ITW_CLASH_Generation_fnc_RegisterAsset") then {
     };
 };
 
-/* Clear stale Impasse orders at handoff only; HAL owns every live order afterward. */
-if (!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle") then {
-    ITW_CLASH_Service_fnc_StageFieldVehicleBase = ITW_CLASH_DualHAL_fnc_StageFieldVehicle;
-    ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
-        private _result = _this call ITW_CLASH_Service_fnc_StageFieldVehicleBase;
-        if (_result) then {
-            private _vehInfo = _this param [0,[]];
-            if (_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) then {
-                private _role = _vehInfo#VEHINFO_ROLE;
-                if (_role in [ITW_VEH_ROLE_TRANSPORT,ITW_VEH_ROLE_DUAL]) then {
-                    private _veh = _vehInfo#VEHINFO_VEH;
-                    private _group = _vehInfo#VEHINFO_CREW_GRP;
-                    if (!isNull _group) then {
-                        if (!isNil "RYD_WPdel") then {[_group] call RYD_WPdel} else {{deleteWaypoint _x} forEachReversed waypoints _group};
-                        _group setVariable ["ITW_CLASH_CapExempt",true];
-                    };
-                    if (!isNull _veh) then {[_veh,"TRANSPORT",[_veh] call ITW_CLASH_Service_fnc_ModeForVehicle,"impasse-handoff"] call ITW_CLASH_Service_fnc_RegisterPhysical};
-                };
-            };
-        };
-        _result
-    };
-};
+/* Transport staging is intentionally not wrapped by ServiceLifecycle during
+   isolation. DualHAL performs the handoff; HAL owns every live order afterward. */
 
 call ITW_CLASH_Service_fnc_InstallProviderWrappers;
 

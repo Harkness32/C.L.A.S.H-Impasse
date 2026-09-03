@@ -101,6 +101,7 @@ ITW_CLASH_ServiceStability_fnc_TryReactivateBase = ITW_CLASH_Service_fnc_TryReac
 ITW_CLASH_Service_fnc_TryReactivate = {
     private _request = _this;
     private _capability = toUpperANSI (_request getOrDefault ["capability",""]);
+    if (_capability == "TRANSPORT") exitWith {createHashMap};
     if !([_capability] call ITW_CLASH_Service_fnc_IsCapability) exitWith {createHashMap};
 
     private _requirements = _request getOrDefault ["requirements",createHashMap];
