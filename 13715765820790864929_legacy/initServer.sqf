@@ -1,7 +1,7 @@
-/* Temporary observer for HAL air-transport pickup stalls. Observer only. */
+/* Temporary diagnostic/recovery hook for HAL air-transport pickup stalls. */
 if (!isServer) exitWith {};
 
-ITW_CLASH_SCargoAirDiagVersion = 6;
+ITW_CLASH_SCargoAirDiagVersion = 7;
 ITW_CLASH_SCargoAirDiagPoll = 1;
 ITW_CLASH_SCargoAirDiagStallSeconds = 8;
 ITW_CLASH_SCargoAirDiagStates = createHashMap;
@@ -98,7 +98,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
     };
     if !(missionNamespace getVariable ["ITW_CLASH_HALReady",false]) exitWith {};
 
-    diag_log format ["CLASH SCARGO AIR DIAG | ready | version=%1 observerOnly=true",ITW_CLASH_SCargoAirDiagVersion];
+    diag_log format ["CLASH SCARGO AIR DIAG | ready | version=%1 observerOnly=false",ITW_CLASH_SCargoAirDiagVersion];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep ITW_CLASH_SCargoAirDiagPoll;
@@ -146,9 +146,11 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                             ) then {
                                 private _flag = "InfGetinCheck" + str _carrierGroup;
                                 _carrierGroup setVariable [_flag,true];
+                                _carrier land "NONE";
+                                _pilot action ["CancelLand",_carrier];
                                 _releaseSent = true;
                                 diag_log format [
-                                    "CLASH SCARGO AIR DIAG | HAL-NATIVE-UNSTICK-ARMED | heldSeconds=%1 expected=%2 group=%3 lastMoveOR=%4",
+                                    "CLASH SCARGO AIR DIAG | HAL-NATIVE-UNSTICK-ARMED-LANDING-RELEASED | heldSeconds=%1 expected=%2 group=%3 lastMoveOR=%4",
                                     round _held,_expected,str _carrierGroup,
                                     _carrier getVariable ["LastMoveOR",0]
                                 ];
