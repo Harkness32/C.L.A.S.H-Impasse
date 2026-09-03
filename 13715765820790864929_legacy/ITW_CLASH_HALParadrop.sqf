@@ -54,14 +54,18 @@ ITW_CLASH_HALParadrop_fnc_ShouldUse = {
     if !(_chance isEqualType 0) then {_chance = 50};
     if (_chance == 777) then {_chance = selectRandom [0,25,50,75,100]};
 
-    if (_capacity >= ITW_CLASH_HALParadrop_HeavyCargoSeats) then {
-        _chance = _chance max ITW_CLASH_HALParadrop_HeavyChance;
-    };
-    if (_threatened) then {
-        _chance = _chance max ITW_CLASH_HALParadrop_ThreatChance;
-    };
-    if (_threatened && {_capacity >= ITW_CLASH_HALParadrop_HeavyCargoSeats}) then {
-        _chance = 100;
+    // Respect explicit ITW "land only" (0) and "parachute only" (100)
+    // settings. C.L.A.S.H. only biases the mixed modes toward safer drops.
+    if (_chance > 0 && {_chance < 100}) then {
+        if (_capacity >= ITW_CLASH_HALParadrop_HeavyCargoSeats) then {
+            _chance = _chance max ITW_CLASH_HALParadrop_HeavyChance;
+        };
+        if (_threatened) then {
+            _chance = _chance max ITW_CLASH_HALParadrop_ThreatChance;
+        };
+        if (_threatened && {_capacity >= ITW_CLASH_HALParadrop_HeavyCargoSeats}) then {
+            _chance = 100;
+        };
     };
 
     [random 100 < _chance,_chance,_capacity]
