@@ -10,7 +10,7 @@ def mission(name: str) -> str:
 
 def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
     text = mission("initServer.sqf")
-    assert "ITW_CLASH_SCargoAirDiagVersion = 11;" in text
+    assert "ITW_CLASH_SCargoAirDiagVersion = 12;" in text
     assert "groupRearmTest=true" in text
     assert '"POST-EMBARK-MOVE-STALLED"' in text
     assert '"carrierInAirG"' in text
@@ -22,6 +22,10 @@ def test_air_transport_probe_uses_only_existing_group_waypoint_rearm():
     assert '"nearHelipadDistance"' in text
     assert '"waypointCount"' in text
     assert '"leaderIsPilot"' in text
+    assert '"leaderCommand"' in text
+    assert '"leaderExpected"' in text
+    assert "createHashMapFromArray _snap" in text
+    assert 'getOrDefault ["wpDistance",-1]' in text
 
     assert '_carrierGroup setCurrentWaypoint [_carrierGroup,_idx];' in text
     assert '"GROUP-WAYPOINT-REARM-ISSUED"' in text
@@ -73,6 +77,8 @@ def test_transport_injection_records_sitrep_cycle_only():
 def test_combat_diagnostics_resolve_hq_from_observed_group():
     text = mission("ITW_CLASH_CombatDiagnostics.sqf")
     assert 'params [["_group",grpNull]];' in text
+    assert 'side _group == side ITW_CLASH_BLUFORHQ' in text
+    assert 'side _group == side ITW_CLASH_HALHQ' in text
     assert '[_group] call ITW_CLASH_fnc_GetCommanderForGroup' in text
     group_fn = text[text.index("ITW_CLASH_Diag_fnc_Group = {"):
                     text.index("ITW_CLASH_Diag_fnc_HQSnapshot = {")]
