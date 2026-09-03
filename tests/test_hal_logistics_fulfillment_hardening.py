@@ -150,7 +150,10 @@ def test_ai_air_ammo_provider_is_preloaded_with_hal_ammo_box_before_dispatch():
     assert '"ITW_CLASH_PreloadedSlingCarrier"' in logistics
     assert "preloadedAmmoSling=true" in logistics
 
-    ammo_block = logistics.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
+    evaluate = logistics.split("ITW_CLASH_HALLogistics_fnc_Evaluate = {", 1)[1].split(
+        "[] spawn {", 1
+    )[0]
+    ammo_block = evaluate.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
     assert ammo_block.index('"LOGISTICS_PACKAGE_AMMO","AIR"') < ammo_block.index('"LOGISTICS_AMMO","AIR"')
     assert '[_hq,_preferredAir] call ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling;' in ammo_block
 
