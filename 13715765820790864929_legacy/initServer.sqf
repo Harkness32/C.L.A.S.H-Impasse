@@ -1,7 +1,7 @@
 /* Temporary observer for HAL air-transport pickup stalls. Observer only. */
 if (!isServer) exitWith {};
 
-ITW_CLASH_SCargoAirDiagVersion = 3;
+ITW_CLASH_SCargoAirDiagVersion = 4;
 ITW_CLASH_SCargoAirDiagPoll = 1;
 ITW_CLASH_SCargoAirDiagStallSeconds = 8;
 ITW_CLASH_SCargoAirDiagStates = createHashMap;
@@ -114,10 +114,11 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                 if (_allAboard) then {"EMBARKED"} else {"BOARDING"}
             };
             private _key = str _carrier;
-            private _state = ITW_CLASH_SCargoAirDiagStates getOrDefault [_key,["",time,-1e10,-1e10,-1e10]];
-            _state params ["_lastPhase","_phaseSince","_lastSnapshot","_lastNoMove","_lastMoveStall"];
+            private _state = ITW_CLASH_SCargoAirDiagStates getOrDefault [_key,["",time,-1e10,-1e10,-1e10,false]];
+            _state params ["_lastPhase","_phaseSince","_lastSnapshot","_lastNoMove","_lastMoveStall","_releaseSent"];
             if (_phase != _lastPhase) then {
                 _phaseSince = time;
+                _releaseSent = false;
                 diag_log format ["CLASH SCARGO AIR DIAG | phase=%1 | %2",_phase,_snap];
             };
             if (time - _lastSnapshot >= 5) then {
@@ -131,6 +132,14 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
             private _held = time - _phaseSince;
             if (_phase == "EMBARKED" && {_speed < 1} && {_held >= ITW_CLASH_SCargoAirDiagStallSeconds}) then {
                 if (_wpType == "MOVE" && {_wpDistance > 100}) then {
+                    if (!_releaseSent && {isTouchingGround _carrier}) then {
+                        private _pilot = driver _carrier;
+                        if (isNull _pilot) then {_pilot = assignedDriver _carrier};
+                        if (!isNull _pilot) then {_pilot action ["CancelLand",_carrier]};
+                        _carrier land "NONE";
+                        _releaseSent = true;
+                        diag_log format ["CLASH SCARGO AIR DIAG | LANDING-LATCH-CLEARED | heldSeconds=%1 | %2",round _held,_snap];
+                    };
                     if (time - _lastMoveStall >= 5) then {
                         _lastMoveStall = time;
                         diag_log format ["CLASH SCARGO AIR DIAG | POST-EMBARK-MOVE-STALLED | heldSeconds=%1 | %2",round _held,_snap];
@@ -142,7 +151,7 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
                     };
                 };
             };
-            ITW_CLASH_SCargoAirDiagStates set [_key,[_phase,_phaseSince,_lastSnapshot,_lastNoMove,_lastMoveStall]];
+            ITW_CLASH_SCargoAirDiagStates set [_key,[_phase,_phaseSince,_lastSnapshot,_lastNoMove,_lastMoveStall,_releaseSent]];
         } forEach (call ITW_CLASH_SCargoAirDiag_fnc_Carriers);
     };
 };

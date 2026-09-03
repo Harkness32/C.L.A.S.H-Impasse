@@ -49,7 +49,6 @@ ITW_CLASH_ServiceExecution_fnc_Reject = {
         sleep 0.25;
         time >= _deadline || {
             missionNamespace getVariable ["ITW_CLASH_ServiceStabilityReady",false]
-            && {!isNil "RYD_Path"}
             && {!isNil "HAL_GoAttInf"}
             && {!isNil "HAL_GoAttArmor"}
             && {!isNil "HAL_GoAttSniper"}
@@ -69,40 +68,6 @@ ITW_CLASH_ServiceExecution_fnc_Reject = {
             !isNil "HAL_GoDef",!isNil "HAL_GoDefAir",!isNil "HAL_GoDefNav",!isNil "HAL_GoDefRes"
         ]] call ITW_CLASH_ServiceExecution_fnc_Log;
     };
-
-    // Repair a verified NR6 Workshop GoAttInf defect without taking over tactical
-    // execution. Some Workshop builds read _wp0 before initializing it in the
-    // cargo-search branch, aborting the native infantry/transport handoff.
-    // Current upstream NR6 already initializes _wp0; detect that and no-op.
-    private _goAttInfPath = RYD_Path + "HAL\\GoAttInf.sqf";
-    private _goAttInfSource = preprocessFileLineNumbers _goAttInfPath;
-    private _goAttInfPatch = "source-unavailable";
-    if (_goAttInfSource isNotEqualTo "") then {
-        private _useAt = _goAttInfSource find "_wp0 isEqualTo []";
-        private _initAt = _goAttInfSource find "_wp0 = [];";
-        if (_useAt >= 0 && {_initAt < 0 || {_initAt > _useAt}}) then {
-            private _anchor = "_nW = 1;";
-            private _anchorAt = _goAttInfSource find _anchor;
-            if (_anchorAt >= 0 && {_anchorAt < _useAt}) then {
-                _goAttInfSource =
-                    (_goAttInfSource select [0,_anchorAt])
-                    + "_wp0 = [];_wp = [];\n"
-                    + (_goAttInfSource select [_anchorAt]);
-                HAL_GoAttInf = compile _goAttInfSource;
-                _goAttInfPatch = "patched";
-            } else {
-                _goAttInfPatch = "anchor-missing";
-            };
-        } else {
-            if (_useAt >= 0 && {_initAt >= 0 && {_initAt < _useAt}}) then {
-                _goAttInfPatch = "already-fixed";
-            } else {
-                _goAttInfPatch = "signature-missing";
-            };
-        };
-    };
-    ["GoAttInf-wp0-fix",[_goAttInfPatch,count _goAttInfSource,_goAttInfPath]] call
-        ITW_CLASH_ServiceExecution_fnc_Log;
 
     ITW_CLASH_ServiceExecution_fnc_GoAttInfBase = HAL_GoAttInf;
     ITW_CLASH_ServiceExecution_fnc_GoAttArmorBase = HAL_GoAttArmor;
