@@ -11,14 +11,11 @@ def mission(name: str) -> str:
 def test_service_home_is_resolved_from_live_impasse_bases():
     text = mission("ITW_CLASH_ServiceHomeResolver.sqf")
 
-    assert 'ITW_CLASH_ServiceHomeResolverVersion = 2;' in text
-    assert 'ITW_CLASH_ServiceHomeRevalidateInterval' in text
-    assert '"ITW_CLASH_ServiceHomeRevalidateInterval",120' in text
-    assert '"ITW_CLASH_ServiceHomeChangeThreshold",200' in text
+    assert 'ITW_CLASH_ServiceHomeResolverVersion = 3;' in text
     assert 'ITW_BASE_SPAWNED' in text
     assert 'ITW_OBJ_OWNER' in text
     assert 'ITW_OBJ_INDEX' in text
-    assert '"request-base"' in text
+    assert '"explicit-base-affinity"' in text
     assert '"nearest-base"' in text
     assert '"water-node"' in text
     assert '"fallback-start"' in text
@@ -55,17 +52,14 @@ def test_transient_groups_use_same_live_resolver_and_start_writer():
     assert 'transientGroupWriteThrough=true' in text
 
 
-def test_rtb_resolves_at_order_and_revalidates_while_progressing():
+def test_home_resolver_is_passive_and_does_not_own_hal_rtb():
     text = mission("ITW_CLASH_ServiceHomeResolver.sqf")
 
-    assert 'ITW_CLASH_ServiceHome_fnc_OrderRTBBase = ITW_CLASH_Service_fnc_OrderRTB;' in text
-    assert '"order-rtb:" + _reason' in text
-    assert 'ITW_CLASH_ServiceHome_fnc_ReissueRTBBase = ITW_CLASH_Service_fnc_ReissueRTB;' in text
-    assert 'ITW_CLASH_ServiceHome_fnc_RefreshRTB' in text
-    assert 'time - _resolvedAt >= ITW_CLASH_ServiceHomeRevalidateInterval' in text
-    assert '_oldPosition distance2D _newPosition >= ITW_CLASH_ServiceHomeChangeThreshold' in text
-    assert '["refreshed-no-waypoint-change",[' in text
-    assert '["waypoint-changed",[' in text
+    assert 'ITW_CLASH_Service_fnc_OrderRTB' not in text
+    assert 'ITW_CLASH_Service_fnc_ReissueRTB' not in text
+    assert 'ITW_CLASH_ServiceHomeRevalidationWatch' not in text
+    assert 'rtbWriter=false' in text
+    assert 'passiveStorageDiscovery=true' in text
 
 
 def test_registration_cannot_clobber_resolver_written_home():
@@ -80,12 +74,15 @@ def test_registration_cannot_clobber_resolver_written_home():
     assert '_entry set ["homeAuthority","UNRESOLVED"]' in text
 
 
-def test_base_hint_is_reference_not_coordinate_snapshot():
+def test_base_hint_is_metadata_and_pooled_assets_choose_nearest_base():
     text = mission("ITW_CLASH_ServiceHomeResolver.sqf")
 
     assert 'ITW_CLASH_ServiceHome_fnc_SetBaseHint' in text
     assert '"ITW_CLASH_ServiceBaseHint"' in text
     assert '_entry set ["baseHint",_baseIndex];' in text
+    assert 'private _useBaseHint = _entry getOrDefault ["useBaseHint",false];' in text
+    assert '_baseIndex = [_side,_currentPos] call ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase;' in text
+    assert '["useBaseHint",true]' in text
     assert '"transport-registration"' in text
     assert '"generated-service-registration"' in text
     assert '"field-handoff"' in text

@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceLifecycleStarted",false]) exitWith {true};
 ITW_CLASH_ServiceLifecycleStarted = true;
-ITW_CLASH_ServiceLifecycleVersion = 3;
+ITW_CLASH_ServiceLifecycleVersion = 4;
 ITW_CLASH_ServiceLifecycleReady = false;
 ITW_CLASH_ServicePool = [];
 ITW_CLASH_ServiceSerial = 0;
@@ -15,6 +15,12 @@ ITW_CLASH_ServiceRTBAirRadius = missionNamespace getVariable [
 ];
 ITW_CLASH_ServiceIdleGrace = missionNamespace getVariable [
     "ITW_CLASH_ServiceIdleGrace",10
+];
+ITW_CLASH_ServiceInitialStorageGrace = missionNamespace getVariable [
+    "ITW_CLASH_ServiceInitialStorageGrace",45
+];
+ITW_CLASH_ServiceIdleSpeedMax = missionNamespace getVariable [
+    "ITW_CLASH_ServiceIdleSpeedMax",3
 ];
 ITW_CLASH_ServiceRetirePlayerRadius = missionNamespace getVariable [
     "ITW_CLASH_ServiceRetirePlayerRadius",100
@@ -341,7 +347,8 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                 "_storageRadius","_storageBase","_storageMethod"
             ];
 
-            if (_busy || {_cargo} || {!_inStorageZone}) then {
+            private _settled = (abs speed _veh) <= ITW_CLASH_ServiceIdleSpeedMax;
+            if (_busy || {_cargo} || {!_inStorageZone} || {!_settled}) then {
                 if (_busy || {_cargo} || {_storageDistance > (_storageRadius + 50)}) then {
                     _entry set ["taskSeen",true];
                     if (_busy || {_cargo}) then {_entry set ["everBusy",true]};
@@ -350,7 +357,16 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                 ITW_CLASH_ServicePool set [_i,_entry];
                 continue;
             };
-            if !(_entry getOrDefault ["taskSeen",false]) then {
+
+            // A freshly materialized asset needs time for HAL to claim it. But
+            // an unused truck parked at a base forever is still strategic stock,
+            // not a permanent physical decoration. Returned assets can drain
+            // immediately; never-tasked assets drain after this one-time grace.
+            private _taskSeen = _entry getOrDefault ["taskSeen",false];
+            private _spawnedAt = _entry getOrDefault ["spawnedAt",time];
+            if (!_taskSeen && {
+                time - _spawnedAt < ITW_CLASH_ServiceInitialStorageGrace
+            }) then {
                 _entry set ["idleSince",-1];
                 ITW_CLASH_ServicePool set [_i,_entry];
                 continue;
@@ -385,11 +401,13 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
 
 ITW_CLASH_ServiceLifecycleReady = true;
 diag_log format [
-    "CLASH BOOT | service-lifecycle-ready | version=%1 capExempt=true virtualPool=true passiveHALReturn=true anyFriendlyBaseStorage=true areaTrigger=true landingNotRequired=true landRadius=%2 airRadius=%3 idleGrace=%4 playerRadius=%5 transportPlayerRadius=%6 clashOrdersRTB=false halOwnsLiveDisposition=true artilleryPersistent=true",
+    "CLASH BOOT | service-lifecycle-ready | version=%1 capExempt=true virtualPool=true passiveHALReturn=true anyFriendlyBaseStorage=true areaTrigger=true landRadius=%2 airRadius=%3 idleGrace=%4 initialStorageGrace=%5 idleSpeedMax=%6 playerRadius=%7 transportPlayerRadius=%8 clashOrdersRTB=false halOwnsLiveDisposition=true artilleryPersistent=true",
     ITW_CLASH_ServiceLifecycleVersion,
     ITW_CLASH_ServiceRTBLandRadius,
     ITW_CLASH_ServiceRTBAirRadius,
     ITW_CLASH_ServiceIdleGrace,
+    ITW_CLASH_ServiceInitialStorageGrace,
+    ITW_CLASH_ServiceIdleSpeedMax,
     ITW_CLASH_ServiceRetirePlayerRadius,
     ITW_CLASH_ServiceTransportRetirePlayerRadius
 ];

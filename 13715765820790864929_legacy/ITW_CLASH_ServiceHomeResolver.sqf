@@ -3,23 +3,14 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceHomeResolverStarted",false]) exitWith {true};
 ITW_CLASH_ServiceHomeResolverStarted = true;
-ITW_CLASH_ServiceHomeResolverVersion = 2;
+ITW_CLASH_ServiceHomeResolverVersion = 3;
 ITW_CLASH_ServiceHomeResolverReady = false;
-ITW_CLASH_ServiceHomeRevalidateInterval = missionNamespace getVariable [
-    "ITW_CLASH_ServiceHomeRevalidateInterval",120
-];
-ITW_CLASH_ServiceHomeChangeThreshold = missionNamespace getVariable [
-    "ITW_CLASH_ServiceHomeChangeThreshold",200
-];
-
 private _deadline = time + 240;
 waitUntil {
     sleep 0.1;
     time >= _deadline || {
         missionNamespace getVariable ["ITW_CLASH_SeaGenerationGuardReady",false]
         && {missionNamespace getVariable ["ITW_CLASH_ServiceStabilityReady",false]}
-        && {!isNil "ITW_CLASH_Service_fnc_OrderRTB"}
-        && {!isNil "ITW_CLASH_Service_fnc_ReissueRTB"}
         && {!isNil "ITW_CLASH_Service_fnc_RegisterPhysical"}
         && {!isNil "ITW_CLASH_Checkbook_fnc_RegisterTransport"}
         && {!isNil "ITW_CLASH_Generation_fnc_RegisterAsset"}
@@ -167,9 +158,12 @@ ITW_CLASH_ServiceHome_fnc_Resolve = {
 
     private _baseIndex = -1;
     private _method = "";
-    if ([_side,_hint] call ITW_CLASH_ServiceHome_fnc_BaseValidForSide) then {
+    private _useBaseHint = _entry getOrDefault ["useBaseHint",false];
+    if (_useBaseHint && {
+        [_side,_hint] call ITW_CLASH_ServiceHome_fnc_BaseValidForSide
+    }) then {
         _baseIndex = _hint;
-        _method = "request-base";
+        _method = "explicit-base-affinity";
     } else {
         _baseIndex = [_side,_currentPos] call ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase;
         if (_baseIndex >= 0) then {_method = "nearest-base"};
@@ -251,7 +245,8 @@ ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup = {
         ["mode",_mode],
         ["vehicle",_veh],
         ["group",_group],
-        ["baseHint",_hint]
+        ["baseHint",_hint],
+        ["useBaseHint",true]
     ];
 
     private _resolved = [_entry,getPosATL _veh] call ITW_CLASH_ServiceHome_fnc_Resolve;
@@ -382,62 +377,6 @@ ITW_CLASH_Service_fnc_RegisterPhysical = {
     _result
 };
 
-ITW_CLASH_ServiceHome_fnc_OrderRTBBase = ITW_CLASH_Service_fnc_OrderRTB;
-ITW_CLASH_Service_fnc_OrderRTB = {
-    params ["_index",["_reason","task-complete"]];
-    private _resolved = [_index,"order-rtb:" + _reason] call ITW_CLASH_ServiceHome_fnc_ResolveAndStore;
-    if ((_resolved getOrDefault ["status",""]) != "RESOLVED") exitWith {false};
-    _this call ITW_CLASH_ServiceHome_fnc_OrderRTBBase
-};
-
-ITW_CLASH_ServiceHome_fnc_ReissueRTBBase = ITW_CLASH_Service_fnc_ReissueRTB;
-ITW_CLASH_ServiceHome_fnc_RefreshRTB = {
-    params ["_index",["_reason","watchdog"]];
-    if (_index < 0 || {_index >= count ITW_CLASH_ServicePool}) exitWith {false};
-    private _before = ITW_CLASH_ServicePool#_index;
-    if ((_before getOrDefault ["state",""]) != "RTB") exitWith {false};
-    private _oldPosition = +(_before getOrDefault ["homeResolvedPos",_before getOrDefault ["home",[]]]);
-
-    private _resolved = [_index,"rtb-refresh:" + _reason] call ITW_CLASH_ServiceHome_fnc_ResolveAndStore;
-    if ((_resolved getOrDefault ["status",""]) != "RESOLVED") exitWith {false};
-    private _newPosition = +(_resolved get "position");
-    private _moved = _oldPosition isEqualTo [] || {
-        _oldPosition distance2D _newPosition >= ITW_CLASH_ServiceHomeChangeThreshold
-    };
-
-    if (_moved) then {
-        private _result = [_index] call ITW_CLASH_ServiceHome_fnc_ReissueRTBBase;
-        if (_result) then {
-            private _entry = ITW_CLASH_ServicePool#_index;
-            private _veh = _entry getOrDefault ["vehicle",objNull];
-            if (!isNull _veh) then {
-                _entry set ["lastDistance",_veh distance2D _newPosition];
-                _entry set ["lastProgressAt",time];
-            };
-            ITW_CLASH_ServicePool set [_index,_entry];
-            ["waypoint-changed",[
-                _entry getOrDefault ["id","?"],_reason,+_oldPosition,+_newPosition,
-                if (_oldPosition isEqualTo []) then {-1} else {round (_oldPosition distance2D _newPosition)}
-            ]] call ITW_CLASH_ServiceHome_fnc_Log;
-        };
-        _result
-    } else {
-        private _entry = ITW_CLASH_ServicePool#_index;
-        _entry set ["lastOrderAt",time];
-        ITW_CLASH_ServicePool set [_index,_entry];
-        ["refreshed-no-waypoint-change",[
-            _entry getOrDefault ["id","?"],_reason,+_newPosition,
-            ITW_CLASH_ServiceHomeChangeThreshold
-        ]] call ITW_CLASH_ServiceHome_fnc_Log;
-        true
-    }
-};
-
-ITW_CLASH_Service_fnc_ReissueRTB = {
-    params ["_index"];
-    [_index,"watchdog"] call ITW_CLASH_ServiceHome_fnc_RefreshRTB
-};
-
 ITW_CLASH_ServiceHome_fnc_RegisterTransportBase = ITW_CLASH_Checkbook_fnc_RegisterTransport;
 ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     private _veh = _this param [0,objNull];
@@ -502,28 +441,9 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     _result
 };
 
-[] spawn {
-    scriptName "ITW_CLASH_ServiceHomeRevalidationWatch";
-    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
-        sleep 5;
-        for "_i" from ((count ITW_CLASH_ServicePool) - 1) to 0 step -1 do {
-            private _entry = ITW_CLASH_ServicePool#_i;
-            if ((_entry getOrDefault ["state",""]) != "RTB") then {continue};
-            private _resolvedAt = _entry getOrDefault ["homeResolvedAt",0];
-            if (_resolvedAt <= 0 || {
-                time - _resolvedAt >= ITW_CLASH_ServiceHomeRevalidateInterval
-            }) then {
-                [_i,"periodic"] call ITW_CLASH_ServiceHome_fnc_RefreshRTB;
-            };
-        };
-    };
-};
-
 ITW_CLASH_ServiceHomeResolverReady = true;
 diag_log format [
-    "CLASH BOOT | service-home-resolver-ready | version=%1 liveImpasseBases=true baseHintOnly=true rtbResolveAtUse=true periodicRevalidate=%2 changeThreshold=%3 seaGuardProjectionOnly=true startWriteThrough=true transientGroupWriteThrough=true",
-    ITW_CLASH_ServiceHomeResolverVersion,
-    ITW_CLASH_ServiceHomeRevalidateInterval,
-    ITW_CLASH_ServiceHomeChangeThreshold
+    "CLASH BOOT | service-home-resolver-ready | version=%1 liveImpasseBases=true pooledNearestAtUse=true baseHintMetadataOnly=true explicitTransientAffinity=true passiveStorageDiscovery=true rtbWriter=false seaGuardProjectionOnly=true transientGroupWriteThrough=true",
+    ITW_CLASH_ServiceHomeResolverVersion
 ];
 true

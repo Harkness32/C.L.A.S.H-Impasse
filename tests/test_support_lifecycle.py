@@ -21,7 +21,6 @@ def test_service_lifecycle_virtualizes_only_after_observed_hal_return():
     assert "ITW_CLASH_ServicePassiveReturnMonitor" in service
     assert '"hal-return-zone-entered"' in service
     assert '[_i,"hal-returned-home"] call ITW_CLASH_Service_fnc_Retire;' in service
-    assert "abs speed _veh < 2" not in service
     assert "passiveHALReturn=true" in service
     assert "clashOrdersRTB=false" in service
     assert "halOwnsLiveDisposition=true" in service
@@ -73,16 +72,19 @@ def test_virtual_transport_reactivation_chooses_best_capacity_fit_not_first_pool
 
 def test_service_storage_is_any_friendly_base_area_not_exact_home_point():
     service = mission("ITW_CLASH_ServiceLifecycle.sqf")
-    assert "ITW_CLASH_ServiceLifecycleVersion = 3;" in service
+    assert "ITW_CLASH_ServiceLifecycleVersion = 4;" in service
     assert "ITW_CLASH_Service_fnc_StorageZone" in service
     assert "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices" in service
     assert "nearest-friendly-base-zone" in service
     assert '"ITW_CLASH_ServiceRTBLandRadius",150' in service
     assert '"ITW_CLASH_ServiceRTBAirRadius",300' in service
     assert '"ITW_CLASH_ServiceIdleGrace",10' in service
+    assert '"ITW_CLASH_ServiceInitialStorageGrace",45' in service
+    assert '"ITW_CLASH_ServiceIdleSpeedMax",3' in service
+    assert "private _settled = (abs speed _veh) <= ITW_CLASH_ServiceIdleSpeedMax;" in service
+    assert 'time - _spawnedAt < ITW_CLASH_ServiceInitialStorageGrace' in service
     assert "anyFriendlyBaseStorage=true" in service
     assert "areaTrigger=true" in service
-    assert "landingNotRequired=true" in service
 
 
 def test_logistics_capabilities_are_virtualized_and_reused():
