@@ -877,6 +877,11 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     };
 
     [_veh,_vehDef,_source] call ITW_CLASH_DualHAL_fnc_TrackAsset;
+
+    // ITW_AtkSpawnVeh deliberately creates vehicles damage-protected and the
+    // normal Impasse field pipeline releases that protection later. Checkbook
+    // bypasses that pipeline, so the HAL handoff is the matching release point.
+    ALLOW_DAMAGE(_veh,true);
     true
 };
 

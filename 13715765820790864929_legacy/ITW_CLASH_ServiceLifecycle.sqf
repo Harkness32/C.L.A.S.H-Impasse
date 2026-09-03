@@ -11,6 +11,7 @@ ITW_CLASH_ServiceRTBLandRadius = 125;
 ITW_CLASH_ServiceRTBAirRadius = 350;
 ITW_CLASH_ServiceIdleGrace = 25;
 ITW_CLASH_ServiceRetirePlayerRadius = 600;
+ITW_CLASH_ServiceTransportRetirePlayerRadius = 125;
 ITW_CLASH_ServiceReuseCooldown = 30;
 
 ITW_CLASH_Service_fnc_Log = {
@@ -217,12 +218,12 @@ ITW_CLASH_Service_fnc_InstallProviderWrappers = {
             ITW_CLASH_ServiceNativeProviders set [_x,_native];
             ITW_CLASH_CheckbookProviders set [_x,ITW_CLASH_Service_fnc_Provider];
         };
-    } forEach ["LOGISTICS_AMMO","LOGISTICS_FUEL","LOGISTICS_REPAIR"];
+    } forEach ["TRANSPORT","LOGISTICS_AMMO","LOGISTICS_FUEL","LOGISTICS_REPAIR"];
     true
 };
 
-// AI transport remains outside the service/virtualization pool during the
-// isolation pass. Checkbook provisions it; HAL owns the live asset directly.
+// Transport is pooled only at the strategic storage boundary. While physical,
+ // HAL retains complete pickup, delivery, RTB, and retasking authority.
 
 if (!isNil "ITW_CLASH_Generation_fnc_RegisterAsset") then {
     ITW_CLASH_Service_fnc_RegisterGeneratedBase = ITW_CLASH_Generation_fnc_RegisterAsset;
@@ -239,8 +240,8 @@ if (!isNil "ITW_CLASH_Generation_fnc_RegisterAsset") then {
     };
 };
 
-/* Transport staging is intentionally not wrapped by ServiceLifecycle during
-   isolation. DualHAL performs the handoff; HAL owns every live order afterward. */
+/* Field transport enrollment is installed by ServiceAuthority after the
+   DualHAL handoff. No waypoint or movement writer is added here. */
 
 call ITW_CLASH_Service_fnc_InstallProviderWrappers;
 

@@ -51,19 +51,45 @@ def test_native_ryd_wait_is_not_wrapped():
     assert 'if (isNil "HAL_SCargo") exitWith {false};' in dual
 
 
-def test_ai_transport_is_outside_service_virtualization():
+def test_ai_transport_virtualizes_only_at_passive_hal_storage_boundary():
     life = mission("ITW_CLASH_ServiceLifecycle.sqf")
     auth = mission("ITW_CLASH_ServiceAuthority.sqf")
     stability = mission("ITW_CLASH_ServiceStability.sqf")
+    dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
     provider_block = life[life.index("ITW_CLASH_Service_fnc_InstallProviderWrappers = {"):
                           life.index("call ITW_CLASH_Service_fnc_InstallProviderWrappers;")]
-    assert '"TRANSPORT"' not in provider_block
-    assert 'checkbook-register' not in life
-    assert 'impasse-handoff"] call ITW_CLASH_Service_fnc_RegisterPhysical' not in life
-    assert '"TRANSPORT","checkbook-transport"' not in auth
-    assert 'if (_capability == "TRANSPORT") exitWith {createHashMap};' in stability
+    assert '"TRANSPORT"' in provider_block
+    assert 'ITW_CLASH_ServiceTransportRetirePlayerRadius = 125;' in life
+    assert '"hal-return-observed"' in life
+    assert '[_i,"hal-returned-home"] call ITW_CLASH_Service_fnc_Retire;' in life
 
+    assert '[_veh,_crewGroup,"TRANSPORT","checkbook-transport"] call' in auth
+    assert '[_veh,_group,"TRANSPORT","impasse-handoff"] call' in auth
+    assert '"impasse-handoff"] call\n                ITW_CLASH_Service_fnc_RegisterPhysical;' in auth
+
+    assert 'if (_capability == "TRANSPORT") exitWith {createHashMap};' not in stability
+    assert 'ITW_CLASH_Checkbook_fnc_RegisterTransport' in stability
+    assert '"transportReuse=true"' not in stability  # boot text is raw, not quoted token
+    assert 'transportReuse=true' in stability
+
+    # Virtualization is bookkeeping/storage only: no CLASH transport movement
+    # actuator is restored.
+    transport_storage = life[life.index("/* HAL owns pickup, delivery and RTB."):
+                             life.index("ITW_CLASH_ServiceLifecycleReady = true;")]
+    for forbidden in [
+        'land "NONE"',
+        'CancelLand',
+        'setDestination',
+        'setCurrentWaypoint',
+        'doMove',
+        'commandMove',
+        'addWaypoint',
+        'deleteWaypoint',
+    ]:
+        assert forbidden not in transport_storage
+
+    assert 'ALLOW_DAMAGE(_veh,true);' in dual
 
 def test_transport_injection_records_sitrep_cycle_only():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
@@ -97,3 +123,20 @@ def test_impasse_aircraft_driver_leadership_is_restored_in_both_air_paths():
     text = mission("ITW_Attack.sqf")
     assert text.count("_crewGrp selectLeader _driver;") == 2
     assert text.count('"aircraft-driver-leader-restored"') == 2
+
+
+def test_transport_pool_enrollment_does_not_reintroduce_handoff_waypoint_surgery():
+    auth = mission("ITW_CLASH_ServiceAuthority.sqf")
+    stage = auth[auth.index("ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {"):
+                 auth.index("ITW_CLASH_ServiceAuthorityReady = true;")]
+    assert '"TRANSPORT","impasse-handoff"' in stage
+    for forbidden in [
+        "RYD_WPdel",
+        "deleteWaypoint",
+        "setCurrentWaypoint",
+        "setWaypointPosition",
+        "addWaypoint",
+        "doMove",
+        "commandMove",
+    ]:
+        assert forbidden not in stage

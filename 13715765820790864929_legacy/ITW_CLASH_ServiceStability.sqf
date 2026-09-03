@@ -57,7 +57,16 @@ ITW_CLASH_Service_fnc_Retire = {
     if (isNull _veh) exitWith {false};
 
     private _players = allPlayers select {!(_x isKindOf "HeadlessClient_F")};
-    if ((_players findIf {_x distance2D _veh < ITW_CLASH_ServiceRetirePlayerRadius}) >= 0) exitWith {false};
+    private _capability = toUpperANSI (_entry getOrDefault ["capability",""]);
+    private _retirePlayerRadius = if (_capability == "TRANSPORT") then {
+        missionNamespace getVariable [
+            "ITW_CLASH_ServiceTransportRetirePlayerRadius",
+            ITW_CLASH_ServiceRetirePlayerRadius
+        ]
+    } else {
+        ITW_CLASH_ServiceRetirePlayerRadius
+    };
+    if ((_players findIf {_x distance2D _veh < _retirePlayerRadius}) >= 0) exitWith {false};
 
     private _vehDef = _entry getOrDefault ["vehDef",[]];
     if (_vehDef isEqualTo []) then {_vehDef = _veh getVariable ["ITW_VehDef",[]]};
@@ -101,7 +110,6 @@ ITW_CLASH_ServiceStability_fnc_TryReactivateBase = ITW_CLASH_Service_fnc_TryReac
 ITW_CLASH_Service_fnc_TryReactivate = {
     private _request = _this;
     private _capability = toUpperANSI (_request getOrDefault ["capability",""]);
-    if (_capability == "TRANSPORT") exitWith {createHashMap};
     if !([_capability] call ITW_CLASH_Service_fnc_IsCapability) exitWith {createHashMap};
 
     private _requirements = _request getOrDefault ["requirements",createHashMap];
@@ -296,7 +304,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
 
 ITW_CLASH_ServiceStabilityReady = true;
 diag_log format [
-    "CLASH BOOT | service-stability-ready | version=%1 passiveLifecycle=true tacticalQuarantine=false halOwnsLiveDisposition=true reconRoleGuard=true virtualEntitlement=true nativeCountAuthority=true",
+    "CLASH BOOT | service-stability-ready | version=%1 passiveLifecycle=true tacticalQuarantine=false halOwnsLiveDisposition=true reconRoleGuard=true virtualEntitlement=true transportReuse=true nativeCountAuthority=true",
     ITW_CLASH_ServiceStabilityVersion
 ];
 true
