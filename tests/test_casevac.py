@@ -113,7 +113,7 @@ def test_casevac_claims_group_before_spawn_can_yield():
         "[] spawn {", 1
     )[0]
 
-    assert "ITW_CLASH_CASEVAC_Version = 4;" in source
+    assert "ITW_CLASH_CASEVAC_Version = 5;" in source
     claim = '_group setVariable ["ITW_CLASH_CASEVAC_State","air-spawning"];'
     spawn = "] call ITW_CLASH_CASEVAC_fnc_SpawnHeli;"
     assert dispatch.index(claim) < dispatch.index(spawn)
@@ -122,7 +122,7 @@ def test_casevac_claims_group_before_spawn_can_yield():
 
 def test_casevac_prefers_smallest_sufficient_faction_helicopter_by_capacity():
     source = text("ITW_CLASH_CASEVAC.sqf")
-    assert "ITW_CLASH_CASEVAC_Version = 4;" in source
+    assert "ITW_CLASH_CASEVAC_Version = 5;" in source
     assert "ITW_CLASH_ServiceCapacity_fnc_RankVariants" in source
     assert '[_seatCount,_candidates,"AIR","CASEVAC"]' in source
     assert "private _spawnDef = +_vehDef;" in source
@@ -130,3 +130,28 @@ def test_casevac_prefers_smallest_sufficient_faction_helicopter_by_capacity():
     assert '"aircraft-selected"' in source
     for hardcoded in ["Huron", "Chinook", "LittleBird", "GhostHawk"]:
         assert hardcoded not in source
+
+
+def test_shattered_squads_force_withdrawal_then_fast_track_safe_evac():
+    remnant = text("ITW_CLASH_RemnantEvac.sqf")
+    casevac = text("ITW_CLASH_CASEVAC.sqf")
+    init = text("init.sqf")
+
+    assert "ITW_CLASH_RemnantEvacVersion = 1;" in remnant
+    assert '"ITW_CLASH_RemnantEvacMaxSurvivors",2' in remnant
+    assert '"ITW_CLASH_RemnantEvacMaxFraction",0.5' in remnant
+    assert '"ITW_CLASH_RemnantEvacMinOriginalStrength",3' in remnant
+    assert '[_group,"combat-remnant"] call ITW_CLASH_fnc_StartWithdrawal' in remnant
+    assert 'setVariable ["ITW_CLASH_RemnantEvac",true,true]' in remnant
+    assert 'getVariable ["ITW_CLASH_VehicleCrewGroup",false]' in remnant
+    assert 'findIf {isPlayer _x}' in remnant
+
+    assert 'getVariable ["ITW_CLASH_RemnantEvac",false]' in casevac
+    assert "ITW_CLASH_RemnantEvacMinWithdrawalTime" in casevac
+    assert "if (!_remnantEvac && {" in casevac
+    assert "_moved < ITW_CLASH_CASEVAC_MinDisengageDistance" in casevac
+
+    # Remnants skip only the self-movement proof. Hot-zone safety remains.
+    assert "_enemyDistance < ITW_CLASH_CASEVAC_EnemyClearance" in casevac
+    assert "_objectiveClearance < ITW_CLASH_CASEVAC_ObjectiveClearance" in casevac
+    assert 'execVM "ITW_CLASH_RemnantEvac.sqf"' in init
