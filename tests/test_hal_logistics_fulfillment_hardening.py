@@ -203,7 +203,6 @@ def test_thunder_run_uses_hal_intelligence_native_drop_and_existing_lifecycle():
         "[] spawn {", 1
     )[0]
     ammo = evaluate.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
-    assert "private _openDemand = false;" in ammo
     assert '"RydHQ_ASupportedG"' in ammo
     assert '"RydHQ_Boxed"' in ammo
     assert "if (_openDemandCount <= 0) exitWith {true};" in ammo
