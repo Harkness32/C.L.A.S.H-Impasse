@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceStabilityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceStabilityStarted = true;
-ITW_CLASH_ServiceStabilityVersion = 3;
+ITW_CLASH_ServiceStabilityVersion = 4;
 ITW_CLASH_ServiceStabilityReady = false;
 ITW_CLASH_ServiceReactivationBusy = false;
 
@@ -116,18 +116,44 @@ ITW_CLASH_Service_fnc_TryReactivate = {
     private _side = _request getOrDefault ["side",sideUnknown];
     private _mode = toUpperANSI (_requirements getOrDefault ["mode","GROUND"]);
     private _seats = round (_requirements getOrDefault ["seats",1]);
-    private _index = ITW_CLASH_ServicePool findIf {
-        (_x getOrDefault ["state",""]) isEqualTo "AVAILABLE" && {
-            (_x getOrDefault ["side",sideUnknown]) == _side && {
-                (_x getOrDefault ["capability",""]) isEqualTo _capability && {
-                    (_x getOrDefault ["mode",""]) isEqualTo _mode && {
-                        time >= (_x getOrDefault ["availableAt",0]) && {
-                            (_x getOrDefault ["vehDef",[]]) isNotEqualTo []
-                        }
-                    }
-                }
-            }
-        }
+    private _eligibleIndices = [];
+    for "_i" from 0 to ((count ITW_CLASH_ServicePool) - 1) do {
+        private _candidate = ITW_CLASH_ServicePool#_i;
+        if (
+            (_candidate getOrDefault ["state",""]) isEqualTo "AVAILABLE"
+            && {(_candidate getOrDefault ["side",sideUnknown]) == _side}
+            && {(_candidate getOrDefault ["capability",""]) isEqualTo _capability}
+            && {(_candidate getOrDefault ["mode",""]) isEqualTo _mode}
+            && {time >= (_candidate getOrDefault ["availableAt",0])}
+            && {(_candidate getOrDefault ["vehDef",[]]) isNotEqualTo []}
+        ) then {
+            _eligibleIndices pushBack _i;
+        };
+    };
+
+    private _index = if (
+        _capability == "TRANSPORT"
+        && {missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]}
+        && {!isNil "ITW_CLASH_ServiceCapacity_fnc_ScoreClass"}
+    ) then {
+        private _best = -1;
+        private _bestScore = 1e12;
+        {
+            private _candidate = ITW_CLASH_ServicePool#_x;
+            private _class = _candidate getOrDefault ["class",""];
+            private _vehDef = _candidate getOrDefault ["vehDef",[]];
+            private _scoreInfo = [
+                _class,_vehDef,_seats,"TRANSPORT_POOL"
+            ] call ITW_CLASH_ServiceCapacity_fnc_ScoreClass;
+            private _score = _scoreInfo#0;
+            if (_score < _bestScore) then {
+                _best = _x;
+                _bestScore = _score;
+            };
+        } forEach _eligibleIndices;
+        _best
+    } else {
+        if (_eligibleIndices isEqualTo []) then {-1} else {_eligibleIndices#0}
     };
     if (_index < 0) exitWith {createHashMap};
 
@@ -304,7 +330,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
 
 ITW_CLASH_ServiceStabilityReady = true;
 diag_log format [
-    "CLASH BOOT | service-stability-ready | version=%1 passiveLifecycle=true tacticalQuarantine=false halOwnsLiveDisposition=true reconRoleGuard=true virtualEntitlement=true transportReuse=true nativeCountAuthority=true",
+    "CLASH BOOT | service-stability-ready | version=%1 passiveLifecycle=true tacticalQuarantine=false halOwnsLiveDisposition=true reconRoleGuard=true virtualEntitlement=true transportReuse=true transportBestFit=true nativeCountAuthority=true",
     ITW_CLASH_ServiceStabilityVersion
 ];
 true
