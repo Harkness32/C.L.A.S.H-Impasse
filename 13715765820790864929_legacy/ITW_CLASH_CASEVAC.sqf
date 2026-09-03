@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_Started",false]) exitWith {};
 
 ITW_CLASH_CASEVAC_Started = true;
-ITW_CLASH_CASEVAC_Version = 3;
+ITW_CLASH_CASEVAC_Version = 4;
 ITW_CLASH_CASEVAC_MaxConcurrent = 2;
 ITW_CLASH_CASEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_CASEVAC_MinDisengageDistance = 500;
@@ -201,18 +201,42 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
     };
     if (_candidates isEqualTo []) exitWith {[]};
 
-    private _pureTransport = _candidates select {
-        (_x#ITW_VEH_ROLE) == ITW_VEH_ROLE_TRANSPORT
+    private _ordered = if (
+        missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]
+        && {!isNil "ITW_CLASH_ServiceCapacity_fnc_RankVariants"}
+    ) then {
+        [_seatCount,_candidates,"AIR","CASEVAC"] call
+            ITW_CLASH_ServiceCapacity_fnc_RankVariants
+    } else {
+        private _pureTransport = _candidates select {
+            (_x#ITW_VEH_ROLE) == ITW_VEH_ROLE_TRANSPORT
+        };
+        private _legacy = [];
+        {
+            private _vehDef = _x;
+            {
+                private _class = if (_x isEqualType []) then {
+                    if (_x isEqualTo []) then {""} else {_x#0}
+                } else {_x};
+                if (_class isEqualTo "") then {continue};
+                _legacy pushBack [0,_vehDef,_x,_class,-1,false,0,0];
+            } forEach (_vehDef#ITW_VEH_CLASSES);
+        } forEach (_pureTransport + (_candidates - _pureTransport));
+        _legacy
     };
-    private _ordered = _pureTransport + (_candidates - _pureTransport);
     _spawnInfo params ["_spawnPos","_baseIndex","_spawnSource"];
 
     private _result = [];
     scopeName "ITW_CLASH_CASEVAC_SPAWN";
     {
-        private _vehDef = _x;
+        _x params [
+            "_capacityScore","_vehDef","_variant","_class",
+            "_estimatedCapacity","_capacityKnown","_ticketCost","_maxSpeed"
+        ];
+        private _spawnDef = +_vehDef;
+        _spawnDef set [ITW_VEH_CLASSES,[_variant]];
         private _heli = [
-            _vehDef,_crewTypes,_unitTypes,_side,_spawnPos
+            _spawnDef,_crewTypes,_unitTypes,_side,_spawnPos
         ] call ITW_AtkSpawnVeh;
         if (isNull _heli) then {continue};
 
@@ -258,6 +282,11 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
         ALLOW_DAMAGE(_heli,true);
         {ALLOW_DAMAGE(_x,true)} forEach crew _heli;
         {_x addCuratorEditableObjects [[_heli] + units _crewGroup,true]} forEach allCurators;
+
+        ["aircraft-selected",[
+            typeOf _heli,_seatCount,_heli emptyPositions "cargo",
+            _estimatedCapacity,round _capacityScore,_ticketCost,_maxSpeed
+        ]] call ITW_CLASH_CASEVAC_fnc_Log;
 
         _result = [_heli,_crewGroup,_vehDef,_baseIndex,_spawnSource,+_spawnPos];
         breakOut "ITW_CLASH_CASEVAC_SPAWN";
