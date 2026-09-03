@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceStabilityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceStabilityStarted = true;
-ITW_CLASH_ServiceStabilityVersion = 4;
+ITW_CLASH_ServiceStabilityVersion = 5;
 ITW_CLASH_ServiceStabilityReady = false;
 ITW_CLASH_ServiceReactivationBusy = false;
 
@@ -271,7 +271,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
     ]] call ITW_CLASH_Service_fnc_Log;
 
     [_request,"APPROVED",[_veh],"virtual-asset-reactivated",
-        "service-stability-v3",_billing,_generation,_metadata
+        "service-stability-v5",_billing,_generation,_metadata
     ] call ITW_CLASH_Checkbook_fnc_Response
 };
 
@@ -330,7 +330,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
 
 ITW_CLASH_ServiceStabilityReady = true;
 diag_log format [
-    "CLASH BOOT | service-stability-ready | version=%1 passiveLifecycle=true tacticalQuarantine=false halOwnsLiveDisposition=true reconRoleGuard=true virtualEntitlement=true transportReuse=true transportBestFit=true nativeCountAuthority=true",
+    "CLASH BOOT | service-stability-ready | version=%1 passiveLifecycle=true anyFriendlyBaseStorage=true logisticsReuse=true tacticalQuarantine=false halOwnsLiveDisposition=true reconRoleGuard=true virtualEntitlement=true transportReuse=true transportBestFit=true nativeCountAuthority=true",
     ITW_CLASH_ServiceStabilityVersion
 ];
 true
