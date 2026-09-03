@@ -207,3 +207,13 @@ def test_ground_medevac_uses_shared_modular_capacity_estimator():
     assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 3;" in policy
     assert "ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats" in policy
     assert "sharedCapacityEstimator=true" in policy
+
+
+def test_ground_medevac_fast_tracks_shattered_remnants_but_keeps_safety_gates():
+    manager = text("ITW_CLASH_GroundMEDEVAC_Manager.sqf")
+    assert 'getVariable ["ITW_CLASH_RemnantEvac",false]' in manager
+    assert "ITW_CLASH_RemnantEvacMinWithdrawalTime" in manager
+    assert "if (!_remnantEvac && {" in manager
+    assert "_moved < ITW_CLASH_GroundMEDEVAC_MinDisengageDistance" in manager
+    assert "_enemyDistance < ITW_CLASH_GroundMEDEVAC_EnemyClearance" in manager
+    assert "_objectiveClearance < ITW_CLASH_GroundMEDEVAC_ObjectiveClearance" in manager
