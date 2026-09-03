@@ -1,7 +1,7 @@
 /* Temporary observer for HAL air-transport pickup stalls. Observer only. */
 if (!isServer) exitWith {};
 
-ITW_CLASH_SCargoAirDiagVersion = 4;
+ITW_CLASH_SCargoAirDiagVersion = 5;
 ITW_CLASH_SCargoAirDiagPoll = 1;
 ITW_CLASH_SCargoAirDiagStallSeconds = 8;
 ITW_CLASH_SCargoAirDiagStates = createHashMap;
@@ -132,13 +132,34 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
             private _held = time - _phaseSince;
             if (_phase == "EMBARKED" && {_speed < 1} && {_held >= ITW_CLASH_SCargoAirDiagStallSeconds}) then {
                 if (_wpType == "MOVE" && {_wpDistance > 100}) then {
-                    if (!_releaseSent && {isTouchingGround _carrier}) then {
+                    if (!_releaseSent) then {
                         private _pilot = driver _carrier;
                         if (isNull _pilot) then {_pilot = assignedDriver _carrier};
-                        if (!isNull _pilot) then {_pilot action ["CancelLand",_carrier]};
-                        _carrier land "NONE";
-                        _releaseSent = true;
-                        diag_log format ["CLASH SCARGO AIR DIAG | LANDING-LATCH-CLEARED | heldSeconds=%1 | %2",round _held,_snap];
+                        if (!isNull _pilot) then {
+                            private _expectedBefore = expectedDestination _pilot;
+                            private _expectedMode = _expectedBefore param [1,""];
+                            if (_expectedMode == "DoNotPlan") then {
+                                private _carrierGroup = group _pilot;
+                                private _wpIndex = currentWaypoint _carrierGroup;
+                                private _wps = waypoints _carrierGroup;
+                                if (
+                                    !isNull _carrierGroup
+                                    && {_wpIndex >= 0}
+                                    && {_wpIndex < count _wps}
+                                ) then {
+                                    private _wpPos = waypointPosition [_carrierGroup,_wpIndex];
+                                    _carrier land "NONE";
+                                    _pilot action ["CancelLand",_carrier];
+                                    _carrierGroup setCurrentWaypoint [_carrierGroup,_wpIndex];
+                                    _pilot setDestination [_wpPos,"LEADER PLANNED",true];
+                                    _releaseSent = true;
+                                    diag_log format [
+                                        "CLASH SCARGO AIR DIAG | PILOT-PLANNER-REARMED | heldSeconds=%1 before=%2 after=%3 wp=%4",
+                                        round _held,_expectedBefore,expectedDestination _pilot,[_wpIndex,_wpPos]
+                                    ];
+                                };
+                            };
+                        };
                     };
                     if (time - _lastMoveStall >= 5) then {
                         _lastMoveStall = time;
