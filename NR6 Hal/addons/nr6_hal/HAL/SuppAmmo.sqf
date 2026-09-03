@@ -251,7 +251,7 @@ for [{_a = 500},{_a <= 44000},{_a = _a + 500}] do
 				//_HQ setVariable ["RydHQ_ASupportedG",(_HQ getVariable ["RydHQ_ASupportedG",[]]) set [(count (_HQ getVariable ["RydHQ_ASupportedG",[]])),(group _Zunit)]];
 				//[_MTruck,_Zunit,_Hollow,_soldiers,false,objNull,_HQ] spawn HAL_GoAmmoSupp
 				
-				[[_MTruck,_Zunit,_Hollow,_soldiers,false,objNull,_HQ],HAL_GoAmmoSupp] call RYD_Spawn;
+				[[_MTruck,_Zunit,_Hollow,_soldiers,false,objNull,_HQ,false,["SUPP_AMMO_GROUND",false,true]],HAL_GoAmmoSupp] call RYD_Spawn;
 				}
 			else
 				{
@@ -339,7 +339,7 @@ if ((count (_HQ getVariable ["RydHQ_AmmoBoxes",[]])) > 0) then
 					_ammoBox = (_HQ getVariable ["RydHQ_AmmoBoxes",[]]) select 0;
 					_HQ setVariable ["RydHQ_AmmoBoxes",(_HQ getVariable ["RydHQ_AmmoBoxes",[]]) - [_ammoBox]];
 					//[_MTruck,_Hunit,_Hollow,_soldiers,true,_ammoBox,_HQ] spawn HAL_GoAmmoSupp; 
-					[[_MTruck,_Hunit,_Hollow,_soldiers,true,_ammoBox,_HQ],HAL_GoAmmoSupp] call RYD_Spawn;
+					[[_MTruck,_Hunit,_Hollow,_soldiers,true,_ammoBox,_HQ,false,["SUPP_AMMO_AIR",true,true]],HAL_GoAmmoSupp] call RYD_Spawn;
 					}
 				else
 					{

@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALLogisticsStarted",false]) exitWith {true};
 ITW_CLASH_HALLogisticsStarted = true;
-ITW_CLASH_HALLogisticsVersion = 7;
+ITW_CLASH_HALLogisticsVersion = 8;
 ITW_CLASH_HALLogisticsReady = false;
 
 // NR6 HAL ships explicit ACE logistics workarounds but leaves them disabled by
@@ -179,6 +179,39 @@ ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling = {
     _paired
 };
 
+ITW_CLASH_HALLogistics_fnc_PrimeExactAmmoSling = {
+    params ["_hq","_veh","_box"];
+    if (isNull _hq || {isNull _veh} || {isNull _box}) exitWith {false};
+    if !(_veh isKindOf "Helicopter") exitWith {false};
+    if (!alive _veh || {!canMove _veh} || {!alive _box}) exitWith {false};
+
+    private _current = getSlingLoad _veh;
+    if (!isNull _current) exitWith {_current isEqualTo _box};
+    if !(_veh canSlingLoad _box) exitWith {
+        ["ammo-exact-sling-unavailable",[
+            _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,typeOf _box
+        ]] call ITW_CLASH_HALLogistics_fnc_Log;
+        false
+    };
+
+    if !(_veh setSlingLoad _box) exitWith {
+        ["ammo-exact-sling-failed",[
+            _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,typeOf _box
+        ]] call ITW_CLASH_HALLogistics_fnc_Log;
+        false
+    };
+
+    _veh setVariable ["ITW_CLASH_PreloadedAmmoBox",_box,true];
+    _box setVariable ["ITW_CLASH_PreloadedSlingCarrier",_veh,true];
+    _box setVariable ["ITW_CLASH_LogisticsPackageState","RESERVED",true];
+    _box setVariable ["ITW_CLASH_LogisticsPackageReason","exact-dispatch-ai-sling",true];
+    ["ammo-exact-sling-preloaded",[
+        _hq getVariable ["RydHQ_CodeSign","?"],
+        typeOf _veh,typeOf _box,getPosATL _veh
+    ]] call ITW_CLASH_HALLogistics_fnc_Log;
+    true
+};
+
 ITW_CLASH_HALLogistics_fnc_Request = {
     params ["_hq","_capability","_mode"];
     if (isNull _hq || {isNil "ITW_CLASH_fnc_RequestCapability"}) exitWith {createHashMap};
@@ -293,20 +326,14 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
                 _ammoBoxes = _ammoBoxes select {!isNull _x && {alive _x}};
             };
 
-            private _airReply = createHashMap;
+            // Provision capacity here, but do not physically bind a box to an
+            // aircraft yet. SuppAmmo has not selected the recipient/exact box.
+            // Exact pre-sling now happens at the annotated GoAmmoSupp dispatch
+            // seam, after player-demand arbitration and before native execution.
             if (_airAmmo isEqualTo []) then {
-                _airReply = [_hq,"LOGISTICS_AMMO","AIR"] call
+                [_hq,"LOGISTICS_AMMO","AIR"] call
                     ITW_CLASH_HALLogistics_fnc_Request;
             };
-            private _preferredAir = if (
-                _airReply isEqualType createHashMap
-                && {(_airReply getOrDefault ["status",""]) == "APPROVED"}
-            ) then {
-                _airReply getOrDefault ["asset",objNull]
-            } else {
-                objNull
-            };
-            [_hq,_preferredAir] call ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling;
             true
         };
         case "FUEL": {

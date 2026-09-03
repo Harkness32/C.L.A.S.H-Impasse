@@ -139,6 +139,16 @@ if (isServer) then {
                 _playerTasksLoaded = call compile preprocessFileLineNumbers
                     "ITW_CLASH_PlayerTaskSupport.sqf";
             };
+            private _ammoDispatchLoaded = false;
+            if (_playerTasksLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_AmmoDispatch.sqf"
+            }) then {
+                _ammoDispatchLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_AmmoDispatch.sqf";
+            } else {
+                diag_log "CLASH BOOT | ammo-dispatch-missing-or-prereq-failed | native ammo dispatch retained";
+            };
+
             private _playerGarageLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
                 _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";
@@ -159,6 +169,8 @@ if (isServer) then {
             // cannot race those existing guards. Native interceptors then wait
             // for both the demand layer and PlayerTaskSupport's HAL binder.
             if (_playerTasksLoaded isEqualTo true && {
+                _ammoDispatchLoaded isEqualTo true
+            } && {
                 _playerArtilleryLoaded isEqualTo true
             } && {fileExists "ITW_CLASH_PlayerDemandDispatch.sqf"}) then {
                 call compile preprocessFileLineNumbers "ITW_CLASH_PlayerDemandDispatch.sqf";

@@ -12,7 +12,7 @@ def mission(name: str) -> str:
 def test_logistics_rechecks_native_hal_after_checkbook_fulfills_capacity():
     text = mission("ITW_CLASH_HALLogistics.sqf")
 
-    assert "ITW_CLASH_HALLogisticsVersion = 7;" in text
+    assert "ITW_CLASH_HALLogisticsVersion = 8;" in text
     assert "ITW_CLASH_HALLogistics_fnc_KickNative" in text
     assert '"native-recheck"' in text
     assert 'case "AMMO": {[_hq] call HAL_SuppAmmo};' in text
@@ -77,7 +77,7 @@ def test_open_player_ammo_demand_uses_real_native_execution_not_supported_bookke
     )[0]
     assert "ITW_CLASH_NativeAmmoExecution" in publish
 
-    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 7;" in intercept
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 8;" in intercept
     assert "native-ai-execution-started" in intercept
     assert "native-ai-execution-ended" in intercept
     assert 'setVariable ["ITW_CLASH_NativeAmmoExecution",nil]' in intercept
@@ -136,29 +136,30 @@ def test_fuel_and_repair_provider_dispatch_no_longer_require_direct_group_assign
     assert repair.count("[_x] call _providerVehicle") >= 5
 
 
-def test_ai_air_ammo_provider_is_preloaded_with_hal_ammo_box_before_dispatch():
+def test_ai_air_ammo_provider_is_preloaded_only_after_exact_dispatch_is_known():
     logistics = mission("ITW_CLASH_HALLogistics.sqf")
+    intercept = mission("ITW_CLASH_PlayerDemandNativeInterceptors.sqf")
     root = Path(__file__).resolve().parents[1]
     go = (root / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "GoAmmoSupp.sqf").read_text(
         encoding="utf-8"
     )
 
-    assert "ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling" in logistics
+    assert "ITW_CLASH_HALLogistics_fnc_PrimeExactAmmoSling" in logistics
     assert "setSlingLoad _box" in logistics
-    assert "getSlingLoad _veh" in logistics
     assert '"ITW_CLASH_PreloadedAmmoBox"' in logistics
     assert '"ITW_CLASH_PreloadedSlingCarrier"' in logistics
-    assert "preloadedAmmoSling=true" in logistics
+    assert "ammo-exact-sling-preloaded" in logistics
 
     evaluate = logistics.split("ITW_CLASH_HALLogistics_fnc_Evaluate = {", 1)[1].split(
         "[] spawn {", 1
     )[0]
     ammo_block = evaluate.split('case "AMMO": {', 1)[1].split('case "FUEL": {', 1)[0]
     assert ammo_block.index('"LOGISTICS_PACKAGE_AMMO","AIR"') < ammo_block.index('"LOGISTICS_AMMO","AIR"')
-    assert '[_hq,_preferredAir] call ITW_CLASH_HALLogistics_fnc_PrimeAmmoSling;' in ammo_block
+    assert "PrimeAmmoSling" not in ammo_block
+    assert "PrimeExactAmmoSling" not in ammo_block
 
+    assert "ITW_CLASH_HALLogistics_fnc_PrimeExactAmmoSling" in intercept
+    assert "_drop" in intercept
+    assert '_vehicle isKindOf "Helicopter"' in intercept
     assert "_preloadedSling = (getSlingLoad _unit) isEqualTo _ammoBox;" in go
     assert "RydxHQ_SlingDrop or {_preloadedSling}" in go
-    assert "if not (_preloadedSling) then" in go
-    assert '"UNHOOK"' in go
-    assert '"HOOK"' in go

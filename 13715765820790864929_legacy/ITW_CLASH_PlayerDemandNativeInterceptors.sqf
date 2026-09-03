@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 7;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 8;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -31,7 +31,7 @@ if (fileExists "ITW_CLASH_PlayerDemandAmmoValidityHardening.sqf") then {
 // demand first, then use the demand-specific dispatcher so decline cooldowns and
 // AI fallback windows apply equally to passive offers and native takeover.
 ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo = {
-    params ["_hq","_target"];
+    params ["_hq","_target",["_supportedWritten",false]];
     if (isNull _hq || {isNull _target}) exitWith {false};
     private _targetGroup = [_target] call ITW_CLASH_PlayerDemand_fnc_TargetGroup;
     if (isNull _targetGroup) exitWith {false};
@@ -56,7 +56,7 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo = {
     };
 
     private _supportedBefore = +(_hq getVariable ["RydHQ_ASupportedG",[]]);
-    private _nativeOwned = _targetGroup in _supportedBefore;
+    private _nativeOwned = _supportedWritten && {_targetGroup in _supportedBefore};
     if (_nativeOwned) then {
         _hq setVariable ["RydHQ_ASupportedG",_supportedBefore - [_targetGroup]];
     };
@@ -147,13 +147,8 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedAmmoRace = {
         !((_demand getOrDefault ["state",""]) in ["RESERVED","EXECUTING"])
     }) exitWith {false};
 
-    // SuppAmmo may have selected this target in the same scheduler slice before
-    // the call-scoped ExReAmmo wrapper saw the new reservation. Remove only the
-    // native assignment marker it just wrote and swallow this duplicate handoff.
-    private _supported = +(_hq getVariable ["RydHQ_ASupportedG",[]]);
-    if (_targetGroup in _supported) then {
-        _hq setVariable ["RydHQ_ASupportedG",_supported - [_targetGroup]];
-    };
+    // Detection only. Dispatch provenance owns rollback: SuppAmmo and TaskInit
+    // reach this wrapper with different pre-dispatch side effects.
     ["native-reserved-race-blocked",[
         _demandId,"LOGISTICS_AMMO",
         [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId
@@ -209,11 +204,21 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
     HAL_GoAmmoSupp = {
         private _vehicle = _this param [0,objNull];
         private _target = _this param [1,objNull];
+        private _drop = _this param [4,false];
+        private _box = _this param [5,objNull];
         private _hq = _this param [6,grpNull];
+        private _dispatchContext = [_this] call ITW_CLASH_AmmoDispatch_fnc_Context;
+        private _supportedWritten = _dispatchContext getOrDefault [
+            "supportedWritten",false
+        ];
 
         if (!isNull _hq && {!isNull _target} && {
             [_hq,_target] call ITW_CLASH_PlayerDemandNative_fnc_BlockReservedAmmoRace
-        }) exitWith {};
+        }) exitWith {
+            [_hq,_target,_box,_dispatchContext,"reserved-player-demand-race"] call
+                ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch;
+            false
+        };
 
         private _providerGroup = grpNull;
         if (!isNull _vehicle) then {
@@ -228,7 +233,29 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
         // Existing PlayerTaskSupport owns the already-capable human provider
         // fast path. Demand-first takeover is for HAL-selected AI providers.
         if (!_providerHuman && {!isNull _hq} && {!isNull _target}) then {
-            if ([_hq,_target] call ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo) exitWith {};
+            if ([_hq,_target,_supportedWritten] call
+                ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo) exitWith {
+                // TakeAmmo already reverses only the ASupportedG write that this
+                // dispatch provenance owns. Return the still-intact HAL package
+                // reservation without clearing the new player-demand owner.
+                [_hq,_target,_box,_dispatchContext,"player-demand-takeover",false] call
+                    ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch;
+                false
+            };
+        };
+
+        // Normal AI air logistics keeps HAL's native sling execution, but the
+        // physical attachment is now delayed until the exact provider, target,
+        // and exact reserved box are known.
+        if (
+            !_providerHuman
+            && {_drop}
+            && {!isNull _box}
+            && {!isNull _vehicle}
+            && {_vehicle isKindOf "Helicopter"}
+        ) then {
+            [_hq,_vehicle,_box] call
+                ITW_CLASH_HALLogistics_fnc_PrimeExactAmmoSling;
         };
 
         private _targetGroup = if (isNull _target) then {grpNull} else {
@@ -291,7 +318,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
 
     ITW_CLASH_PlayerDemandNativeInterceptorsReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true nativeAmmoExecutionMarker=true callScopedNativeExclusion=true sameCycleRaceGuard=true specialistExecutionOwnership=true nativeFailOpen=true",
+        "CLASH BOOT | player-demand-native-interceptors-ready | version=%1 ammoAIHandoff=true severeMedicalHandoff=true exactDemandDispatch=true markerAuthority=true nativeAmmoExecutionMarker=true callScopedNativeExclusion=true sameCycleRaceGuard=true preDispatchReconcile=true explicitDispatchProvenance=true exactBoxSling=true specialistExecutionOwnership=true nativeFailOpen=true",
         ITW_CLASH_PlayerDemandNativeInterceptorsVersion
     ];
 

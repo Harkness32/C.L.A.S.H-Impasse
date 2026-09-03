@@ -718,7 +718,7 @@ Action8ct = {
 	_ammoBox = (_HQ getVariable ["RydHQ_AmmoBoxes",[]]) select 0;
 	_HQ setVariable ["RydHQ_AmmoBoxes",(_HQ getVariable ["RydHQ_AmmoBoxes",[]]) - [_ammoBox]];
 
-	[[assignedvehicle (leader _FlyBoy),(vehicle (_this select 0)),[],[],true,_ammoBox,_HQ],HAL_GoAmmoSupp] call RYD_Spawn;
+	[[assignedvehicle (leader _FlyBoy),(vehicle (_this select 0)),[],[],true,_ammoBox,_HQ,false,["TASKINIT_AIR",true,false]],HAL_GoAmmoSupp] call RYD_Spawn;
 
 	[leader _HQ, (groupId (group (_this select 0))) + ', affirmative. Supplies are on their way - Out'] remoteExecCall ["RYD_MP_Sidechat"];
 
@@ -813,7 +813,7 @@ Action9ct = {
 
 	if (_AmmoBoy isEqualTo objNull) exitwith {[leader _HQ, (groupId (group (_this select 0))) + ', negative. No rearming services are currently available - Out'] remoteExecCall ["RYD_MP_Sidechat"]};
 
-	[[_AmmoBoy,(vehicle (_this select 0)),[],[],false,objNull,_HQ,true],HAL_GoAmmoSupp] call RYD_Spawn;
+	[[_AmmoBoy,(vehicle (_this select 0)),[],[],false,objNull,_HQ,true,["TASKINIT_GROUND",false,false]],HAL_GoAmmoSupp] call RYD_Spawn;
 
 	[leader _HQ, (groupId (group (_this select 0))) + ', affirmative. Ammunition truck is on its way - Out'] remoteExecCall ["RYD_MP_Sidechat"];
 
