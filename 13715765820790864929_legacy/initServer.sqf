@@ -1,7 +1,7 @@
 /* Temporary read-only observer for HAL air-transport pickup stalls. */
 if (!isServer) exitWith {};
 
-ITW_CLASH_SCargoAirDiagVersion = 8;
+ITW_CLASH_SCargoAirDiagVersion = 9;
 ITW_CLASH_SCargoAirDiagPoll = 1;
 ITW_CLASH_SCargoAirDiagStallSeconds = 8;
 ITW_CLASH_SCargoAirDiagStates = createHashMap;
@@ -58,6 +58,14 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
         !isNull _carrierGroup && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}
     ) then {[_carrierGroup] call ITW_CLASH_fnc_GetCommanderForGroup} else {grpNull};
     private _cycle = if (isNull _hq) then {-1} else {_hq getVariable ["RydHQ_Cyclecount",-1]};
+    private _hqLZ = !isNull _hq && {_hq getVariable ["RydHQ_LZ",false]};
+    private _tempLZ = if (isNull _carrierGroup) then {objNull} else {
+        _carrierGroup getVariable ["TempLZ",objNull]
+    };
+    private _nearLZ = nearestObjects [_carrier,["Land_HelipadEmpty_F"],60];
+    private _nearLZDistance = if (_nearLZ isEqualTo []) then {-1} else {
+        _carrier distance2D (_nearLZ#0)
+    };
     private _injectCycle = _carrier getVariable [
         "ITW_CLASH_CheckbookInjectedCycle",
         if (isNull _carrierGroup) then {-1} else {
@@ -84,6 +92,10 @@ ITW_CLASH_SCargoAirDiag_fnc_Snapshot = {
         ["sitrepCycle",_cycle],
         ["injectedCycle",_injectCycle],
         ["sitrepSinceInjection",if (_cycle < 0 || {_injectCycle < 0}) then {-1} else {_cycle - _injectCycle}],
+        ["hqLZ",_hqLZ],
+        ["tempLZ",if (isNull _tempLZ) then {[]} else {[typeOf _tempLZ,getPosATL _tempLZ,round (_carrier distance2D _tempLZ)]}],
+        ["nearHelipadCount",count _nearLZ],
+        ["nearHelipadDistance",if (_nearLZDistance < 0) then {-1} else {round _nearLZDistance}],
         ["pilotAI",if (isNull _pilot) then {[]} else {[
             _pilot checkAIFeature "TARGET",
             _pilot checkAIFeature "AUTOTARGET",

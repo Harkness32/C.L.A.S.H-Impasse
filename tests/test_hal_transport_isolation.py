@@ -10,12 +10,16 @@ def mission(name: str) -> str:
 
 def test_air_transport_probe_is_read_only():
     text = mission("initServer.sqf")
-    assert "ITW_CLASH_SCargoAirDiagVersion = 8;" in text
+    assert "ITW_CLASH_SCargoAirDiagVersion = 9;" in text
     assert "observerOnly=true" in text
     assert '"POST-EMBARK-MOVE-STALLED"' in text
     assert '"carrierInAirG"' in text
     assert '"cargoInNCrewInfG"' in text
     assert '"sitrepSinceInjection"' in text
+    assert '"hqLZ"' in text
+    assert '"tempLZ"' in text
+    assert '"nearHelipadCount"' in text
+    assert '"nearHelipadDistance"' in text
 
     for forbidden in [
         'land "NONE"',
