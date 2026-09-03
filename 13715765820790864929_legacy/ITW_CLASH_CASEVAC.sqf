@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_Started",false]) exitWith {};
 
 ITW_CLASH_CASEVAC_Started = true;
-ITW_CLASH_CASEVAC_Version = 4;
+ITW_CLASH_CASEVAC_Version = 5;
 ITW_CLASH_CASEVAC_MaxConcurrent = 2;
 ITW_CLASH_CASEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_CASEVAC_MinDisengageDistance = 500;
@@ -21,7 +21,7 @@ ITW_CLASH_CASEVAC_SmokeClass = "SmokeShell";
 ITW_CLASH_CASEVAC_Active = createHashMap;
 
 diag_log format [
-    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6 symmetricSides=true",
+    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6 symmetricSides=true remnantFastTrack=true",
     ITW_CLASH_CASEVAC_Version,
     ITW_CLASH_CASEVAC_MaxConcurrent,
     ITW_CLASH_CASEVAC_MinDisengageDistance,
@@ -663,7 +663,16 @@ ITW_CLASH_CASEVAC_fnc_Eligible = {
     if !(_group getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {[false,[]]};
     if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {[false,[]]};
     if (time < (_group getVariable ["ITW_CLASH_CASEVAC_RetryAt",0])) exitWith {[false,[]]};
-    if (time - _startedAt < ITW_CLASH_CASEVAC_MinWithdrawalTime) exitWith {[false,[]]};
+    private _remnantEvac = _group getVariable ["ITW_CLASH_RemnantEvac",false];
+    private _minWithdrawalTime = if (_remnantEvac) then {
+        missionNamespace getVariable [
+            "ITW_CLASH_RemnantEvacMinWithdrawalTime",
+            ITW_CLASH_CASEVAC_MinWithdrawalTime
+        ]
+    } else {
+        ITW_CLASH_CASEVAC_MinWithdrawalTime
+    };
+    if (time - _startedAt < _minWithdrawalTime) exitWith {[false,[]]};
     if (_destination isEqualTo []) exitWith {[false,[]]};
 
     private _origin = _group getVariable ["ITW_CLASH_CASEVAC_Origin",[]];
@@ -673,7 +682,9 @@ ITW_CLASH_CASEVAC_fnc_Eligible = {
     };
 
     private _moved = leader _group distance2D _origin;
-    if (_moved < ITW_CLASH_CASEVAC_MinDisengageDistance) exitWith {[false,[]]};
+    if (!_remnantEvac && {
+        _moved < ITW_CLASH_CASEVAC_MinDisengageDistance
+    }) exitWith {[false,[]]};
 
     private _egressDistance = leader _group distance2D _destination;
     if (_egressDistance < ITW_CLASH_CASEVAC_MinEgressDistance) exitWith {[false,[]]};
