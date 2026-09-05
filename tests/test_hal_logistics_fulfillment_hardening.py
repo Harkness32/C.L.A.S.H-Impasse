@@ -17,12 +17,13 @@ _core.mission = _mission_with_thunder_core
 from hal_logistics_fulfillment_hardening_core import *  # noqa: F401,F403,E402
 
 
-def test_thunder_run_v3_visible_sling_and_vehicle_ammo_bridge():
+def test_thunder_run_v4_visible_sling_vehicle_ammo_and_live_burn_tuning():
     overlay = _original_mission("ITW_CLASH_ThunderRun.sqf")
     core = _original_mission("ITW_CLASH_ThunderRun_Core.sqf")
+    tuning = _original_mission("ITW_CLASH_ThunderRun_Tuning.sqf")
 
     assert "ITW_CLASH_ThunderRunVersion = 2;" in core
-    assert "ITW_CLASH_ThunderRunVersion = 3;" in overlay
+    assert "ITW_CLASH_ThunderRunVersion = 4;" in overlay
     assert "ITW_CLASH_ThunderRun_fnc_ApplyStagingCore" in overlay
     assert "ITW_CLASH_HALLogistics_fnc_PrimeExactAmmoSling" in overlay
     assert '"package-sling-departure"' in overlay
@@ -44,21 +45,36 @@ def test_thunder_run_v3_visible_sling_and_vehicle_ammo_bridge():
     assert '_state in ["CONTESTED","HOT"]' in overlay
     assert "HAL_GoAmmoSupp" in overlay
 
-    # Vehicle admission must not weaken safety. The short commit-window lock can
-    # preserve a CONTESTED/HOT decision only when the recheck became SAFE/NORMAL;
-    # AIR_DENIED is never overwritten.
     classify = overlay.split("ITW_CLASH_ThunderRun_fnc_Classify = {", 1)[1].split(
         "ITW_CLASH_ThunderRun_fnc_VehicleAmmoTargets = {", 1
     )[0]
     assert 'in ["NORMAL","SAFE"]' in classify
     assert 'in ["CONTESTED","HOT"]' in classify
-    assert '"AIR_DENIED"' not in classify.split("_result set [\"state\",_lockedState]", 1)[0]
+    assert '"AIR_DENIED"' not in classify.split(
+        '_result set ["state",_lockedState]', 1
+    )[0]
 
-    # Busy remains the HAL retask lock, while the enhancement layer never blinds
-    # TARGET/AUTOTARGET during the sortie.
     staging = overlay.split("ITW_CLASH_ThunderRun_fnc_ApplyStaging = {", 1)[1].split(
         "ITW_CLASH_ThunderRun_fnc_TransitionPackage = {", 1
     )[0]
     assert '"Busy" + str _group,true' in staging
     assert 'disableAI "TARGET"' not in staging
     assert 'disableAI "AUTOTARGET"' not in staging
+
+    assert '"ITW_CLASH_ThunderRun_Tuning.sqf"' in overlay
+    assert "ITW_CLASH_ThunderRunTuningVersion = 1;" in tuning
+    assert '"ITW_CLASH_ThunderRunTransitSpeedFraction",0.75' in tuning
+    assert '"ITW_CLASH_ThunderRunTerminalSpeedFraction",0.90' in tuning
+    assert '"ITW_CLASH_ThunderRunFlareCadenceScale",0.80' in tuning
+    assert '"ITW_CLASH_ThunderRunReleaseBurstCount",6' in tuning
+    assert '"ITW_CLASH_ThunderRunReleaseBurstCadence",0.16' in tuning
+    assert '"ITW_CLASH_ThunderRunEgressFlareCadence",0.90' in tuning
+    assert '"flare-burst"' in tuning
+    assert '"rtb-immediate-after-cold"' in tuning
+    assert '"rtb-ordered"' in tuning
+    assert '"DoNotPlan"' in tuning
+    assert '"LEADER PLANNED"' in tuning
+    assert '"CLASH_VEHICLE_AMMO_AIR"' in tuning
+    assert '"RydxHQ_MagicRearm"' in tuning
+    assert "setVehicleAmmo 1" in tuning
+    assert '"vehicle-ace-rearm"' in tuning
