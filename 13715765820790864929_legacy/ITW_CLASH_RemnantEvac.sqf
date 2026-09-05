@@ -2,7 +2,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_RemnantEvacStarted",false]) exitWith {true};
 
 ITW_CLASH_RemnantEvacStarted = true;
-ITW_CLASH_RemnantEvacVersion = 1;
+ITW_CLASH_RemnantEvacVersion = 2;
 ITW_CLASH_RemnantEvacMaxSurvivors = missionNamespace getVariable [
     "ITW_CLASH_RemnantEvacMaxSurvivors",2
 ];
@@ -18,6 +18,7 @@ ITW_CLASH_RemnantEvacRetryDelay = missionNamespace getVariable [
 ITW_CLASH_RemnantEvacMinWithdrawalTime = missionNamespace getVariable [
     "ITW_CLASH_RemnantEvacMinWithdrawalTime",20
 ];
+ITW_CLASH_RemnantLineagePrefix = "ITW-REMNANT|";
 
 ITW_CLASH_RemnantEvac_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -26,6 +27,43 @@ ITW_CLASH_RemnantEvac_fnc_Log = {
     } else {
         diag_log format ["CLASH REMNANT EVAC | %1 | %2",_event,_payload];
     };
+};
+
+ITW_CLASH_RemnantEvac_fnc_Begin = {
+    params ["_group","_kind","_reason","_aliveCount","_originalStrength",["_fraction",1]];
+    if (isNull _group) exitWith {false};
+
+    if (_kind == "REMNANT") then {
+        private _lineage = _group getVariable ["ITW_CLASH_Lineage",""];
+        if ((_lineage find ITW_CLASH_RemnantLineagePrefix) != 0) then {
+            private _id = if (!isNil "ITW_CLASH_fnc_GroupId") then {
+                [_group] call ITW_CLASH_fnc_GroupId
+            } else {str _group};
+            _group setVariable [
+                "ITW_CLASH_Lineage",
+                ITW_CLASH_RemnantLineagePrefix + _id
+            ];
+        };
+    };
+
+    _group setVariable ["ITW_CLASH_RecoveryClass",_kind,true];
+    if ([_group,_reason] call ITW_CLASH_fnc_StartWithdrawal) then {
+        _group setVariable ["ITW_CLASH_RemnantEvac",true,true];
+        _group setVariable ["ITW_CLASH_RemnantEvacSince",time,true];
+        ["withdrawal-forced",[
+            if (!isNil "ITW_CLASH_fnc_GroupId") then {
+                [_group] call ITW_CLASH_fnc_GroupId
+            } else {str _group},
+            side _group,_kind,_aliveCount,_originalStrength,_fraction
+        ]] call ITW_CLASH_RemnantEvac_fnc_Log;
+        true
+    } else {
+        _group setVariable ["ITW_CLASH_RecoveryClass",nil,true];
+        ["withdrawal-deferred",[
+            str _group,side _group,_kind,_aliveCount,_originalStrength,_fraction
+        ]] call ITW_CLASH_RemnantEvac_fnc_Log;
+        false
+    }
 };
 
 [] spawn {
@@ -68,6 +106,31 @@ ITW_CLASH_RemnantEvac_fnc_Log = {
             if (_alive findIf {!(_x isKindOf "CAManBase")} >= 0) then {continue};
             if (_alive findIf {vehicle _x != _x} >= 0) then {continue};
 
+            private _retryAt = _group getVariable ["ITW_CLASH_RemnantEvacRetryAt",0];
+            if (time < _retryAt) then {continue};
+            _group setVariable [
+                "ITW_CLASH_RemnantEvacRetryAt",
+                time + ITW_CLASH_RemnantEvacRetryDelay
+            ];
+
+            // Deployment remnants are formations ITW itself fractured before
+            // combat. They are recovered as exact bodies and banked, never as a
+            // free full-archetype combat-loss reward.
+            if (_group getVariable ["ITW_CLASH_DeploymentRemnant",false]) then {
+                private _parentStrength = _group getVariable [
+                    "ITW_CLASH_FragmentParentStrength",0
+                ];
+                [
+                    _group,"REMNANT","itw-deployment-remnant",
+                    _aliveCount,_parentStrength,
+                    _aliveCount / (_parentStrength max 1)
+                ] call ITW_CLASH_RemnantEvac_fnc_Begin;
+                continue;
+            };
+
+            // A shattered formation entered combat as a viable squad and was
+            // subsequently reduced to one or two survivors. Successful physical
+            // recovery keeps the existing full, free archetype reconstitution.
             private _archetype = +(_group getVariable ["ITW_CLASH_Archetype",[]]);
             if (_archetype isEqualTo [] && {!isNil "ITW_CLASH_fnc_GetArchetype"}) then {
                 _archetype = [_group] call ITW_CLASH_fnc_GetArchetype;
@@ -78,33 +141,16 @@ ITW_CLASH_RemnantEvac_fnc_Log = {
             private _fraction = _aliveCount / (_originalStrength max 1);
             if (_fraction > ITW_CLASH_RemnantEvacMaxFraction) then {continue};
 
-            private _retryAt = _group getVariable ["ITW_CLASH_RemnantEvacRetryAt",0];
-            if (time < _retryAt) then {continue};
-            _group setVariable [
-                "ITW_CLASH_RemnantEvacRetryAt",
-                time + ITW_CLASH_RemnantEvacRetryDelay
-            ];
-
-            if ([_group,"combat-remnant"] call ITW_CLASH_fnc_StartWithdrawal) then {
-                _group setVariable ["ITW_CLASH_RemnantEvac",true,true];
-                _group setVariable ["ITW_CLASH_RemnantEvacSince",time,true];
-                ["withdrawal-forced",[
-                    if (!isNil "ITW_CLASH_fnc_GroupId") then {
-                        [_group] call ITW_CLASH_fnc_GroupId
-                    } else {str _group},
-                    side _group,_aliveCount,_originalStrength,_fraction
-                ]] call ITW_CLASH_RemnantEvac_fnc_Log;
-            } else {
-                ["withdrawal-deferred",[
-                    str _group,side _group,_aliveCount,_originalStrength,_fraction
-                ]] call ITW_CLASH_RemnantEvac_fnc_Log;
-            };
+            [
+                _group,"SHATTERED","combat-shattered",
+                _aliveCount,_originalStrength,_fraction
+            ] call ITW_CLASH_RemnantEvac_fnc_Begin;
         } forEach +allGroups;
     };
 };
 
 diag_log format [
-    "CLASH BOOT | remnant-evac-ready | version=%1 maxSurvivors=%2 maxFraction=%3 minOriginal=%4 fastEligibility=%5",
+    "CLASH BOOT | remnant-evac-ready | version=%1 maxSurvivors=%2 maxFraction=%3 minOriginal=%4 fastEligibility=%5 deploymentRemnants=true shatteredFreeReconstitution=true",
     ITW_CLASH_RemnantEvacVersion,
     ITW_CLASH_RemnantEvacMaxSurvivors,
     ITW_CLASH_RemnantEvacMaxFraction,
