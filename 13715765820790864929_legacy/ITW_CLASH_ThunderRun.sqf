@@ -360,7 +360,8 @@ ITW_CLASH_ThunderRun_fnc_TryVehicleAmmoDispatch = {
     if (_boxes isEqualTo []) exitWith {false};
 
     private _dispatched = false;
-    for [{private _radius = 500},{_radius <= 44000 && {!_dispatched}},{_radius = _radius + 500}] do {
+    private _radius = 500;
+    for [{},{_radius <= 44000 && {!_dispatched}},{_radius = _radius + 500}] do {
         {
             _x params ["_providerGroup","_provider"];
             if (_dispatched) exitWith {};
