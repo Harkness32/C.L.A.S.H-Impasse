@@ -502,8 +502,8 @@ ITW_CLASH_ThunderRun_fnc_ApplyStaging = {
     _group setVariable ["Busy" + str _group,true];
     _group setVariable ["ITW_CLASH_ThunderRunActive",true];
     _veh setVariable ["ITW_CLASH_ThunderRunActive",true,true];
-    _veh disableAI "TARGET";
-    _veh disableAI "AUTOTARGET";
+    // Busy is the HAL retask lock. Keep TARGET/AUTOTARGET untouched so the
+    // crew remains a live sensor while CARELESS + BLUE controls the sortie.
     [_group] call RYD_WPdel;
 
     private _targetGroup = [_target] call ITW_CLASH_ThunderRun_fnc_TargetGroup;
