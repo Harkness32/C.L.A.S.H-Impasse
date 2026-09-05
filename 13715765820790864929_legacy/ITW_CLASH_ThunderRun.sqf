@@ -15,19 +15,16 @@ if !(missionNamespace getVariable ["ITW_CLASH_ThunderRunReady",false]) exitWith 
 
 ITW_CLASH_ThunderRunEnhancementsStarted = true;
 ITW_CLASH_ThunderRunEnhancementsReady = false;
-ITW_CLASH_ThunderRunVersion = 3;
+ITW_CLASH_ThunderRunVersion = 4;
 
 /*
-    v3 enhancement layer
+    Enhancement layer over the proven Thunder Run core.
 
-    1. The exact reserved ammo package is visibly slingloaded for the transit
-       leg. At TAKEOVER the same object is detached, hidden/staged, then handed
-       to the existing RYD_AmmoDrop release primitive.
-    2. HAL's RydHQ_Hollow array already contains both hollow infantry and _ZeroA
-       dry vehicles. Native HAL only feeds infantry into its air-drop branch, so
-       this layer adds a narrow vehicle-ammo Thunder Run admission bridge. It
-       consumes HAL's existing demand/provider/threat state; it does not invent a
-       second generic logistics planner.
+    - Exact reserved package is visibly slingloaded for transit.
+    - At TAKEOVER the same object is detached/staged for RYD_AmmoDrop.
+    - Dry AI vehicles in RydHQ_Hollow can use the same air-ammo doctrine.
+    - Crew sensors stay live; Busy remains the HAL retask lock.
+    - Live-burn speed/flare/RTB/ACE tuning loads after this layer is ready.
 */
 
 ITW_CLASH_ThunderRun_fnc_ApplyStagingCore = ITW_CLASH_ThunderRun_fnc_ApplyStaging;
@@ -104,8 +101,8 @@ ITW_CLASH_ThunderRun_fnc_ApplyStaging = {
     _group setVariable ["Busy" + str _group,true];
     _group setVariable ["ITW_CLASH_ThunderRunActive",true];
     _veh setVariable ["ITW_CLASH_ThunderRunActive",true,true];
-    // Busy is the retask lock. TARGET/AUTOTARGET stay enabled so the crew can
-    // continue contributing to HAL's emerging battlefield picture.
+    // Busy prevents retasking; leave TARGET/AUTOTARGET enabled so this crew
+    // remains part of HAL's emerging battlefield picture.
     [_group] call RYD_WPdel;
 
     private _targetGroup = [_target] call ITW_CLASH_ThunderRun_fnc_TargetGroup;
@@ -171,9 +168,7 @@ ITW_CLASH_ThunderRun_fnc_TransitionPackage = {
         };
     };
 
-    // Staging is deliberately an abstraction only inside the tactical run-in.
-    // The exact object seen under the helicopter is the object later passed to
-    // RYD_AmmoDrop; no replacement crate is created.
+    // Same exact object: visible sling -> hidden tactical staging -> native chute.
     _box hideObjectGlobal true;
     _box enableSimulationGlobal false;
     _box setPos [0,0,2000];
@@ -209,10 +204,6 @@ ITW_CLASH_ThunderRun_fnc_TransitionPackage = {
 ITW_CLASH_ThunderRun_fnc_SetPhase = {
     params ["_state","_phase"];
     private _result = [_state,_phase] call ITW_CLASH_ThunderRun_fnc_SetPhaseCore;
-
-    // Base Run calls SetPhase TAKEOVER immediately before low-level terminal
-    // commands. Doing the package transition synchronously here guarantees that
-    // the sling is gone before the 25 m run-in begins.
     if (_phase == "TAKEOVER" && {
         _state getOrDefault ["slingTransit",false]
     }) then {
@@ -233,10 +224,6 @@ ITW_CLASH_ThunderRun_fnc_SetPhase = {
 
 ITW_CLASH_ThunderRun_fnc_Dispose = {
     params ["_state","_outcome"];
-
-    // Pre-takeover aborts can still have the package physically slung. Detach
-    // before the core reservation reconciliation teleports an intact package
-    // back to its origin/pool.
     if !(_state getOrDefault ["released",false]) then {
         private _veh = _state getOrDefault ["vehicle",objNull];
         private _box = _state getOrDefault ["box",objNull];
@@ -249,16 +236,11 @@ ITW_CLASH_ThunderRun_fnc_Dispose = {
             };
         };
     };
-
     [_state,_outcome] call ITW_CLASH_ThunderRun_fnc_DisposeCore
 };
 
-/*
-    A vehicle bridge dispatch is pre-classified before it reserves HAL state.
-    Preserve that decision for a few seconds so the immediate HAL_GoAmmoSupp
-    wrapper sees the same CONTESTED/HOT result. AIR_DENIED always wins; the lock
-    can never make a newly-dangerous corridor more permissive.
-*/
+// Preserve a preclassified vehicle-bridge CONTESTED/HOT decision for the few
+// seconds between claim and the common HAL_GoAmmoSupp wrapper. AIR_DENIED wins.
 ITW_CLASH_ThunderRun_fnc_Classify = {
     params ["_veh","_target","_hq"];
     private _result = [_veh,_target,_hq] call ITW_CLASH_ThunderRun_fnc_ClassifyCore;
@@ -303,7 +285,6 @@ ITW_CLASH_ThunderRun_fnc_VehicleAmmoTargets = {
         private _targetGroup = [_target] call ITW_CLASH_ThunderRun_fnc_TargetGroup;
         if (isNull _targetGroup || {_targetGroup in _blocked}) then {continue};
         if ((units _targetGroup findIf {isPlayer _x}) >= 0) then {continue};
-
         _result pushBackUnique _target;
     } forEach (_hq getVariable ["RydHQ_Hollow",[]]);
     _result
@@ -335,7 +316,6 @@ ITW_CLASH_ThunderRun_fnc_VehicleAmmoProviders = {
             || {!isNull getSlingLoad _veh}
             || {_veh getVariable ["ITW_CLASH_ThunderRunActive",false]}
         ) then {continue};
-
         _result pushBackUnique [_group,_veh];
     } forEach (_hq getVariable ["RydHQ_AmmoDrop",[]]);
     _result
@@ -351,7 +331,6 @@ ITW_CLASH_ThunderRun_fnc_TryVehicleAmmoDispatch = {
 
     private _targets = [_hq] call ITW_CLASH_ThunderRun_fnc_VehicleAmmoTargets;
     if (_targets isEqualTo []) exitWith {false};
-
     private _providers = [_hq] call ITW_CLASH_ThunderRun_fnc_VehicleAmmoProviders;
     if (_providers isEqualTo []) exitWith {false};
 
@@ -365,7 +344,6 @@ ITW_CLASH_ThunderRun_fnc_TryVehicleAmmoDispatch = {
         {
             _x params ["_providerGroup","_provider"];
             if (_dispatched) exitWith {};
-
             {
                 private _target = _x;
                 if (_provider distance2D _target > _radius) then {continue};
@@ -393,10 +371,6 @@ ITW_CLASH_ThunderRun_fnc_TryVehicleAmmoDispatch = {
                 private _state = _classification getOrDefault ["state","NORMAL"];
                 if !(_state in ["CONTESTED","HOT"]) then {continue};
 
-                // Claim the same two pieces of HAL pre-dispatch state as native
-                // SuppAmmo air dispatch, then route through the existing
-                // HAL_GoAmmoSupp interception seam. Its disposition code owns
-                // rollback if the corridor becomes AIR_DENIED.
                 private _supported = +(_hq getVariable ["RydHQ_ASupportedG",[]]);
                 _supported pushBackUnique _targetGroup;
                 _hq setVariable ["RydHQ_ASupportedG",_supported];
@@ -441,7 +415,6 @@ ITW_CLASH_ThunderRun_fnc_TryVehicleAmmoDispatch = {
         private _sides = [];
         if (!isNil "ITW_PlayerSide") then {_sides pushBackUnique ITW_PlayerSide};
         if (!isNil "ITW_EnemySide") then {_sides pushBackUnique ITW_EnemySide};
-
         {
             private _hq = [_x] call ITW_CLASH_fnc_GetCommanderForSide;
             if (!isNull _hq) then {
@@ -453,9 +426,16 @@ ITW_CLASH_ThunderRun_fnc_TryVehicleAmmoDispatch = {
 };
 
 ITW_CLASH_ThunderRunEnhancementsReady = true;
+
+private _tuningLoaded = false;
+if (fileExists "ITW_CLASH_ThunderRun_Tuning.sqf") then {
+    _tuningLoaded = call compile preprocessFileLineNumbers
+        "ITW_CLASH_ThunderRun_Tuning.sqf";
+};
+
 diag_log format [
-    "CLASH BOOT | thunder-run-enhancements-ready | version=%1 visibleSlingTransit=true exactBoxIdentity=true takeoverPackageTransition=true vehicleAmmoThunderRun=true vehicleDemandSource=RydHQ_Hollow halThreatAuthority=true sensorAwareCrew=true",
-    ITW_CLASH_ThunderRunVersion
+    "CLASH BOOT | thunder-run-enhancements-ready | version=%1 visibleSlingTransit=true exactBoxIdentity=true takeoverPackageTransition=true vehicleAmmoThunderRun=true vehicleDemandSource=RydHQ_Hollow halThreatAuthority=true sensorAwareCrew=true liveBurnTuning=%2",
+    ITW_CLASH_ThunderRunVersion,_tuningLoaded
 ];
 
 true
