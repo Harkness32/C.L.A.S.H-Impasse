@@ -51,6 +51,19 @@ ITW_CLASH_Diag_fnc_GroupId = {
 };
 
 ITW_CLASH_Diag_fnc_HQ = {
+    params [["_group",grpNull]];
+    if (!isNull _group) then {
+        if (!isNil "ITW_CLASH_BLUFORHQ" && {!isNull ITW_CLASH_BLUFORHQ} && {
+            side _group == side ITW_CLASH_BLUFORHQ
+        }) exitWith {ITW_CLASH_BLUFORHQ};
+        if (!isNil "ITW_CLASH_HALHQ" && {!isNull ITW_CLASH_HALHQ} && {
+            side _group == side ITW_CLASH_HALHQ
+        }) exitWith {ITW_CLASH_HALHQ};
+        if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+            private _resolved = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+            if (!isNull _resolved) exitWith {_resolved};
+        };
+    };
     if (!isNil "ITW_CLASH_HALHQ" && {!isNull ITW_CLASH_HALHQ}) exitWith {
         ITW_CLASH_HALHQ
     };
@@ -69,9 +82,9 @@ ITW_CLASH_Diag_fnc_GroupIds = {
 };
 
 ITW_CLASH_Diag_fnc_HALContactKnowledge = {
-    params ["_otherUnit"];
+    params ["_otherUnit",["_observerGroup",grpNull]];
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_observerGroup] call ITW_CLASH_Diag_fnc_HQ;
     if (isNull _hq || {isNull _otherUnit}) exitWith {
         [["valid",false]]
     };
@@ -190,7 +203,7 @@ ITW_CLASH_Diag_fnc_Group = {
     params ["_group"];
     if (isNull _group) exitWith {["<null>"]};
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
     private _leader = leader _group;
     private _busyName = "Busy" + str _group;
     private _wp = [_group] call ITW_CLASH_Diag_fnc_Waypoint;
@@ -293,7 +306,7 @@ ITW_CLASH_Diag_fnc_ContactSide = {
     params ["_group","_unit","_otherUnit"];
     if (isNull _group || {isNull _unit} || {isNull _otherUnit}) exitWith {["invalid"]};
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
     private _leader = leader _group;
     private _nearestLeader = if (isNull _leader) then {objNull} else {
         _leader findNearestEnemy _leader
@@ -330,7 +343,7 @@ ITW_CLASH_Diag_fnc_ContactSide = {
             ]
         },
         [_unit,_otherUnit] call ITW_CLASH_Diag_fnc_Unit,
-        [_otherUnit] call ITW_CLASH_Diag_fnc_HALContactKnowledge,
+        [_otherUnit,_group] call ITW_CLASH_Diag_fnc_HALContactKnowledge,
         [
             [_hq,"RydHQ_AttackAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
             [_hq,"RydHQ_CombatAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
@@ -371,7 +384,7 @@ ITW_CLASH_Diag_fnc_ContactReasons = {
     };
 
     if (_distance <= 75 && {_groupKnowledge < 0.05}) then {
-        private _hq = call ITW_CLASH_Diag_fnc_HQ;
+        private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
         if (!isNull _hq) then {
             private _otherVehicle = vehicle _otherUnit;
             private _otherGroup = group _otherUnit;

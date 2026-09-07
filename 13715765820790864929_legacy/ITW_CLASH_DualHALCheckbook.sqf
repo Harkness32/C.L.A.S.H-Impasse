@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 5;
+ITW_CLASH_DualHALCheckbookVersion = 6;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -15,6 +15,15 @@ ITW_CLASH_DualHALBLUFORGroups = [];
 ITW_CLASH_DualHALOPFORExtraGroups = [];
 ITW_CLASH_CheckbookAssets = [];
 ITW_CLASH_CheckbookRequestSerial = 0;
+
+private _serviceCapacityPolicyLoaded = false;
+if (fileExists "ITW_CLASH_ServiceCapacityPolicy.sqf") then {
+    _serviceCapacityPolicyLoaded = call compile preprocessFileLineNumbers
+        "ITW_CLASH_ServiceCapacityPolicy.sqf";
+};
+if !(_serviceCapacityPolicyLoaded isEqualTo true) then {
+    diag_log "CLASH BOOT | service-capacity-policy-missing | transport selection falls back to legacy order";
+};
 
 ITW_CLASH_DualHAL_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -113,6 +122,59 @@ ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter = {
     if (!isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}) then {_supported = true};
     if (!isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}) then {_supported = true};
     _supported
+};
+
+ITW_CLASH_DualHAL_fnc_MarkVehicleCrew = {
+    params ["_group","_veh",["_source","vehicle"]];
+    if (isNull _group) exitWith {false};
+    _group setVariable ["ITW_CLASH_VehicleCrewGroup",true];
+    _group setVariable ["ITW_CLASH_CrewVehicle",_veh];
+    _group setVariable ["ITW_CLASH_CrewSource",_source];
+    {
+        _x setVariable ["ITW_CLASH_VehicleCrewUnit",true];
+    } forEach units _group;
+    true
+};
+
+ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine = {
+    params ["_group",["_enabled",true],["_source","transport"]];
+    if (isNull _group) exitWith {false};
+
+    private _suffixes = ["CargoOnly","NoAttack","NoRecon","NoDef"];
+    if (_enabled) then {
+        _group setVariable ["ITW_CLASH_HALTransportOnly",true];
+        _group setVariable ["ITW_CLASH_HALTransportDoctrineSource",_source];
+
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,_suffixes,true] call
+                ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        } else {
+            private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+            if (!isNull _hq) then {
+                {
+                    private _name = "RydHQ_" + _x;
+                    private _arr = +(_hq getVariable [_name,[]]);
+                    _arr pushBackUnique _group;
+                    _hq setVariable [_name,_arr];
+                } forEach _suffixes;
+            };
+        };
+
+        private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+        if (!isNull _hq) then {
+            private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
+            _cargo pushBackUnique _group;
+            _hq setVariable ["RydHQ_CargoG",_cargo];
+        };
+    } else {
+        _group setVariable ["ITW_CLASH_HALTransportOnly",nil];
+        _group setVariable ["ITW_CLASH_HALTransportDoctrineSource",nil];
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,_suffixes,false] call
+                ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        };
+    };
+    true
 };
 
 ITW_CLASH_DualHAL_fnc_RegisterGroup = {
@@ -663,28 +725,24 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     _veh setVariable ["ITW_CLASH_DualHALManaged",true];
 
     private _role = _vehInfo#VEHINFO_ROLE;
-    if (_role in [ITW_VEH_ROLE_TRANSPORT,ITW_VEH_ROLE_DUAL]) then {
+    private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
+    private _transportDeployment = _role == ITW_VEH_ROLE_TRANSPORT || {
+        _role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}
+    };
+
+    [_crewGroup,_veh,"impasse-field"] call ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+
+    if (_transportDeployment) then {
+        [_crewGroup,true,"impasse-field"] call
+            ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+    };
+
+    if (_veh isKindOf "Air") then {
         private _hq = [_crewGroup] call ITW_CLASH_fnc_GetCommanderForGroup;
         if (!isNull _hq) then {
-            private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
-            _cargo pushBackUnique _crewGroup;
-            _hq setVariable ["RydHQ_CargoG",_cargo];
-
-            private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-            _cargoOnly pushBackUnique _crewGroup;
-            _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
-
-            {
-                private _arr = +(_hq getVariable [_x,[]]);
-                _arr pushBackUnique _crewGroup;
-                _hq setVariable [_x,_arr];
-            } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
-
-            if (_veh isKindOf "Air") then {
-                private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
-                _air pushBackUnique _crewGroup;
-                _hq setVariable ["RydHQ_AirG",_air];
-            };
+            private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
+            _air pushBackUnique _crewGroup;
+            _hq setVariable ["RydHQ_AirG",_air];
         };
     };
 
@@ -736,6 +794,18 @@ ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {
         VAR_SET_OBJ_IDX(_crewGroup,-1);
         [_crewGroup,"managed-vehicle-migration"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
         _veh setVariable ["ITW_CLASH_DualHALManaged",true];
+        [_crewGroup,_veh,"managed-vehicle-migration"] call
+            ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+
+        private _role = _vehInfo#VEHINFO_ROLE;
+        private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
+        if (
+            _role == ITW_VEH_ROLE_TRANSPORT
+            || {_role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}}
+        ) then {
+            [_crewGroup,true,"managed-vehicle-migration"] call
+                ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+        };
 
         private _vehDef = _veh getVariable ["ITW_VehDef",[]];
         [_veh,_vehDef,"managed-vehicle-migration"] call ITW_CLASH_DualHAL_fnc_TrackAsset;
@@ -792,6 +862,37 @@ ITW_CLASH_Checkbook_fnc_SelectTransportDefs = {
     },"ASCEND"] call BIS_fnc_sortBy
 };
 
+ITW_CLASH_Checkbook_fnc_RankTransportVariants = {
+    params ["_side","_mode","_seatCount"];
+    private _defs = [_side,_mode,_seatCount] call
+        ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
+    if (_ranked isEqualTo []) exitWith {[]};
+
+    if (
+        missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]
+        && {!isNil "ITW_CLASH_ServiceCapacity_fnc_RankVariants"}
+    ) exitWith {
+        [_seatCount,_defs,_mode,"TRANSPORT"] call
+            ITW_CLASH_ServiceCapacity_fnc_RankVariants
+    };
+
+    private _fallback = [];
+    {
+        private _vehDef = _x;
+        {
+            private _class = if (_x isEqualType []) then {
+                if (_x isEqualTo []) then {""} else {_x#0}
+            } else {_x};
+            if (_class isEqualTo "") then {continue};
+            _fallback pushBack [
+                0,_vehDef,_x,_class,-1,false,
+                _vehDef#ITW_VEH_REQD_TICKETS,0
+            ];
+        } forEach (_vehDef#ITW_VEH_CLASSES);
+    } forEach _defs;
+    _fallback
+};
+
 ITW_CLASH_Checkbook_fnc_GetCrewTypes = {
     params ["_side"];
     private _friendly = !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide};
@@ -806,13 +907,33 @@ ITW_CLASH_Checkbook_fnc_GetCrewTypes = {
     } else {
         call FACTION_UNIT_FALLBACK_SUBF_OPF
     };
-    private _unitTypes = ([_factions,["Crewman","Diver"],true,_fallback] call FactionUnits) apply {
+    private _rawUnitTypes = ([_factions,["Crewman","Diver"],true,_fallback] call FactionUnits) apply {
         toLowerANSI _x
     };
-    private _crewTypes = ([
+    private _rawCrewTypes = ([
         _factions,["Crewman"],false,call FACTION_UNIT_FALLBACK_ROLE_REQ
     ] call FactionUnits) apply {toLowerANSI _x};
+    private _validManClass = {
+        params ["_class"];
+        _class isEqualType "" && {
+            _class isNotEqualTo "" && {
+                isClass (configFile >> "CfgVehicles" >> _class) && {
+                    _class isKindOf "CAManBase"
+                }
+            }
+        }
+    };
+    private _unitTypes = _rawUnitTypes select {[_x] call _validManClass};
+    private _crewTypes = _rawCrewTypes select {[_x] call _validManClass};
     if (_crewTypes isEqualTo []) then {_crewTypes = +_unitTypes};
+    if (
+        count _unitTypes != count _rawUnitTypes
+        || {count _crewTypes != count _rawCrewTypes}
+    ) then {
+        ["crew-pool-sanitized",[
+            _side,count _unitTypes,count _rawUnitTypes,count _crewTypes,count _rawCrewTypes
+        ]] call ITW_CLASH_DualHAL_fnc_Log;
+    };
     [_crewTypes,_unitTypes]
 };
 
@@ -826,22 +947,16 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     _crewGroup setVariable ["ITW_CLASH_CheckbookAsset",true];
     _crewGroup setVariable ["ITW_CLASH_CheckbookRequest",_requestId];
     _crewGroup setVariable ["START" + str _crewGroup,getPosATL _veh];
+    private _injectCycle = _hq getVariable ["RydHQ_Cyclecount",-1];
+    _crewGroup setVariable ["ITW_CLASH_CheckbookInjectedCycle",_injectCycle];
+    _veh setVariable ["ITW_CLASH_CheckbookInjectedCycle",_injectCycle,true];
 
     [_crewGroup,"checkbook-transport"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
 
-    private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
-    _cargo pushBackUnique _crewGroup;
-    _hq setVariable ["RydHQ_CargoG",_cargo];
-
-    private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-    _cargoOnly pushBackUnique _crewGroup;
-    _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
-
-    {
-        private _arr = +(_hq getVariable [_x,[]]);
-        _arr pushBackUnique _crewGroup;
-        _hq setVariable [_x,_arr];
-    } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+    [_crewGroup,_veh,"checkbook-transport"] call
+        ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    [_crewGroup,true,"checkbook-transport"] call
+        ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
 
     if (_veh isKindOf "Air") then {
         private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
@@ -854,6 +969,11 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     };
 
     [_veh,_vehDef,_source] call ITW_CLASH_DualHAL_fnc_TrackAsset;
+
+    // ITW_AtkSpawnVeh deliberately creates vehicles damage-protected and the
+    // normal Impasse field pipeline releases that protection later. Checkbook
+    // bypasses that pipeline, so the HAL handoff is the matching release point.
+    ALLOW_DAMAGE(_veh,true);
     true
 };
 
@@ -864,7 +984,8 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     if !(_mode in ["AIR","GROUND"]) exitWith {objNull};
 
     private _side = side _requester;
-    private _defs = [_side,_mode,_seatCount] call ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
+    private _ranked = [_side,_mode,_seatCount] call
+        ITW_CLASH_Checkbook_fnc_RankTransportVariants;
     private _requestId = _externalRequestId;
     if (_requestId isEqualTo "") then {
         ITW_CLASH_CheckbookRequestSerial = ITW_CLASH_CheckbookRequestSerial + 1;
@@ -906,8 +1027,13 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     private _result = objNull;
     {
         if (!isNull _result) then {continue};
-        private _vehDef = _x;
-        private _veh = [_vehDef,_crewTypes,_unitTypes,_side,_spawn] call ITW_AtkSpawnVeh;
+        _x params [
+            "_capacityScore","_vehDef","_variant","_class",
+            "_estimatedCapacity","_capacityKnown","_ticketCost","_maxSpeed"
+        ];
+        private _spawnDef = +_vehDef;
+        _spawnDef set [ITW_VEH_CLASSES,[_variant]];
+        private _veh = [_spawnDef,_crewTypes,_unitTypes,_side,_spawn] call ITW_AtkSpawnVeh;
         if (isNull _veh) then {continue};
 
         private _crewGroup = group driver _veh;
@@ -948,9 +1074,10 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
             _requestId,[_requester] call ITW_CLASH_DualHAL_fnc_GroupId,
             side _requester,_mode,_seatCount,typeOf _veh,_capacity,
             _baseIndex,_objectiveIndex,_spawnSource,
-            _vehDef#ITW_VEH_REQD_TICKETS,_vehDef#ITW_VEH_CURR_TICKETS
+            _vehDef#ITW_VEH_REQD_TICKETS,_vehDef#ITW_VEH_CURR_TICKETS,
+            round _capacityScore,_estimatedCapacity,_maxSpeed
         ]] call ITW_CLASH_DualHAL_fnc_Log;
-    } forEach _defs;
+    } forEach _ranked;
 
     if (isNull _result) then {
         ["checkbook-denied",[

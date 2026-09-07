@@ -104,7 +104,7 @@ def test_casevac_and_ground_medevac_use_casualty_side_context_and_enemy_relation
     ground = mission("ITW_CLASH_GroundMEDEVAC.sqf")
     manager = mission("ITW_CLASH_GroundMEDEVAC_Manager.sqf")
 
-    assert "ITW_CLASH_CASEVAC_Version = 2;" in casevac
+    assert "ITW_CLASH_CASEVAC_Version = 5;" in casevac
     assert "ITW_AtkReconstitutionTransportContexts" in casevac
     assert 'toUpperANSI str _recoverySide' in casevac
     assert '(_groupSide getFriend (side _x)) < 0.6' in casevac
@@ -112,7 +112,7 @@ def test_casevac_and_ground_medevac_use_casualty_side_context_and_enemy_relation
     assert "ITW_ATTACK_AIR_F" in casevac
     assert "ITW_ATTACK_AIR_E" in casevac
 
-    assert "ITW_CLASH_GroundMEDEVAC_Version = 2;" in ground
+    assert "ITW_CLASH_GroundMEDEVAC_Version = 3;" in ground
     assert "ITW_AtkReconstitutionTransportContexts" in ground
     assert "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn" in ground
     assert '(_groupSide getFriend (side _x)) < 0.6' in ground
@@ -144,7 +144,7 @@ def test_bootstrap_accepts_the_symmetric_runtime_versions():
 def test_field_vehicle_staging_obeys_shared_echelon_policy():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_DualHALCheckbookVersion = 5;" in dual
+    assert "ITW_CLASH_DualHALCheckbookVersion = 6;" in dual
     assert "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn" in dual
 
     echelon = dual[
@@ -171,7 +171,7 @@ def test_armored_recovery_uses_forward_fob_but_native_hal_gorest_executes_moveme
     policy = mission("ITW_CLASH_VehicleEchelonPolicy.sqf")
     init = mission("init.sqf")
 
-    assert "ITW_CLASH_VehicleEchelonPolicyVersion = 1;" in policy
+    assert "ITW_CLASH_VehicleEchelonPolicyVersion = 2;" in policy
     assert "ITW_CLASH_VehicleEchelon_fnc_IsArmoredCombatGroup" in policy
     assert 'ITW_TYPE_VEH_TANK' in policy
     assert 'ITW_TYPE_VEH_APC' in policy
@@ -210,7 +210,7 @@ def test_late_recovery_overrides_preserve_side_symmetric_contexts():
     assert "_side != ITW_EnemySide" not in air
     assert "symmetricSides=true" in air
 
-    assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 2;" in ground_policy
+    assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 3;" in ground_policy
     assert '["_recoverySide",sideUnknown]' in ground_policy
     assert "ITW_AtkReconstitutionTransportContexts" in ground_policy
     assert "toUpperANSI str _recoverySide" in ground_policy
@@ -394,3 +394,13 @@ def test_reconstitution_transit_failure_distinguishes_combat_loss_from_lifecycle
     assert '"combat-loss-in-transit"' in transit
     assert '"transport-loss-with-cargo"' in transit
     assert '"group-object-lost-in-transit"' in transit
+
+
+def test_vehicle_echelon_wrapper_is_nil_safe_for_native_gorest():
+    policy = mission("ITW_CLASH_VehicleEchelonPolicy.sqf")
+    block = policy.split("HAL_GoRest = {", 1)[1].split(
+        "ITW_CLASH_VehicleEchelonPolicyReady = true;", 1
+    )[0]
+
+    assert "ITW_CLASH_VehicleEchelonPolicyVersion = 2;" in policy
+    assert 'if (isNil "_result") exitWith {};' in block

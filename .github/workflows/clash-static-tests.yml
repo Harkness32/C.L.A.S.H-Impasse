@@ -10,6 +10,7 @@ on:
     branches:
       - "agent/**"
       - "feature/**"
+      - "opfor-fob-logic"
 
 permissions:
   contents: read
@@ -40,10 +41,16 @@ jobs:
           tests/test_support_lifecycle.py
           tests/test_support_authority_hardening.py
           tests/test_hal_transport_audio.py
+          tests/test_player_transport_paradrop_bridge.py
           tests/test_player_job_state_hardening.py
           tests/test_player_job_cancel_certification.py
           tests/test_player_logistics_provider_compat.py
+          tests/test_player_task_sling_transport.py
           tests/test_hal_logistics_fulfillment_hardening.py
+          tests/test_spawn_type_guard.py
+          tests/test_ground_medevac.py
+          tests/test_casevac.py
+          tests/test_front_routing_phase0.py
           tests/test_player_artillery_tasking.py
           tests/test_player_artillery_side_marker.py
           tests/test_player_demand_dispatch.py

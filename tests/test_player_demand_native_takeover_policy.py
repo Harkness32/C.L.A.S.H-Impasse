@@ -74,3 +74,31 @@ def test_supported_arrays_are_native_handoff_cleanup_only():
     assert "native-SupportedG-cleared-on-handoff" in text
     assert "sameCycleRaceGuard=true" in text
     assert "exactDemandDispatch=true" in text
+
+
+def test_ammo_dispatch_provenance_and_race_reconciliation_are_explicit():
+    dispatch = (MISSION / "ITW_CLASH_AmmoDispatch.sqf").read_text(encoding="utf-8")
+    intercept = (MISSION / "ITW_CLASH_PlayerDemandNativeInterceptors.sqf").read_text(
+        encoding="utf-8"
+    )
+    hal = ROOT / "NR6 Hal" / "addons" / "nr6_hal"
+    supp = (hal / "HAL" / "SuppAmmo.sqf").read_text(encoding="utf-8")
+    task = (hal / "TaskInitNR6.sqf").read_text(encoding="utf-8")
+
+    assert "ITW_CLASH_AmmoDispatchVersion = 1;" in dispatch
+    assert "ITW_CLASH_AmmoDispatch_fnc_ReconcilePreDispatch" in dispatch
+    assert "inferASupported=false" in dispatch
+    assert '["SUPP_AMMO_AIR",true,true]' in supp
+    assert '["SUPP_AMMO_GROUND",false,true]' in supp
+    assert '["TASKINIT_AIR",true,false]' in task
+    assert '["TASKINIT_GROUND",false,false]' in task
+
+    race = _block(
+        intercept,
+        "ITW_CLASH_PlayerDemandNative_fnc_BlockReservedAmmoRace = {",
+        "ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {",
+    )
+    assert "RydHQ_ASupportedG" not in race
+    assert "ReconcilePreDispatch" in intercept
+    assert "reserved-player-demand-race" in intercept
+    assert "player-demand-takeover" in intercept

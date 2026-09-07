@@ -79,6 +79,20 @@ ITW_CLASH_Generation_fnc_GetPool = {
                 missionNamespace getVariable ["ITW_CLASH_EnemyRepairClasses",[]]
             }
         };
+        case "GROUND_ATTACK_LIGHT": {
+            if (_friendly) then {
+                missionNamespace getVariable ["ITW_CLASH_PlayerGroundAttackLightClasses",[]]
+            } else {
+                missionNamespace getVariable ["ITW_CLASH_EnemyGroundAttackLightClasses",[]]
+            }
+        };
+        case "CAS_AIRCRAFT": {
+            if (_friendly) then {
+                missionNamespace getVariable ["ITW_CLASH_PlayerCASAircraftClasses",[]]
+            } else {
+                missionNamespace getVariable ["ITW_CLASH_EnemyCASAircraftClasses",[]]
+            }
+        };
         default {[]};
     };
 
@@ -311,7 +325,13 @@ ITW_CLASH_Generation_fnc_SelectBillingDefs = {
         };
         private _exactBias = if (_class in _defClasses) then {0} else {1000};
         private _role = _def#ITW_VEH_ROLE;
-        private _roleBias = if (_capabilityKey == "ARTILLERY") then {
+        // ARTILLERY, GROUND_ATTACK_LIGHT and CAS_AIRCRAFT are all combat
+        // capabilities and want attack-role billing defs; everything else
+        // (LOGISTICS_*, TRANSPORT) wants transport-role ones. This used to be
+        // a plain ARTILLERY-vs-everything-else check, which would have scored
+        // combat billing defs for the two new capabilities as if they needed
+        // a transport role - a real bug, not just a missing case.
+        private _roleBias = if (_capabilityKey in ["ARTILLERY","GROUND_ATTACK_LIGHT","CAS_AIRCRAFT"]) then {
             if (_role in [ITW_VEH_ROLE_ATTACK,ITW_VEH_ROLE_DUAL]) then {0} else {500}
         } else {
             if (_role in [ITW_VEH_ROLE_TRANSPORT,ITW_VEH_ROLE_DUAL]) then {0} else {500}
@@ -345,19 +365,26 @@ ITW_CLASH_Generation_fnc_RegisterAsset = {
     _veh setVariable ["ITW_CLASH_GenerationCapability",_capability,true];
     _group setVariable ["ITW_CLASH_CheckbookAsset",true];
     _group setVariable ["ITW_CLASH_CheckbookRequest",_requestId];
+    _group setVariable ["ITW_CLASH_GenerationCapability",_capability];
     _group setVariable ["START" + str _group,getPosATL _veh];
 
     if !([_group,"checkbook-" + toLowerANSI _capability] call ITW_CLASH_DualHAL_fnc_RegisterGroup) exitWith {false};
 
-    private _noAttack = +(_hq getVariable ["RydHQ_NoAttack",[]]);
-    _noAttack pushBackUnique _group;
-    _hq setVariable ["RydHQ_NoAttack",_noAttack];
-    private _noRecon = +(_hq getVariable ["RydHQ_NoRecon",[]]);
-    _noRecon pushBackUnique _group;
-    _hq setVariable ["RydHQ_NoRecon",_noRecon];
-    private _noDef = +(_hq getVariable ["RydHQ_NoDef",[]]);
-    _noDef pushBackUnique _group;
-    _hq setVariable ["RydHQ_NoDef",_noDef];
+    if (!isNil "ITW_CLASH_DualHAL_fnc_MarkVehicleCrew") then {
+        [_group,_veh,"checkbook-" + toLowerANSI _capability] call
+            ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    };
+
+    if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+        [_group,["NoAttack","NoRecon","NoDef"],true] call
+            ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+    } else {
+        {
+            private _arr = +(_hq getVariable [_x,[]]);
+            _arr pushBackUnique _group;
+            _hq setVariable [_x,_arr];
+        } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+    };
 
     switch (_capability) do {
         case "ARTILLERY": {
@@ -380,7 +407,75 @@ ITW_CLASH_Generation_fnc_RegisterAsset = {
                 _hq setVariable ["RydHQ_AirG",_air];
             };
         };
+        // GROUND_ATTACK_LIGHT / CAS_AIRCRAFT are combat capabilities, unlike
+        // every case above. The generic path just above this switch put this
+        // group into NoAttack/NoRecon/NoDef - correct for a support truck,
+        // wrong for a combat asset HAL asked for specifically to go fight
+        // something. Clear that before projecting into the matching pool.
+        case "GROUND_ATTACK_LIGHT": {
+            if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+                [_group,["NoAttack","NoRecon","NoDef"],false] call
+                    ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+            } else {
+                {
+                    private _arr = (+(_hq getVariable [_x,[]])) - [_group];
+                    _hq setVariable [_x,_arr];
+                } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+            };
+
+            // Route by what was actually spawned. The classlist is now
+            // Apc+Car only (see VehicleArrays.sqf) - no infantry, so no
+            // NCrewInfG fallback; HAL already hunts infantry threats itself,
+            // Checkbook doesn't need to manufacture infantry through a
+            // vehicle provider. Wheeled Apc classes typically resolve as CAR,
+            // tracked ones as TANK via ClassKind's isKindOf checks - CarsG is
+            // the fallback for anything else only as a defensive default, not
+            // an expected case; logged so an unexpected kind is visible.
+            private _kind = [typeOf _veh] call ITW_CLASH_Generation_fnc_ClassKind;
+            private _poolVar = switch (_kind) do {
+                case "TANK": {"RydHQ_LArmorG"};
+                case "CAR": {"RydHQ_CarsG"};
+                default {
+                    ["unexpected-ground-attack-light-kind",[_kind,typeOf _veh]] call
+                        ITW_CLASH_Generation_fnc_Log;
+                    "RydHQ_CarsG"
+                };
+            };
+            private _pool = +(_hq getVariable [_poolVar,[]]);
+            _pool pushBackUnique _group;
+            _hq setVariable [_poolVar,_pool];
+        };
+        case "CAS_AIRCRAFT": {
+            if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+                [_group,["NoAttack","NoRecon","NoDef"],false] call
+                    ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+            } else {
+                {
+                    private _arr = (+(_hq getVariable [_x,[]])) - [_group];
+                    _hq setVariable [_x,_arr];
+                } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+            };
+
+            // RCAS so both HAL's own RYD_Dispatcher merge and the addon's
+            // fnc_watch.sqf pool see it; AirG so it counts in HAL's general
+            // air bookkeeping too, same dual-registration shape LOGISTICS_AMMO/
+            // AIR already uses above for AmmoDrop+AirG. RCAP too: HAL's own
+            // "Air" threat dispatch (RYD_Dispatcher's "Air" case) draws on
+            // RydHQ_RCAP specifically, not RCAS - without this a
+            // CAS_AIRCRAFT purchase would never actually help HAL answer an
+            // enemy-air deficit, only a ground-support one.
+            private _rcas = +(_hq getVariable ["RydHQ_RCAS",[]]);
+            _rcas pushBackUnique _group;
+            _hq setVariable ["RydHQ_RCAS",_rcas];
+            private _rcap = +(_hq getVariable ["RydHQ_RCAP",[]]);
+            _rcap pushBackUnique _group;
+            _hq setVariable ["RydHQ_RCAP",_rcap];
+            private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
+            _air pushBackUnique _group;
+            _hq setVariable ["RydHQ_AirG",_air];
+        };
     };
+
 
     [_veh,_vehDef,"checkbook-" + toLowerANSI _capability] call
         ITW_CLASH_DualHAL_fnc_TrackAsset;
@@ -498,7 +593,7 @@ ITW_CLASH_Generation_fnc_Provider = {
 
 {
     [_x,ITW_CLASH_Generation_fnc_Provider] call ITW_CLASH_Checkbook_fnc_RegisterProvider;
-} forEach ["ARTILLERY","LOGISTICS_AMMO","LOGISTICS_FUEL","LOGISTICS_REPAIR"];
+} forEach ["ARTILLERY","LOGISTICS_AMMO","LOGISTICS_FUEL","LOGISTICS_REPAIR","GROUND_ATTACK_LIGHT","CAS_AIRCRAFT"];
 
 ITW_CLASH_Generation_fnc_UsableGroups = {
     params ["_groups"];

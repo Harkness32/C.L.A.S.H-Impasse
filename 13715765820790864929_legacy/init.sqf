@@ -76,6 +76,16 @@ if (isServer) then {
                 diag_log "CLASH BOOT | commander-parity-missing-or-prereq-failed | Commander B parity extensions unavailable";
             };
 
+            private _crewRemnantCleanupLoaded = false;
+            if (_commanderParityLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_CrewRemnantCleanup.sqf"
+            }) then {
+                _crewRemnantCleanupLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_CrewRemnantCleanup.sqf";
+            } else {
+                diag_log "CLASH BOOT | crew-remnant-cleanup-missing-or-prereq-failed | orphan vehicle crews remain native";
+            };
+
             private _checkbookAPIReady = false;
             if (_dualHALHardened isEqualTo true && {fileExists "ITW_CLASH_CheckbookAPI.sqf"}) then {
                 _checkbookAPIReady = call compile preprocessFileLineNumbers "ITW_CLASH_CheckbookAPI.sqf";
@@ -85,6 +95,22 @@ if (isServer) then {
             if (_checkbookAPIReady isEqualTo true && {fileExists "ITW_CLASH_ForceGeneration.sqf"}) then {
                 _forceGenerationReady = call compile preprocessFileLineNumbers "ITW_CLASH_ForceGeneration.sqf";
             };
+            // Phase-0 front routing is intentionally shadow-only. It derives
+            // side-symmetric primary/alternate FOB lanes from the live Impasse
+            // graph and publishes the commander's current selection without
+            // changing any spawn or tactical movement authority.
+            private _frontRoutingLoaded = false;
+            if (
+                _forceGenerationReady isEqualTo true
+                && {_commanderParityLoaded isEqualTo true}
+                && {fileExists "ITW_CLASH_FrontRouting.sqf"}
+            ) then {
+                _frontRoutingLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_FrontRouting.sqf";
+            } else {
+                diag_log "CLASH BOOT | front-routing-missing-or-prereq-failed | fixed Impasse generation graph retained";
+            };
+
             private _vehicleEchelonLoaded = false;
             if (_forceGenerationReady isEqualTo true && {
                 fileExists "ITW_CLASH_VehicleEchelonPolicy.sqf"
@@ -98,6 +124,18 @@ if (isServer) then {
             private _halLogisticsLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
                 _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
+            };
+            private _halThreatCoverageLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALThreatCoverage.sqf"}) then {
+                _halThreatCoverageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALThreatCoverage.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
+            };
+            private _infantryDemandLoaded = false;
+            if (fileExists "ITW_CLASH_InfantryDemand.sqf") then {
+                _infantryDemandLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_InfantryDemand.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | infantry-demand-missing | native random squad-template selection retained";
             };
             private _playerTransportLoaded = false;
             if (_forceGenerationReady isEqualTo true && {
@@ -113,6 +151,26 @@ if (isServer) then {
                 _playerTasksLoaded = call compile preprocessFileLineNumbers
                     "ITW_CLASH_PlayerTaskSupport.sqf";
             };
+            private _ammoDispatchLoaded = false;
+            if (_playerTasksLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_AmmoDispatch.sqf"
+            }) then {
+                _ammoDispatchLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_AmmoDispatch.sqf";
+            } else {
+                diag_log "CLASH BOOT | ammo-dispatch-missing-or-prereq-failed | native ammo dispatch retained";
+            };
+
+            private _thunderRunLoaded = false;
+            if (_ammoDispatchLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_ThunderRun.sqf"
+            }) then {
+                _thunderRunLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_ThunderRun.sqf";
+            } else {
+                diag_log "CLASH BOOT | thunder-run-missing-or-prereq-failed | native ammo air delivery retained";
+            };
+
             private _playerGarageLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
                 _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";
@@ -133,6 +191,8 @@ if (isServer) then {
             // cannot race those existing guards. Native interceptors then wait
             // for both the demand layer and PlayerTaskSupport's HAL binder.
             if (_playerTasksLoaded isEqualTo true && {
+                _ammoDispatchLoaded isEqualTo true
+            } && {
                 _playerArtilleryLoaded isEqualTo true
             } && {fileExists "ITW_CLASH_PlayerDemandDispatch.sqf"}) then {
                 call compile preprocessFileLineNumbers "ITW_CLASH_PlayerDemandDispatch.sqf";
@@ -154,6 +214,7 @@ if (isServer) then {
             if (
                 _dualHALHardened isEqualTo true
                 && {_commanderParityLoaded isEqualTo true}
+                && {_crewRemnantCleanupLoaded isEqualTo true}
                 && {_checkbookAPIReady isEqualTo true}
                 && {_forceGenerationReady isEqualTo true}
                 && {_halLogisticsLoaded isEqualTo true}
@@ -163,7 +224,7 @@ if (isServer) then {
                 && {_playerArtilleryLoaded isEqualTo true}
             ) then {
                 diag_log format [
-                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7 commanderParity=%8",
+                    "CLASH BOOT | dual-hal-checkbook-deferred-ready | hardening=true capabilityAPI=v2 forceGeneration=%1 halLogistics=%2 playerTransport=%3 playerTasks=%4 playerGarage=%5 playerArtillery=%6 sideBinderOwnsCommanderB=true nativeCoreLaunch=live-mode-only configuredMode=%7 commanderParity=%8 crewRemnantCleanup=%9",
                     _forceGenerationReady,
                     _halLogisticsLoaded,
                     _playerTransportLoaded,
@@ -171,12 +232,13 @@ if (isServer) then {
                     _playerGarageLoaded,
                     _playerArtilleryLoaded,
                     missionNamespace getVariable ["ITW_ParamCLASHObserver",-1],
-                    _commanderParityLoaded
+                    _commanderParityLoaded,
+                    _crewRemnantCleanupLoaded
                 ];
             } else {
                 diag_log format [
-                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 commanderParity=%9 runtime candidate blocked",
-                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded,_commanderParityLoaded
+                    "CLASH BOOT | WARNING | dual-hal-checkbook-incomplete | hardening=%1 capabilityAPI=%2 forceGeneration=%3 halLogistics=%4 playerTransport=%5 playerTasks=%6 playerGarage=%7 playerArtillery=%8 commanderParity=%9 crewRemnantCleanup=%10 runtime candidate blocked",
+                    _dualHALHardened,_checkbookAPIReady,_forceGenerationReady,_halLogisticsLoaded,_playerTransportLoaded,_playerTasksLoaded,_playerGarageLoaded,_playerArtilleryLoaded,_commanderParityLoaded,_crewRemnantCleanupLoaded
                 ];
             };
         } else {
@@ -189,6 +251,16 @@ if (isServer) then {
             missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitReady",false],
             fileExists "ITW_CLASH_DualHALCheckbook.sqf"
         ];
+    };
+
+    if (fileExists "ITW_CLASH_HALParadrop.sqf") then {
+        private _halParadropLoaded = call compile preprocessFileLineNumbers
+            "ITW_CLASH_HALParadrop.sqf";
+        if !(_halParadropLoaded isEqualTo true) then {
+            diag_log "CLASH BOOT | hal-paradrop-load-failed | native HAL landing retained";
+        };
+    } else {
+        diag_log "CLASH BOOT | hal-paradrop-missing | native HAL landing retained";
     };
 
     // Temporary hosted-test comms are intentionally observer-only and load
@@ -311,6 +383,12 @@ if (isServer) then {
             [] execVM "ITW_CLASH_GTFO_Runtime.sqf";
         } else {
             diag_log "CLASH BOOT | gtfo-runtime-missing | core HAL withdrawal bridge remains active without late guards";
+        };
+
+        if (fileExists "ITW_CLASH_RemnantEvac.sqf") then {
+            [] execVM "ITW_CLASH_RemnantEvac.sqf";
+        } else {
+            diag_log "CLASH BOOT | remnant-evac-missing | shattered infantry remains HAL-native";
         };
     };
 };

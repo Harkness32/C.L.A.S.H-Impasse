@@ -19,25 +19,23 @@ def test_player_logistics_roster_uses_physical_sling_vehicle():
     assert '_group setVariable ["ITW_CLASH_PlayerLogisticsAir",_eligible,true];' in text
 
 
-def test_native_suppammo_accepts_current_vehicle_for_human_ammo_drop_group():
+def test_native_suppammo_uses_shared_physical_provider_resolver():
     text = (HAL / "SuppAmmo.sqf").read_text(encoding="utf-8")
+    mission_logistics = (MISSION / "ITW_CLASH_HALLogistics.sqf").read_text(encoding="utf-8")
 
     assert '_providerVehicle = {' in text
     start = text.index('_providerVehicle = {')
     stop = text.index('_ammo = RHQ_Ammo', start)
     helper = text[start:stop]
 
-    # AI behavior stays native: assignedVehicle is still the first answer.
-    assert 'private _veh = assignedVehicle _leader;' in helper
-    # Only a group containing a human may fall back to the actual occupied vehicle.
-    assert '(units _group findIf {isPlayer _x}) >= 0' in helper
-    assert 'private _current = vehicle _leader;' in helper
-    assert 'if (_current != _leader)' in helper
-    assert '_veh = _current;' in helper
-    assert 'provider-current-vehicle-fallback' in helper
+    assert 'ITW_CLASH_HALLogistics_fnc_ProviderVehicle' in helper
+    assert 'assignedVehicle _unit' in helper
+    assert '(units _group findIf {isPlayer _x}) >= 0' in mission_logistics
+    assert '"ITW_CLASH_ServiceAsset",false' in mission_logistics
+    assert '"ITW_CLASH_CheckbookAsset",false' in mission_logistics
+    assert 'private _physical = vehicle _unit;' in mission_logistics
+    assert '"provider-physical-vehicle-fallback"' in mission_logistics
 
-    # Provider admission and both native ammo assignment passes must consume the
-    # compatibility resolver rather than re-reading assignedVehicle directly.
     assert '_mtr = [_x] call _providerVehicle;' in text
     assert text.count('_MTruck = [_x] call _providerVehicle;') >= 2
     assert text.count('private _nearProvider = [_x] call _providerVehicle;') >= 2
