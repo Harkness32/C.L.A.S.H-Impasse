@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_InfantryDemandStarted",false]) exitWith {true};
 ITW_CLASH_InfantryDemandStarted = true;
-ITW_CLASH_InfantryDemandVersion = 1;
+ITW_CLASH_InfantryDemandVersion = 2;
 ITW_CLASH_InfantryDemandReady = false;
 
 // Infantry gets no ForceGeneration-style provider - Impasse's own manpower
@@ -27,6 +27,19 @@ ITW_CLASH_InfantryDemand_fnc_Log = {
     } else {
         diag_log format ["CLASH INFANTRY DEMAND | %1 | %2",_event,_payload];
     };
+};
+
+// Plain-language kind -> phrase for the human-readable RPT lines below.
+// Purely cosmetic - demand-raised/demand-fulfilled above remain the
+// structured lines anything automated should parse.
+ITW_CLASH_InfantryDemand_fnc_DescribeKind = {
+    params ["_kind"];
+    switch (_kind) do {
+        case "AT":    {"AT infantry"};
+        case "AA":    {"AA infantry"};
+        case "RECON": {"recon-capable infantry"};
+        default {_kind};
+    }
 };
 
 // Called by the HAL-state watcher below (or anything else) to raise a
@@ -127,6 +140,11 @@ ITW_CLASH_fnc_SelectInfantryTemplate = {
     // One-shot: consumed only here, on an actual matching pick - never on a
     // miss, and never on a roll that happened to land on an ordinary squad.
     ITW_CLASH_InfantryDemandBySide set [str _side,createHashMap];
+    diag_log format [
+        "Request approved for %1 for %2",
+        [_kind] call ITW_CLASH_InfantryDemand_fnc_DescribeKind,
+        _side
+    ];
     ["demand-fulfilled",[str _side,_kind,count _selected]] call
         ITW_CLASH_InfantryDemand_fnc_Log;
     _selected
@@ -142,17 +160,30 @@ ITW_CLASH_InfantryDemand_fnc_Evaluate = {
     if (isNull _hq) exitWith {false};
     private _side = side _hq;
 
-    private _armorPresent = (count (_hq getVariable ["RydHQ_EnHArmor",[]])) > 0
-        || {(count (_hq getVariable ["RydHQ_EnLArmorAT",[]])) > 0};
+    private _armorGroups = (_hq getVariable ["RydHQ_EnHArmor",[]]) + (_hq getVariable ["RydHQ_EnLArmorAT",[]]);
     private _atCapable = (count (_hq getVariable ["RydHQ_ATInfG",[]])) > 0;
-    if (_armorPresent && {!_atCapable}) then {
-        [_side,"AT"] call ITW_CLASH_InfantryDemand_fnc_SetDemand;
+    if (count _armorGroups > 0 && {!_atCapable}) then {
+        if ([_side,"AT"] call ITW_CLASH_InfantryDemand_fnc_SetDemand) then {
+            diag_log format [
+                "%1 at %2, requesting %3",
+                "heavy armor",
+                getPosATL (leader (_armorGroups select 0)),
+                "AT infantry"
+            ];
+        };
     };
 
-    private _airPresent = (count (_hq getVariable ["RydHQ_EnAir",[]])) > 0;
+    private _airGroups = _hq getVariable ["RydHQ_EnAir",[]];
     private _aaCapable = (count (_hq getVariable ["RydHQ_AAInfG",[]])) > 0;
-    if (_airPresent && {!_aaCapable}) then {
-        [_side,"AA"] call ITW_CLASH_InfantryDemand_fnc_SetDemand;
+    if (count _airGroups > 0 && {!_aaCapable}) then {
+        if ([_side,"AA"] call ITW_CLASH_InfantryDemand_fnc_SetDemand) then {
+            diag_log format [
+                "%1 at %2, requesting %3",
+                "enemy aircraft",
+                getPosATL (leader (_airGroups select 0)),
+                "AA infantry"
+            ];
+        };
     };
     true
 };

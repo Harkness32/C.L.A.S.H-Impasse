@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALThreatCoverageStarted",false]) exitWith {true};
 ITW_CLASH_HALThreatCoverageStarted = true;
-ITW_CLASH_HALThreatCoverageVersion = 3;
+ITW_CLASH_HALThreatCoverageVersion = 4;
 ITW_CLASH_HALThreatCoverageReady = false;
 
 // Same role as ITW_CLASH_HALLogistics.sqf, for a different gap: HQOrders.sqf
@@ -105,8 +105,30 @@ ITW_CLASH_HALThreatCoverage_fnc_EffectiveAirPools = {
     [_airCAS,_airCAP]
 };
 
+// Plain-language kind -> phrase, for the human-readable RPT lines below.
+// Purely cosmetic - every structured diag_log elsewhere in this file is
+// unaffected and remains the thing anything automated should parse.
+ITW_CLASH_HALThreatCoverage_fnc_DescribeKind = {
+    params ["_kind"];
+    switch (_kind) do {
+        case "AAInf":    {"AA infantry"};
+        case "StaticAA": {"a static AA position"};
+        case "StaticAT": {"a static AT position"};
+        case "Support":  {"an enemy support column"};
+        case "Cargo":    {"enemy cargo/logistics"};
+        case "ATInf":    {"AT infantry"};
+        case "Inf":      {"enemy infantry"};
+        case "Armor":    {"heavy armor"};
+        case "Cars":     {"technicals"};
+        case "Art":      {"enemy artillery"};
+        case "Static":   {"fortified positions"};
+        case "Air":      {"enemy aircraft"};
+        default {_kind};
+    }
+};
+
 ITW_CLASH_HALThreatCoverage_fnc_Request = {
-    params ["_hq","_capability","_mode"];
+    params ["_hq","_capability","_mode",["_kind",""]];
     if (isNull _hq || {isNil "ITW_CLASH_fnc_RequestCapability"}) exitWith {createHashMap};
     private _side = side _hq;
     private _requirements = createHashMapFromArray [
@@ -119,6 +141,13 @@ ITW_CLASH_HALThreatCoverage_fnc_Request = {
     private _reply = [
         _capability,_hq,_requirements,"HIGH"
     ] call ITW_CLASH_fnc_RequestCapability;
+    if ((_reply getOrDefault ["status",""]) == "APPROVED") then {
+        diag_log format [
+            "Request approved for %1 for %2",
+            _capability,
+            [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind
+        ];
+    };
     ["request-result",[
         _hq getVariable ["RydHQ_CodeSign","?"],
         _capability,
@@ -193,7 +222,13 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
                 if (time >= (_hq getVariable [_cooldownKey,0])) then {
                     _hq setVariable [_cooldownKey,time + 45];
                     private _mode = if (_capability == "CAS_AIRCRAFT") then {"AIR"} else {"GROUND"};
-                    [_hq,_capability,_mode] call ITW_CLASH_HALThreatCoverage_fnc_Request;
+                    diag_log format [
+                        "%1 at %2, requesting %3",
+                        [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
+                        getPosATL (leader (_demand select 0)),
+                        _capability
+                    ];
+                    [_hq,_capability,_mode,_kind] call ITW_CLASH_HALThreatCoverage_fnc_Request;
                 };
             };
         };
@@ -211,7 +246,13 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
         private _cooldownKey = "ITW_CLASH_ThreatCoverageRetryAt_Air_Cap";
         if (time >= (_hq getVariable [_cooldownKey,0])) then {
             _hq setVariable [_cooldownKey,time + 45];
-            [_hq,"CAS_AIRCRAFT","AIR"] call ITW_CLASH_HALThreatCoverage_fnc_Request;
+            diag_log format [
+                "%1 at %2, requesting %3",
+                ["Air"] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
+                getPosATL (leader (_airDemand select 0)),
+                "CAS_AIRCRAFT"
+            ];
+            [_hq,"CAS_AIRCRAFT","AIR","Air"] call ITW_CLASH_HALThreatCoverage_fnc_Request;
         };
     };
 
