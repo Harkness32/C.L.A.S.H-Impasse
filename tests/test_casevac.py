@@ -132,26 +132,40 @@ def test_casevac_prefers_smallest_sufficient_faction_helicopter_by_capacity():
         assert hardcoded not in source
 
 
-def test_shattered_squads_force_withdrawal_then_fast_track_safe_evac():
-    remnant = text("ITW_CLASH_RemnantEvac.sqf")
+def test_shattered_squads_use_formation_recovery_and_keep_casevac_compatibility():
+    formation = text("ITW_CLASH_FormationRecovery.sqf")
+    compat = text("ITW_CLASH_RemnantEvac.sqf")
     casevac = text("ITW_CLASH_CASEVAC.sqf")
     init = text("init.sqf")
 
-    assert "ITW_CLASH_RemnantEvacVersion = 1;" in remnant
-    assert '"ITW_CLASH_RemnantEvacMaxSurvivors",2' in remnant
-    assert '"ITW_CLASH_RemnantEvacMaxFraction",0.5' in remnant
-    assert '"ITW_CLASH_RemnantEvacMinOriginalStrength",3' in remnant
-    assert '[_group,"combat-remnant"] call ITW_CLASH_fnc_StartWithdrawal' in remnant
-    assert 'setVariable ["ITW_CLASH_RemnantEvac",true,true]' in remnant
-    assert 'getVariable ["ITW_CLASH_VehicleCrewGroup",false]' in remnant
-    assert 'findIf {isPlayer _x}' in remnant
+    assert "ITW_CLASH_FormationRecoveryVersion = 1;" in formation
+    assert '"ITW_CLASH_FormationRecoveryMaxShatteredSurvivors"' in formation
+    assert '"ITW_CLASH_FormationRecoveryMaxShatteredFraction"' in formation
+    assert '"ITW_CLASH_FormationRecoveryMinOriginalStrength"' in formation
+    assert '[_group,"shattered-squad"] call ITW_CLASH_fnc_StartWithdrawal' in formation
+    assert 'setVariable ["ITW_CLASH_Shattered",true,true]' in formation
+    assert 'getVariable ["ITW_CLASH_DeploymentRemnant",false]' in formation
+    assert 'getVariable ["ITW_CLASH_VehicleCrewGroup",false]' in formation
+    assert 'findIf {isPlayer _x}' in formation
 
+    # CASEVAC v5 still consumes the legacy projection. The canonical detector
+    # owns that projection until CASEVAC migrates in a later compatibility pass.
+    assert 'setVariable ["ITW_CLASH_RemnantEvac",true,true]' in formation
     assert 'getVariable ["ITW_CLASH_RemnantEvac",false]' in casevac
     assert "ITW_CLASH_RemnantEvacMinWithdrawalTime" in casevac
     assert "if (!_remnantEvac && {" in casevac
     assert "_moved < ITW_CLASH_CASEVAC_MinDisengageDistance" in casevac
 
-    # Remnants skip only the self-movement proof. Hot-zone safety remains.
+    # Shattered squads skip only the self-movement proof. Hot-zone safety remains.
     assert "_enemyDistance < ITW_CLASH_CASEVAC_EnemyClearance" in casevac
     assert "_objectiveClearance < ITW_CLASH_CASEVAC_ObjectiveClearance" in casevac
+
+    assert 'preprocessFileLineNumbers "ITW_CLASH_FormationRecovery.sqf"' in compat
     assert 'execVM "ITW_CLASH_RemnantEvac.sqf"' in init
+
+
+def test_formation_recovery_source_delimiters_balance():
+    source = text("ITW_CLASH_FormationRecovery.sqf")
+    pairs = [("(", ")"), ("[", "]"), ("{", "}")]
+    for left, right in pairs:
+        assert source.count(left) == source.count(right)
