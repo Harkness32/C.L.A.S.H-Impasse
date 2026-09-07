@@ -1003,7 +1003,21 @@ ITW_AtkManager = {
                     if (_squad isEqualTo []) then {
                         _newSquad = true;
                         if (_squadTypes isNotEqualTo []) then {
-                            _squad = +(selectRandom _squadTypes);
+                            // CLASH advisory hook: "I am about to choose an
+                            // infantry template. You may advise me." Returns
+                            // [] for no preference, identical to CLASH never
+                            // having been asked - see
+                            // ITW_CLASH_InfantryDemand.sqf.
+                            private _clashSelected = [];
+                            if (!isNil "ITW_CLASH_fnc_SelectInfantryTemplate") then {
+                                _clashSelected = [_squadTypes,_side] call
+                                    ITW_CLASH_fnc_SelectInfantryTemplate;
+                            };
+                            _squad = if (_clashSelected isNotEqualTo []) then {
+                                _clashSelected
+                            } else {
+                                +(selectRandom _squadTypes)
+                            };
                         } else {
                             for "_i" from 1 to AI_SQUAD_SIZE do {_squad pushBack selectRandom _unitTypes};
                         };

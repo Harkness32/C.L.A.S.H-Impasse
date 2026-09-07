@@ -125,6 +125,18 @@ if (isServer) then {
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
                 _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
             };
+            private _halThreatCoverageLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALThreatCoverage.sqf"}) then {
+                _halThreatCoverageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALThreatCoverage.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
+            };
+            private _infantryDemandLoaded = false;
+            if (fileExists "ITW_CLASH_InfantryDemand.sqf") then {
+                _infantryDemandLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_InfantryDemand.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | infantry-demand-missing | native random squad-template selection retained";
+            };
             private _playerTransportLoaded = false;
             if (_forceGenerationReady isEqualTo true && {
                 fileExists "ITW_CLASH_PlayerTransportAuthority.sqf"
