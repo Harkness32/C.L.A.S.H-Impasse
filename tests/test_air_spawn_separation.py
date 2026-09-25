@@ -50,7 +50,8 @@ def land_branch() -> str:
     body = spawn_veh()
     marker = '    } else {\n        private _landSpawn = +_spawnPt;'
     start = body.index(marker)
-    return body[start:body.index("\n    };", start) + len("\n    };")]
+    end = body.index("\n\n    if (!_crewFailed", start)
+    return body[start:end]
 
 
 def test_ground_vehicle_spawns_rotate_around_the_staging_point():
