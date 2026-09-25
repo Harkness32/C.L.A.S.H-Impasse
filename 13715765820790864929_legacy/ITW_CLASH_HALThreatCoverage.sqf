@@ -136,9 +136,11 @@ ITW_CLASH_HALThreatCoverage_fnc_Commit = {
 };
 
 // Preserve HAL ownership of the mission itself. C.L.A.S.H. only carries the
-// causal target through the procurement transaction, then performs the exact
-// native dispatcher handoff: Busy=true, remove from AttackAv, RYD_GoLaunch.
-// From that point GoAtt* owns geometry, chatter, engagement and RTB.
+// causal target through the procurement transaction and makes the new group
+// immediately available. Native categories are re-offered to RYD_Dispatcher;
+// the five HAL gaps are re-offered to CLASH HAL Additions' responder. Those
+// selectors retain HAL's terrain/weather/AT/AA resignation before GoAtt* owns
+// geometry, chatter, engagement and RTB.
 ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
     params ["_hq","_reply","_targetGroup","_kind","_capability"];
     if (
