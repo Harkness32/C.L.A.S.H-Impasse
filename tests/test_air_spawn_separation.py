@@ -44,3 +44,25 @@ def test_the_air_ring_rotates_on_every_call():
     air = offsetter[air_start:offsetter.index("\n    } else {", air_start)]
     assert "ITW_SpawnPlaneOffset = (_offset+1) mod 16;" in air
     assert offsetter.rstrip().endswith("[_newPos,_newDir]")
+
+
+def land_branch() -> str:
+    body = spawn_veh()
+    marker = '    } else {\n        private _landSpawn = +_spawnPt;'
+    start = body.index(marker)
+    return body[start:body.index("\n    };", start) + len("\n    };")]
+
+
+def test_ground_vehicle_spawns_rotate_around_the_staging_point():
+    branch = land_branch()
+    assert 'ITW_CLASH_GroundSpawnOffsets = createHashMap' in branch
+    assert '(_slot + 1) mod 12' in branch
+    assert 'if (_slot < 6) then {20} else {40}' in branch
+    assert '(_slot mod 6) * 60' in branch
+
+
+def test_ground_vehicle_spawn_uses_empty_position_and_does_not_move_ships():
+    branch = land_branch()
+    assert 'if (_vehType isKindOf "LandVehicle") then {' in branch
+    assert 'findEmptyPosition [0,12,_vehType]' in branch
+    assert 'surfaceIsWater _candidate' in branch
