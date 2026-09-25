@@ -146,7 +146,6 @@ ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
             (_reply getOrDefault ["status",""]) != "APPROVED"
         }
     ) exitWith {false};
-    if (isNil "RYD_GoLaunch" || {isNil "RYD_Spawn"}) exitWith {false};
 
     private _asset = _reply getOrDefault ["asset",objNull];
     if (isNull _asset || {!alive _asset}) exitWith {false};
@@ -158,62 +157,169 @@ ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
 
     private _targetLeader = leader _targetGroup;
     if (isNull _targetLeader || {!alive _targetLeader}) exitWith {false};
-    private _target = vehicle _targetLeader;
-    if (isNull _target || {!alive _target}) exitWith {false};
 
-    private _capabilityKey = toUpperANSI _capability;
-    private _pattern = switch (_capabilityKey) do {
-        case "GROUND_ATTACK_LIGHT": {
-            private _vehicleKind = if (!isNil "ITW_CLASH_Generation_fnc_ClassKind") then {
-                [typeOf _asset] call ITW_CLASH_Generation_fnc_ClassKind
-            } else {
-                if (_asset isKindOf "Tank") then {"TANK"} else {
-                    if (_asset isKindOf "Car") then {"CAR"} else {"OTHER"}
-                }
+    // Newly registered groups do not necessarily enter AttackAv until HAL's
+    // next HQOrders pass. Make this one immediately available, then let HAL's
+    // own dispatcher/responder decide whether it is tactically acceptable.
+    // If HAL declines because of terrain/weather/AT/AA risk, the group simply
+    // remains in AttackAv and therefore counts as available coverage next poll.
+    private _attackAv = +(_hq getVariable ["RydHQ_AttackAv",[]]);
+    _attackAv pushBackUnique _group;
+    _hq setVariable ["RydHQ_AttackAv",_attackAv];
+    _group setVariable ["Busy" + str _group,false];
+
+    private _nativeKinds = ["ATInf","Inf","Armor","Cars","Art","Static","Air"];
+    private _gapKinds = ["AAInf","StaticAA","StaticAT","Support","Cargo"];
+    private _attempted = false;
+
+    if (_kind in _nativeKinds && {!isNil "RYD_Dispatcher"}) then {
+        private _snipersG  = _hq getVariable ["RydHQ_snipersG",[]];
+        private _NCrewInfG = (_hq getVariable ["RydHQ_NCrewInfG",[]]) -
+            (_hq getVariable ["RydHQ_SpecForG",[]]);
+        private _air = (_hq getVariable ["RydHQ_AirG",[]]) - (
+            (_hq getVariable ["RydHQ_NCAirG",[]])
+            + (_hq getVariable ["RydHQ_NCrewInfG",[]])
+            + (_hq getVariable ["RydHQ_AmmoDrop",[]])
+        );
+        private _cars = (_hq getVariable ["RydHQ_CarsG",[]]) - (
+            (_hq getVariable ["RydHQ_ATInfG",[]])
+            + (_hq getVariable ["RydHQ_AAInfG",[]])
+            + (_hq getVariable ["RydHQ_SupportG",[]])
+            + (_hq getVariable ["RydHQ_NCCargoG",[]])
+        );
+        private _fPool = [
+            _snipersG,
+            _NCrewInfG,
+            _air,
+            _hq getVariable ["RydHQ_LArmorG",[]],
+            _hq getVariable ["RydHQ_HArmorG",[]],
+            _cars,
+            _hq getVariable ["RydHQ_LArmorATG",[]],
+            _hq getVariable ["RydHQ_ATInfG",[]],
+            _hq getVariable ["RydHQ_AAInfG",[]],
+            _hq getVariable ["RydHQ_Recklessness",0.5],
+            _hq getVariable ["RydHQ_AttackAv",[]],
+            _hq getVariable ["RydHQ_Garrison",[]],
+            _hq getVariable ["RydHQ_GarrR",500],
+            _hq getVariable ["RydHQ_FlankAv",[]],
+            _hq getVariable ["RydHQ_AirG",[]],
+            _hq getVariable ["RydHQ_NCVeh",[]],
+            _hq getVariable ["RydHQ_NavalG",[]],
+            _hq getVariable ["RydHQ_RCAS",[]],
+            _hq getVariable ["RydHQ_RCAP",[]],
+            _hq getVariable ["RydHQ_BAirG",[]]
+        ];
+        private _risk = switch (_kind) do {
+            case "ATInf": {[0,0,85]};
+            case "Inf": {[75,80,85]};
+            case "Armor": {[50,0,85]};
+            case "Cars": {[75,80,85]};
+            case "Art": {[70,75,75]};
+            case "Air": {[0,0,75]};
+            default {[75,80,85]}; // Static
+        };
+        private _constant = [
+            _hq getVariable ["RydHQ_AAthreat",[]],
+            _hq getVariable ["RydHQ_ATthreat",[]],
+            (_hq getVariable ["RydHQ_EnHArmor",[]]) +
+                (_hq getVariable ["RydHQ_EnLArmorAT",[]]),
+            _fPool
+        ];
+        ([
+            [_targetGroup],_kind,_hq,_risk#0,_risk#1,_risk#2
+        ] + _constant) call RYD_Dispatcher;
+        _attempted = true;
+    };
+
+    if (_kind in _gapKinds) then {
+        if (!isNil "CLASH_fnc_HALAdd_Respond") then {
+            private _snipersG  = _hq getVariable ["RydHQ_snipersG",[]];
+            private _NCrewInfG = (_hq getVariable ["RydHQ_NCrewInfG",[]]) -
+                (_hq getVariable ["RydHQ_SpecForG",[]]);
+            private _LArmorG = _hq getVariable ["RydHQ_LArmorG",[]];
+            private _HArmorG = _hq getVariable ["RydHQ_HArmorG",[]];
+            private _cars = (_hq getVariable ["RydHQ_CarsG",[]]) - (
+                (_hq getVariable ["RydHQ_ATInfG",[]])
+                + (_hq getVariable ["RydHQ_AAInfG",[]])
+                + (_hq getVariable ["RydHQ_SupportG",[]])
+            );
+            private _airPools = [_hq] call
+                ITW_CLASH_HALThreatCoverage_fnc_EffectiveAirPools;
+            private _airCAS = _airPools#0;
+
+            private _policy = switch (_kind) do {
+                case "AAInf": {
+                    [[
+                        [_snipersG,0.5,"SNP"],[_LArmorG,1,"ARM"],
+                        [_cars,1,"INF"],[_NCrewInfG,0.5,"INF"]
+                    ],0,0,85]
+                };
+                case "StaticAA": {
+                    [[
+                        [_LArmorG,1,"ARM"],[_HArmorG,1,"ARM"],
+                        [_cars,1,"INF"],[_NCrewInfG,0.5,"INF"],
+                        [_snipersG,0.5,"SNP"]
+                    ],0,0,85]
+                };
+                case "StaticAT": {
+                    [[
+                        [_airCAS,2,"AIR"],[_NCrewInfG,0.5,"INF"],
+                        [_snipersG,0.5,"SNP"]
+                    ],75,80,0]
+                };
+                case "Support": {
+                    [[
+                        [_cars,1,"INF"],[_airCAS,1,"AIR"],
+                        [_LArmorG,0.5,"ARM"]
+                    ],75,80,85]
+                };
+                default {
+                    [[
+                        [_cars,1,"INF"],[_airCAS,1,"AIR"],
+                        [_NCrewInfG,0.5,"INF"]
+                    ],75,80,85]
+                };
             };
-            switch (_vehicleKind) do {
-                case "TANK": {"ARM"};
-                case "CAR": {"INF"};
-                default {""};
-            }
+            [
+                [_targetGroup],_kind,_hq,_policy#0,
+                _policy#1,_policy#2,_policy#3
+            ] call CLASH_fnc_HALAdd_Respond;
+            _attempted = true;
+        } else {
+            ["immediate-dispatch-addon-missing",[
+                _reply getOrDefault ["requestId",""],_kind,typeOf _asset
+            ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
         };
-        case "CAS_AIRCRAFT": {
-            if (toUpperANSI _kind == "AIR") then {"AIRCAP"} else {"AIR"}
-        };
-        default {""};
     };
-    if (_pattern == "") exitWith {
-        ["immediate-dispatch-unsupported",[
-            _reply getOrDefault ["requestId",""],_kind,_capabilityKey,typeOf _asset
+
+    private _busy = _group getVariable ["Busy" + str _group,false];
+    if (_busy) then {
+        [_hq,_group,_targetGroup,_kind] call
+            ITW_CLASH_HALThreatCoverage_fnc_Commit;
+        ["immediate-dispatch",[
+            _reply getOrDefault ["requestId",""],
+            _kind,toUpperANSI _capability,typeOf _asset,
+            groupId _group,groupId _targetGroup,
+            "hal-selected"
         ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
-        false
+        diag_log format [
+            "CLASH THREAT COVERAGE | HAL immediately committed %1 to %2 | target=%3",
+            typeOf _asset,
+            [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
+            groupId _targetGroup
+        ];
+    } else {
+        ["immediate-ready",[
+            _reply getOrDefault ["requestId",""],
+            _kind,toUpperANSI _capability,typeOf _asset,
+            groupId _group,groupId _targetGroup,_attempted
+        ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
+        diag_log format [
+            "CLASH THREAT COVERAGE | %1 available to HAL immediately; no forced task | kind=%2 target=%3",
+            typeOf _asset,_kind,groupId _targetGroup
+        ];
     };
-
-    private _launcher = [_pattern] call RYD_GoLaunch;
-    if !(_launcher isEqualType {}) exitWith {false};
-
-    _group setVariable ["Busy" + str _group,true];
-    _hq setVariable [
-        "RydHQ_AttackAv",
-        (_hq getVariable ["RydHQ_AttackAv",[]]) - [_group]
-    ];
-    [_hq,_group,_targetGroup,_kind] call
-        ITW_CLASH_HALThreatCoverage_fnc_Commit;
-
-    [[_group,_target,_hq],_launcher] call RYD_Spawn;
-
-    ["immediate-dispatch",[
-        _reply getOrDefault ["requestId",""],
-        _kind,_capabilityKey,_pattern,typeOf _asset,
-        groupId _group,groupId _targetGroup,
-        round (_asset distance2D _target)
-    ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
-    diag_log format [
-        "CLASH THREAT COVERAGE | immediate HAL task | %1 (%2) -> %3 | target=%4",
-        typeOf _asset,_pattern,[_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
-        groupId _targetGroup
-    ];
-    true
+    _attempted
 };
 
 // Revised: alive/Busy/Unable alone was looser than HAL's actual notion of
