@@ -2178,6 +2178,11 @@ ITW_AtkSpawnVeh = {
     private _crewFailed = false;
 
     if (_vehType isKindOf "Air") then {
+        // Every caller hands in one fixed base point, so aircraft created there
+        // together collide. Take the next slot in Impasse's own air ring first.
+        private _airType = if (_vehType isKindOf "Plane") then {ITW_TYPE_VEH_AIRPLANE} else {ITW_TYPE_VEH_HELI};
+        private _airSlot = ([_airType,_spawnPt,0,-1,-1,_vehType] call ITW_AtkSpawnOffsetter) param [0,[]];
+        if (_airSlot isNotEqualTo []) then {_spawnPt = _airSlot};
         private _pilot = objNull;
         if (_crewCount > 0) then {
             _pilot = [_crewGrp,_vehCrewTypes,_spawnPt,true] call ITW_AtkUnitToGroup;
