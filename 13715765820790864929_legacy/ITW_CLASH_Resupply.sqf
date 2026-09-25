@@ -50,7 +50,8 @@ ITW_CLASH_ResupplyVersion = 1;
     ["ITW_CLASH_ResupplyMaxSearch",3000],
     ["ITW_CLASH_ResupplyPrimaryMags",6],
     ["ITW_CLASH_ResupplyHandgunMags",2],
-    ["ITW_CLASH_ResupplyRoleAuditDelay",180]
+    ["ITW_CLASH_ResupplyRoleAuditDelay",180],
+    ["ITW_CLASH_ResupplyUnwindTimeout",90]
 ];
 ITW_CLASH_ResupplySweepOffsets = [0,-45,45,-90,90];
 
@@ -246,6 +247,14 @@ ITW_CLASH_Resupply_fnc_Eligible = {
         || {_group getVariable ["ITW_CLASH_ServiceAsset",false]}
         || {(_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo ""}
         || {(_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo ""}
+    ) exitWith {false};
+
+    // A player explicitly tasked this group; same active-job test PlayerTaskStateHardening uses.
+    if (
+        (_group getVariable ["ITW_CLASH_PlayerStrikeJobId",""]) isNotEqualTo ""
+        || {(_group getVariable ["ITW_CLASH_PlayerReconJobId",""]) isNotEqualTo ""}
+        || {(_group getVariable ["ITW_CLASH_PlayerAmmoJobId",""]) isNotEqualTo ""}
+        || {(_group getVariable ["ITW_CLASH_PlayerArtilleryJobId",""]) isNotEqualTo ""}
     ) exitWith {false};
 
     private _providers = (_hq getVariable ["RydHQ_AmmoSupportG",[]])
@@ -503,40 +512,46 @@ ITW_CLASH_Resupply_fnc_Claim = {
         params ["_claim"];
         private _group = _claim get "group";
         private _var = str _group;
-        private _breakSet = false;
-        if (
-            _group getVariable ["Busy" + _var,false]
-            || {_group getVariable ["Resting" + _var,false]}
-        ) then {
-            _group setVariable ["Break",true];
-            _breakSet = true;
-        };
+        private _breaks = 0;
+        private _deadline = time + ITW_CLASH_ResupplyUnwindTimeout;
 
-        private _deadline = time + 45;
+        // Poll fast and take the group the instant it is free, so nothing can
+        // re-task it in between. If a new order grabs Busy first, Break again:
+        // HAL orders consume Break and release Busy on every exit path.
         waitUntil {
-            sleep 1;
+            sleep 0.2;
+            private _free = !(_group getVariable ["Busy" + _var,false])
+                && {!(_group getVariable ["Resting" + _var,false])};
+            if (!_free && {!(_group getVariable ["Break",false])}) then {
+                _group setVariable ["Break",true];
+                _breaks = _breaks + 1;
+            };
             isNull _group
+            || {_free}
             || {time >= _deadline}
-            || {
-                !(_group getVariable ["Busy" + _var,false])
-                && {!(_group getVariable ["Resting" + _var,false])}
-                && {!(_group getVariable ["Break",false])}
-            }
+            || {!(_group getVariable ["ITW_CLASH_ResupplyClaimed",false])}
         };
         if (isNull _group) exitWith {};
-        if !(_group getVariable ["ITW_CLASH_ResupplyClaimed",false]) exitWith {};
+        if !(_group getVariable ["ITW_CLASH_ResupplyClaimed",false]) exitWith {
+            if (_breaks > 0) then {_group setVariable ["Break",false]};
+        };
 
-        if (
-            _group getVariable ["Busy" + _var,false]
-            || {_group getVariable ["Resting" + _var,false]}
-        ) exitWith {
-            if (_breakSet) then {_group setVariable ["Break",false]};
-            _claim set ["abortReason","hal-order-did-not-unwind"];
+        private _busy = _group getVariable ["Busy" + _var,false];
+        private _resting = _group getVariable ["Resting" + _var,false];
+        if (_busy || {_resting}) exitWith {
+            if (_breaks > 0) then {_group setVariable ["Break",false]};
+            _claim set ["abortReason",format [
+                "hal-order-did-not-unwind busy=%1 resting=%2 breaksSent=%3",
+                _busy,_resting,_breaks
+            ]];
             _claim set ["state","ABORT"];
         };
 
         _group setVariable ["Busy" + _var,true];
+        // A Break nobody consumed would kill the group's next HAL order instantly.
+        if (_breaks > 0) then {_group setVariable ["Break",false]};
         _claim set ["busyOwned",true];
+        _claim set ["breaksSent",_breaks];
         private _roles = [_group,_claim get "hq"] call ITW_CLASH_Resupply_fnc_ClearHALRoles;
         _claim set ["rolesCleared",_roles];
         if (_roles isNotEqualTo []) then {

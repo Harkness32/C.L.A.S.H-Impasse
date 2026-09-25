@@ -419,7 +419,7 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_Request = {
         scriptName "ITW_CLASH_PlayerReconContactHistoryObserver";
         while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
             sleep ITW_CLASH_PlayerReconHistoryPoll;
-            if (!missionNamespace getVariable ["ITW_CLASH_HALReady",false]) then {continue};
+            if !(missionNamespace getVariable ["ITW_CLASH_HALReady",false]) then {continue};
             private _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
             if (isNull _hq) then {continue};
             [_hq] call ITW_CLASH_PlayerTaskRequestRecon_fnc_UpdateHistory;

@@ -77,14 +77,32 @@ def test_stamps_bind_after_the_player_demand_interceptor():
 
 def test_claim_breaks_hal_order_before_taking_busy():
     claim = fn("ITW_CLASH_Resupply_fnc_Claim")
-    breaking = claim.index('_group setVariable ["Break",true]')
     wait = claim.index("waitUntil")
+    breaking = claim.index('_group setVariable ["Break",true]')
     take_busy = claim.index('_group setVariable ["Busy" + _var,true]')
-    assert breaking < wait < take_busy
+    assert wait < breaking < take_busy
     # a stale claim never grabs Busy after it was released
     assert claim.index('"ITW_CLASH_ResupplyClaimed",false') < take_busy
-    # never force Busy over a HAL order that refused to unwind
-    assert '"hal-order-did-not-unwind"' in claim
+    # never force Busy over a HAL order that refused to unwind, and say why
+    assert "hal-order-did-not-unwind busy=%1 resting=%2 breaksSent=%3" in claim
+
+
+def test_claim_closes_the_retask_race_seen_in_the_live_run():
+    # Live RPT: G56 aborted with hal-order-did-not-unwind. Polling once a
+    # second and requiring Break to be clear left a gap for re-tasking.
+    claim = fn("ITW_CLASH_Resupply_fnc_Claim")
+    assert "sleep 0.2;" in claim
+    # Break is re-sent whenever a new order holds the group
+    assert "if (!_free && {!(_group getVariable [\"Break\",false])}) then {" in claim
+    # a Break nobody consumed is always cleared, never left to kill the next order
+    assert claim.count('if (_breaks > 0) then {_group setVariable ["Break",false]};') == 3
+    assert default("ITW_CLASH_ResupplyUnwindTimeout") >= 60
+
+
+def test_player_tasked_groups_are_never_claimed():
+    eligible = fn("ITW_CLASH_Resupply_fnc_Eligible")
+    for job in ["Strike", "Recon", "Ammo", "Artillery"]:
+        assert f'"ITW_CLASH_Player{job}JobId"' in eligible
 
 
 def test_release_only_clears_busy_it_owns():

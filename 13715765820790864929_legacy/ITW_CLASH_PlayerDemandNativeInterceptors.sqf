@@ -376,7 +376,7 @@ ITW_CLASH_PlayerDemandNative_fnc_BlockReservedMedevacRace = {
     // to subscribers without inventing a second target-selection model.
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep 2;
-        if (!missionNamespace getVariable ["ITW_CLASH_HALReady",false]) then {continue};
+        if !(missionNamespace getVariable ["ITW_CLASH_HALReady",false]) then {continue};
         private _hq = missionNamespace getVariable ["ITW_CLASH_BLUFORHQ",grpNull];
         if (isNull _hq) then {continue};
 

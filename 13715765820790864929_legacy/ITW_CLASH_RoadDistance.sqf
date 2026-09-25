@@ -19,7 +19,7 @@ ITW_CLASH_RoadDistanceVersion = 2;
     separate, reusable-project-wide infrastructure, worth building on its own
     terms - see docs/CLASH_HAL_DISPATCH_PATCH.md history). This is a bounded,
     on-demand, two-point query: expand outward from the roads near A via the
-    native roadsConnectingTo adjacency until a road near B is actually reached
+    native roadsConnectedTo adjacency until a road near B is actually reached
     or the search budget runs out, then throw the search state away. Proximity
     never counts as connection. Fine to run once per demand
     evaluation (a 20-45s interval, not a hot path); not fine to run every
@@ -123,7 +123,7 @@ ITW_CLASH_RoadDistance_fnc_Calculate = {
                             _open pushBack [_x,_edgeCost];
                         };
                     };
-                } forEach (roadsConnectingTo _current);
+                } forEach (roadsConnectedTo _current);
             };
         };
     };

@@ -866,7 +866,7 @@ ITW_CLASH_Checkbook_fnc_RankTransportVariants = {
     params ["_side","_mode","_seatCount"];
     private _defs = [_side,_mode,_seatCount] call
         ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
-    if (_ranked isEqualTo []) exitWith {[]};
+    if (_defs isEqualTo []) exitWith {[]};
 
     if (
         missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]
@@ -994,7 +994,7 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
         ];
     };
 
-    if (_defs isEqualTo []) exitWith {
+    if (_ranked isEqualTo []) exitWith {
         ["checkbook-denied",[
             _requestId,[_requester] call ITW_CLASH_DualHAL_fnc_GroupId,
             side _requester,_mode,_seatCount,"no-affordable-capability"

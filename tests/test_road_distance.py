@@ -50,7 +50,7 @@ def test_itw_atk_road_map_was_checked_and_confirmed_unusable_for_this():
     cache_end = source.index("ITW_AtkRoadMap set [[_fromBaseIdxOrPt,_toObjIdx],_roads];", cache_start)
     cache_block = source[cache_start:cache_end]
     assert "nearRoads" in cache_block
-    assert "roadsConnectingTo" not in cache_block  # confirms: no adjacency walk, not a graph
+    assert "roadsConnectedTo" not in cache_block  # confirms: no adjacency walk, not a graph
     assert "BIS_fnc_sortBy" in cache_block  # sorts by proximity for spawn offsetting, not path order
 
 
@@ -127,7 +127,13 @@ def test_uses_real_adjacency_not_a_radius_scan():
     # nearby" (which would let the search jump across a river if two
     # disconnected roads happen to be close in a straight line).
     source = road_distance()
-    assert "roadsConnectingTo" in source
+    assert "roadsConnectedTo" in source
+    # v1/v2 shipped "roadsConnectingTo", which is not an Arma command: the
+    # file failed to compile in-game. Prove the command exists by finding it
+    # in HAL's own working code.
+    assert "roadsConnectingTo" not in source
+    hal = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAC_fnc.sqf").read_text(encoding="utf-8", errors="replace")
+    assert "roadsConnectedTo" in hal
 
 
 def test_relaxation_only_replaces_a_worse_known_cost():
