@@ -121,6 +121,12 @@ if (isServer) then {
                 diag_log "CLASH BOOT | vehicle-echelon-policy-missing-or-prereq-failed | native field staging/recovery retained";
             };
 
+            private _roadDistanceLoaded = false;
+            if (fileExists "ITW_CLASH_RoadDistance.sqf") then {
+                _roadDistanceLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_RoadDistance.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | road-distance-missing | dispatch distance checks fall back to straight-line";
+            };
             private _halLogisticsLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
                 _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
@@ -203,6 +209,12 @@ if (isServer) then {
                 };
             } else {
                 diag_log "CLASH BOOT | player-demand-dispatch-missing-or-prereq-failed | legacy player admission retained";
+            };
+
+            if (_halLogisticsLoaded isEqualTo true && {fileExists "ITW_CLASH_Resupply.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_Resupply.sqf";
+            } else {
+                diag_log "CLASH BOOT | resupply-missing-or-prereq-failed | dry HAL units rely on native resupply only";
             };
 
             if (missionNamespace getVariable ["ITW_CLASH_CertificationMode",false] && {
