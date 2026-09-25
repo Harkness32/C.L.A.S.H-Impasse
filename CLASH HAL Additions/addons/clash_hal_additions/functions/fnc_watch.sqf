@@ -36,8 +36,8 @@ while {!isNull _HQ} do
 
 	private _categories =
 	[
-		["AAInf",    _HQ getVariable ["RydHQ_EnAAinf", []],    [[_snipersG,0.5,"SNP"],[_LArmorG,1,"ARM"],[_NCrewInfG,0.5,"INF"]],                 0,  0, 85],
-		["StaticAA", _HQ getVariable ["RydHQ_EnStaticAA", []], [[_LArmorG,1,"ARM"],[_HArmorG,1,"ARM"],[_NCrewInfG,0.5,"INF"],[_snipersG,0.5,"SNP"]], 0,  0, 85],
+		["AAInf",    _HQ getVariable ["RydHQ_EnAAinf", []],    [[_snipersG,0.5,"SNP"],[_LArmorG,1,"ARM"],[_cars,1,"INF"],[_NCrewInfG,0.5,"INF"]], 0,  0, 85],
+		["StaticAA", _HQ getVariable ["RydHQ_EnStaticAA", []], [[_LArmorG,1,"ARM"],[_HArmorG,1,"ARM"],[_cars,1,"INF"],[_NCrewInfG,0.5,"INF"],[_snipersG,0.5,"SNP"]], 0,  0, 85],
 		["StaticAT", _HQ getVariable ["RydHQ_EnStaticAT", []], [[_airCAS,2,"AIR"],[_NCrewInfG,0.5,"INF"],[_snipersG,0.5,"SNP"]],                    75, 80,  0],
 		["Support",  _HQ getVariable ["RydHQ_EnSupport", []],  [[_cars,1,"INF"],[_airCAS,1,"AIR"],[_LArmorG,0.5,"ARM"]],                            75, 80, 85],
 		["Cargo",    _HQ getVariable ["RydHQ_EnCargo", []],    [[_cars,1,"INF"],[_airCAS,1,"AIR"],[_NCrewInfG,0.5,"INF"]],                          75, 80, 85]
