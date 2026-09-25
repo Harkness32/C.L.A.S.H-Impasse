@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALThreatCoverageStarted",false]) exitWith {true};
 ITW_CLASH_HALThreatCoverageStarted = true;
-ITW_CLASH_HALThreatCoverageVersion = 4;
+ITW_CLASH_HALThreatCoverageVersion = 5;
 ITW_CLASH_HALThreatCoverageReady = false;
 
 // Same role as ITW_CLASH_HALLogistics.sqf, for a different gap: HQOrders.sqf
@@ -50,6 +50,10 @@ ITW_CLASH_HALThreatCoverageReady = false;
 ITW_CLASH_ThreatCoverageBootstrapInterval = missionNamespace getVariable [
     "ITW_CLASH_ThreatCoverageBootstrapInterval",20
 ];
+ITW_CLASH_ThreatCoverageCommitmentTimeout = missionNamespace getVariable [
+    "ITW_CLASH_ThreatCoverageCommitmentTimeout",900
+];
+ITW_CLASH_ThreatCoverageCommitments = createHashMap;
 
 ITW_CLASH_HALThreatCoverage_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -58,6 +62,158 @@ ITW_CLASH_HALThreatCoverage_fnc_Log = {
     } else {
         diag_log format ["CLASH HAL THREAT COVERAGE | %1 | %2",_event,_payload];
     };
+};
+
+
+ITW_CLASH_HALThreatCoverage_fnc_CommitmentKey = {
+    params ["_hq","_targetGroup","_kind"];
+    format ["%1|%2|%3",str _hq,str _targetGroup,toUpperANSI _kind]
+};
+
+// A purchased unit that HAL is already employing against the exact threat that
+// caused the purchase counts as coverage even though native HAL correctly
+// removes it from AttackAv and marks it Busy for the duration of that task.
+// Without this second notion of coverage, immediate tasking turns the next
+// 20-second coverage poll into another purchase request.
+ITW_CLASH_HALThreatCoverage_fnc_CommitmentActive = {
+    params ["_hq","_targetGroup","_kind"];
+    if (isNull _hq || {isNull _targetGroup}) exitWith {false};
+
+    private _key = [_hq,_targetGroup,_kind] call
+        ITW_CLASH_HALThreatCoverage_fnc_CommitmentKey;
+    private _entry = ITW_CLASH_ThreatCoverageCommitments getOrDefault [_key,[]];
+    if (_entry isEqualTo [] || {count _entry < 4}) exitWith {false};
+
+    _entry params ["_responder","_target","_committedKind","_committedAt"];
+
+    private _targetAlive = !isNull _target && {
+        ({alive _x} count units _target) > 0
+    };
+    private _responderAlive = !isNull _responder && {
+        ({alive _x} count units _responder) > 0
+    };
+    private _busy = _responderAlive && {
+        _responder getVariable ["Busy" + str _responder,false]
+    };
+    private _physical = false;
+    if (_responderAlive) then {
+        private _veh = vehicle leader _responder;
+        _physical = !isNull _veh && {
+            alive _veh && {
+                _veh isEqualTo leader _responder || {canMove _veh}
+            }
+        };
+    };
+    private _fresh = (time - _committedAt) <=
+        ITW_CLASH_ThreatCoverageCommitmentTimeout;
+    private _sameTarget = _target isEqualTo _targetGroup;
+    private _sameKind = toUpperANSI _committedKind == toUpperANSI _kind;
+
+    private _active = _targetAlive && {_responderAlive} && {_busy} &&
+        {_physical} && {_fresh} && {_sameTarget} && {_sameKind};
+
+    if (!_active) then {
+        ITW_CLASH_ThreatCoverageCommitments deleteAt _key;
+        if (!isNull _responder) then {
+            _responder setVariable ["ITW_CLASH_ThreatCoverageTarget",nil];
+            _responder setVariable ["ITW_CLASH_ThreatCoverageKind",nil];
+            _responder setVariable ["ITW_CLASH_ThreatCoverageCommittedAt",nil];
+        };
+    };
+    _active
+};
+
+ITW_CLASH_HALThreatCoverage_fnc_Commit = {
+    params ["_hq","_responder","_targetGroup","_kind"];
+    private _key = [_hq,_targetGroup,_kind] call
+        ITW_CLASH_HALThreatCoverage_fnc_CommitmentKey;
+    ITW_CLASH_ThreatCoverageCommitments set [
+        _key,[_responder,_targetGroup,_kind,time]
+    ];
+    _responder setVariable ["ITW_CLASH_ThreatCoverageTarget",_targetGroup];
+    _responder setVariable ["ITW_CLASH_ThreatCoverageKind",_kind];
+    _responder setVariable ["ITW_CLASH_ThreatCoverageCommittedAt",time];
+};
+
+// Preserve HAL ownership of the mission itself. C.L.A.S.H. only carries the
+// causal target through the procurement transaction, then performs the exact
+// native dispatcher handoff: Busy=true, remove from AttackAv, RYD_GoLaunch.
+// From that point GoAtt* owns geometry, chatter, engagement and RTB.
+ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
+    params ["_hq","_reply","_targetGroup","_kind","_capability"];
+    if (
+        isNull _hq || {isNull _targetGroup} || {
+            (_reply getOrDefault ["status",""]) != "APPROVED"
+        }
+    ) exitWith {false};
+    if (isNil "RYD_GoLaunch" || {isNil "RYD_Spawn"}) exitWith {false};
+
+    private _asset = _reply getOrDefault ["asset",objNull];
+    if (isNull _asset || {!alive _asset}) exitWith {false};
+
+    private _crew = crew _asset;
+    if (_crew isEqualTo []) exitWith {false};
+    private _group = group (_crew#0);
+    if (isNull _group || {({alive _x} count units _group) <= 0}) exitWith {false};
+
+    private _targetLeader = leader _targetGroup;
+    if (isNull _targetLeader || {!alive _targetLeader}) exitWith {false};
+    private _target = vehicle _targetLeader;
+    if (isNull _target || {!alive _target}) exitWith {false};
+
+    private _capabilityKey = toUpperANSI _capability;
+    private _pattern = switch (_capabilityKey) do {
+        case "GROUND_ATTACK_LIGHT": {
+            private _vehicleKind = if (!isNil "ITW_CLASH_Generation_fnc_ClassKind") then {
+                [typeOf _asset] call ITW_CLASH_Generation_fnc_ClassKind
+            } else {
+                if (_asset isKindOf "Tank") then {"TANK"} else {
+                    if (_asset isKindOf "Car") then {"CAR"} else {"OTHER"}
+                }
+            };
+            switch (_vehicleKind) do {
+                case "TANK": {"ARM"};
+                case "CAR": {"INF"};
+                default {""};
+            }
+        };
+        case "CAS_AIRCRAFT": {
+            if (toUpperANSI _kind == "AIR") then {"AIRCAP"} else {"AIR"}
+        };
+        default {""};
+    };
+    if (_pattern == "") exitWith {
+        ["immediate-dispatch-unsupported",[
+            _reply getOrDefault ["requestId",""],_kind,_capabilityKey,typeOf _asset
+        ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
+        false
+    };
+
+    private _launcher = [_pattern] call RYD_GoLaunch;
+    if !(_launcher isEqualType {}) exitWith {false};
+
+    _group setVariable ["Busy" + str _group,true];
+    _hq setVariable [
+        "RydHQ_AttackAv",
+        (_hq getVariable ["RydHQ_AttackAv",[]]) - [_group]
+    ];
+    [_hq,_group,_targetGroup,_kind] call
+        ITW_CLASH_HALThreatCoverage_fnc_Commit;
+
+    [[_group,_target,_hq],_launcher] call RYD_Spawn;
+
+    ["immediate-dispatch",[
+        _reply getOrDefault ["requestId",""],
+        _kind,_capabilityKey,_pattern,typeOf _asset,
+        groupId _group,groupId _targetGroup,
+        round (_asset distance2D _target)
+    ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
+    diag_log format [
+        "CLASH THREAT COVERAGE | immediate HAL task | %1 (%2) -> %3 | target=%4",
+        typeOf _asset,_pattern,[_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
+        groupId _targetGroup
+    ];
+    true
 };
 
 // Revised: alive/Busy/Unable alone was looser than HAL's actual notion of
@@ -128,15 +284,22 @@ ITW_CLASH_HALThreatCoverage_fnc_DescribeKind = {
 };
 
 ITW_CLASH_HALThreatCoverage_fnc_Request = {
-    params ["_hq","_capability","_mode",["_kind",""]];
+    params ["_hq","_capability","_mode",["_kind",""],["_targetGroup",grpNull]];
     if (isNull _hq || {isNil "ITW_CLASH_fnc_RequestCapability"}) exitWith {createHashMap};
     private _side = side _hq;
+    private _reference = if (!isNull _targetGroup && {!isNull leader _targetGroup}) then {
+        getPosATL (vehicle leader _targetGroup)
+    } else {
+        getPosATL leader _hq
+    };
     private _requirements = createHashMapFromArray [
         ["hq",_hq],
         ["side",_side],
         ["mode",_mode],
         ["profile",if (_mode == "AIR") then {"REAR_AIR"} else {"REAR"}],
-        ["reference",getPosATL leader _hq]
+        ["reference",_reference],
+        ["threatGroup",_targetGroup],
+        ["threatKind",_kind]
     ];
     private _reply = [
         _capability,_hq,_requirements,"HIGH"
@@ -147,6 +310,10 @@ ITW_CLASH_HALThreatCoverage_fnc_Request = {
             _capability,
             [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind
         ];
+        if (!isNull _targetGroup) then {
+            [_hq,_reply,_targetGroup,_kind,_capability] call
+                ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased;
+        };
     };
     ["request-result",[
         _hq getVariable ["RydHQ_CodeSign","?"],
@@ -154,7 +321,8 @@ ITW_CLASH_HALThreatCoverage_fnc_Request = {
         _mode,
         _reply getOrDefault ["status","INVALID"],
         _reply getOrDefault ["reason","invalid-result"],
-        _reply getOrDefault ["requestId",""]
+        _reply getOrDefault ["requestId",""],
+        if (isNull _targetGroup) then {""} else {groupId _targetGroup}
     ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
     _reply
 };
@@ -212,23 +380,38 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
 
     {
         _x params ["_demandVar","_kind","_checkGround","_checkAir","_capability"];
-        private _demand = _hq getVariable [_demandVar, []];
+        private _demand = (_hq getVariable [_demandVar, []]) select {
+            !isNull _x && {!isNull leader _x} && {alive leader _x}
+        };
         if (count _demand > 0) then {
             private _anyUsable = false;
             if (_checkGround && {count _groundUsable > 0}) then {_anyUsable = true};
             if (_checkAir && {count _airUsable > 0}) then {_anyUsable = true};
             if (!_anyUsable) then {
-                private _cooldownKey = "ITW_CLASH_ThreatCoverageRetryAt_" + _kind;
-                if (time >= (_hq getVariable [_cooldownKey,0])) then {
-                    _hq setVariable [_cooldownKey,time + 45];
-                    private _mode = if (_capability == "CAS_AIRCRAFT") then {"AIR"} else {"GROUND"};
-                    diag_log format [
-                        "%1 at %2, requesting %3",
-                        [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
-                        getPosATL (leader (_demand select 0)),
-                        _capability
-                    ];
-                    [_hq,_capability,_mode,_kind] call ITW_CLASH_HALThreatCoverage_fnc_Request;
+                // Find the first threat in this HAL category that is not
+                // already being answered by a purchased responder. Busy
+                // responders deliberately count here even though they are
+                // absent from AttackAv - that is exactly what "on mission"
+                // means in native HAL.
+                private _targetIndex = _demand findIf {
+                    !([_hq,_x,_kind] call
+                        ITW_CLASH_HALThreatCoverage_fnc_CommitmentActive)
+                };
+                if (_targetIndex >= 0) then {
+                    private _targetGroup = _demand#_targetIndex;
+                    private _cooldownKey = "ITW_CLASH_ThreatCoverageRetryAt_" + _kind;
+                    if (time >= (_hq getVariable [_cooldownKey,0])) then {
+                        _hq setVariable [_cooldownKey,time + 45];
+                        private _mode = if (_capability == "CAS_AIRCRAFT") then {"AIR"} else {"GROUND"};
+                        diag_log format [
+                            "%1 at %2, requesting %3",
+                            [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
+                            getPosATL (vehicle leader _targetGroup),
+                            _capability
+                        ];
+                        [_hq,_capability,_mode,_kind,_targetGroup] call
+                            ITW_CLASH_HALThreatCoverage_fnc_Request;
+                    };
                 };
             };
         };
@@ -241,18 +424,28 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
     // empty - only request when BOTH are genuinely dry. A Checkbook-bought
     // CAS_AIRCRAFT asset registers into both RCAS and RCAP (see
     // ForceGeneration.sqf), so requesting it here is still the right ask.
-    private _airDemand = _hq getVariable ["RydHQ_EnAir", []];
+    private _airDemand = (_hq getVariable ["RydHQ_EnAir", []]) select {
+        !isNull _x && {!isNull leader _x} && {alive leader _x}
+    };
     if (count _airDemand > 0 && {count _airCapUsable <= 0} && {count _aaInfUsable <= 0}) then {
-        private _cooldownKey = "ITW_CLASH_ThreatCoverageRetryAt_Air_Cap";
-        if (time >= (_hq getVariable [_cooldownKey,0])) then {
-            _hq setVariable [_cooldownKey,time + 45];
-            diag_log format [
-                "%1 at %2, requesting %3",
-                ["Air"] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
-                getPosATL (leader (_airDemand select 0)),
-                "CAS_AIRCRAFT"
-            ];
-            [_hq,"CAS_AIRCRAFT","AIR","Air"] call ITW_CLASH_HALThreatCoverage_fnc_Request;
+        private _targetIndex = _airDemand findIf {
+            !([_hq,_x,"Air"] call
+                ITW_CLASH_HALThreatCoverage_fnc_CommitmentActive)
+        };
+        if (_targetIndex >= 0) then {
+            private _targetGroup = _airDemand#_targetIndex;
+            private _cooldownKey = "ITW_CLASH_ThreatCoverageRetryAt_Air_Cap";
+            if (time >= (_hq getVariable [_cooldownKey,0])) then {
+                _hq setVariable [_cooldownKey,time + 45];
+                diag_log format [
+                    "%1 at %2, requesting %3",
+                    ["Air"] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
+                    getPosATL (vehicle leader _targetGroup),
+                    "CAS_AIRCRAFT"
+                ];
+                [_hq,"CAS_AIRCRAFT","AIR","Air",_targetGroup] call
+                    ITW_CLASH_HALThreatCoverage_fnc_Request;
+            };
         };
     };
 
@@ -284,7 +477,7 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
 
 ITW_CLASH_HALThreatCoverageReady = true;
 diag_log format [
-    "CLASH BOOT | hal-threat-coverage-ready | version=%1 categories=AAInf,StaticAA,StaticAT,Support,Cargo,ATInf,Inf,Armor,Cars,Art,Static,Air capabilities=GROUND_ATTACK_LIGHT,CAS_AIRCRAFT providersRegistered=true notCovered=Recon,Naval",
+    "CLASH BOOT | hal-threat-coverage-ready | version=%1 categories=AAInf,StaticAA,StaticAT,Support,Cargo,ATInf,Inf,Armor,Cars,Art,Static,Air capabilities=GROUND_ATTACK_LIGHT,CAS_AIRCRAFT providersRegistered=true immediateHALHandoff=true activeCommitmentCoverage=true notCovered=Recon,Naval",
     ITW_CLASH_HALThreatCoverageVersion
 ];
 
