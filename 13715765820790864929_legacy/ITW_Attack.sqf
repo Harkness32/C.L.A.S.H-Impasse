@@ -2194,6 +2194,45 @@ ITW_AtkSpawnVeh = {
         };
     } else {
         private _landSpawn = +_spawnPt;
+
+        // CLASH/Checkbook callers hand this function one fixed base staging
+        // point. Ground vehicles created together used to stack on that exact
+        // coordinate and could collide/kill one another before HAL ever saw
+        // them. Give LandVehicle spawns a small rotating two-ring footprint
+        // around the staging point. Ships and other non-land classes keep the
+        // native point unchanged.
+        if (_vehType isKindOf "LandVehicle") then {
+            if (isNil "ITW_CLASH_GroundSpawnOffsets") then {
+                ITW_CLASH_GroundSpawnOffsets = createHashMap;
+            };
+
+            // Quantize the staging coordinate so each base/staging point keeps
+            // its own rotation without requiring an Impasse base index.
+            private _spawnKey = format [
+                "%1:%2",
+                round ((_spawnPt#0) / 5),
+                round ((_spawnPt#1) / 5)
+            ];
+            private _slot = ITW_CLASH_GroundSpawnOffsets getOrDefault [_spawnKey,0];
+            ITW_CLASH_GroundSpawnOffsets set [_spawnKey,(_slot + 1) mod 12];
+
+            private _radius = if (_slot < 6) then {20} else {40};
+            private _angle = (_slot mod 6) * 60;
+            private _candidate = _spawnPt getPos [_radius,_angle];
+            if (count _candidate < 3) then {_candidate pushBack 0};
+            _candidate set [2,0];
+
+            if (!surfaceIsWater _candidate) then {
+                private _empty = _candidate findEmptyPosition [0,12,_vehType];
+                _landSpawn = if (_empty isEqualTo []) then {
+                    _candidate
+                } else {
+                    _empty
+                };
+            };
+        };
+
+        if (count _landSpawn < 3) then {_landSpawn pushBack 0};
         _landSpawn set [2,_landSpawn#2 + 4];
         _veh = [_vehTypeTxtr,_landSpawn] call ITW_VehCreateVehicle;
     };
