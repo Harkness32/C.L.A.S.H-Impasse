@@ -18,20 +18,24 @@ def test_purchased_combat_asset_keeps_the_triggering_threat():
     assert 'getPosATL (vehicle (leader _targetGroup))' in text
 
 
-def test_purchase_is_immediately_handed_to_native_hal_attack_logic():
+def test_purchase_is_immediately_offered_to_hal_dispatchers():
     text = source()
     assert 'ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased' in text
-    assert '_group setVariable ["Busy" + str _group,true];' in text
-    assert '"RydHQ_AttackAv",' in text
-    assert '[_pattern] call RYD_GoLaunch' in text
-    assert '[[_group,_target,_hq],_launcher] call RYD_Spawn;' in text
+    assert '_attackAv pushBackUnique _group;' in text
+    assert 'call RYD_Dispatcher;' in text
+    assert 'call CLASH_fnc_HALAdd_Respond;' in text
+    assert '"hal-selected"' in text
+    assert '"immediate-ready"' in text
 
 
-def test_ground_and_air_purchase_patterns_match_hal_native_dispatch():
+def test_native_handoff_preserves_hals_risk_tables():
     text = source()
-    assert 'case "TANK": {"ARM"};' in text
-    assert 'case "CAR": {"INF"};' in text
-    assert 'if (toUpperANSI _kind == "AIR") then {"AIRCAP"} else {"AIR"}' in text
+    assert 'case "ATInf": {[0,0,85]};' in text
+    assert 'case "Inf": {[75,80,85]};' in text
+    assert 'case "Armor": {[50,0,85]};' in text
+    assert 'case "Art": {[70,75,75]};' in text
+    assert 'case "Air": {[0,0,75]};' in text
+    assert 'private _nativeKinds = ["ATInf","Inf","Armor","Cars","Art","Static","Air"];' in text
 
 
 def test_busy_committed_responder_counts_as_coverage():
