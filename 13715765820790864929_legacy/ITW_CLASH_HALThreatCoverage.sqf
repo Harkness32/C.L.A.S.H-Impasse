@@ -54,6 +54,13 @@ ITW_CLASH_ThreatCoverageCommitmentTimeout = missionNamespace getVariable [
     "ITW_CLASH_ThreatCoverageCommitmentTimeout",900
 ];
 ITW_CLASH_ThreatCoverageCommitments = createHashMap;
+// Usable coverage is sampled once per pass, so without a per-capability
+// interval every kind that falls back to CAS could each buy in one pass. How
+// many may exist is ITW's call: its per-row caps and spawn-adjustment params
+// are enforced at billing (ForceGeneration's SelectBillingDefs).
+ITW_CLASH_ThreatCoverageBuyInterval = missionNamespace getVariable [
+    "ITW_CLASH_ThreatCoverageBuyInterval",90
+];
 
 ITW_CLASH_HALThreatCoverage_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -154,8 +161,18 @@ ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
 
     private _crew = crew _asset;
     if (_crew isEqualTo []) exitWith {false};
-    private _group = group (_crew#0);
+    [
+        _hq,group (_crew#0),_targetGroup,_kind,_capability,
+        _reply getOrDefault ["requestId",""]
+    ] call ITW_CLASH_HALThreatCoverage_fnc_Offer
+};
+
+// Shared by fresh purchases and idle earlier ones: HAL decides, CLASH only
+// makes the group available against the causal threat.
+ITW_CLASH_HALThreatCoverage_fnc_Offer = {
+    params ["_hq","_group","_targetGroup","_kind","_capability","_ref"];
     if (isNull _group || {({alive _x} count units _group) <= 0}) exitWith {false};
+    private _asset = vehicle leader _group;
 
     private _targetLeader = leader _targetGroup;
     if (isNull _targetLeader || {!alive _targetLeader}) exitWith {false};
@@ -289,7 +306,7 @@ ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
             _attempted = true;
         } else {
             ["immediate-dispatch-addon-missing",[
-                _reply getOrDefault ["requestId",""],_kind,typeOf _asset
+                _ref,_kind,typeOf _asset
             ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
         };
     };
@@ -299,7 +316,7 @@ ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
         [_hq,_group,_targetGroup,_kind] call
             ITW_CLASH_HALThreatCoverage_fnc_Commit;
         ["immediate-dispatch",[
-            _reply getOrDefault ["requestId",""],
+            _ref,
             _kind,toUpperANSI _capability,typeOf _asset,
             groupId _group,groupId _targetGroup,
             "hal-selected"
@@ -312,7 +329,7 @@ ITW_CLASH_HALThreatCoverage_fnc_DispatchPurchased = {
         ];
     } else {
         ["immediate-ready",[
-            _reply getOrDefault ["requestId",""],
+            _ref,
             _kind,toUpperANSI _capability,typeOf _asset,
             groupId _group,groupId _targetGroup,_attempted
         ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
@@ -435,6 +452,68 @@ ITW_CLASH_HALThreatCoverage_fnc_Request = {
     _reply
 };
 
+// Checkbook purchases of this capability for this HQ that can still fight.
+ITW_CLASH_HALThreatCoverage_fnc_Bought = {
+    params ["_hq","_capability"];
+    private _side = side _hq;
+    allGroups select {
+        side _x == _side
+        && {_x getVariable ["ITW_CLASH_CheckbookAsset",false]}
+        && {(_x getVariable ["ITW_CLASH_GenerationCapability",""]) == _capability}
+        && {alive leader _x}
+        && {
+            private _veh = vehicle leader _x;
+            _veh != leader _x && {alive _veh} && {canMove _veh}
+        }
+    }
+};
+
+// Bought earlier and left without a task (live run: helicopters hovering at
+// their spawn), as opposed to on a HAL mission, resting or being resupplied.
+ITW_CLASH_HALThreatCoverage_fnc_Idle = {
+    params ["_groups","_hq"];
+    private _NCVeh = _hq getVariable ["RydHQ_NCVeh",[]];
+    _groups select {
+        !(_x getVariable ["Busy" + str _x,false])
+        && {!(_x getVariable ["Resting" + str _x,false])}
+        && {!(_x getVariable ["Unable",false])}
+        && {!(_x getVariable ["ITW_CLASH_ResupplyClaimed",false])}
+        && {([_x,_NCVeh] call RYD_AmmoCount) > 0}
+    }
+};
+
+// One gate for every purchase: re-offer an idle earlier purchase to HAL
+// first, then buy at most once per capability per interval.
+ITW_CLASH_HALThreatCoverage_fnc_Cover = {
+    params ["_hq","_capability","_kind","_targetGroup"];
+    private _idle = [
+        [_hq,_capability] call ITW_CLASH_HALThreatCoverage_fnc_Bought,_hq
+    ] call ITW_CLASH_HALThreatCoverage_fnc_Idle;
+    if (_idle isNotEqualTo []) exitWith {
+        private _nearest = ([
+            _idle,[vehicle leader _targetGroup],
+            {(vehicle leader _x) distance2D _input0},"ASCEND"
+        ] call BIS_fnc_sortBy)#0;
+        [_hq,_nearest,_targetGroup,_kind,_capability,"idle-reoffer"] call
+            ITW_CLASH_HALThreatCoverage_fnc_Offer
+    };
+
+    private _buyKey = "ITW_CLASH_ThreatCoverageBuyAt_" + _capability;
+    if (time < (_hq getVariable [_buyKey,0])) exitWith {false};
+    _hq setVariable [_buyKey,time + ITW_CLASH_ThreatCoverageBuyInterval];
+
+    private _mode = if (_capability == "CAS_AIRCRAFT") then {"AIR"} else {"GROUND"};
+    diag_log format [
+        "%1 at %2, requesting %3",
+        [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
+        getPosATL (vehicle (leader _targetGroup)),
+        _capability
+    ];
+    [_hq,_capability,_mode,_kind,_targetGroup] call
+        ITW_CLASH_HALThreatCoverage_fnc_Request;
+    true
+};
+
 ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
     params ["_hq"];
     if (isNull _hq || {
@@ -510,15 +589,8 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
                     private _cooldownKey = "ITW_CLASH_ThreatCoverageRetryAt_" + _kind;
                     if (time >= (_hq getVariable [_cooldownKey,0])) then {
                         _hq setVariable [_cooldownKey,time + 45];
-                        private _mode = if (_capability == "CAS_AIRCRAFT") then {"AIR"} else {"GROUND"};
-                        diag_log format [
-                            "%1 at %2, requesting %3",
-                            [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
-                            getPosATL (vehicle (leader _targetGroup)),
-                            _capability
-                        ];
-                        [_hq,_capability,_mode,_kind,_targetGroup] call
-                            ITW_CLASH_HALThreatCoverage_fnc_Request;
+                        [_hq,_capability,_kind,_targetGroup] call
+                            ITW_CLASH_HALThreatCoverage_fnc_Cover;
                     };
                 };
             };
@@ -545,14 +617,8 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
             private _cooldownKey = "ITW_CLASH_ThreatCoverageRetryAt_Air_Cap";
             if (time >= (_hq getVariable [_cooldownKey,0])) then {
                 _hq setVariable [_cooldownKey,time + 45];
-                diag_log format [
-                    "%1 at %2, requesting %3",
-                    ["Air"] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
-                    getPosATL (vehicle (leader _targetGroup)),
-                    "CAS_AIRCRAFT"
-                ];
-                [_hq,"CAS_AIRCRAFT","AIR","Air",_targetGroup] call
-                    ITW_CLASH_HALThreatCoverage_fnc_Request;
+                [_hq,"CAS_AIRCRAFT","Air",_targetGroup] call
+                    ITW_CLASH_HALThreatCoverage_fnc_Cover;
             };
         };
     };

@@ -303,6 +303,11 @@ ITW_CLASH_Generation_fnc_SelectBillingDefs = {
     private _zonesOwned = [_friendly] call ITW_CLASH_Checkbook_fnc_GetZonesOwned;
     private _kind = [_class] call ITW_CLASH_Generation_fnc_ClassKind;
     private _capabilityKey = toUpperANSI _capability;
+    // Combat buys may only draw on ITW's attack/dual rows, so ITW's own caps
+    // and spawn-adjustment params bind. Live run: 136/140 GROUND_ATTACK_LIGHT
+    // and 69/115 CAS_AIRCRAFT buys billed the transport car row (1 ticket,
+    // max 99) and transport heli row (2 tickets, max 8) instead.
+    private _combatOnly = _capabilityKey in ["GROUND_ATTACK_LIGHT","CAS_AIRCRAFT"];
     private _defs = ITW_VehArrays select {
         private _def = _x;
         private _defClasses = (_def#ITW_VEH_CLASSES) apply {
@@ -316,6 +321,7 @@ ITW_CLASH_Generation_fnc_SelectBillingDefs = {
         && {_def#ITW_VEH_ZONES_OWNED <= _zonesOwned}
         && {_def#ITW_VEH_CURR_TICKETS >= _def#ITW_VEH_REQD_TICKETS}
         && {_def#ITW_VEH_COUNT < _def#ITW_VEH_MAX}
+        && {!_combatOnly || {(_def#ITW_VEH_ROLE) in [ITW_VEH_ROLE_ATTACK,ITW_VEH_ROLE_DUAL]}}
     };
 
     [_defs,[],{
