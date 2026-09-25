@@ -287,8 +287,8 @@ ITW_CLASH_HALThreatCoverage_fnc_Request = {
     params ["_hq","_capability","_mode",["_kind",""],["_targetGroup",grpNull]];
     if (isNull _hq || {isNil "ITW_CLASH_fnc_RequestCapability"}) exitWith {createHashMap};
     private _side = side _hq;
-    private _reference = if (!isNull _targetGroup && {!isNull leader _targetGroup}) then {
-        getPosATL (vehicle leader _targetGroup)
+    private _reference = if (!isNull _targetGroup && {!isNull (leader _targetGroup)}) then {
+        getPosATL (vehicle (leader _targetGroup))
     } else {
         getPosATL leader _hq
     };
@@ -381,7 +381,7 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
     {
         _x params ["_demandVar","_kind","_checkGround","_checkAir","_capability"];
         private _demand = (_hq getVariable [_demandVar, []]) select {
-            !isNull _x && {!isNull leader _x} && {alive leader _x}
+            !isNull _x && {!isNull (leader _x)} && {alive (leader _x)}
         };
         if (count _demand > 0) then {
             private _anyUsable = false;
@@ -406,7 +406,7 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
                         diag_log format [
                             "%1 at %2, requesting %3",
                             [_kind] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
-                            getPosATL (vehicle leader _targetGroup),
+                            getPosATL (vehicle (leader _targetGroup)),
                             _capability
                         ];
                         [_hq,_capability,_mode,_kind,_targetGroup] call
@@ -425,7 +425,7 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
     // CAS_AIRCRAFT asset registers into both RCAS and RCAP (see
     // ForceGeneration.sqf), so requesting it here is still the right ask.
     private _airDemand = (_hq getVariable ["RydHQ_EnAir", []]) select {
-        !isNull _x && {!isNull leader _x} && {alive leader _x}
+        !isNull _x && {!isNull (leader _x)} && {alive (leader _x)}
     };
     if (count _airDemand > 0 && {count _airCapUsable <= 0} && {count _aaInfUsable <= 0}) then {
         private _targetIndex = _airDemand findIf {
@@ -440,7 +440,7 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
                 diag_log format [
                     "%1 at %2, requesting %3",
                     ["Air"] call ITW_CLASH_HALThreatCoverage_fnc_DescribeKind,
-                    getPosATL (vehicle leader _targetGroup),
+                    getPosATL (vehicle (leader _targetGroup)),
                     "CAS_AIRCRAFT"
                 ];
                 [_hq,"CAS_AIRCRAFT","AIR","Air",_targetGroup] call
