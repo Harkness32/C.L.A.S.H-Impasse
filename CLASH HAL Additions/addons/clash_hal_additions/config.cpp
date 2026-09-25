@@ -6,7 +6,7 @@ class CfgPatches
 		name = "CLASH HAL Additions";
 		units[] = {};
 		weapons[] = {};
-		requiredVersion = 4.11;
+		requiredVersion = 0.1;
 		requiredAddons[] = { "NR6_HAL" };
 		version = "0.1";
 	};
@@ -18,14 +18,15 @@ class CfgPatches
 // Does not modify, wrap, or duplicate any nr6_hal file.
 class CfgFunctions
 {
-	class CLASHHALADD
+	class CLASH
 	{
-		class Main
+		tag = "CLASH";
+		class HALAdd
 		{
-			file = "\CLASH_HAL_Additions\functions";
-			class respond { file = "fnc_respond.sqf"; };
-			class watch { file = "fnc_watch.sqf"; };
-			class start { file = "fnc_start.sqf"; preInit = 1; };
+			// A function-level file= is a full path; it does not inherit a category folder.
+			class HALAdd_Respond { file = "\clash_hal_additions\functions\fnc_respond.sqf"; };
+			class HALAdd_Watch { file = "\clash_hal_additions\functions\fnc_watch.sqf"; };
+			class HALAdd_Start { file = "\clash_hal_additions\functions\fnc_start.sqf"; preInit = 1; };
 		};
 	};
 };
