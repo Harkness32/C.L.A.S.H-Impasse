@@ -49,7 +49,8 @@ ITW_CLASH_ResupplyVersion = 1;
     ["ITW_CLASH_ResupplyStepDistance",250],
     ["ITW_CLASH_ResupplyMaxSearch",3000],
     ["ITW_CLASH_ResupplyPrimaryMags",6],
-    ["ITW_CLASH_ResupplyHandgunMags",2]
+    ["ITW_CLASH_ResupplyHandgunMags",2],
+    ["ITW_CLASH_ResupplyRoleAuditDelay",180]
 ];
 ITW_CLASH_ResupplySweepOffsets = [0,-45,45,-90,90];
 
@@ -243,7 +244,6 @@ ITW_CLASH_Resupply_fnc_Eligible = {
         || {_group getVariable ["ITW_CLASH_ThunderRunActive",false]}
         || {_group getVariable ["Resting" + _var,false]}
         || {_group getVariable ["ITW_CLASH_ServiceAsset",false]}
-        || {_group getVariable ["ITW_CLASH_CheckbookAsset",false]}
         || {(_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo ""}
         || {(_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo ""}
     ) exitWith {false};
@@ -253,6 +253,11 @@ ITW_CLASH_Resupply_fnc_Eligible = {
         + (_hq getVariable ["RydHQ_RepSupportG",[]])
         + (_hq getVariable ["RydHQ_AmmoDrop",[]]);
     if (_group in _providers) exitWith {false};
+
+    // Breaking a group mid-transport would strand another group's troops.
+    if (([_group] call ITW_CLASH_Resupply_fnc_GroundVehicles) findIf {
+        (crew _x) findIf {alive _x && {group _x != _group}} >= 0
+    } >= 0) exitWith {false};
 
     private _veh = vehicle leader _group;
     !(_veh isKindOf "Air") && {!(_veh isKindOf "Ship")}
@@ -428,14 +433,34 @@ ITW_CLASH_Resupply_fnc_FindSharedRally = {
     _best
 };
 
+ITW_CLASH_ResupplyHALRoleLists = ["RydHQ_Garrison","RydHQ_DefSpot","RydHQ_Def","RydHQ_DefRes","RydHQ_RecDefSpot"];
+
+// Returns the roles actually removed so Release can audit whether HAL
+// repopulates them on its own. Instrumentation only - no restore yet.
 ITW_CLASH_Resupply_fnc_ClearHALRoles = {
     params ["_group","_hq"];
-    if (isNull _hq) exitWith {};
+    if (isNull _hq) exitWith {[]};
+    private _removed = [];
     {
         private _members = +(_hq getVariable [_x,[]]);
-        if (_group in _members) then {_hq setVariable [_x,_members - [_group]]};
-    } forEach ["RydHQ_Garrison","RydHQ_DefSpot","RydHQ_Def","RydHQ_DefRes","RydHQ_RecDefSpot"];
-    if (_group getVariable ["Defending",false]) then {_group setVariable ["Defending",false]};
+        if (_group in _members) then {
+            _hq setVariable [_x,_members - [_group]];
+            _removed pushBack _x;
+        };
+    } forEach ITW_CLASH_ResupplyHALRoleLists;
+    if (_group getVariable ["Defending",false]) then {
+        _group setVariable ["Defending",false];
+        _removed pushBack "Defending";
+    };
+    _removed
+};
+
+ITW_CLASH_Resupply_fnc_CurrentHALRoles = {
+    params ["_group","_hq"];
+    if (isNull _group || {isNull _hq}) exitWith {[]};
+    private _roles = ITW_CLASH_ResupplyHALRoleLists select {_group in (_hq getVariable [_x,[]])};
+    if (_group getVariable ["Defending",false]) then {_roles pushBack "Defending"};
+    _roles
 };
 
 ITW_CLASH_Resupply_fnc_OrderMove = {
@@ -460,7 +485,8 @@ ITW_CLASH_Resupply_fnc_Claim = {
         ["needs",_needs],["claimedAt",time],["busyOwned",false],
         ["rally",[]],["rallySource",""],["inPlace",false],["arrivedAt",-1],
         ["relocations",0],["lastRallyCheck",time],["lastMoveOrder",-1],
-        ["deliveryAt",-1],["deliveryMode",""],["retries",0],["lastDispatchTry",-1]
+        ["deliveryAt",-1],["deliveryMode",""],["retries",0],["lastDispatchTry",-1],
+        ["rolesCleared",[]]
     ];
     ITW_CLASH_ResupplyClaims set [_id,_claim];
     _group setVariable ["ITW_CLASH_ResupplyClaimed",true];
@@ -511,7 +537,11 @@ ITW_CLASH_Resupply_fnc_Claim = {
 
         _group setVariable ["Busy" + _var,true];
         _claim set ["busyOwned",true];
-        [_group,_claim get "hq"] call ITW_CLASH_Resupply_fnc_ClearHALRoles;
+        private _roles = [_group,_claim get "hq"] call ITW_CLASH_Resupply_fnc_ClearHALRoles;
+        _claim set ["rolesCleared",_roles];
+        if (_roles isNotEqualTo []) then {
+            ["roles-cleared",[_claim get "id",_roles]] call ITW_CLASH_Resupply_fnc_Log;
+        };
         _claim set ["state","RESOLVE"];
     };
     true
@@ -533,6 +563,22 @@ ITW_CLASH_Resupply_fnc_Release = {
         _group setVariable ["ITW_CLASH_ResupplyNeedSince",nil];
         if (_reason != "serviced") then {
             _group setVariable ["ITW_CLASH_ResupplyRetryAt",time + ITW_CLASH_ResupplyRetryCooldown];
+        };
+
+        // Does HAL put the group back into the roles cleared at claim time?
+        private _rolesCleared = _claim getOrDefault ["rolesCleared",[]];
+        if (_rolesCleared isNotEqualTo []) then {
+            [_group,_claim get "hq",_claim get "id",_rolesCleared] spawn {
+                params ["_group","_hq","_id","_rolesCleared"];
+                sleep ITW_CLASH_ResupplyRoleAuditDelay;
+                private _now = [_group,_hq] call ITW_CLASH_Resupply_fnc_CurrentHALRoles;
+                ["role-audit",[_id,_rolesCleared,_now,isNull _group]] call ITW_CLASH_Resupply_fnc_Log;
+                [format [
+                    "role audit: %1 had %2 cleared at claim; %3s after release it is in %4",
+                    _id,_rolesCleared,round ITW_CLASH_ResupplyRoleAuditDelay,
+                    if (_now isEqualTo []) then {"no HAL roles"} else {str _now}
+                ]] call ITW_CLASH_Resupply_fnc_Say;
+            };
         };
     };
 
@@ -939,20 +985,35 @@ ITW_CLASH_Resupply_fnc_Dispatch = {
     _mode
 };
 
+// A provider that physically still exists and could serve once free: crew
+// alive AND its service vehicle intact. Busy is deliberately NOT rejected -
+// a busy provider will come back; a destroyed one never will.
+ITW_CLASH_Resupply_fnc_ProviderViable = {
+    params ["_providerGroup","_mode"];
+    if (isNull _providerGroup || {({alive _x} count units _providerGroup) == 0}) exitWith {false};
+    if (_providerGroup getVariable ["Unable",false]) exitWith {false};
+    private _veh = [_providerGroup] call ITW_CLASH_Resupply_fnc_ProviderVehicle;
+    !isNull _veh
+    && {alive _veh}
+    && {canMove _veh}
+    && {fuel _veh > 0}
+    && {if (_mode == "AIR") then {_veh isKindOf "Helicopter"} else {_veh isKindOf "LandVehicle"}}
+};
+
 // Checkbook is for capability that is missing, not capability that is busy.
 ITW_CLASH_Resupply_fnc_RequestCapacity = {
     params ["_claim"];
     if (isNil "ITW_CLASH_HALLogistics_fnc_Request") exitWith {false};
     private _hq = _claim get "hq";
     private _needs = _claim get "needs";
-    private _alive = {
-        params ["_groups"];
-        _groups select {!isNull _x && {({alive _x} count units _x) > 0}}
+    private _noneViable = {
+        params ["_groups","_mode"];
+        (_groups findIf {[_x,_mode] call ITW_CLASH_Resupply_fnc_ProviderViable}) < 0
     };
 
     private _asks = [];
     if (([_needs] call ITW_CLASH_Resupply_fnc_CrateCovers) && {"AMMO_INF" in _needs || {count (_needs - ["AMMO_INF"]) >= 2}}) then {
-        if (([_hq getVariable ["RydHQ_AmmoDrop",[]]] call _alive) isEqualTo []) then {
+        if ([_hq getVariable ["RydHQ_AmmoDrop",[]],"AIR"] call _noneViable) then {
             _asks pushBack ["LOGISTICS_AMMO","AIR"];
         };
         if (((_hq getVariable ["RydHQ_AmmoBoxes",[]]) select {!isNull _x && {alive _x}}) isEqualTo []) then {
@@ -960,12 +1021,12 @@ ITW_CLASH_Resupply_fnc_RequestCapacity = {
         };
     };
     {
-        private _poolKey = switch (_x) do {
-            case "AMMO": {"RydHQ_AmmoSupportG"};
-            case "FUEL": {"RydHQ_FuelSupportG"};
-            default {"RydHQ_RepSupportG"};
+        private _pool = switch (_x) do {
+            case "AMMO": {(_hq getVariable ["RydHQ_AmmoSupportG",[]]) - (_hq getVariable ["RydHQ_AmmoDrop",[]])};
+            case "FUEL": {_hq getVariable ["RydHQ_FuelSupportG",[]]};
+            default {_hq getVariable ["RydHQ_RepSupportG",[]]};
         };
-        if (([_hq getVariable [_poolKey,[]]] call _alive) isEqualTo []) then {
+        if ([_pool,"GROUND"] call _noneViable) then {
             _asks pushBack ["LOGISTICS_" + _x,"GROUND"];
         };
     } forEach ((_needs - ["AMMO_INF"]) select {_x in ["AMMO","FUEL","REPAIR"]});

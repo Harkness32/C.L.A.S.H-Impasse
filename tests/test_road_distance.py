@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +36,7 @@ def test_this_is_not_a_whole_map_cached_graph():
     fn = source[fn_start:fn_end]
     assert "private _knownCost = createHashMap;" in fn
     assert "private _open = " in fn
-    assert "private _visited = [];" in fn
+    assert "private _visited = createHashMap;" in fn
 
 
 def test_itw_atk_road_map_was_checked_and_confirmed_unusable_for_this():
@@ -73,18 +74,38 @@ def test_no_road_access_returns_a_distinct_sentinel_not_zero_or_fallback():
     assert "distance2D" not in no_road_block
 
 
-def test_close_ends_on_the_same_local_cluster_skip_the_graph_search():
-    # Two points sharing one nearby road cluster don't need Dijkstra - the
-    # short-circuit exists so the search cost is only paid when actually
-    # crossing distinct parts of the road network.
+def calculate_fn() -> str:
     source = road_distance()
     fn_start = source.index("ITW_CLASH_RoadDistance_fnc_Calculate = {")
     fn_end = source.index("\nITW_CLASH_RoadDistanceReady", fn_start)
-    fn = source[fn_start:fn_end]
-    assert "_startRoad distance2D _endRoad < ITW_CLASH_RoadDistanceSearchRadius" in fn
-    shortcut_pos = fn.index("_startRoad distance2D _endRoad")
-    dijkstra_pos = fn.index("private _knownCost = createHashMap;")
-    assert shortcut_pos < dijkstra_pos
+    return source[fn_start:fn_end]
+
+
+def test_success_requires_real_connectivity_never_proximity():
+    # Two roads either side of a river can be metres apart and unconnected.
+    # Any "close enough to the end road counts as arrived" check (the v1 bug,
+    # both in the search loop and a same-cluster shortcut) recreates exactly
+    # the topology error this subsystem exists to prevent.
+    fn = calculate_fn()
+    assert "_endRoad" not in fn
+    assert "_startRoad" not in fn
+    assert not re.search(r"distance2D \S+ < ITW_CLASH_RoadDistanceSearchRadius", fn)
+    # The only way to produce a result is popping the virtual goal entry,
+    # which is only ever pushed from a road actually reached via the graph.
+    assert fn.count("_result = ") == 2  # the -1 initialiser and the goal pop
+    assert "if (isNull _current) then {\n            _result = _currentCost;" in fn
+    goal_push = fn.index("_open pushBack [objNull,_currentCost + _exit]")
+    visited = fn.index("_visited set [_currentKey,true]")
+    assert visited < goal_push
+
+
+def test_off_road_access_legs_on_both_ends_are_costed():
+    fn = calculate_fn()
+    # A -> its road: every road near A starts at its off-road leg, not zero
+    assert "private _entry = _posA distance2D _x;" in fn
+    assert "_open pushBack [_x,_entry];" in fn
+    # road near B -> B
+    assert "_exitCost set [str _x,_posB distance2D _x]" in fn
 
 
 def test_search_is_bounded_on_both_node_count_and_cumulative_distance():

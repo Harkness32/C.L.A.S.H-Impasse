@@ -108,6 +108,36 @@ def test_players_and_other_owners_are_never_claimed():
         assert token in eligible, token
 
 
+def test_checkbook_bought_combat_assets_are_never_excluded():
+    # Cross-file contract: RegisterAsset flags EVERY Checkbook purchase,
+    # combat vehicles included. Any group flag it sets must not be an
+    # exclusion in Eligible, or the replacement IFV CLASH just bought for HAL
+    # is the one unit this system ignores when it runs dry.
+    generation = text(MISSION / "ITW_CLASH_ForceGeneration.sqf")
+    start = generation.index("ITW_CLASH_Generation_fnc_RegisterAsset = {")
+    register = generation[start:generation.index("\n};", start)]
+    group_flags = re.findall(r'_group setVariable \["([A-Za-z_]+)"', register)
+    assert "ITW_CLASH_CheckbookAsset" in group_flags
+    eligible = fn("ITW_CLASH_Resupply_fnc_Eligible")
+    for flag in group_flags:
+        assert f'"{flag}"' not in eligible, flag
+
+
+def test_service_providers_stay_excluded_because_that_flag_is_logistics_only():
+    lifecycle = text(MISSION / "ITW_CLASH_ServiceLifecycle.sqf")
+    start = lifecycle.index("ITW_CLASH_Service_fnc_IsCapability = {")
+    capabilities = lifecycle[start:lifecycle.index("\n};", start)]
+    assert set(re.findall(r'"([A-Z_]+)"', capabilities)) == {
+        "TRANSPORT", "LOGISTICS_AMMO", "LOGISTICS_FUEL", "LOGISTICS_REPAIR"
+    }
+    assert '"ITW_CLASH_ServiceAsset"' in fn("ITW_CLASH_Resupply_fnc_Eligible")
+
+
+def test_a_group_carrying_other_troops_is_never_broken_mid_transport():
+    eligible = fn("ITW_CLASH_Resupply_fnc_Eligible")
+    assert "(crew _x) findIf {alive _x && {group _x != _group}} >= 0" in eligible
+
+
 def test_unarmed_vehicles_never_read_as_out_of_ammo():
     armed = fn("ITW_CLASH_Resupply_fnc_IsArmed")
     assert '"RydHQ_NCVeh"' in armed
@@ -170,8 +200,31 @@ def test_delivery_reuses_hal_native_go_scripts():
 def test_checkbook_only_buys_missing_capability_not_busy_capability():
     request = fn("ITW_CLASH_Resupply_fnc_RequestCapacity")
     assert "ITW_CLASH_HALLogistics_fnc_Request" in request
-    assert "call _alive) isEqualTo []" in request
     assert "ITW_CLASH_ResupplyBuyCooldown" in request
+    assert request.count("call _noneViable") == 2  # air pool and ground pools
+    # a heli in the ammo pool must never count as ground ammo capability
+    assert '"RydHQ_AmmoSupportG",[]]) - (_hq getVariable ["RydHQ_AmmoDrop",[]])' in request
+
+
+def test_viability_requires_the_service_vehicle_not_just_a_surviving_crew():
+    # A destroyed ammo truck with a surviving crew is NOT capability.
+    viable = fn("ITW_CLASH_Resupply_fnc_ProviderViable")
+    for check in ["!isNull _veh", "alive _veh", "canMove _veh", "fuel _veh > 0", '"Helicopter"', '"LandVehicle"']:
+        assert check in viable, check
+    # ...but a busy provider still is: it will come back.
+    assert "Busy" not in viable
+
+
+def test_cleared_hal_roles_are_recorded_and_audited_after_release():
+    clear = fn("ITW_CLASH_Resupply_fnc_ClearHALRoles")
+    assert "_removed pushBack _x;" in clear
+    assert clear.rstrip().endswith("_removed")
+    claim = fn("ITW_CLASH_Resupply_fnc_Claim")
+    assert '_claim set ["rolesCleared",_roles]' in claim
+    release = fn("ITW_CLASH_Resupply_fnc_Release")
+    assert "sleep ITW_CLASH_ResupplyRoleAuditDelay;" in release
+    assert "ITW_CLASH_Resupply_fnc_CurrentHALRoles" in release
+    assert '"role-audit"' in release
 
 
 def test_claims_and_deliveries_are_capped():

@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_RoadDistanceStarted",false]) exitWi
 
 ITW_CLASH_RoadDistanceStarted = true;
 ITW_CLASH_RoadDistanceReady = false;
-ITW_CLASH_RoadDistanceVersion = 1;
+ITW_CLASH_RoadDistanceVersion = 2;
 
 /*
     Genuinely honest distance between two points, not straight-line. Answers
@@ -18,9 +18,10 @@ ITW_CLASH_RoadDistanceVersion = 1;
     Deliberately NOT a whole-map cached road graph (that would be real,
     separate, reusable-project-wide infrastructure, worth building on its own
     terms - see docs/CLASH_HAL_DISPATCH_PATCH.md history). This is a bounded,
-    on-demand, two-point query: expand outward from both ends via the native
-    roadsConnectingTo adjacency until they meet or the search budget runs
-    out, then throw the search state away. Fine to run once per demand
+    on-demand, two-point query: expand outward from the roads near A via the
+    native roadsConnectingTo adjacency until a road near B is actually reached
+    or the search budget runs out, then throw the search state away. Proximity
+    never counts as connection. Fine to run once per demand
     evaluation (a 20-45s interval, not a hot path); not fine to run every
     tick or keep resident in memory.
 
@@ -49,20 +50,10 @@ ITW_CLASH_RoadDistance_fnc_Log = {
     };
 };
 
-ITW_CLASH_RoadDistance_fnc_Nearest = {
-    params ["_pos","_candidates"];
-    private _best = _candidates#0;
-    private _bestDist = _pos distance2D _best;
-    {
-        private _d = _pos distance2D _x;
-        if (_d < _bestDist) then {_best = _x; _bestDist = _d};
-    } forEach _candidates;
-    _best
-};
-
-// [posA, posB] -> NUMBER (real road-following distance in meters), or -1 if
-// no road exists near one/both ends, or the search budget runs out before
-// the two ends connect. -1 means "don't trust this as close" - a caller
+// [posA, posB] -> NUMBER (off-road access legs plus real road-following
+// distance, in meters), or -1 if no road exists near one/both ends, or the
+// search budget runs out before a road near B is reached through actual road
+// connectivity. -1 means "don't trust this as close" - a caller
 // deciding near/far should treat it the same as "far" (force air), not as
 // zero or as a fallback to straight-line, since -1 specifically means ground
 // access here is unproven, not merely unmeasured.
@@ -76,22 +67,24 @@ ITW_CLASH_RoadDistance_fnc_Calculate = {
         -1
     };
 
-    private _startRoad = [_posA,_startCandidates] call ITW_CLASH_RoadDistance_fnc_Nearest;
-    private _endRoad = [_posB,_endCandidates] call ITW_CLASH_RoadDistance_fnc_Nearest;
+    // Every road near B is a possible exit, costed by its off-road leg to B.
+    // Reaching one pushes a virtual goal entry (objNull); the search ends when
+    // that goal is popped, so the answer is a true shortest path rather than
+    // the first road that happens to lie near B.
+    private _exitCost = createHashMap;
+    {_exitCost set [str _x,_posB distance2D _x]} forEach _endCandidates;
 
-    // Same local road cluster - no graph search needed, straight line between
-    // the two points is a fine approximation over this short a stretch.
-    if (_startRoad distance2D _endRoad < ITW_CLASH_RoadDistanceSearchRadius) exitWith {
-        _posA distance2D _posB
-    };
-
-    // Bounded Dijkstra. No priority queue - a linear scan of a capped open
-    // list is trivial at this node budget and this call frequency.
+    // Bounded multi-source Dijkstra: every road near A starts at its off-road
+    // leg from A. No priority queue - a linear scan of a capped open list is
+    // trivial at this node budget and this call frequency.
     private _knownCost = createHashMap;
-    private _startKey = str _startRoad;
-    _knownCost set [_startKey,0];
-    private _open = [[_startRoad,0]];
-    private _visited = [];
+    private _open = [];
+    {
+        private _entry = _posA distance2D _x;
+        _knownCost set [str _x,_entry];
+        _open pushBack [_x,_entry];
+    } forEach _startCandidates;
+    private _visited = createHashMap;
     private _result = -1;
     private _nodesExpanded = 0;
 
@@ -109,17 +102,21 @@ ITW_CLASH_RoadDistance_fnc_Calculate = {
         private _currentCost = (_open#_bestIdx)#1;
         _open deleteAt _bestIdx;
 
-        if (!(_current in _visited) && {_currentCost <= ITW_CLASH_RoadDistanceMaxDistance}) then {
-            _visited pushBack _current;
-            _nodesExpanded = _nodesExpanded + 1;
+        if (isNull _current) then {
+            _result = _currentCost;
+        } else {
+            private _currentKey = str _current;
+            if (!(_currentKey in _visited) && {_currentCost <= ITW_CLASH_RoadDistanceMaxDistance}) then {
+                _visited set [_currentKey,true];
+                _nodesExpanded = _nodesExpanded + 1;
 
-            if (_current distance2D _endRoad < ITW_CLASH_RoadDistanceSearchRadius) then {
-                _result = _currentCost + (_current distance2D _posB);
-            } else {
+                private _exit = _exitCost getOrDefault [_currentKey,-1];
+                if (_exit >= 0) then {_open pushBack [objNull,_currentCost + _exit]};
+
                 {
-                    if (!(_x in _visited)) then {
+                    private _key = str _x;
+                    if !(_key in _visited) then {
                         private _edgeCost = _currentCost + (_current distance2D _x);
-                        private _key = str _x;
                         private _known = _knownCost getOrDefault [_key,1e10];
                         if (_edgeCost < _known) then {
                             _knownCost set [_key,_edgeCost];
