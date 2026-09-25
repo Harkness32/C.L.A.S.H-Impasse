@@ -66,3 +66,11 @@ def test_required_addon_is_nr6_hals_real_cfgpatches_class():
     patches = hal_config[hal_config.index("class CfgPatches"):]
     hal_class = re.search(r"class\s+(\w+)", patches[len("class CfgPatches"):]).group(1)
     assert re.search(rf'requiredAddons\[\]\s*=\s*\{{\s*"{hal_class}"\s*\}}', config())
+
+
+def test_wheeled_ground_attack_assets_are_valid_aa_ground_responders():
+    watch = (ADDON / "functions" / "fnc_watch.sqf").read_text(encoding="utf-8")
+    aa_line = next(line for line in watch.splitlines() if '["AAInf"' in line)
+    static_aa_line = next(line for line in watch.splitlines() if '["StaticAA"' in line)
+    assert '[_cars,1,"INF"]' in aa_line
+    assert '[_cars,1,"INF"]' in static_aa_line
