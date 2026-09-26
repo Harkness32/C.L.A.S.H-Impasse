@@ -136,6 +136,44 @@ ITW_CLASH_DualHAL_fnc_MarkVehicleCrew = {
     true
 };
 
+// HAL's class autofill counts only transportSoldier seats as cargo, so an
+// unarmed Prowler (every passenger seat is fire-from-vehicle) lands in its car
+// list and HAL sends ammo trucks to it. An unarmed vehicle with passenger
+// seats goes on HAL's own non-combat cargo list (RHQ_NCCargo), which keeps it
+// out of HAL's attacks and ammo runs and marks it as lift. Weapons are read
+// from the live vehicle: stripped magazines leave the weapons, so an armed
+// class used as a disarmed transport is never listed.
+ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL = {
+    params ["_veh"];
+    if (isNull _veh || {isNil "RHQ_NCCargo"}) exitWith {false};
+    private _class = toLowerANSI (typeOf _veh);
+    if (_class in RHQ_NCCargo) exitWith {false};
+
+    private _weaponMags = (magazinesAllTurrets _veh) select {
+        private _name = toLowerANSI (_x#0);
+        !("smoke" in _name) && {!("flare" in _name)} && {!("laserbatteries" in _name)}
+    };
+    if (_weaponMags isNotEqualTo [] || {((getPylonMagazines _veh) - [""]) isNotEqualTo []}) exitWith {false};
+
+    private _weapons = _veh weaponsTurret [-1];
+    {_weapons append (_veh weaponsTurret _x)} forEach allTurrets [_veh,false];
+    private _combat = _weapons findIf {
+        private _weapon = _x;
+        (["CarHorn","SmokeLauncher","CMFlareLauncher","Laserdesignator_mounted"] findIf {
+            _weapon isKindOf [_x,configFile >> "CfgWeapons"]
+        }) < 0
+    };
+    if (_combat >= 0) exitWith {false};
+
+    private _seats = count (fullCrew [_veh,"cargo",true])
+        + count ((fullCrew [_veh,"turret",true]) select {_x#4});
+    if (_seats == 0) exitWith {false};
+
+    RHQ_NCCargo pushBackUnique _class;
+    ["hal-noncombat-cargo-class",[_class,_seats]] call ITW_CLASH_DualHAL_fnc_Log;
+    true
+};
+
 ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine = {
     params ["_group",["_enabled",true],["_source","transport"]];
     if (isNull _group) exitWith {false};
@@ -806,6 +844,7 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     };
 
     [_crewGroup,_veh,"impasse-field"] call ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    [_veh] call ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL;
 
     if (_transportDeployment) then {
         [_crewGroup,true,"impasse-field"] call
@@ -871,6 +910,7 @@ ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {
         _veh setVariable ["ITW_CLASH_DualHALManaged",true];
         [_crewGroup,_veh,"managed-vehicle-migration"] call
             ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+        [_veh] call ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL;
 
         private _role = _vehInfo#VEHINFO_ROLE;
         private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
@@ -1030,6 +1070,7 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
 
     [_crewGroup,_veh,"checkbook-transport"] call
         ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    [_veh] call ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL;
     [_crewGroup,true,"checkbook-transport"] call
         ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
 
