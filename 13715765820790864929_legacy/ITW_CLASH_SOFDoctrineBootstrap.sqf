@@ -142,6 +142,8 @@ if (!isNil "SKL_fnc_CompileFinal") then {
     private _finalizers = [];
     if (_sofLoaded) then {
         _finalizers append [
+            "ITW_CLASH_SOF_fnc_ClassFamilies",
+            "ITW_CLASH_SOF_fnc_SideSlot",
             "ITW_CLASH_SOF_fnc_Classify",
             "ITW_CLASH_SOF_fnc_IsSOF",
             "ITW_CLASH_fnc_SelectAnchorGroup_SOFBase",

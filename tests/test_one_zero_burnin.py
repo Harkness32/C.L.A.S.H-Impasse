@@ -11,7 +11,7 @@ def mission(name: str) -> str:
 def test_sof_classifier_uses_spawn_archetype_and_strict_majority():
     sof = mission("ITW_CLASH_SOFDoctrine.sqf")
 
-    assert "ITW_CLASH_SOFClassifierVersion = 2;" in sof
+    assert "ITW_CLASH_SOFClassifierVersion = 3;" in sof
     assert 'getVariable ["ITW_CLASH_SpawnArchetype",[]]' in sof
     assert "(floor (_sourceCount / 2)) + 1" in sof
     assert "private _isSOF = _qualifying isNotEqualTo [];" in sof
