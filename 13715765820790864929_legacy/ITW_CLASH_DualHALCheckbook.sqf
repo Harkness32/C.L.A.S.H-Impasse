@@ -591,20 +591,89 @@ ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo = {
 // weapons, not its ITW row: ITW fills a car-typed dual row with APC/IFV
 // classes when a faction has no dual cars, which sent IFVs forward.
 ITW_CLASH_DualHAL_fnc_IsRearEchelon = {
-    params ["_veh"];
+    params ["_veh",["_context","field-handoff"]];
     if (isNull _veh) exitWith {false};
     private _class = typeOf _veh;
-    if (getNumber (configFile >> "CfgVehicles" >> _class >> "artilleryScanner") == 1) exitWith {true};
-    if (_class in (
+    private _reason = "";
+    if (getNumber (configFile >> "CfgVehicles" >> _class >> "artilleryScanner") == 1) then {
+        _reason = "artillery-scanner";
+    };
+    if (_reason == "" && {_class in (
         (missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryClasses",[]])
         + (missionNamespace getVariable ["ITW_CLASH_EnemyArtilleryClasses",[]])
-    )) exitWith {true};
-    private _magazines = ((magazinesAllTurrets _veh) apply {_x#0}) + getPylonMagazines _veh;
-    _magazines = (_magazines arrayIntersect _magazines) - [""];
-    (_magazines findIf {
+    )}) then {
+        _reason = "artillery-class";
+    };
+    // [magazine, turret path, rounds]; pylon magazines carry path "pylon".
+    private _entries = ((magazinesAllTurrets _veh) apply {[_x#0,_x#1,_x#2]}) select {_x#0 != ""};
+    {_entries pushBack [_x,"pylon",-1]} forEach ((getPylonMagazines _veh) - [""]);
+    private _decider = [];
+    if (_reason == "") then {
+        private _index = _entries findIf {
+            [getText (configFile >> "CfgMagazines" >> _x#0 >> "ammo")] call
+                ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo
+        };
+        if (_index >= 0) then {
+            _decider = _entries#_index;
+            _reason = "anti-armour-magazine";
+        };
+    };
+    [_veh,_context,_reason,_decider,_entries] call ITW_CLASH_DualHAL_fnc_LogEchelon;
+    _reason != ""
+};
+
+// Diagnostic: in the 2026-09-25 peer run identical classes split between
+// rear and forward (Rhino 4/6, Panther 5/13, unarmed Huron rear 2/4). Logs
+// the deciding magazine, its turret and who sits there, beside the verdict
+// the class config alone gives; "echelon-mismatch" marks a live-state cause.
+ITW_CLASH_DualHAL_fnc_LogEchelon = {
+    params ["_veh","_context","_reason","_decider","_entries"];
+    private _cfg = configFile >> "CfgVehicles" >> typeOf _veh;
+    private _configMags = getArray (_cfg >> "magazines");
+    private _walk = {
+        params ["_turrets"];
+        {
+            if (getNumber (_x >> "isPersonTurret") == 0) then {
+                _configMags append getArray (_x >> "magazines");
+            };
+            [_x >> "Turrets"] call _walk;
+        } forEach ("true" configClasses _turrets);
+    };
+    [_cfg >> "Turrets"] call _walk;
+    _configMags = _configMags arrayIntersect _configMags;
+    private _configIndex = _configMags findIf {
         [getText (configFile >> "CfgMagazines" >> _x >> "ammo")] call
             ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo
-    }) >= 0
+    };
+    private _configMag = if (_configIndex >= 0) then {_configMags#_configIndex} else {""};
+
+    private _deciderAmmo = "";
+    private _deciderSeat = [];
+    if (_decider isNotEqualTo []) then {
+        _deciderAmmo = getText (configFile >> "CfgMagazines" >> _decider#0 >> "ammo");
+        private _seats = fullCrew [_veh,"",true];
+        private _seat = _seats findIf {(_x#3) isEqualTo (_decider#1)};
+        if (_seat >= 0) then {
+            (_seats#_seat) params ["_unit","_role","","","_personTurret"];
+            _deciderSeat = [_role,_personTurret,if (isNull _unit) then {""} else {typeOf _unit}];
+        };
+    };
+
+    private _artillery = _reason in ["artillery-scanner","artillery-class"];
+    private _mismatch = !_artillery && {
+        (_reason == "" && {_configIndex >= 0})
+        || {_reason != "" && {(_decider#1) isNotEqualTo "pylon"} && {_configIndex < 0}}
+    };
+    private _names = _entries apply {_x#0};
+    [if (_mismatch) then {"echelon-mismatch"} else {"echelon-decided"},[
+        [group effectiveCommander _veh] call ITW_CLASH_DualHAL_fnc_GroupId,
+        _context,typeOf _veh,_reason != "",_reason,
+        _decider,_deciderAmmo,_deciderSeat,
+        _configIndex >= 0,_configMag,
+        local _veh,count crew _veh,
+        count ((fullCrew [_veh,"turret",false]) select {_x#4}),
+        count _entries,_names arrayIntersect _names
+    ]] call ITW_CLASH_DualHAL_fnc_Log;
 };
 
 ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
@@ -1052,7 +1121,7 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
         // Transports spawn at the forward FOB; a dual-role IFV or AT-armed
         // helicopter must not arrive there without driving (echelon rule).
         if (!_kindOK || {_capacity < _seatCount} || {
-            [_veh] call ITW_CLASH_DualHAL_fnc_IsRearEchelon
+            [_veh,"checkbook-transport"] call ITW_CLASH_DualHAL_fnc_IsRearEchelon
         }) then {
             deleteVehicleCrew _veh;
             deleteVehicle _veh;

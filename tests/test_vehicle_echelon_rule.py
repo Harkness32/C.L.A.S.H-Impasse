@@ -30,6 +30,21 @@ def test_rear_echelon_is_artillery_or_anything_that_can_kill_a_tank():
     assert "ITW_VehDef" not in rule
 
 
+def test_every_echelon_decision_logs_its_deciding_magazine_and_config_verdict():
+    # Peer run: identical classes split rear/forward. The log names the
+    # magazine, turret and seat that decided, beside a config-only verdict.
+    rule = function(dual(), "ITW_CLASH_DualHAL_fnc_IsRearEchelon")
+    assert 'params ["_veh",["_context","field-handoff"]];' in rule
+    assert "call ITW_CLASH_DualHAL_fnc_LogEchelon" in rule
+    assert "exitWith {true}" not in rule  # every path reaches the log
+    log = function(dual(), "ITW_CLASH_DualHAL_fnc_LogEchelon")
+    assert '"isPersonTurret"' in log
+    assert "fullCrew [_veh,\"\",true]" in log
+    assert '"echelon-mismatch"' in log
+    assert '"echelon-decided"' in log
+    assert '(_decider#1) isNotEqualTo "pylon"' in log
+
+
 def test_anti_armour_uses_the_engines_ammo_flag_on_ammo_and_submunition():
     ammo = function(dual(), "ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo")
     assert '"aiAmmoUsageFlags"' in ammo
@@ -67,12 +82,12 @@ def test_rear_echelon_never_fails_forward():
 
 def test_forward_fob_transports_reject_rear_echelon_vehicles():
     transport = function(dual(), "ITW_CLASH_Checkbook_fnc_RequestTransport")
-    assert "[_veh] call ITW_CLASH_DualHAL_fnc_IsRearEchelon" in transport
+    assert '[_veh,"checkbook-transport"] call ITW_CLASH_DualHAL_fnc_IsRearEchelon' in transport
     recon = function(
         mission("ITW_CLASH_ReconstitutionDispatchFix.sqf"),
         "ITW_AtkDispatchReconstitutionTransport",
     )
-    assert "[_veh] call ITW_CLASH_DualHAL_fnc_IsRearEchelon" in recon
+    assert '[_veh,"reconstitution-lift"] call ITW_CLASH_DualHAL_fnc_IsRearEchelon' in recon
     assert "if (_availableSeats < _requiredSeats || {_rearEchelon}) then {" in recon
 
 
