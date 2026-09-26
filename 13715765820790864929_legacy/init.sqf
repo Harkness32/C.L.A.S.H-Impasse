@@ -137,6 +137,14 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
             };
+            // HAL front: each commander's dispatcher answers threats only where
+            // that side has something in play; SF raids ignore it.
+            private _halFrontLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALFront.sqf"}) then {
+                _halFrontLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALFront.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-front-missing-or-prereq-failed | HAL answers threats anywhere on the map";
+            };
             private _infantryDemandLoaded = false;
             if (fileExists "ITW_CLASH_InfantryDemand.sqf") then {
                 _infantryDemandLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_InfantryDemand.sqf";
