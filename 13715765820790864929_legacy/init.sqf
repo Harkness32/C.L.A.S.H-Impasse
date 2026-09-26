@@ -131,6 +131,15 @@ if (isServer) then {
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
                 _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
             };
+            // The air picture: observation only, on a 5-second clock, plus the
+            // classification every later reader asks it for. HAL's own cycle is
+            // far too slow for a jet over the rear.
+            private _airPictureLoaded = false;
+            if (fileExists "ITW_CLASH_AirPicture.sqf") then {
+                _airPictureLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_AirPicture.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | air-picture-missing | enemy air is seen only at HAL's own cycle rate";
+            };
             private _halThreatCoverageLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALThreatCoverage.sqf"}) then {
                 _halThreatCoverageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALThreatCoverage.sqf";
