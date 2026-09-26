@@ -145,6 +145,15 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-front-missing-or-prereq-failed | HAL answers threats anywhere on the map";
             };
+            // HAL's dispatcher measures an aircraft's AA risk against the
+            // nearest AT threat. Patched in the compiled function's own text,
+            // so it has to wait for HAL's runtime bind: scheduled, like the
+            // native SF fix, and logs a warning if the anchor no longer matches.
+            if (fileExists "ITW_CLASH_HALDispatcherAAFix.sqf") then {
+                [] execVM "ITW_CLASH_HALDispatcherAAFix.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-dispatcher-aa-fix-missing | HAL keeps measuring air risk against AT threats";
+            };
             private _infantryDemandLoaded = false;
             if (fileExists "ITW_CLASH_InfantryDemand.sqf") then {
                 _infantryDemandLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_InfantryDemand.sqf";
