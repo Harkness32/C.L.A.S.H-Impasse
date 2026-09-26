@@ -96,3 +96,11 @@ def test_itw_role_rows_and_param_scaling_still_exist():
     attack = (MISSION / "ITW_Attack.sqf").read_text(encoding="utf-8", errors="replace")
     assert "ITW_ParamAttackHeliSpawnAdjustment" in attack
     assert "_x set [ITW_VEH_MAX,_newMax];" in attack
+
+
+def test_aa_infantry_does_not_count_as_air_cover():
+    # Live peer run: an enemy jet killed BLUFOR's helicopters and no air
+    # request was raised; AA infantry does not hold air parity.
+    evaluate = function(coverage(), "ITW_CLASH_HALThreatCoverage_fnc_Evaluate")
+    assert "_aaInfUsable" not in evaluate
+    assert "if (count _airDemand > 0 && {count _airCapUsable <= 0}) then {" in evaluate

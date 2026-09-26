@@ -534,7 +534,6 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
     private _groundUsable = [_groundPool,_hq] call ITW_CLASH_HALThreatCoverage_fnc_UsableGroups;
     private _airUsable    = [_airCAS,_hq] call ITW_CLASH_HALThreatCoverage_fnc_UsableGroups;
     private _airCapUsable = [_airCAP,_hq] call ITW_CLASH_HALThreatCoverage_fnc_UsableGroups;
-    private _aaInfUsable  = [(_hq getVariable ["RydHQ_AAInfG", []]),_hq] call ITW_CLASH_HALThreatCoverage_fnc_UsableGroups;
 
     // Revised from "check ground and air independently, buy either that's
     // missing" to "does HAL have ANY usable responder among the buckets this
@@ -599,15 +598,15 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
 
     // Air/AIRCAP - its own case, not part of the generic table above: HAL's
     // "Air" dispatch pool is airCAP+AAInfG (HAC_fnc.sqf's "Air" case), not
-    // airCAS. Same OR-coverage fix applies here: AAInfG having usable
-    // squads means HAL already has a legitimate answer, even with RCAP
-    // empty - only request when BOTH are genuinely dry. A Checkbook-bought
+    // airCAS. Only usable airCAP counts as coverage: AA infantry does not
+    // hold air parity (live peer run: an enemy Black Wasp killed BLUFOR's
+    // helicopters and no air request was ever raised). A Checkbook-bought
     // CAS_AIRCRAFT asset registers into both RCAS and RCAP (see
     // ForceGeneration.sqf), so requesting it here is still the right ask.
     private _airDemand = (_hq getVariable ["RydHQ_EnAir", []]) select {
         !isNull _x && {!isNull (leader _x)} && {alive (leader _x)}
     };
-    if (count _airDemand > 0 && {count _airCapUsable <= 0} && {count _aaInfUsable <= 0}) then {
+    if (count _airDemand > 0 && {count _airCapUsable <= 0}) then {
         private _targetIndex = _airDemand findIf {
             !([_hq,_x,"Air"] call
                 ITW_CLASH_HALThreatCoverage_fnc_CommitmentActive)
