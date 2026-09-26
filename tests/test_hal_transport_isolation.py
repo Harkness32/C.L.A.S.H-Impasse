@@ -100,8 +100,8 @@ def test_transport_injection_records_sitrep_cycle_only():
 def test_combat_diagnostics_resolve_hq_from_observed_group():
     text = mission("ITW_CLASH_CombatDiagnostics.sqf")
     assert 'params [["_group",grpNull]];' in text
-    assert 'side _group == side ITW_CLASH_BLUFORHQ' in text
-    assert 'side _group == side ITW_CLASH_HALHQ' in text
+    assert '} forEach ["ITW_CLASH_BLUFORHQ","ITW_CLASH_HALHQ"];' in text
+    assert 'side _group == side _candidate' in text
     assert '[_group] call ITW_CLASH_fnc_GetCommanderForGroup' in text
     group_fn = text[text.index("ITW_CLASH_Diag_fnc_Group = {"):
                     text.index("ITW_CLASH_Diag_fnc_HQSnapshot = {")]

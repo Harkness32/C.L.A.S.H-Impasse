@@ -2,7 +2,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_CombatDiagnosticsStarted",false]) exitWith {true};
 
 ITW_CLASH_CombatDiagnosticsStarted = true;
-ITW_CLASH_CombatDiagnosticsVersion = 3;
+ITW_CLASH_CombatDiagnosticsVersion = 4;
 ITW_CLASH_CombatDiagnosticsEnabled = true;
 ITW_CLASH_CombatDiagnosticsPollInterval = 1.5;
 ITW_CLASH_CombatDiagnosticsContactRadius = 200;
@@ -50,24 +50,28 @@ ITW_CLASH_Diag_fnc_GroupId = {
     str _group
 };
 
+// The group's own commander, else HAL's. Resolved into _hq at function scope:
+// the exitWith calls this used to make inside `then` blocks only left those
+// blocks, so every group, WEST included, was checked against ITW_CLASH_HALHQ.
 ITW_CLASH_Diag_fnc_HQ = {
     params [["_group",grpNull]];
+    private _hq = grpNull;
     if (!isNull _group) then {
-        if (!isNil "ITW_CLASH_BLUFORHQ" && {!isNull ITW_CLASH_BLUFORHQ} && {
-            side _group == side ITW_CLASH_BLUFORHQ
-        }) exitWith {ITW_CLASH_BLUFORHQ};
-        if (!isNil "ITW_CLASH_HALHQ" && {!isNull ITW_CLASH_HALHQ} && {
-            side _group == side ITW_CLASH_HALHQ
-        }) exitWith {ITW_CLASH_HALHQ};
-        if (!isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {
+        {
+            private _candidate = missionNamespace getVariable [_x,grpNull];
+            if (isNull _hq && {!isNull _candidate} && {side _group == side _candidate}) then {
+                _hq = _candidate;
+            };
+        } forEach ["ITW_CLASH_BLUFORHQ","ITW_CLASH_HALHQ"];
+        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}) then {
             private _resolved = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-            if (!isNull _resolved) exitWith {_resolved};
+            if (!isNil "_resolved" && {!isNull _resolved}) then {_hq = _resolved};
         };
     };
-    if (!isNil "ITW_CLASH_HALHQ" && {!isNull ITW_CLASH_HALHQ}) exitWith {
-        ITW_CLASH_HALHQ
+    if (isNull _hq) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
     };
-    grpNull
+    _hq
 };
 
 ITW_CLASH_Diag_fnc_InHQList = {

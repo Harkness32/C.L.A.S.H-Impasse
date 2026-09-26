@@ -153,6 +153,19 @@ def test_every_hal_cycle_is_logged_for_both_commanders():
     assert '} forEach ["ITW_CLASH_HALHQ","ITW_CLASH_BLUFORHQ"];' in source
 
 
+def test_groups_are_checked_against_their_own_commander():
+    # 2026-09-26 run: all 47 WEST groups logged RydHQ_Friends false because
+    # exitWith inside `then` fell through to ITW_CLASH_HALHQ (the GUER commander).
+    source = diag()
+    assert "ITW_CLASH_CombatDiagnosticsVersion = 4;" in source
+    hq = source[source.index("ITW_CLASH_Diag_fnc_HQ = {"):]
+    hq = hq[:hq.index("\n};")]
+    assert "exitWith" not in hq
+    assert '} forEach ["ITW_CLASH_BLUFORHQ","ITW_CLASH_HALHQ"];' in hq
+    assert "side _group == side _candidate" in hq
+    assert hq.rstrip().endswith("_hq")
+
+
 def test_boot_banner_exposes_forensic_scope():
     source = diag()
     assert "observerOnly=true" in source
