@@ -393,7 +393,7 @@ def test_commander_b_sitrep_is_the_identified_periodic_array_overwriter():
 
 
 def test_native_support_source_has_the_call_scoped_exclusion_seams_we_depend_on():
-    ammo = (HAL / "SuppAmmo.sqf").read_text(encoding="utf-8")
+    ammo = (ROOT / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal" / "SuppAmmo.sqf").read_text(encoding="utf-8")
     med = (HAL / "SuppMed.sqf").read_text(encoding="utf-8")
 
     assert 'RydHQ_ExReAmmo' in ammo

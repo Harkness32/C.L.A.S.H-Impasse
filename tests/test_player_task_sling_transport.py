@@ -131,7 +131,7 @@ def test_known_expression_regressions_are_absent() -> None:
 
 
 def test_native_hal_employment_actions_remain_visible_in_vehicles() -> None:
-    text = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "TaskInitNR6.sqf").read_text(
+    text = (ROOT / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal" / "TaskInitNR6.sqf").read_text(
         encoding="utf-8"
     )
     for function_name in ("Action1fnc", "Action2fnc", "Action3fnc", "ActionMfnc"):

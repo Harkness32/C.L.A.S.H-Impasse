@@ -80,8 +80,9 @@ if (_drop) then
 			_abPos = getPosATL _ammoBox;
 			_pos = _Trg;
 			(group _Trg) setVariable ["ForBoxing",_pos];
+			_preloadedSling = (getSlingLoad _unit) isEqualTo _ammoBox;
 			
-			if not (RydxHQ_SlingDrop) then
+			if not (RydxHQ_SlingDrop or {_preloadedSling}) then
 				{
 				_ammoBox setPos [0,0,2000];
 				_ang = [(getPosATL _unit),(getPosATL _Trg),5] call RYD_AngTowards;
@@ -178,11 +179,13 @@ if (_drop) then
 				_pos2 = position _pos;
 				_pos = position _ammoBox;
 
-				if (_unit canSlingLoad _ammoBox) then
+				if (_preloadedSling or {_unit canSlingLoad _ammoBox}) then
 					{
 					
 					_unitG setVariable ["AmmBox" + (str _unitG),_ammoBox];
-					_wp = [_unitG,_pos,"HOOK","STEALTH","BLUE","FULL",["true","deletewaypoint [(group this), 0]"]] call RYD_WPadd;
+					if not (_preloadedSling) then
+						{
+						_wp = [_unitG,_pos,"HOOK","STEALTH","BLUE","FULL",["true","deletewaypoint [(group this), 0]"]] call RYD_WPadd;
 
 					_wp waypointAttachVehicle _ammoBox;
 					
@@ -200,6 +203,7 @@ if (_drop) then
 						_AmmoPoints = _AmmoPoints - [_Trg];
 						_HQ setVariable ["RydHQ_AmmoPoints",_AmmoPoints];
 						_unitG setVariable [("Busy" + _unitvar), false];
+						};
 						};
 					
 					_wp = [_unitG,_pos2,"UNHOOK","STEALTH","BLUE","FULL",["true","deletewaypoint [(group this), 0]"]] call RYD_WPadd;
@@ -438,8 +442,8 @@ else
 
 		if not (_counter == 0) then 
 			{
-			_posX = ((position _unit) select 0) + (random 100) -  50;
-			_posY = ((position _unit) select 1) + (random 100) -  50;
+			_posX = ((position _Trg) select 0) + (random 100) -  50;
+			_posY = ((position _Trg) select 1) + (random 100) -  50;
 
 			_isWater = surfaceIsWater [_posX,_posY];
 

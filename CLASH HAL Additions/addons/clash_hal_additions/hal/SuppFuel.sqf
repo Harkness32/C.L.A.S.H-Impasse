@@ -5,6 +5,35 @@ private ["_HQ","_fuel","_noenemy","_fuelS","_fuelSG","_dried","_ZeroF","_av","_c
 
 _HQ = _this select 0;
 
+_providerVehicle = {
+	params ["_subject"];
+	if (!isNil "ITW_CLASH_HALLogistics_fnc_ProviderVehicle") exitWith
+		{
+		[_subject] call ITW_CLASH_HALLogistics_fnc_ProviderVehicle
+		};
+
+	private _unit = objNull;
+	if (typeName _subject == "GROUP") then
+		{
+		if (!isNull _subject) then {_unit = leader _subject}
+		}
+	else
+		{
+		if (typeName _subject == "OBJECT") then {_unit = _subject}
+		};
+	if (isNull _unit) exitWith {objNull};
+	assignedVehicle _unit
+};
+
+_providerCapability = {
+	params ["_veh"];
+	if (isNull _veh) exitWith {""};
+	toUpperANSI (_veh getVariable [
+		"ITW_CLASH_ServiceCapability",
+		_veh getVariable ["ITW_CLASH_GenerationCapability",""]
+	])
+};
+
 _fuel = RHQ_Fuel + RYD_WS_fuel - RHQs_Fuel;
 _noenemy = true;
 	
@@ -14,7 +43,9 @@ _fuelSG = [];
 	{
 	if not (_x in _fuelS) then
 		{
-		if ((toLower (typeOf (assignedvehicle _x))) in _fuel) then 
+		private _provider = [_x] call _providerVehicle;
+		private _declared = [_provider] call _providerCapability;
+		if ((!isNull _provider && {(toLower (typeOf _provider)) in _fuel}) || {_declared == "LOGISTICS_FUEL"}) then 
 			{
 			_fuelS pushBack _x;
 			if not ((group _x) in (_fuelSG + (_HQ getVariable ["RydHQ_SpecForG",[]]) + (_HQ getVariable ["RydHQ_CargoOnly",[]]))) then 
@@ -74,7 +105,7 @@ _cisterns = [];
 
 
 	{
-	_cis = assignedVehicle (leader _x);
+	_cis = [_x] call _providerVehicle;
 
 	if not (isNull _cis) then
 		{
@@ -110,14 +141,15 @@ _a = 0;
 for [{_a = 500},{_a <= 44000},{_a = _a + 500}] do
 	{
 		{
-		_cistern = assignedvehicle (leader _x);
+		_cistern = [_x] call _providerVehicle;
 
 		for [{_b = 0},{_b < (count _ZeroF)},{_b = _b + 1}] do 
 			{
 			_Zunit = _ZeroF select _b;
 
 				{
-				if ((_Zunit distance (assignedvehicle (leader _x))) < 300) exitwith 
+				private _nearProvider = [_x] call _providerVehicle;
+				if (!isNull _nearProvider && {(_Zunit distance _nearProvider) < 300}) exitwith 
 					{
 					if not ((group _Zunit) in (_HQ getVariable ["RydHQ_FSupportedG",[]])) then 
 						{
@@ -193,13 +225,14 @@ _Dunits = +_dried;
 for [{_a = 500},{_a < 10000},{_a = _a + 500}] do
 	{
 		{
-		_cistern = assignedvehicle (leader _x);
+		_cistern = [_x] call _providerVehicle;
 		for [{_b = 0},{_b < (count _dried)},{_b = _b + 1}] do 
 			{
 			_Dunit = _dried select _b;
 
 				{
-				if ((_Dunit distance (assignedvehicle (leader _x))) < 400) exitwith 
+				private _nearProvider = [_x] call _providerVehicle;
+				if (!isNull _nearProvider && {(_Dunit distance _nearProvider) < 400}) exitwith 
 					{
 					if not ((group _Dunit) in (_HQ getVariable ["RydHQ_FSupportedG",[]])) then 
 						{

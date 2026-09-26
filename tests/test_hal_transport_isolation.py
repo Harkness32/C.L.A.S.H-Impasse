@@ -147,7 +147,7 @@ def test_hal_ai_transport_can_use_native_itw_paradrop_without_classname_doctrine
     policy = mission("ITW_CLASH_HALParadrop.sqf")
     attack = mission("ITW_Attack.sqf")
     ally = mission("ITW_Ally.sqf")
-    go = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "GoAttInf.sqf").read_text(
+    go = (ROOT / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal" / "GoAttInf.sqf").read_text(
         encoding="utf-8"
     )
 

@@ -102,7 +102,7 @@ def test_generated_ai_logistics_provider_admission_is_physical_and_declared():
     logistics = mission("ITW_CLASH_HALLogistics.sqf")
     generation = mission("ITW_CLASH_ForceGeneration.sqf")
     root = Path(__file__).resolve().parents[1]
-    hal = root / "NR6 Hal" / "addons" / "nr6_hal" / "HAL"
+    hal = root / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal"
 
     assert "physicalServiceProviderFallback=true" in logistics
     assert "declaredCapabilityAdmission=true" in logistics
@@ -124,7 +124,7 @@ def test_generated_ai_logistics_provider_admission_is_physical_and_declared():
 
 def test_fuel_and_repair_provider_dispatch_no_longer_require_direct_group_assignment():
     root = Path(__file__).resolve().parents[1]
-    hal = root / "NR6 Hal" / "addons" / "nr6_hal" / "HAL"
+    hal = root / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal"
     fuel = (hal / "SuppFuel.sqf").read_text(encoding="utf-8")
     repair = (hal / "SuppRep.sqf").read_text(encoding="utf-8")
 
@@ -140,7 +140,7 @@ def test_ai_air_ammo_provider_is_preloaded_only_after_exact_dispatch_is_known():
     logistics = mission("ITW_CLASH_HALLogistics.sqf")
     intercept = mission("ITW_CLASH_PlayerDemandNativeInterceptors.sqf")
     root = Path(__file__).resolve().parents[1]
-    go = (root / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "GoAmmoSupp.sqf").read_text(
+    go = (root / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal" / "GoAmmoSupp.sqf").read_text(
         encoding="utf-8"
     )
 

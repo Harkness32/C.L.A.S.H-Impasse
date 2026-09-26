@@ -66,7 +66,7 @@ _isWater = surfaceIsWater [_posX,_posY];
 
 if not (_isWater) exitwith 
 	{
-	_isAttacked = _Trg getVariable ("Capturing" + (str _Trg) + (str _HQ));
+	_isAttacked = _Trg getVariable [("Capturing" + (str _Trg) + (str _HQ)),[1,_amountG]];
 	_amountC = _isAttacked select 1;
 	_amountC = _amountC - _amountG;
 	_isAttacked = _isAttacked select 0;
@@ -181,7 +181,7 @@ if (((_timer > 30) or (_enemy)) and (_OtherGroup)) then {if not (isNull _GDV) th
 if (((_timer > 30) or (_enemy)) and not (_OtherGroup)) then {[_unitG, (currentWaypoint _unitG)] setWaypointPosition [getPosATL (vehicle _UL), 0]};
 if (not (_alive) and not (_OtherGroup)) exitwith 
 	{
-	_isAttacked = _Trg getVariable ("Capturing" + (str _Trg) + (str _HQ));
+	_isAttacked = _Trg getVariable [("Capturing" + (str _Trg) + (str _HQ)),[1,_amountG]];
 	_amountC = _isAttacked select 1;
 	_amountC = _amountC - _amountG;
 	_isAttacked = _isAttacked select 0;
@@ -197,7 +197,7 @@ if (not (_alive) and not (_OtherGroup)) exitwith
 
 if (({alive _x} count (units _unitG)) < 1) exitwith 
 	{
-	_isAttacked = _Trg getVariable ("Capturing" + (str _Trg) + (str _HQ));
+	_isAttacked = _Trg getVariable [("Capturing" + (str _Trg) + (str _HQ)),[1,_amountG]];
 	_amountC = _isAttacked select 1;
 	_amountC = _amountC - _amountG;
 	_isAttacked = _isAttacked select 0;
@@ -221,7 +221,7 @@ _UL = leader _unitG;if not (isPlayer _UL) then {if (not (_halfway) and (_timer <
 if ((({alive _x} count (units _unitG)) < 1) or (_timer > 240)) exitwith 
 	{
 	if not (({alive _x} count (units _unitG)) < 1) then {_unitG setVariable [("Capt" + (str _unitG)),false]};
-	_isAttacked = _Trg getVariable ("Capturing" + (str _Trg) + (str _HQ));
+	_isAttacked = _Trg getVariable [("Capturing" + (str _Trg) + (str _HQ)),[1,_amountG]];
 	_amountC = _isAttacked select 1;
 	_amountC = _amountC - _amountG;
 	_isAttacked = _isAttacked select 0;
@@ -261,7 +261,7 @@ _alive = _cause select 1;
 
 if not (_alive) exitwith 
 	{
-	_isAttacked = _Trg getVariable ("Capturing" + (str _Trg) + (str _HQ));
+	_isAttacked = _Trg getVariable [("Capturing" + (str _Trg) + (str _HQ)),[1,_amountG]];
 	_amountC = _isAttacked select 1;
 	_amountC = _amountC - _amountG;
 	_isAttacked = _isAttacked select 0;

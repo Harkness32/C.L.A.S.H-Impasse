@@ -94,19 +94,21 @@ _posY = _Ypos;
 _isDecoy = false;
 _enemyMatters = true;
 
-if not (isNull (_HQ getVariable ["RydHQ_RestDecoy",objNull])) then
+// C.L.A.S.H. may publish a group-specific strategic withdrawal point. Prefer
+// that over the commander's shared RestDecoy so simultaneous recovery tasks can
+// withdraw to their own Impasse-authored forward FOB without moving the HQ.
+_restDecoy = _unitG getVariable ["ITW_CLASH_GTFO_GroupRestDecoy",objNull];
+if (isNull _restDecoy) then {
+	_restDecoy = _HQ getVariable ["RydHQ_RestDecoy",objNull];
+};
+
+if not (isNull _restDecoy) then
 	{
 	_isDecoy = true;
 
-//	_tRadius = (triggerArea (_HQ getVariable ["RydHQ_RestDecoy",objNull])) select 0;
-
 	if ((random 100) >= (_HQ getVariable ["RydHQ_RDChance",100])) exitWith {_unitG setVariable [("Busy" + (str _unitG)),false];_isDecoy = false};
 
-	_tPos = getPosATL (_HQ getVariable ["RydHQ_RestDecoy",objNull]);
-//_enemyMatters = (triggerArea (_HQ getVariable ["RydHQ_RestDecoy",objNull])) select 3; - comment here _area = triggerArea sensor1; // result is [200 -0, 120 -1, 45 -2, false -3, -1 -4]; so select 3 would be a check of "isRectangle"....
-
-//	_posX = (_tPos select 0) + (random (2 * _tRadius)) - (_tRadius);
-//	_posY = (_tPos select 1) + (random (2 * _tRadius)) - (_tRadius);
+	_tPos = getPosATL _restDecoy;
 	_posX = (_tPos select 0) + (random 200) - 100;
 	_posY = (_tPos select 1) + (random 200) - 100;
 	};

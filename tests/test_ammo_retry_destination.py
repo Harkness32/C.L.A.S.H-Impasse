@@ -1,7 +1,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-AMMO = ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "GoAmmoSupp.sqf"
+AMMO = ROOT / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal" / "GoAmmoSupp.sqf"
 
 
 def test_ground_ammo_retry_stays_centered_on_original_recipient():

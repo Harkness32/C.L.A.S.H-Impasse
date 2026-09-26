@@ -26,7 +26,7 @@ Action1fnc = {
 
 	_Unit = _this select 0;
 
-	_Action = _Unit addAction ["[HAL Tasking] Deny Assigned Task","[_this select 3] remoteExec ['Action1ct',2]",_Unit,-2,false,false,"","_target isEqualTo (vehicle player)",0.01];
+	_Action = _Unit addAction ["[HAL Tasking] Deny Assigned Task","[_this select 3] remoteExec ['Action1ct',2]",_Unit,-2,false,false,"","_this isEqualTo _target",0.01];
 	_Unit setVariable ["HAL_TaskAddedID",_Action];
 };
 
@@ -66,7 +66,7 @@ Action2fnc = {
 		[_this select 3] remoteExecCall ['Action2ct',2]
 		"
 		, 
-		_Unit,-2.1,false,false,"","_target isEqualTo (vehicle player)",0.01];
+		_Unit,-2.1,false,false,"","_this isEqualTo _target",0.01];
 
 	_Unit setVariable ["HAL_TaskDisabledID",_Action];
 
@@ -106,7 +106,7 @@ Action3fnc = {
 		[_this select 3] remoteExecCall ['Action3ct',2]
 		"
 		, 
-		_Unit,-2.2,false,false,"","_target isEqualTo (vehicle player)",0.01];
+		_Unit,-2.2,false,false,"","_this isEqualTo _target",0.01];
 	
 	_Unit setVariable ["HAL_TaskEnabledID",_Action];
 
@@ -718,7 +718,7 @@ Action8ct = {
 	_ammoBox = (_HQ getVariable ["RydHQ_AmmoBoxes",[]]) select 0;
 	_HQ setVariable ["RydHQ_AmmoBoxes",(_HQ getVariable ["RydHQ_AmmoBoxes",[]]) - [_ammoBox]];
 
-	[[assignedvehicle (leader _FlyBoy),(vehicle (_this select 0)),[],[],true,_ammoBox,_HQ],HAL_GoAmmoSupp] call RYD_Spawn;
+	[[assignedvehicle (leader _FlyBoy),(vehicle (_this select 0)),[],[],true,_ammoBox,_HQ,false,["TASKINIT_AIR",true,false]],HAL_GoAmmoSupp] call RYD_Spawn;
 
 	[leader _HQ, (groupId (group (_this select 0))) + ', affirmative. Supplies are on their way - Out'] remoteExecCall ["RYD_MP_Sidechat"];
 
@@ -813,7 +813,7 @@ Action9ct = {
 
 	if (_AmmoBoy isEqualTo objNull) exitwith {[leader _HQ, (groupId (group (_this select 0))) + ', negative. No rearming services are currently available - Out'] remoteExecCall ["RYD_MP_Sidechat"]};
 
-	[[_AmmoBoy,(vehicle (_this select 0)),[],[],false,objNull,_HQ,true],HAL_GoAmmoSupp] call RYD_Spawn;
+	[[_AmmoBoy,(vehicle (_this select 0)),[],[],false,objNull,_HQ,true,["TASKINIT_GROUND",false,false]],HAL_GoAmmoSupp] call RYD_Spawn;
 
 	[leader _HQ, (groupId (group (_this select 0))) + ', affirmative. Ammunition truck is on its way - Out'] remoteExecCall ["RYD_MP_Sidechat"];
 
@@ -1253,7 +1253,7 @@ ActionMfnc = {
 		showCommandingMenu '#USER:NR6_Player_Menu';
 		"
 		, 
-		_Unit,-4.5,false,false,"","_target isEqualTo (vehicle player)",50];
+		_Unit,-4.5,false,false,"","_this isEqualTo _target",50];
 	
 	_Unit setVariable ["HAL_ReqMenuID",_Action];
 

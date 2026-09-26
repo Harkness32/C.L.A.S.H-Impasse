@@ -81,8 +81,8 @@ def test_ammo_dispatch_provenance_and_race_reconciliation_are_explicit():
     intercept = (MISSION / "ITW_CLASH_PlayerDemandNativeInterceptors.sqf").read_text(
         encoding="utf-8"
     )
-    hal = ROOT / "NR6 Hal" / "addons" / "nr6_hal"
-    supp = (hal / "HAL" / "SuppAmmo.sqf").read_text(encoding="utf-8")
+    hal = ROOT / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal"
+    supp = (hal / "SuppAmmo.sqf").read_text(encoding="utf-8")
     task = (hal / "TaskInitNR6.sqf").read_text(encoding="utf-8")
 
     assert "ITW_CLASH_AmmoDispatchVersion = 1;" in dispatch

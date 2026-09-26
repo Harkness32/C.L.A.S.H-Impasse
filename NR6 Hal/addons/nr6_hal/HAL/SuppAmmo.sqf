@@ -1,46 +1,9 @@
 _SCRname = "SuppAmmo";
 
 private ["_HQ","_ammo","_noenemy","_ammoS","_ammoSG","_Hollow","_soldiers","_ZeroA","_ammoN","_av","_MTrucks","_mtr","_unitvar","_busy","_Unable","_MTrucks2","_MTrucks3","_MTrucks2a","_MTrucks3a","_Zunits","_a",
-	"_Zunit","_halfway","_distT","_eClose1","_eClose2","_UL","_Hunits","_MTruck","_Hunit","_ammoBox","_supported","_providerVehicle"];
+	"_Zunit","_halfway","_distT","_eClose1","_eClose2","_UL","_Hunits","_MTruck","_Hunit","_ammoBox","_supported"];
 
 _HQ = _this select 0;
-
-/*
-    HAL's native ammo-provider path resolves carriers with assignedVehicle.
-    That is correct for AI crews, but a player who manually enters a purchased
-    helicopter may have no assignedVehicle even though vehicle leader _group is
-    the aircraft currently being flown. C.L.A.S.H. admits player LOGISTICS from
-    the physical vehicle, so preserve native AI semantics and allow only human
-    ammo-drop groups to fall back to their actual current vehicle.
-*/
-_providerVehicle = {
-	params ["_subject"];
-	if (!isNil "ITW_CLASH_HALLogistics_fnc_ProviderVehicle") exitWith
-		{
-		[_subject] call ITW_CLASH_HALLogistics_fnc_ProviderVehicle
-		};
-
-	private _unit = objNull;
-	if (typeName _subject == "GROUP") then
-		{
-		if (!isNull _subject) then {_unit = leader _subject}
-		}
-	else
-		{
-		if (typeName _subject == "OBJECT") then {_unit = _subject}
-		};
-	if (isNull _unit) exitWith {objNull};
-	assignedVehicle _unit
-};
-
-_providerCapability = {
-	params ["_veh"];
-	if (isNull _veh) exitWith {""};
-	toUpperANSI (_veh getVariable [
-		"ITW_CLASH_ServiceCapability",
-		_veh getVariable ["ITW_CLASH_GenerationCapability",""]
-	])
-};
 
 _ammo = RHQ_Ammo + RYD_WS_ammo - RHQs_Ammo;
 
@@ -52,9 +15,7 @@ _ammoSG = [];
 	{
 	if not (_x in _ammoS) then
 		{
-		private _provider = [_x] call _providerVehicle;
-		private _declared = [_provider] call _providerCapability;
-		if ((!isNull _provider && {(toLower (typeOf _provider)) in _ammo}) || {_declared == "LOGISTICS_AMMO"}) then 
+		if ((toLower (typeOf (assignedvehicle _x))) in _ammo) then 
 			{
 			_ammoS pushBack _x;
 
@@ -139,7 +100,7 @@ _HQ setVariable ["RydHQ_Hollow",_Hollow + _ZeroA];
 _MTrucks = [];
 
 	{
-	_mtr = [_x] call _providerVehicle;
+	_mtr = assignedVehicle (leader _x);
 
 	if not (isNull _mtr) then
 		{
@@ -192,15 +153,14 @@ _a = 0;
 for [{_a = 500},{_a <= 44000},{_a = _a + 500}] do
 	{
 		{
-		_MTruck = [_x] call _providerVehicle;
+		_MTruck = assignedvehicle (leader _x);
 
 		for [{_b = 0},{_b < (count _ZeroA)},{_b = _b + 1}] do 
 			{
 			_Zunit = _ZeroA select _b;		
 
 				{
-				private _nearProvider = [_x] call _providerVehicle;
-				if (!isNull _nearProvider && {(_Zunit distance _nearProvider) < 400}) exitwith 
+				if ((_Zunit distance (assignedvehicle (leader _x))) < 400) exitwith 
 					{
 					if not ((group _Zunit) in (_HQ getVariable ["RydHQ_ASupportedG",[]])) then 
 						{
@@ -251,7 +211,7 @@ for [{_a = 500},{_a <= 44000},{_a = _a + 500}] do
 				//_HQ setVariable ["RydHQ_ASupportedG",(_HQ getVariable ["RydHQ_ASupportedG",[]]) set [(count (_HQ getVariable ["RydHQ_ASupportedG",[]])),(group _Zunit)]];
 				//[_MTruck,_Zunit,_Hollow,_soldiers,false,objNull,_HQ] spawn HAL_GoAmmoSupp
 				
-				[[_MTruck,_Zunit,_Hollow,_soldiers,false,objNull,_HQ,false,["SUPP_AMMO_GROUND",false,true]],HAL_GoAmmoSupp] call RYD_Spawn;
+				[[_MTruck,_Zunit,_Hollow,_soldiers,false,objNull,_HQ],HAL_GoAmmoSupp] call RYD_Spawn;
 				}
 			else
 				{
@@ -277,15 +237,14 @@ if ((count (_HQ getVariable ["RydHQ_AmmoBoxes",[]])) > 0) then
 	for [{_a = 500},{_a < 44000},{_a = _a + 500}] do
 		{
 			{
-			_MTruck = [_x] call _providerVehicle;
+			_MTruck = assignedvehicle (leader _x);
 			
 			for [{_b = 0},{_b < (count _Hollow)},{_b = _b + 1}] do 
 				{
 				_Hunit = _Hollow select _b;
 
 					{
-					private _nearProvider = [_x] call _providerVehicle;
-					if (!isNull _nearProvider && {(_Hunit distance _nearProvider) < 250}) exitwith 
+					if ((_Hunit distance (assignedvehicle (leader _x))) < 250) exitwith 
 						{
 						if not ((group _Hunit) in (_HQ getVariable ["RydHQ_ASupportedG",[]])) then 
 							{
@@ -339,7 +298,7 @@ if ((count (_HQ getVariable ["RydHQ_AmmoBoxes",[]])) > 0) then
 					_ammoBox = (_HQ getVariable ["RydHQ_AmmoBoxes",[]]) select 0;
 					_HQ setVariable ["RydHQ_AmmoBoxes",(_HQ getVariable ["RydHQ_AmmoBoxes",[]]) - [_ammoBox]];
 					//[_MTruck,_Hunit,_Hollow,_soldiers,true,_ammoBox,_HQ] spawn HAL_GoAmmoSupp; 
-					[[_MTruck,_Hunit,_Hollow,_soldiers,true,_ammoBox,_HQ,false,["SUPP_AMMO_AIR",true,true]],HAL_GoAmmoSupp] call RYD_Spawn;
+					[[_MTruck,_Hunit,_Hollow,_soldiers,true,_ammoBox,_HQ],HAL_GoAmmoSupp] call RYD_Spawn;
 					}
 				else
 					{
