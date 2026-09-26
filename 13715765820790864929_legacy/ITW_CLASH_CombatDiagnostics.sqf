@@ -2,7 +2,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_CombatDiagnosticsStarted",false]) exitWith {true};
 
 ITW_CLASH_CombatDiagnosticsStarted = true;
-ITW_CLASH_CombatDiagnosticsVersion = 2;
+ITW_CLASH_CombatDiagnosticsVersion = 3;
 ITW_CLASH_CombatDiagnosticsEnabled = true;
 ITW_CLASH_CombatDiagnosticsPollInterval = 1.5;
 ITW_CLASH_CombatDiagnosticsContactRadius = 200;
@@ -302,6 +302,29 @@ ITW_CLASH_Diag_fnc_HQSnapshot = {
     ]
 };
 
+// One line per commander per HAL cycle. HAL pauses between cycles for
+// (friends x 5 s) + a reflex/comm-delay term (HAC_fnc2.sqf:1097), so the
+// measured gap between cycles is what bounds how fast a commander can react.
+ITW_CLASH_Diag_fnc_HQCycle = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {};
+    private _cycle = _hq getVariable ["RydHQ_Cyclecount",0];
+    if (_cycle == (_hq getVariable ["ITW_CLASH_DiagLastCycle",-1])) exitWith {};
+    private _lastAt = _hq getVariable ["ITW_CLASH_DiagLastCycleAt",-1];
+    _hq setVariable ["ITW_CLASH_DiagLastCycle",_cycle];
+    _hq setVariable ["ITW_CLASH_DiagLastCycleAt",time];
+    ["hq-cycle",[
+        [_hq] call ITW_CLASH_Diag_fnc_GroupId,
+        str side _hq,
+        _cycle,
+        if (_lastAt < 0) then {-1} else {round (time - _lastAt)},
+        _hq getVariable ["RydHQ_myDelay",-1],
+        count (_hq getVariable ["RydHQ_Friends",[]]),
+        count (_hq getVariable ["RydHQ_KnEnemiesG",[]]),
+        _hq getVariable ["RydHQ_Order",""]
+    ]] call ITW_CLASH_Diag_fnc_Log;
+};
+
 ITW_CLASH_Diag_fnc_ContactSide = {
     params ["_group","_unit","_otherUnit"];
     if (isNull _group || {isNull _unit} || {isNull _otherUnit}) exitWith {["invalid"]};
@@ -438,7 +461,7 @@ ITW_CLASH_Diag_fnc_DumpAll = {
     };
 
     diag_log format [
-        "CLASH BOOT | combat-diagnostics-ready | version=%1 observerOnly=true poll=%2 contactRadius=%3 pairCooldown=%4 hqInterval=%5 detectionIndependent=true halContactCorrelation=true",
+        "CLASH BOOT | combat-diagnostics-ready | version=%1 observerOnly=true poll=%2 contactRadius=%3 pairCooldown=%4 hqInterval=%5 detectionIndependent=true halContactCorrelation=true hqCycle=both-commanders",
         ITW_CLASH_CombatDiagnosticsVersion,
         ITW_CLASH_CombatDiagnosticsPollInterval,
         ITW_CLASH_CombatDiagnosticsContactRadius,
@@ -449,6 +472,10 @@ ITW_CLASH_Diag_fnc_DumpAll = {
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep ITW_CLASH_CombatDiagnosticsPollInterval;
         if (!ITW_CLASH_CombatDiagnosticsEnabled) then {continue};
+
+        {
+            [missionNamespace getVariable [_x,grpNull]] call ITW_CLASH_Diag_fnc_HQCycle;
+        } forEach ["ITW_CLASH_HALHQ","ITW_CLASH_BLUFORHQ"];
 
         if (time - _lastHQ >= ITW_CLASH_CombatDiagnosticsHQInterval) then {
             _lastHQ = time;

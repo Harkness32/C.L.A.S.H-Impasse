@@ -139,6 +139,20 @@ def test_diagnostics_capture_waypoint_and_manual_dump_surfaces():
         assert token in source
 
 
+def test_every_hal_cycle_is_logged_for_both_commanders():
+    # Commander B had no HQ logging, and HAL's delay between cycles grows with
+    # army size; the measured gap is what bounds how fast a commander reacts.
+    source = diag()
+    cycle = source[source.index("ITW_CLASH_Diag_fnc_HQCycle = {"):]
+    cycle = cycle[:cycle.index("\n};")]
+    assert '"RydHQ_Cyclecount"' in cycle
+    assert '"RydHQ_myDelay"' in cycle
+    assert 'count (_hq getVariable ["RydHQ_Friends",[]])' in cycle
+    assert "round (time - _lastAt)" in cycle
+    assert '"hq-cycle"' in cycle
+    assert '} forEach ["ITW_CLASH_HALHQ","ITW_CLASH_BLUFORHQ"];' in source
+
+
 def test_boot_banner_exposes_forensic_scope():
     source = diag()
     assert "observerOnly=true" in source
