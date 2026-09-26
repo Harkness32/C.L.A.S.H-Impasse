@@ -406,6 +406,40 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
     }
 };
 
+// Surviving crew stay assigned to a destroyed vehicle, and a wreck has no ammo
+// or fuel, so native SuppAmmo/SuppFuel would send a truck to it. Groups with no
+// live assigned vehicle are hidden from that one native scan through HAL's own
+// exclusion list; anything else HAL still sees is caught by the Resupply guard.
+ITW_CLASH_HALLogistics_fnc_WreckOnlyGroups = {
+    params ["_hq"];
+    (_hq getVariable ["RydHQ_Friends",[]]) select {
+        private _assigned = [];
+        {
+            private _veh = assignedVehicle _x;
+            if (!isNull _veh) then {_assigned pushBackUnique _veh};
+        } forEach units _x;
+        _assigned isNotEqualTo [] && {_assigned findIf {alive _x} < 0}
+    }
+};
+
+ITW_CLASH_HALLogistics_fnc_CallWithoutWrecks = {
+    params ["_hq","_excludeVar","_native","_args"];
+    private _hidden = [];
+    if (!isNull _hq) then {
+        private _excluded = _hq getVariable [_excludeVar,[]];
+        _hidden = ([_hq] call ITW_CLASH_HALLogistics_fnc_WreckOnlyGroups) - _excluded;
+        if (_hidden isNotEqualTo []) then {
+            _hq setVariable [_excludeVar,_excluded + _hidden];
+        };
+    };
+    private _result = _args call _native;
+    if (_hidden isNotEqualTo []) then {
+        _hq setVariable [_excludeVar,(_hq getVariable [_excludeVar,[]]) - _hidden];
+    };
+    if (isNil "_result") exitWith {};
+    _result
+};
+
 [] spawn {
     scriptName "ITW_CLASH_HALLogisticsBinder";
     private _deadline = diag_tickTime + 600;
@@ -428,7 +462,9 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
     HAL_SuppAmmo = {
         private _hq = _this param [0,grpNull];
         private _result = true;
-        private _nativeResult = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppAmmo;
+        private _nativeResult = [
+            _hq,"RydHQ_ExReAmmo",ITW_CLASH_HALLogistics_fnc_NativeSuppAmmo,_this
+        ] call ITW_CLASH_HALLogistics_fnc_CallWithoutWrecks;
         if !(isNil "_nativeResult") then {_result = _nativeResult};
         if (!isNull _hq) then {[_hq,"AMMO"] spawn ITW_CLASH_HALLogistics_fnc_Evaluate};
         _result
@@ -436,7 +472,9 @@ ITW_CLASH_HALLogistics_fnc_Evaluate = {
     HAL_SuppFuel = {
         private _hq = _this param [0,grpNull];
         private _result = true;
-        private _nativeResult = _this call ITW_CLASH_HALLogistics_fnc_NativeSuppFuel;
+        private _nativeResult = [
+            _hq,"RydHQ_ExRefuel",ITW_CLASH_HALLogistics_fnc_NativeSuppFuel,_this
+        ] call ITW_CLASH_HALLogistics_fnc_CallWithoutWrecks;
         if !(isNil "_nativeResult") then {_result = _nativeResult};
         if (!isNull _hq) then {[_hq,"FUEL"] spawn ITW_CLASH_HALLogistics_fnc_Evaluate};
         _result

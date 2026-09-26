@@ -121,6 +121,52 @@ ITW_CLASH_Resupply_fnc_Stamp = {
     _group setVariable ["ITW_CLASH_ResupplyInFlightAt",time];
 };
 
+// Native Go*Supp never checks that its recipient is still alive, so a truck
+// drives every leg to a wreck. A dead recipient is skipped up front; one that
+// dies en route gets HAL's own Break. The aborted order leaves its waypoint and
+// disabled targeting behind, and nothing consumes Break, so those are undone.
+ITW_CLASH_Resupply_fnc_RunNative = {
+    params ["_args","_base",["_ground",true]];
+    private _vehicle = _args param [0,objNull];
+    private _target = _args param [1,objNull];
+    if (_ground && {!alive _target}) exitWith {
+        ["dead-recipient-skipped",[typeOf _vehicle,typeOf _target]] call
+            ITW_CLASH_Resupply_fnc_Log;
+        false
+    };
+
+    private _provider = if (isNull _vehicle) then {grpNull} else {
+        group assignedDriver _vehicle
+    };
+    private _watch = scriptNull;
+    if (_ground && {!isNull _provider}) then {
+        _watch = [_provider,_target] spawn {
+            params ["_provider","_target"];
+            waitUntil {sleep 2; !alive _target};
+            _provider setVariable ["ITW_CLASH_ResupplyDeadRecipient",true];
+            _provider setVariable ["Break",true];
+        };
+    };
+
+    private _group = [_target] call ITW_CLASH_Resupply_fnc_TargetGroup;
+    [_group,1] call ITW_CLASH_Resupply_fnc_Stamp;
+    private _result = _args call _base;
+    [_group,-1] call ITW_CLASH_Resupply_fnc_Stamp;
+    if (!isNull _watch) then {terminate _watch};
+
+    if (!isNull _provider && {_provider getVariable ["ITW_CLASH_ResupplyDeadRecipient",false]}) then {
+        _provider setVariable ["ITW_CLASH_ResupplyDeadRecipient",nil];
+        _provider setVariable ["Break",false];
+        [_provider] call RYD_WPdel;
+        _vehicle enableAI "TARGET";
+        _vehicle enableAI "AUTOTARGET";
+        ["dead-recipient-aborted",[groupId _provider,typeOf _vehicle,typeOf _target]] call
+            ITW_CLASH_Resupply_fnc_Log;
+    };
+    if (isNil "_result") exitWith {};
+    _result
+};
+
 ITW_CLASH_Resupply_fnc_InFlight = {
     params ["_group"];
     if (isNull _group) exitWith {false};
@@ -1351,32 +1397,21 @@ ITW_CLASH_Resupply_fnc_TickCrates = {
 
     ITW_CLASH_Resupply_fnc_GoAmmoSuppBase = HAL_GoAmmoSupp;
     HAL_GoAmmoSupp = {
-        private _group = [_this param [1,objNull]] call ITW_CLASH_Resupply_fnc_TargetGroup;
-        [_group,1] call ITW_CLASH_Resupply_fnc_Stamp;
-        private _result = _this call ITW_CLASH_Resupply_fnc_GoAmmoSuppBase;
-        [_group,-1] call ITW_CLASH_Resupply_fnc_Stamp;
-        if (isNil "_result") exitWith {};
-        _result
+        // Only the ground leg; an air drop's recipient is one soldier of a group.
+        [_this,ITW_CLASH_Resupply_fnc_GoAmmoSuppBase,!(_this param [4,false])] call
+            ITW_CLASH_Resupply_fnc_RunNative
     };
 
     ITW_CLASH_Resupply_fnc_GoFuelSuppBase = HAL_GoFuelSupp;
     HAL_GoFuelSupp = {
-        private _group = [_this param [1,objNull]] call ITW_CLASH_Resupply_fnc_TargetGroup;
-        [_group,1] call ITW_CLASH_Resupply_fnc_Stamp;
-        private _result = _this call ITW_CLASH_Resupply_fnc_GoFuelSuppBase;
-        [_group,-1] call ITW_CLASH_Resupply_fnc_Stamp;
-        if (isNil "_result") exitWith {};
-        _result
+        [_this,ITW_CLASH_Resupply_fnc_GoFuelSuppBase,true] call
+            ITW_CLASH_Resupply_fnc_RunNative
     };
 
     ITW_CLASH_Resupply_fnc_GoRepSuppBase = HAL_GoRepSupp;
     HAL_GoRepSupp = {
-        private _group = [_this param [1,objNull]] call ITW_CLASH_Resupply_fnc_TargetGroup;
-        [_group,1] call ITW_CLASH_Resupply_fnc_Stamp;
-        private _result = _this call ITW_CLASH_Resupply_fnc_GoRepSuppBase;
-        [_group,-1] call ITW_CLASH_Resupply_fnc_Stamp;
-        if (isNil "_result") exitWith {};
-        _result
+        [_this,ITW_CLASH_Resupply_fnc_GoRepSuppBase,true] call
+            ITW_CLASH_Resupply_fnc_RunNative
     };
 
     ITW_CLASH_ResupplyStampsReady = true;

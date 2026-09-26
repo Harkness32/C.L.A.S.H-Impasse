@@ -63,9 +63,12 @@ def test_all_three_native_delivery_scripts_are_stamped():
     for native in ["HAL_GoAmmoSupp", "HAL_GoFuelSupp", "HAL_GoRepSupp"]:
         wrapper_start = source.index(f"    {native} = {{")
         wrapper = source[wrapper_start:source.index("\n    };", wrapper_start)]
-        assert "[_group,1] call ITW_CLASH_Resupply_fnc_Stamp" in wrapper
-        assert "[_group,-1] call ITW_CLASH_Resupply_fnc_Stamp" in wrapper
-        assert wrapper.index("[_group,1]") < wrapper.index("Base;") < wrapper.index("[_group,-1]")
+        assert "ITW_CLASH_Resupply_fnc_RunNative" in wrapper
+    run = source[source.index("ITW_CLASH_Resupply_fnc_RunNative = {"):]
+    run = run[:run.index("\n};")]
+    assert "[_group,1] call ITW_CLASH_Resupply_fnc_Stamp" in run
+    assert "[_group,-1] call ITW_CLASH_Resupply_fnc_Stamp" in run
+    assert run.index("[_group,1]") < run.index("_args call _base;") < run.index("[_group,-1]")
 
 
 def test_stamps_bind_after_the_player_demand_interceptor():
