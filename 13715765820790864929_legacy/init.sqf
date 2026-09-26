@@ -155,6 +155,15 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
             };
+            // SPAA overwatch: every air defence vehicle on a side, the ETB's
+            // and Impasse's alike, stays behind the front instead of being
+            // dispatched forward as another armored group.
+            private _spaaOverwatchLoaded = false;
+            if (_airPictureLoaded isEqualTo true && {fileExists "ITW_CLASH_SPAAOverwatch.sqf"}) then {
+                _spaaOverwatchLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_SPAAOverwatch.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | spaa-overwatch-missing-or-prereq-failed | HAL keeps dispatching SPAA forward";
+            };
             // HAL front: each commander's dispatcher answers threats only where
             // that side has something in play; SF raids ignore it.
             private _halFrontLoaded = false;

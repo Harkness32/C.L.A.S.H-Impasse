@@ -180,6 +180,87 @@ ITW_CLASH_AirPicture_fnc_WeaponProfile = {
 };
 
 /*
+    The same questions, answered from a class's config instead of a spawned
+    vehicle: what a candidate would be if it were bought. Every provider check
+    is re-run on the real vehicle after it spawns, because a config guess can
+    be wrong about pylons and loadouts - this only decides what is worth
+    spawning. Cached: config reads are not free and the answer cannot change.
+*/
+ITW_CLASH_AirPictureClassProfiles = createHashMap;
+
+ITW_CLASH_AirPicture_fnc_ConfigMagazines = {
+    params ["_class"];
+    private _cfg = configFile >> "CfgVehicles" >> _class;
+    if !(isClass _cfg) exitWith {[]};
+    private _magazines = getArray (_cfg >> "magazines");
+    private _walk = {
+        params ["_turrets"];
+        {
+            if (getNumber (_x >> "isPersonTurret") == 0) then {
+                _magazines append getArray (_x >> "magazines");
+            };
+            [_x >> "Turrets"] call _walk;
+        } forEach ("true" configClasses _turrets);
+    };
+    [_cfg >> "Turrets"] call _walk;
+    // Default pylon loadout, where the airframe has one.
+    private _presets = _cfg >> "Components" >> "TransportPylonsComponent" >> "Presets";
+    if (isClass _presets) then {
+        private _preset = ("true" configClasses _presets) param [0,configNull];
+        if !(isNull _preset) then {
+            _magazines append ((getArray (_preset >> "attachment")) select {_x isEqualType ""});
+        };
+    };
+    _magazines = _magazines select {_x isEqualType "" && {_x isNotEqualTo ""}};
+    _magazines arrayIntersect _magazines
+};
+
+ITW_CLASH_AirPicture_fnc_ClassProfile = {
+    params ["_class"];
+    private _cached = ITW_CLASH_AirPictureClassProfiles getOrDefault [_class,createHashMap];
+    if (count _cached > 0) exitWith {_cached};
+
+    private _profile = createHashMapFromArray [
+        ["antiArmor",false],["antiAir",false],["antiAirGun",false],
+        ["antiAirMissile",false],["airToAirMissiles",0],["ordnance",false],
+        ["armed",false],["radar",false]
+    ];
+    {
+        private _ammo = getText (configFile >> "CfgMagazines" >> _x >> "ammo");
+        if (_ammo isEqualTo "") then {continue};
+        _profile set ["armed",true];
+        if ([_ammo] call ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo) then {
+            _profile set ["antiArmor",true];
+        };
+        if ([_ammo] call ITW_CLASH_AirPicture_fnc_AmmoIsOrdnance) then {
+            _profile set ["ordnance",true];
+        };
+        if ([_ammo] call ITW_CLASH_AirPicture_fnc_IsAntiAirAmmo) then {
+            _profile set ["antiAir",true];
+            if ([_ammo] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided) then {
+                _profile set ["antiAirMissile",true];
+                private _count = getNumber (configFile >> "CfgMagazines" >> _x >> "count");
+                _profile set ["airToAirMissiles",(_profile get "airToAirMissiles") + (_count max 1)];
+            } else {
+                _profile set ["antiAirGun",true];
+            };
+        };
+    } forEach ([_class] call ITW_CLASH_AirPicture_fnc_ConfigMagazines);
+
+    private _sensors = configFile >> "CfgVehicles" >> _class >> "Components" >>
+        "SensorsManagerComponent" >> "Components";
+    if (isClass _sensors) then {
+        private _radar = ("true" configClasses _sensors) findIf {
+            (toLowerANSI getText (_x >> "class")) in
+                ["activeradarsensorcomponent","passiveradarsensorcomponent"]
+        };
+        if (_radar >= 0) then {_profile set ["radar",true]};
+    };
+    ITW_CLASH_AirPictureClassProfiles set [_class,_profile];
+    _profile
+};
+
+/*
     The anti-armor threat test, ours and not HAL's: an armored vehicle (tank or
     wheeled-APC base) carrying anti-armor weapons. HAL would miss every Rhino
     and count every Bobcat, so in the peer run its count would have been wrong
@@ -200,8 +281,17 @@ ITW_CLASH_AirPicture_fnc_IsArmoredThreat = {
 ITW_CLASH_AirPicture_fnc_IsCombatAircraft = {
     params ["_veh"];
     if (isNull _veh || {!alive _veh} || {!(_veh isKindOf "Air")}) exitWith {false};
+    // Cached per airframe: this is asked of every enemy aircraft on the map
+    // every 5 seconds, and whether a hull carries ordnance at all does not
+    // change with its remaining rounds. The tier below is not cached, because
+    // a fighter that has fired its missiles really has dropped a tier.
+    private _cached = _veh getVariable ["ITW_CLASH_AirPictureCombat",-1];
+    if (_cached >= 0) exitWith {_cached > 0};
     private _profile = [_veh] call ITW_CLASH_AirPicture_fnc_WeaponProfile;
-    (_profile get "antiArmor") || {_profile get "ordnance"} || {_profile get "antiAirMissile"}
+    private _combat = (_profile get "antiArmor") || {_profile get "ordnance"} ||
+        {_profile get "antiAirMissile"};
+    _veh setVariable ["ITW_CLASH_AirPictureCombat",if (_combat) then {1} else {0}];
+    _combat
 };
 
 // A fighter for coverage purposes: fixed-wing with air-to-air weapons.
