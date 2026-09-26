@@ -175,6 +175,9 @@ ITW_CLASH_HALThreatCoverage_fnc_UsableGroups = {
 ITW_CLASH_HALThreatCoverage_fnc_HasLoadedLauncher = {
     params ["_group",["_kind","AT"]];
     if (isNull _group) exitWith {false};
+    if (isNil "ITW_CLASH_AirPicture_fnc_IsAntiAirAmmo" || {
+        isNil "ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo"
+    }) exitWith {false};
     private _test = if (_kind isEqualTo "AA") then {
         ITW_CLASH_AirPicture_fnc_IsAntiAirAmmo
     } else {
