@@ -140,6 +140,15 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | air-picture-missing | enemy air is seen only at HAL's own cycle rate";
             };
+            // The Emerging Threats Budget: a separate wallet per commander on
+            // top of Impasse, so a threat counter no longer competes with
+            // Impasse's own spawner for the same row tickets.
+            private _etbLoaded = false;
+            if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_EmergingThreatsBudget.sqf"}) then {
+                _etbLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_EmergingThreatsBudget.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | etb-missing-or-prereq-failed | threat counters keep competing for Impasse tickets";
+            };
             private _halThreatCoverageLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALThreatCoverage.sqf"}) then {
                 _halThreatCoverageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALThreatCoverage.sqf";
