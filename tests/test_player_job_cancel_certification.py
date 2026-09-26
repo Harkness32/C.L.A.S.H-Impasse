@@ -28,7 +28,7 @@ def test_seaguard_is_projection_only_and_cannot_clobber_service_home():
 def test_embarked_hal_contract_defers_unlock_until_physical_unlink():
     bridge = source("ITW_CLASH_PlayerTransportNativeBridge.sqf")
 
-    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 5;' in bridge
+    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 7;' in bridge
     assert 'ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier' in bridge
     assert 'alive _x && {vehicle _x == _carrier}' in bridge
     assert '"hal-contract-end-deferred-embarked"' in bridge
@@ -86,7 +86,7 @@ def test_player_hal_carrier_start_is_written_only_by_service_home_authority():
 
     assert 'ITW_CLASH_PlayerCarrierHomeVersion = 3;' in home
     assert 'ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup' in home
-    assert 'ITW_CLASH_ServiceHomeResolverVersion = 2;' in resolver
+    assert 'ITW_CLASH_ServiceHomeResolverVersion = 3;' in resolver
     assert 'ITW_CLASH_ServiceHome_fnc_ResolveTransientGroup = {' in resolver
     assert '_group setVariable ["START" + str _group,+_position];' in resolver
     assert '_group setVariable ["ITW_CLASH_ServiceHome",+_position];' in resolver

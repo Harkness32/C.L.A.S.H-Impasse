@@ -14,7 +14,16 @@ ITW_CLASH_GroundMEDEVAC_fnc_Eligible = {
     if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {[false,[]]};
     if ((_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "") exitWith {[false,[]]};
     if (time < (_group getVariable ["ITW_CLASH_GroundMEDEVAC_RetryAt",0])) exitWith {[false,[]]};
-    if (time - _startedAt < ITW_CLASH_GroundMEDEVAC_MinWithdrawalTime) exitWith {[false,[]]};
+    private _remnantEvac = _group getVariable ["ITW_CLASH_RemnantEvac",false];
+    private _minWithdrawalTime = if (_remnantEvac) then {
+        missionNamespace getVariable [
+            "ITW_CLASH_RemnantEvacMinWithdrawalTime",
+            ITW_CLASH_GroundMEDEVAC_MinWithdrawalTime
+        ]
+    } else {
+        ITW_CLASH_GroundMEDEVAC_MinWithdrawalTime
+    };
+    if (time - _startedAt < _minWithdrawalTime) exitWith {[false,[]]};
     if (_destination isEqualTo []) exitWith {[false,[]]};
 
     private _origin = _group getVariable ["ITW_CLASH_CASEVAC_Origin",[]];
@@ -23,7 +32,9 @@ ITW_CLASH_GroundMEDEVAC_fnc_Eligible = {
         _group setVariable ["ITW_CLASH_CASEVAC_Origin",+_origin];
     };
     private _moved = leader _group distance2D _origin;
-    if (_moved < ITW_CLASH_GroundMEDEVAC_MinDisengageDistance) exitWith {[false,[]]};
+    if (!_remnantEvac && {
+        _moved < ITW_CLASH_GroundMEDEVAC_MinDisengageDistance
+    }) exitWith {[false,[]]};
 
     private _egressDistance = leader _group distance2D _destination;
     if (_egressDistance < ITW_CLASH_GroundMEDEVAC_MinEgressDistance || {
@@ -63,12 +74,20 @@ ITW_CLASH_GroundMEDEVAC_fnc_Dispatch = {
         "_egressDistance","_spawnInfo","_pickupInfo"
     ];
     if (isNull _group) exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "") exitWith {false};
+
+    // Claim both arbitration gates before vehicle creation can yield.
+    _group setVariable ["ITW_CLASH_GroundMEDEVAC_State","ground-spawning"];
+    _group setVariable ["ITW_CLASH_CASEVAC_State","ground-spawning"];
 
     private _survivors = units _group select {alive _x};
     private _vehicleInfo = [
         count _survivors,_spawnInfo,side _group
     ] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle;
     if (_vehicleInfo isEqualTo []) exitWith {
+        _group setVariable ["ITW_CLASH_GroundMEDEVAC_State",nil];
+        _group setVariable ["ITW_CLASH_CASEVAC_State",nil];
         _group setVariable ["ITW_CLASH_GroundMEDEVAC_RetryAt",time + ITW_CLASH_GroundMEDEVAC_AirFallbackDelay];
         ["deferred",[_id,_lineage,"no-ground-vehicle-available"]] call ITW_CLASH_GroundMEDEVAC_fnc_Log;
         false

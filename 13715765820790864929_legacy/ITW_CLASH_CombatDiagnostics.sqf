@@ -2,7 +2,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_CombatDiagnosticsStarted",false]) exitWith {true};
 
 ITW_CLASH_CombatDiagnosticsStarted = true;
-ITW_CLASH_CombatDiagnosticsVersion = 2;
+ITW_CLASH_CombatDiagnosticsVersion = 4;
 ITW_CLASH_CombatDiagnosticsEnabled = true;
 ITW_CLASH_CombatDiagnosticsPollInterval = 1.5;
 ITW_CLASH_CombatDiagnosticsContactRadius = 200;
@@ -50,11 +50,28 @@ ITW_CLASH_Diag_fnc_GroupId = {
     str _group
 };
 
+// The group's own commander, else HAL's. Resolved into _hq at function scope:
+// the exitWith calls this used to make inside `then` blocks only left those
+// blocks, so every group, WEST included, was checked against ITW_CLASH_HALHQ.
 ITW_CLASH_Diag_fnc_HQ = {
-    if (!isNil "ITW_CLASH_HALHQ" && {!isNull ITW_CLASH_HALHQ}) exitWith {
-        ITW_CLASH_HALHQ
+    params [["_group",grpNull]];
+    private _hq = grpNull;
+    if (!isNull _group) then {
+        {
+            private _candidate = missionNamespace getVariable [_x,grpNull];
+            if (isNull _hq && {!isNull _candidate} && {side _group == side _candidate}) then {
+                _hq = _candidate;
+            };
+        } forEach ["ITW_CLASH_BLUFORHQ","ITW_CLASH_HALHQ"];
+        if (isNull _hq && {!isNil "ITW_CLASH_fnc_GetCommanderForGroup"}) then {
+            private _resolved = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+            if (!isNil "_resolved" && {!isNull _resolved}) then {_hq = _resolved};
+        };
     };
-    grpNull
+    if (isNull _hq) then {
+        _hq = missionNamespace getVariable ["ITW_CLASH_HALHQ",grpNull];
+    };
+    _hq
 };
 
 ITW_CLASH_Diag_fnc_InHQList = {
@@ -69,9 +86,9 @@ ITW_CLASH_Diag_fnc_GroupIds = {
 };
 
 ITW_CLASH_Diag_fnc_HALContactKnowledge = {
-    params ["_otherUnit"];
+    params ["_otherUnit",["_observerGroup",grpNull]];
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_observerGroup] call ITW_CLASH_Diag_fnc_HQ;
     if (isNull _hq || {isNull _otherUnit}) exitWith {
         [["valid",false]]
     };
@@ -190,7 +207,7 @@ ITW_CLASH_Diag_fnc_Group = {
     params ["_group"];
     if (isNull _group) exitWith {["<null>"]};
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
     private _leader = leader _group;
     private _busyName = "Busy" + str _group;
     private _wp = [_group] call ITW_CLASH_Diag_fnc_Waypoint;
@@ -289,11 +306,34 @@ ITW_CLASH_Diag_fnc_HQSnapshot = {
     ]
 };
 
+// One line per commander per HAL cycle. HAL pauses between cycles for
+// (friends x 5 s) + a reflex/comm-delay term (HAC_fnc2.sqf:1097), so the
+// measured gap between cycles is what bounds how fast a commander can react.
+ITW_CLASH_Diag_fnc_HQCycle = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {};
+    private _cycle = _hq getVariable ["RydHQ_Cyclecount",0];
+    if (_cycle == (_hq getVariable ["ITW_CLASH_DiagLastCycle",-1])) exitWith {};
+    private _lastAt = _hq getVariable ["ITW_CLASH_DiagLastCycleAt",-1];
+    _hq setVariable ["ITW_CLASH_DiagLastCycle",_cycle];
+    _hq setVariable ["ITW_CLASH_DiagLastCycleAt",time];
+    ["hq-cycle",[
+        [_hq] call ITW_CLASH_Diag_fnc_GroupId,
+        str side _hq,
+        _cycle,
+        if (_lastAt < 0) then {-1} else {round (time - _lastAt)},
+        _hq getVariable ["RydHQ_myDelay",-1],
+        count (_hq getVariable ["RydHQ_Friends",[]]),
+        count (_hq getVariable ["RydHQ_KnEnemiesG",[]]),
+        _hq getVariable ["RydHQ_Order",""]
+    ]] call ITW_CLASH_Diag_fnc_Log;
+};
+
 ITW_CLASH_Diag_fnc_ContactSide = {
     params ["_group","_unit","_otherUnit"];
     if (isNull _group || {isNull _unit} || {isNull _otherUnit}) exitWith {["invalid"]};
 
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
     private _leader = leader _group;
     private _nearestLeader = if (isNull _leader) then {objNull} else {
         _leader findNearestEnemy _leader
@@ -330,7 +370,7 @@ ITW_CLASH_Diag_fnc_ContactSide = {
             ]
         },
         [_unit,_otherUnit] call ITW_CLASH_Diag_fnc_Unit,
-        [_otherUnit] call ITW_CLASH_Diag_fnc_HALContactKnowledge,
+        [_otherUnit,_group] call ITW_CLASH_Diag_fnc_HALContactKnowledge,
         [
             [_hq,"RydHQ_AttackAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
             [_hq,"RydHQ_CombatAv",_group] call ITW_CLASH_Diag_fnc_InHQList,
@@ -371,7 +411,7 @@ ITW_CLASH_Diag_fnc_ContactReasons = {
     };
 
     if (_distance <= 75 && {_groupKnowledge < 0.05}) then {
-        private _hq = call ITW_CLASH_Diag_fnc_HQ;
+        private _hq = [_group] call ITW_CLASH_Diag_fnc_HQ;
         if (!isNull _hq) then {
             private _otherVehicle = vehicle _otherUnit;
             private _otherGroup = group _otherUnit;
@@ -425,7 +465,7 @@ ITW_CLASH_Diag_fnc_DumpAll = {
     };
 
     diag_log format [
-        "CLASH BOOT | combat-diagnostics-ready | version=%1 observerOnly=true poll=%2 contactRadius=%3 pairCooldown=%4 hqInterval=%5 detectionIndependent=true halContactCorrelation=true",
+        "CLASH BOOT | combat-diagnostics-ready | version=%1 observerOnly=true poll=%2 contactRadius=%3 pairCooldown=%4 hqInterval=%5 detectionIndependent=true halContactCorrelation=true hqCycle=both-commanders",
         ITW_CLASH_CombatDiagnosticsVersion,
         ITW_CLASH_CombatDiagnosticsPollInterval,
         ITW_CLASH_CombatDiagnosticsContactRadius,
@@ -436,6 +476,10 @@ ITW_CLASH_Diag_fnc_DumpAll = {
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep ITW_CLASH_CombatDiagnosticsPollInterval;
         if (!ITW_CLASH_CombatDiagnosticsEnabled) then {continue};
+
+        {
+            [missionNamespace getVariable [_x,grpNull]] call ITW_CLASH_Diag_fnc_HQCycle;
+        } forEach ["ITW_CLASH_HALHQ","ITW_CLASH_BLUFORHQ"];
 
         if (time - _lastHQ >= ITW_CLASH_CombatDiagnosticsHQInterval) then {
             _lastHQ = time;

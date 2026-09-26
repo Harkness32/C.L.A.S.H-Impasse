@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GroundMEDEVAC_VehiclePolicyStarted",false]) exitWith {};
 ITW_CLASH_GroundMEDEVAC_VehiclePolicyStarted = true;
-ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 2;
+ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 3;
 
 /*
     Ground MEDEVAC vehicle policy
@@ -108,8 +108,15 @@ ITW_CLASH_GroundMEDEVAC_fnc_RankVehicleVariants = {
             // value is kept as a low-priority unknown rather than rejected so
             // unusual mod configs can still pass the authoritative post-spawn
             // emptyPositions "cargo" check.
-            private _capacity = round getNumber (_cfg >> "transportSoldier");
-            private _capacityKnown = _capacity > 0;
+            private _capacity = if (
+                missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]
+                && {!isNil "ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats"}
+            ) then {
+                [_class] call ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats
+            } else {
+                round getNumber (_cfg >> "transportSoldier")
+            };
+            private _capacityKnown = _capacity >= 0;
             if (_capacityKnown && {_capacity < _seatCount}) then {continue};
 
             private _fitCapacity = if (_capacityKnown) then {
@@ -312,7 +319,7 @@ ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle = {
 };
 
 diag_log format [
-    "CLASH BOOT | ground-medevac-vehicle-policy-ready | version=%1 routing=capability-score lightMax=%2 mediumMax=%3 factionPool=true symmetricSides=true",
+    "CLASH BOOT | ground-medevac-vehicle-policy-ready | version=%1 routing=capability-score lightMax=%2 mediumMax=%3 factionPool=true symmetricSides=true sharedCapacityEstimator=true",
     ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion,
     ITW_CLASH_GroundMEDEVAC_LightMaxSurvivors,
     ITW_CLASH_GroundMEDEVAC_MediumMaxSurvivors

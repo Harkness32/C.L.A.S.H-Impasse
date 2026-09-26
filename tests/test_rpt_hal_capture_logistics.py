@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MISSION = ROOT / "13715765820790864929_legacy"
-HAL = ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL"
+HAL = ROOT / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal"
 
 CAPTURE_READ = '_Trg getVariable ("Capturing" + (str _Trg) + (str _HQ));'
 GUARDED_CAPTURE_READ = (

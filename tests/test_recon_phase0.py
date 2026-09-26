@@ -79,3 +79,18 @@ def test_native_hal_statusquo_has_real_specfor_classification_surface():
     assert '_SpecForcheck' in source
     assert '_specFor_class' in source
     assert 'setVariable ["RydHQ_SpecForG",_SpecForG]' in source
+
+
+def test_ai_recon_squads_are_not_benched_when_their_recon_ends():
+    # 2026-09-26 run: every WEST AI squad whose native recon ended was synced
+    # as a player-task group with no subscriptions, which set HAL's Unable and
+    # removed it from attack, defence and rest for the rest of the game.
+    source = recon()
+    end = source[source.index("ITW_CLASH_Recon_fnc_EndMission = {"):]
+    end = end[:end.index("\n};")]
+    sync = end.index('[_group,"native-recon-ended"] call')
+    guard = end.rindex("if (", 0, sync)
+    assert end[guard:sync].startswith('if (_jobId isNotEqualTo "" && {')
+    # the job ID only exists for a player group's recon
+    assert 'if ([_group] call ITW_CLASH_Recon_fnc_IsPlayerGroup) then {' in source
+    assert "ITW_CLASH_ReconPhase0Version = 6;" in source

@@ -4,14 +4,14 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_Started",false]) exitWith {};
 
 ITW_CLASH_CASEVAC_Started = true;
-ITW_CLASH_CASEVAC_Version = 2;
+ITW_CLASH_CASEVAC_Version = 5;
 ITW_CLASH_CASEVAC_MaxConcurrent = 2;
 ITW_CLASH_CASEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_CASEVAC_MinDisengageDistance = 500;
 ITW_CLASH_CASEVAC_EnemyClearance = 650;
 ITW_CLASH_CASEVAC_InboundAbortClearance = 450;
 ITW_CLASH_CASEVAC_ObjectiveClearance = 500;
-ITW_CLASH_CASEVAC_MinEgressDistance = 1000;
+ITW_CLASH_CASEVAC_MinEgressDistance = 400;
 ITW_CLASH_CASEVAC_LZLeadDistance = 175;
 ITW_CLASH_CASEVAC_SmokeDistance = 700;
 ITW_CLASH_CASEVAC_BoardingTimeout = 90;
@@ -21,7 +21,7 @@ ITW_CLASH_CASEVAC_SmokeClass = "SmokeShell";
 ITW_CLASH_CASEVAC_Active = createHashMap;
 
 diag_log format [
-    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6 symmetricSides=true",
+    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6 symmetricSides=true remnantFastTrack=true",
     ITW_CLASH_CASEVAC_Version,
     ITW_CLASH_CASEVAC_MaxConcurrent,
     ITW_CLASH_CASEVAC_MinDisengageDistance,
@@ -201,18 +201,42 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
     };
     if (_candidates isEqualTo []) exitWith {[]};
 
-    private _pureTransport = _candidates select {
-        (_x#ITW_VEH_ROLE) == ITW_VEH_ROLE_TRANSPORT
+    private _ordered = if (
+        missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]
+        && {!isNil "ITW_CLASH_ServiceCapacity_fnc_RankVariants"}
+    ) then {
+        [_seatCount,_candidates,"AIR","CASEVAC"] call
+            ITW_CLASH_ServiceCapacity_fnc_RankVariants
+    } else {
+        private _pureTransport = _candidates select {
+            (_x#ITW_VEH_ROLE) == ITW_VEH_ROLE_TRANSPORT
+        };
+        private _legacy = [];
+        {
+            private _vehDef = _x;
+            {
+                private _class = if (_x isEqualType []) then {
+                    if (_x isEqualTo []) then {""} else {_x#0}
+                } else {_x};
+                if (_class isEqualTo "") then {continue};
+                _legacy pushBack [0,_vehDef,_x,_class,-1,false,0,0];
+            } forEach (_vehDef#ITW_VEH_CLASSES);
+        } forEach (_pureTransport + (_candidates - _pureTransport));
+        _legacy
     };
-    private _ordered = _pureTransport + (_candidates - _pureTransport);
     _spawnInfo params ["_spawnPos","_baseIndex","_spawnSource"];
 
     private _result = [];
     scopeName "ITW_CLASH_CASEVAC_SPAWN";
     {
-        private _vehDef = _x;
+        _x params [
+            "_capacityScore","_vehDef","_variant","_class",
+            "_estimatedCapacity","_capacityKnown","_ticketCost","_maxSpeed"
+        ];
+        private _spawnDef = +_vehDef;
+        _spawnDef set [ITW_VEH_CLASSES,[_variant]];
         private _heli = [
-            _vehDef,_crewTypes,_unitTypes,_side,_spawnPos
+            _spawnDef,_crewTypes,_unitTypes,_side,_spawnPos
         ] call ITW_AtkSpawnVeh;
         if (isNull _heli) then {continue};
 
@@ -258,6 +282,11 @@ ITW_CLASH_CASEVAC_fnc_SpawnHeli = {
         ALLOW_DAMAGE(_heli,true);
         {ALLOW_DAMAGE(_x,true)} forEach crew _heli;
         {_x addCuratorEditableObjects [[_heli] + units _crewGroup,true]} forEach allCurators;
+
+        ["aircraft-selected",[
+            typeOf _heli,_seatCount,_heli emptyPositions "cargo",
+            _estimatedCapacity,round _capacityScore,_ticketCost,_maxSpeed
+        ]] call ITW_CLASH_CASEVAC_fnc_Log;
 
         _result = [_heli,_crewGroup,_vehDef,_baseIndex,_spawnSource,+_spawnPos];
         breakOut "ITW_CLASH_CASEVAC_SPAWN";
@@ -634,7 +663,16 @@ ITW_CLASH_CASEVAC_fnc_Eligible = {
     if !(_group getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {[false,[]]};
     if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {[false,[]]};
     if (time < (_group getVariable ["ITW_CLASH_CASEVAC_RetryAt",0])) exitWith {[false,[]]};
-    if (time - _startedAt < ITW_CLASH_CASEVAC_MinWithdrawalTime) exitWith {[false,[]]};
+    private _remnantEvac = _group getVariable ["ITW_CLASH_RemnantEvac",false];
+    private _minWithdrawalTime = if (_remnantEvac) then {
+        missionNamespace getVariable [
+            "ITW_CLASH_RemnantEvacMinWithdrawalTime",
+            ITW_CLASH_CASEVAC_MinWithdrawalTime
+        ]
+    } else {
+        ITW_CLASH_CASEVAC_MinWithdrawalTime
+    };
+    if (time - _startedAt < _minWithdrawalTime) exitWith {[false,[]]};
     if (_destination isEqualTo []) exitWith {[false,[]]};
 
     private _origin = _group getVariable ["ITW_CLASH_CASEVAC_Origin",[]];
@@ -644,7 +682,9 @@ ITW_CLASH_CASEVAC_fnc_Eligible = {
     };
 
     private _moved = leader _group distance2D _origin;
-    if (_moved < ITW_CLASH_CASEVAC_MinDisengageDistance) exitWith {[false,[]]};
+    if (!_remnantEvac && {
+        _moved < ITW_CLASH_CASEVAC_MinDisengageDistance
+    }) exitWith {[false,[]]};
 
     private _egressDistance = leader _group distance2D _destination;
     if (_egressDistance < ITW_CLASH_CASEVAC_MinEgressDistance) exitWith {[false,[]]};
@@ -680,11 +720,16 @@ ITW_CLASH_CASEVAC_fnc_Dispatch = {
         "_objectiveClearance","_egressDistance","_lz"
     ];
     if (isNull _group) exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {false};
+
+    // Claim before spawning; vehicle/crew creation can yield.
+    _group setVariable ["ITW_CLASH_CASEVAC_State","air-spawning"];
 
     private _spawnInfo = [
         _originalObjective,side _group
     ] call ITW_CLASH_CASEVAC_fnc_GetAirSpawn;
     if (_spawnInfo isEqualTo []) exitWith {
+        _group setVariable ["ITW_CLASH_CASEVAC_State",nil];
         _group setVariable ["ITW_CLASH_CASEVAC_RetryAt",time + 15];
         false
     };
@@ -694,6 +739,7 @@ ITW_CLASH_CASEVAC_fnc_Dispatch = {
         count _survivors,_spawnInfo,side _group
     ] call ITW_CLASH_CASEVAC_fnc_SpawnHeli;
     if (_heliInfo isEqualTo []) exitWith {
+        _group setVariable ["ITW_CLASH_CASEVAC_State",nil];
         _group setVariable ["ITW_CLASH_CASEVAC_RetryAt",time + 15];
         false
     };

@@ -3,13 +3,12 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceStabilityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceStabilityStarted = true;
-ITW_CLASH_ServiceStabilityVersion = 1;
+ITW_CLASH_ServiceStabilityVersion = 5;
 ITW_CLASH_ServiceStabilityReady = false;
 ITW_CLASH_ServiceReactivationBusy = false;
 
 if (
     !(missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityReady",false])
-    || {isNil "ITW_CLASH_Service_fnc_OrderRTB"}
     || {isNil "ITW_CLASH_Service_fnc_Retire"}
     || {isNil "ITW_CLASH_Service_fnc_TryReactivate"}
 ) exitWith {
@@ -33,78 +32,24 @@ ITW_CLASH_ServiceStability_fnc_HasLease = {
 };
 
 /*
-    Service quarantine is an invariant, not a one-shot array write. HAL may
-    rebuild availability arrays and Dual-HAL may readmit an existing field group.
-    Reconcile both the positive service membership and every tactical negative.
+    Compatibility shim for callers from older service-authority revisions.
+    A live lease is identity/accounting metadata only. We deliberately do not
+    rewrite HAL planning arrays here: HAL owns live disposition and SitRep.
 */
 ITW_CLASH_ServiceStability_fnc_EnsureQuarantine = {
-    params ["_group",["_source","reconcile"]];
-    if (isNull _group) exitWith {false};
-    private _veh = vehicle leader _group;
-    if !([_group,_veh] call ITW_CLASH_ServiceStability_fnc_HasLease) exitWith {false};
-    if (_group getVariable ["ITW_CLASH_ServiceRTB",false]) exitWith {true};
-
-    private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
-    if (isNull _hq) exitWith {false};
-    private _changed = [];
-
-    {
-        private _name = _x;
-        private _members = +(_hq getVariable [_name,[]]);
-        if !(_group in _members) then {
-            _members pushBackUnique _group;
-            _hq setVariable [_name,_members];
-            _changed pushBack _name;
-        };
-    } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
-
-    {
-        private _name = _x;
-        private _members = +(_hq getVariable [_name,[]]);
-        if (_group in _members) then {
-            _hq setVariable [_name,_members - [_group]];
-            _changed pushBack ("-" + _name);
-        };
-    } forEach [
-        "RydHQ_AttackAv","RydHQ_FlankAv","RydHQ_CombatAv",
-        "RydHQ_ReconAv","RydHQ_ReconG","RydHQ_DefRes"
-    ];
-
-    private _lease = [_group] call ITW_CLASH_ServiceAuthority_fnc_GetLease;
-    if (_lease isEqualTo [] && {!isNull _veh}) then {
-        _lease = [_veh] call ITW_CLASH_ServiceAuthority_fnc_GetLease;
-    };
-    private _capability = if (_lease isEqualTo []) then {""} else {toUpperANSI (_lease#0)};
-    if (_capability == "TRANSPORT") then {
-        {
-            private _name = _x;
-            private _members = +(_hq getVariable [_name,[]]);
-            if !(_group in _members) then {
-                _members pushBackUnique _group;
-                _hq setVariable [_name,_members];
-                _changed pushBack _name;
-            };
-        } forEach ["RydHQ_CargoG","RydHQ_CargoOnly"];
-    };
-
-    if (_changed isNotEqualTo []) then {
-        ["quarantine-reconciled",[
-            [_group] call ITW_CLASH_DualHAL_fnc_GroupId,
-            if (isNull _veh) then {"<none>"} else {typeOf _veh},
-            _capability,_source,_changed
-        ]] call ITW_CLASH_ServiceStability_fnc_Log;
-    };
-    true
+    params ["_group",["_source","compat"]];
+    !isNull _group
 };
 
 /*
-    Physical retirement releases physical capacity. The pool entry is the paid
-    entitlement; it is not a shadow ITW_VEH_COUNT reservation. Impasse's normal
-    live-vehicle recount remains authoritative after deletion.
+    Virtualization occurs only after ServiceLifecycle has observed HAL's own RTB
+    and home-idle settle. At this storage boundary it is safe to remove the live
+    group from HAL, clear the lease, delete the physical object, and retain the
+    already-paid virtual entitlement. Impasse's live count remains authoritative.
 */
 ITW_CLASH_ServiceStability_fnc_RetireBase = ITW_CLASH_Service_fnc_Retire;
 ITW_CLASH_Service_fnc_Retire = {
-    params ["_index",["_reason","home"]];
+    params ["_index",["_reason","hal-returned-home"]];
     if (_index < 0 || {_index >= count ITW_CLASH_ServicePool}) exitWith {false};
     private _entry = ITW_CLASH_ServicePool#_index;
     private _veh = _entry getOrDefault ["vehicle",objNull];
@@ -112,12 +57,24 @@ ITW_CLASH_Service_fnc_Retire = {
     if (isNull _veh) exitWith {false};
 
     private _players = allPlayers select {!(_x isKindOf "HeadlessClient_F")};
-    if ((_players findIf {_x distance2D _veh < ITW_CLASH_ServiceRetirePlayerRadius}) >= 0) exitWith {false};
+    private _capability = toUpperANSI (_entry getOrDefault ["capability",""]);
+    private _retirePlayerRadius = if (_capability == "TRANSPORT") then {
+        missionNamespace getVariable [
+            "ITW_CLASH_ServiceTransportRetirePlayerRadius",
+            ITW_CLASH_ServiceRetirePlayerRadius
+        ]
+    } else {
+        ITW_CLASH_ServiceRetirePlayerRadius
+    };
+    if ((_players findIf {_x distance2D _veh < _retirePlayerRadius}) >= 0) exitWith {false};
 
     private _vehDef = _entry getOrDefault ["vehDef",[]];
     if (_vehDef isEqualTo []) then {_vehDef = _veh getVariable ["ITW_VehDef",[]]};
     if (_vehDef isEqualTo []) exitWith {false};
-    if (!isNull _group) then {[_group] call ITW_CLASH_Service_fnc_RemoveHALOwnership};
+
+    if (!isNull _group) then {
+        [_group] call ITW_CLASH_Service_fnc_RemoveHALOwnership
+    };
 
     _entry set ["vehDef",_vehDef];
     _entry set ["class",typeOf _veh];
@@ -131,7 +88,8 @@ ITW_CLASH_Service_fnc_Retire = {
     private _poolId = _entry get "id";
     private _capability = _entry get "capability";
     private _class = typeOf _veh;
-    [_veh,_group,"virtualized"] call ITW_CLASH_ServiceAuthority_fnc_ClearLease;
+    [_veh,_group,"virtualized-after-hal-rtb"] call ITW_CLASH_ServiceAuthority_fnc_ClearLease;
+
     deleteVehicleCrew _veh;
     deleteVehicle _veh;
     if (!isNull _group && {units _group isEqualTo []}) then {deleteGroup _group};
@@ -144,10 +102,9 @@ ITW_CLASH_Service_fnc_Retire = {
 };
 
 /*
-    A virtual entitlement may rematerialize only if native Impasse capacity is
-    currently available. Serialize pooled rematerializations, re-check the live
-    class count at the transaction boundary, increment physical count on success,
-    and deliberately do not reduce tickets a second time.
+    A virtual entitlement rematerializes only when native Impasse capacity is
+    available. It does not spend tickets again. Once registered, the live asset
+    belongs to HAL until HAL later returns it home.
 */
 ITW_CLASH_ServiceStability_fnc_TryReactivateBase = ITW_CLASH_Service_fnc_TryReactivate;
 ITW_CLASH_Service_fnc_TryReactivate = {
@@ -159,18 +116,44 @@ ITW_CLASH_Service_fnc_TryReactivate = {
     private _side = _request getOrDefault ["side",sideUnknown];
     private _mode = toUpperANSI (_requirements getOrDefault ["mode","GROUND"]);
     private _seats = round (_requirements getOrDefault ["seats",1]);
-    private _index = ITW_CLASH_ServicePool findIf {
-        (_x getOrDefault ["state",""]) isEqualTo "AVAILABLE" && {
-            (_x getOrDefault ["side",sideUnknown]) == _side && {
-                (_x getOrDefault ["capability",""]) isEqualTo _capability && {
-                    (_x getOrDefault ["mode",""]) isEqualTo _mode && {
-                        time >= (_x getOrDefault ["availableAt",0]) && {
-                            (_x getOrDefault ["vehDef",[]]) isNotEqualTo []
-                        }
-                    }
-                }
-            }
-        }
+    private _eligibleIndices = [];
+    for "_i" from 0 to ((count ITW_CLASH_ServicePool) - 1) do {
+        private _candidate = ITW_CLASH_ServicePool#_i;
+        if (
+            (_candidate getOrDefault ["state",""]) isEqualTo "AVAILABLE"
+            && {(_candidate getOrDefault ["side",sideUnknown]) == _side}
+            && {(_candidate getOrDefault ["capability",""]) isEqualTo _capability}
+            && {(_candidate getOrDefault ["mode",""]) isEqualTo _mode}
+            && {time >= (_candidate getOrDefault ["availableAt",0])}
+            && {(_candidate getOrDefault ["vehDef",[]]) isNotEqualTo []}
+        ) then {
+            _eligibleIndices pushBack _i;
+        };
+    };
+
+    private _index = if (
+        _capability == "TRANSPORT"
+        && {missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]}
+        && {!isNil "ITW_CLASH_ServiceCapacity_fnc_ScoreClass"}
+    ) then {
+        private _best = -1;
+        private _bestScore = 1e12;
+        {
+            private _candidate = ITW_CLASH_ServicePool#_x;
+            private _class = _candidate getOrDefault ["class",""];
+            private _vehDef = _candidate getOrDefault ["vehDef",[]];
+            private _scoreInfo = [
+                _class,_vehDef,_seats,"TRANSPORT_POOL"
+            ] call ITW_CLASH_ServiceCapacity_fnc_ScoreClass;
+            private _score = _scoreInfo#0;
+            if (_score < _bestScore) then {
+                _best = _x;
+                _bestScore = _score;
+            };
+        } forEach _eligibleIndices;
+        _best
+    } else {
+        if (_eligibleIndices isEqualTo []) then {-1} else {_eligibleIndices#0}
     };
     if (_index < 0) exitWith {createHashMap};
 
@@ -191,7 +174,9 @@ ITW_CLASH_Service_fnc_TryReactivate = {
     private _reference = +(_requirements getOrDefault [
         "reference",if (isNull _requester) then {[0,0,0]} else {getPosATL leader _requester}
     ]);
-    private _generation = [_side,_capability,_profile,_reference] call ITW_CLASH_Generation_fnc_Resolve;
+    private _generation = [
+        _side,_capability,_profile,_reference
+    ] call ITW_CLASH_Generation_fnc_Resolve;
     if ((_generation getOrDefault ["status",""]) != "RESOLVED") exitWith {createHashMap};
 
     private _crewInfo = [_side] call ITW_CLASH_Checkbook_fnc_GetCrewTypes;
@@ -216,6 +201,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
         createHashMap
     };
     private _crewGroup = group driver _veh;
+
     if (_capability == "TRANSPORT" && {_veh emptyPositions "" < _seats}) exitWith {
         deleteVehicleCrew _veh;
         deleteVehicle _veh;
@@ -257,104 +243,51 @@ ITW_CLASH_Service_fnc_TryReactivate = {
         createHashMap
     };
 
-    // Registration succeeded while the transaction lock is held. This mirrors
-    // the purchase path's physical count mutation, minus ticket deduction.
     ITW_VEH_COUNT_INCR(_vehDef);
     SEM_UNLOCK(ITW_CLASH_ServiceReactivationBusy);
 
     _veh setDir (_generation getOrDefault ["direction",direction _veh]);
     {_x addCuratorEditableObjects [[_veh] + units _crewGroup,true]} forEach allCurators;
-    [_veh,_capability,_mode,"virtual-reactivation"] call ITW_CLASH_Service_fnc_RegisterPhysical;
-    [_crewGroup,"reactivated"] call ITW_CLASH_ServiceStability_fnc_EnsureQuarantine;
+    [_veh,_capability,_mode,"virtual-reactivation"] call
+        ITW_CLASH_Service_fnc_RegisterPhysical;
 
     private _billing = createHashMapFromArray [
-        ["class",_class],["ticketCost",0],["reused",true],
-        ["count",_vehDef#ITW_VEH_COUNT],["max",_vehDef#ITW_VEH_MAX]
+        ["class",_class],
+        ["ticketCost",0],
+        ["reused",true],
+        ["count",_vehDef#ITW_VEH_COUNT],
+        ["max",_vehDef#ITW_VEH_MAX]
     ];
     private _metadata = createHashMapFromArray [
-        ["mode",_mode],["virtualPool",true],["poolId",_entry get "id"]
+        ["mode",_mode],
+        ["virtualPool",true],
+        ["poolId",_entry get "id"],
+        ["halOwnsLiveDisposition",true]
     ];
+
     ["reactivated",[
         _entry get "id",_capability,_side,_mode,_class,
         _vehDef#ITW_VEH_COUNT,_vehDef#ITW_VEH_MAX
     ]] call ITW_CLASH_Service_fnc_Log;
 
-    [_request,"APPROVED",[_veh],"virtual-asset-reactivated","service-stability-v1",_billing,_generation,_metadata] call
-        ITW_CLASH_Checkbook_fnc_Response
+    [_request,"APPROVED",[_veh],"virtual-asset-reactivated",
+        "service-stability-v5",_billing,_generation,_metadata
+    ] call ITW_CLASH_Checkbook_fnc_Response
 };
 
-// Close the lifecycle-v1 state hole: a vehicle that moved far enough to set
-// taskSeen but was never Busy can return home with no waypoint and otherwise sit
-// forever. Give that state the same deterministic idle grace as completed work.
-[] spawn {
-    scriptName "ITW_CLASH_ServiceIdleAtHomeClosure";
-    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
-        sleep 5;
-        for "_i" from ((count ITW_CLASH_ServicePool) - 1) to 0 step -1 do {
-            private _entry = ITW_CLASH_ServicePool#_i;
-            if ((_entry getOrDefault ["state",""]) != "DEPLOYED") then {continue};
-            if !(_entry getOrDefault ["taskSeen",false]) then {continue};
-            if (_entry getOrDefault ["everBusy",false]) then {continue};
-
-            private _veh = _entry getOrDefault ["vehicle",objNull];
-            private _group = _entry getOrDefault ["group",grpNull];
-            private _home = +(_entry getOrDefault ["home",[]]);
-            if (isNull _veh || {isNull _group} || {_home isEqualTo []}) then {continue};
-            if !([_group,_veh] call ITW_CLASH_ServiceStability_fnc_HasLease) then {continue};
-
-            private _busy = _group getVariable ["Busy" + str _group,false];
-            private _cargo = (assignedCargo _veh) isNotEqualTo [] || {
-                (crew _veh findIf {alive _x && {group _x != _group}}) >= 0
-            };
-            if (_busy || {_cargo} || {_veh distance2D _home > 175}) then {continue};
-            private _wp = [_group] call ITW_CLASH_Service_fnc_CurrentWaypoint;
-            if ((_wp#0) != "NONE") then {continue};
-
-            private _idleSince = _entry getOrDefault ["idleSince",-1];
-            if (_idleSince < 0) then {
-                _entry set ["idleSince",time];
-                ITW_CLASH_ServicePool set [_i,_entry];
-                continue;
-            };
-            if (time - _idleSince >= ITW_CLASH_ServiceIdleGrace) then {
-                ["idle-at-home-closed",[
-                    _entry get "id",typeOf _veh,round (_veh distance2D _home),
-                    round (time - _idleSince)
-                ]] call ITW_CLASH_ServiceStability_fnc_Log;
-                [_i,"idle-at-home-after-task"] call ITW_CLASH_Service_fnc_OrderRTB;
-            };
-        };
-    };
-};
-
-// Reassert quarantine continuously so runtime-existing-field, migration and
-// HAL availability rebuilds cannot turn a leased service vehicle into combat.
-[] spawn {
-    scriptName "ITW_CLASH_ServiceQuarantineWatch";
-    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
-        sleep 1;
-        {
-            private _entry = _x;
-            if ((_entry getOrDefault ["state",""]) != "DEPLOYED") then {continue};
-            private _group = _entry getOrDefault ["group",grpNull];
-            private _veh = _entry getOrDefault ["vehicle",objNull];
-            if (isNull _group || {isNull _veh}) then {continue};
-            if !([_group,_veh] call ITW_CLASH_ServiceStability_fnc_HasLease) then {continue};
-            [_group,"pool-watch"] call ITW_CLASH_ServiceStability_fnc_EnsureQuarantine;
-        } forEach +ITW_CLASH_ServicePool;
-    };
-};
-
-// Recon execution is explicitly guarded as well as planner membership. This
-// binds after ReconObserver so later wrappers (GTFO) can preserve it as a base.
+/*
+    Service identity is still a role-safety boundary: a truck/transport that HAL
+    accidentally presents to recon execution is rejected. This does not author
+    routes or maintain tactical availability arrays.
+*/
 [] spawn {
     scriptName "ITW_CLASH_ServiceReconExecutionGuard";
     private _deadline = time + 240;
     waitUntil {
         sleep 0.25;
         time >= _deadline || {
-            !isNil "ITW_CLASH_Recon_fnc_NativeGoRecon" &&
-            {!isNil "HAL_GoRecon"} && {!isNil "HAL_GoDefRecon"}
+            !isNil "ITW_CLASH_Recon_fnc_NativeGoRecon"
+            && {!isNil "HAL_GoRecon"} && {!isNil "HAL_GoDefRecon"}
         }
     };
     if (time >= _deadline) exitWith {
@@ -363,6 +296,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
 
     ITW_CLASH_ServiceStability_fnc_GoReconBase = HAL_GoRecon;
     ITW_CLASH_ServiceStability_fnc_GoDefReconBase = HAL_GoDefRecon;
+
     HAL_GoRecon = {
         private _group = _this param [0,grpNull];
         if (!isNull _group && {
@@ -376,6 +310,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
         };
         _this call ITW_CLASH_ServiceStability_fnc_GoReconBase
     };
+
     HAL_GoDefRecon = {
         private _group = _this param [0,grpNull];
         if (!isNull _group && {
@@ -389,12 +324,13 @@ ITW_CLASH_Service_fnc_TryReactivate = {
         };
         _this call ITW_CLASH_ServiceStability_fnc_GoDefReconBase
     };
+
     ["recon-execution-guard-ready",[]] call ITW_CLASH_ServiceStability_fnc_Log;
 };
 
 ITW_CLASH_ServiceStabilityReady = true;
 diag_log format [
-    "CLASH BOOT | service-stability-ready | version=%1 idleAtHomeClosed=true quarantineReconciled=true reconExecutionGuard=true virtualEntitlement=true nativeCountAuthority=true",
+    "CLASH BOOT | service-stability-ready | version=%1 passiveLifecycle=true anyFriendlyBaseStorage=true logisticsReuse=true tacticalQuarantine=false halOwnsLiveDisposition=true reconRoleGuard=true virtualEntitlement=true transportReuse=true transportBestFit=true nativeCountAuthority=true",
     ITW_CLASH_ServiceStabilityVersion
 ];
 true
