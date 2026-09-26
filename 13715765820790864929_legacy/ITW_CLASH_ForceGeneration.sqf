@@ -502,11 +502,11 @@ ITW_CLASH_Generation_fnc_Provider = {
             ITW_CLASH_Checkbook_fnc_Response
     };
 
+    // Artillery (incl. rocket artillery) is rear echelon like every other
+    // tank-killer: it spawns at the rear FOB and drives, never mid-corridor.
     private _profile = toUpperANSI (_requirements getOrDefault [
         "profile",
-        if (_capability == "ARTILLERY") then {"INTERSTITIAL"} else {
-            if (_mode == "AIR") then {"REAR_AIR"} else {"REAR"}
-        }
+        if (_mode == "AIR") then {"REAR_AIR"} else {"REAR"}
     ]);
     private _reference = +(_requirements getOrDefault [
         "reference",getPosATL leader _requester
@@ -643,7 +643,7 @@ ITW_CLASH_Generation_fnc_UsableGroups = {
             private _requirements = createHashMapFromArray [
                 ["hq",_hq],
                 ["side",_side],
-                ["profile","INTERSTITIAL"],
+                ["profile","REAR"],
                 ["mode","GROUND"],
                 ["reference",getPosATL leader _hq]
             ];

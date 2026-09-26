@@ -151,12 +151,12 @@ def test_field_vehicle_staging_obeys_shared_echelon_policy():
         dual.index("ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {"):
         dual.index("ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {")
     ]
-    assert '"INTERSTITIAL"' in echelon
-    assert 'ITW_TYPE_VEH_TANK,ITW_TYPE_VEH_APC' in echelon
+    # Echelon is decided from the spawned vehicle, not its ITW row type
+    # (see tests/test_vehicle_echelon_rule.py).
+    assert "ITW_CLASH_DualHAL_fnc_IsRearEchelon" in echelon
+    assert "ITW_TYPE_VEH_TANK,ITW_TYPE_VEH_APC" not in echelon
     assert '"REAR"' in echelon
-    assert '"FORWARD"' in echelon
     assert "ITW_CLASH_Generation_fnc_Resolve" in echelon
-    assert '"field-interstitial-unresolved-native-origin"' in echelon
     assert '"field-rear-unresolved-native-origin"' in echelon
 
     staging = dual[

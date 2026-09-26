@@ -564,6 +564,49 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
     true
 };
 
+// Engine's own anti-armour designation: CfgAmmo aiAmmoUsageFlags bit 512
+// ("64 + 128 + 512" style text or a number), checked on the ammo and its
+// submunition so tank guns, IFV APFSDS, ATGMs and AT rockets all qualify.
+ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo = {
+    params ["_ammo"];
+    private _flagsOf = {
+        params ["_entry"];
+        if (isNumber _entry) exitWith {getNumber _entry};
+        private _sum = 0;
+        {_sum = _sum + parseNumber _x} forEach ((getText _entry) splitString "+ ");
+        _sum
+    };
+    private _config = configFile >> "CfgAmmo" >> _ammo;
+    private _flags = [_config >> "aiAmmoUsageFlags"] call _flagsOf;
+    if ((floor (_flags / 512)) mod 2 == 1) exitWith {true};
+    private _sub = _config >> "submunitionAmmo";
+    if !(isText _sub) exitWith {false};
+    _flags = [configFile >> "CfgAmmo" >> getText _sub >> "aiAmmoUsageFlags"] call _flagsOf;
+    (floor (_flags / 512)) mod 2 == 1
+};
+
+// Echelon rule (both sides): artillery and anything that can kill a tank
+// (IFVs and above, AT carriers, AT-armed aircraft) stage at the rear FOB;
+// APCs and lighter stage forward. Decided from the spawned vehicle's real
+// weapons, not its ITW row: ITW fills a car-typed dual row with APC/IFV
+// classes when a faction has no dual cars, which sent IFVs forward.
+ITW_CLASH_DualHAL_fnc_IsRearEchelon = {
+    params ["_veh"];
+    if (isNull _veh) exitWith {false};
+    private _class = typeOf _veh;
+    if (getNumber (configFile >> "CfgVehicles" >> _class >> "artilleryScanner") == 1) exitWith {true};
+    if (_class in (
+        (missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryClasses",[]])
+        + (missionNamespace getVariable ["ITW_CLASH_EnemyArtilleryClasses",[]])
+    )) exitWith {true};
+    private _magazines = ((magazinesAllTurrets _veh) apply {_x#0}) + getPylonMagazines _veh;
+    _magazines = (_magazines arrayIntersect _magazines) - [""];
+    (_magazines findIf {
+        [getText (configFile >> "CfgMagazines" >> _x >> "ammo")] call
+            ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo
+    }) >= 0
+};
+
 ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
     params ["_vehInfo"];
     if !(_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) exitWith {[]};
@@ -572,78 +615,41 @@ ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
     private _crewGroup = _vehInfo#VEHINFO_CREW_GRP;
     if (isNull _veh || {isNull _crewGroup}) exitWith {[]};
 
-    private _vehType = _vehInfo#VEHINFO_TYPE;
-    private _class = typeOf _veh;
-    private _artilleryClasses = if (
-        !isNil "ITW_PlayerSide" && {side _crewGroup == ITW_PlayerSide}
-    ) then {
-        missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryClasses",[]]
-    } else {
-        missionNamespace getVariable ["ITW_CLASH_EnemyArtilleryClasses",[]]
-    };
-    private _isArtillery = _class in _artilleryClasses;
-
-    private _profile = if (_isArtillery) then {
-        "INTERSTITIAL"
-    } else {
-        if (_vehType in [ITW_TYPE_VEH_TANK,ITW_TYPE_VEH_APC]) then {
-            "REAR"
-        } else {
-            "FORWARD"
-        }
-    };
-
-    if (_profile == "FORWARD") exitWith {
+    private _air = _veh isKindOf "Air";
+    if !([_veh] call ITW_CLASH_DualHAL_fnc_IsRearEchelon) exitWith {
         [
             side _crewGroup,
-            if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"},
+            if (_air) then {"AIR"} else {"GROUND"},
             getPosATL _veh
         ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn
     };
 
+    // Assigned, then returned at function scope: an exitWith inside the
+    // `then` block only left that block, so a resolved rear node was
+    // discarded and every armor hand-off fell through to native origin.
+    private _rear = [];
     if (!isNil "ITW_CLASH_Generation_fnc_Resolve") then {
         private _resolved = [
             side _crewGroup,
-            if (_isArtillery) then {"ARTILLERY"} else {"FIELD_ARMOR"},
-            _profile,
+            "FIELD_ARMOR",
+            if (_air) then {"REAR_AIR"} else {"REAR"},
             getPosATL _veh
         ] call ITW_CLASH_Generation_fnc_Resolve;
         if (_resolved isEqualType createHashMap && {
             (_resolved getOrDefault ["status",""]) == "RESOLVED"
-        }) exitWith {
-            private _baseIndex = if (_profile == "REAR") then {
-                _resolved getOrDefault ["rearBase",-1]
-            } else {
-                _resolved getOrDefault ["forwardBase",-1]
-            };
-            [
+        }) then {
+            _rear = [
                 +(_resolved getOrDefault ["origin",[]]),
-                _baseIndex,
+                _resolved getOrDefault ["rearBase",-1],
                 _resolved getOrDefault ["objective",-1],
-                format [
-                    "field-%1-%2",
-                    toLowerANSI _profile,
-                    _resolved getOrDefault ["source","generation-node"]
-                ]
-            ]
+                "field-rear-" + (_resolved getOrDefault ["source","generation-node"])
+            ];
         };
     };
+    if (_rear isNotEqualTo []) exitWith {_rear};
 
-    // Never deliberately fall artillery back into a protected FOB when the
-    // interstitial geometry cannot be resolved. Preserve its native physical
-    // origin and let HAL own tactical employment from there.
-    if (_isArtillery) exitWith {
-        [
-            getPosATL _veh,
-            -1,
-            VAR_GET_OBJ_IDX(_crewGroup),
-            "field-interstitial-unresolved-native-origin"
-        ]
-    };
-
-    // Rear armor resolution should normally be available once ForceGeneration
-    // is live. Fail open to native field position instead of moving heavy armor
-    // forward in violation of the echelon contract.
+    // Never fail forward: keep the native home-base origin so the vehicle
+    // paths to the front like any other rear-echelon asset.
     [
         getPosATL _veh,
         -1,
@@ -1043,7 +1049,11 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
         } else {
             _veh isKindOf "LandVehicle"
         };
-        if (!_kindOK || {_capacity < _seatCount}) then {
+        // Transports spawn at the forward FOB; a dual-role IFV or AT-armed
+        // helicopter must not arrive there without driving (echelon rule).
+        if (!_kindOK || {_capacity < _seatCount} || {
+            [_veh] call ITW_CLASH_DualHAL_fnc_IsRearEchelon
+        }) then {
             deleteVehicleCrew _veh;
             deleteVehicle _veh;
             if (!isNull _crewGroup && {units _crewGroup isEqualTo []}) then {
