@@ -396,6 +396,7 @@ ITW_CLASH_ThunderRun_fnc_SetPhase = {
         _state getOrDefault ["classificationReason",""],
         !(_state getOrDefault ["finalized",false])
     ]] call ITW_CLASH_ThunderRun_fnc_Log;
+    true
 };
 
 ITW_CLASH_ThunderRun_fnc_ClearASupported = {
