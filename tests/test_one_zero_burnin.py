@@ -101,7 +101,7 @@ def test_burnin_hardening_is_scheduled_by_required_recon_bridge():
 def test_sof_standby_uses_hq_side_attack_slots_without_changing_shared_corridor():
     sf = mission("ITW_CLASH_HALNativeSFFix.sqf")
 
-    assert "ITW_CLASH_HALNativeSFFixVersion = 3;" in sf
+    assert "ITW_CLASH_HALNativeSFFixVersion = 4;" in sf
     assert "ITW_CLASH_HALNativeSF_fnc_GetSupportCorridorSpawn" in sf
     assert "ITW_ATTACK_LAND_F" in sf
     assert "ITW_ATTACK_AIR_F" in sf

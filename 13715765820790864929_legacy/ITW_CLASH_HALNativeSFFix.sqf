@@ -8,7 +8,8 @@ if (missionNamespace getVariable ["ITW_CLASH_HALNativeSFFixStarted",false]) exit
 ITW_CLASH_HALNativeSFFixStarted = true;
 ITW_CLASH_HALNativeSFFixReady = false;
 ITW_CLASH_HALNativeSFFixFinished = false;
-ITW_CLASH_HALNativeSFFixVersion = 3;
+ITW_CLASH_HALNativeSFFixVersion = 4;
+ITW_CLASH_HALStatusQuoSFPatched = false;
 ITW_CLASH_SFStandbyMinRadius = 90;
 ITW_CLASH_SFStandbyMaxRadius = 220;
 scriptName "ITW_CLASH_HALNativeSFFix";
@@ -396,12 +397,58 @@ HAL_SFIdleOrd = {
     } forEach (_hq getVariable ["RydHQ_SpecForG",[]]);
 };
 
+// HAL's SF raid routine (RYD_StatusQuo, HAC_fnc2.sqf:1165-1251) loops over
+// enemy commanders with `_HQ = group _x;`. StatusQuo is called from each
+// commander's HQSitRep loop, which sets _HQ once, so with two HAL commanders
+// the first raid check turned that loop into the enemy commander for the rest
+// of the game. The raid block also read the SpecFor list StatusQuo builds from
+// HAL's class tables, never the commander's list the recon bridge adds
+// C.L.A.S.H. SOF to in HQOrders, which runs just before it. All four edits
+// apply or none do; unpatched, StatusQuo stays native and C.L.A.S.H. SOF never
+// reach the raid routine.
+private _statusQuoResults = [];
+if (isNil "RYD_StatusQuo") then {
+    _statusQuoResults pushBack "StatusQuo:missing";
+} else {
+    private _quo = toString RYD_StatusQuo;
+    private _ok = true;
+    {
+        if (!_ok) then {continue};
+        _x params ["_bad","_good","_label"];
+        private _edit = [_quo,_bad,_good,_label] call _replaceExact;
+        _statusQuoResults pushBack (_edit#2);
+        _ok = _edit#0;
+        _quo = _edit#1;
+    } forEach [
+        ["_HQ = group _x;","private _clashSFTargetHQ = group _x;","StatusQuo-SF-target-var"],
+        ["if (_HQ in _knownEG) then","if (_clashSFTargetHQ in _knownEG) then","StatusQuo-SF-target-test"],
+        ["_SFTgts pushBack _HQ","_SFTgts pushBack _clashSFTargetHQ","StatusQuo-SF-target-push"],
+        [
+            "_SFcount = {",
+            "_SpecForG = _HQ getVariable [""RydHQ_SpecForG"",_SpecForG]; _SFcount = {",
+            "StatusQuo-SF-commander-list"
+        ]
+    ];
+    if (_ok && {(_quo find "_HQ = group _x;") < 0}) then {
+        RYD_StatusQuo = compile _quo;
+        ITW_CLASH_HALStatusQuoSFPatched = true;
+    };
+};
+if (!ITW_CLASH_HALStatusQuoSFPatched) then {
+    diag_log format [
+        "CLASH BOOT | WARNING | native-sf-statusquo-unpatched | results=%1 clashSOFRaids=false",
+        _statusQuoResults
+    ];
+};
+
 ITW_CLASH_HALNativeSFFixReady = true;
 ITW_CLASH_HALNativeSFFixFinished = true;
 diag_log format [
-    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false sideAwareStandby=true goSFAttack=native-patched-observed nativeExecutorPreserved=true attackChars=%3",
+    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false sideAwareStandby=true goSFAttack=native-patched-observed nativeExecutorPreserved=true attackChars=%3 statusQuoPatched=%4 statusQuo=%5",
     ITW_CLASH_HALNativeSFFixVersion,
     _results,
-    count _attackSource
+    count _attackSource,
+    ITW_CLASH_HALStatusQuoSFPatched,
+    _statusQuoResults
 ];
 true

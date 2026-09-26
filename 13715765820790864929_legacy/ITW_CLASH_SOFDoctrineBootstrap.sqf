@@ -50,8 +50,11 @@ diag_log format [
 private _sofLoaded = false;
 if (_sofExists && {_sofChars > 0}) then {
     private _result = call compile _sofSource;
+    // The doctrine file is version 1 (classifier 2). c5d411b bumped this check
+    // to 2 with the infantry-authority one, so every boot reported
+    // sof-doctrine-load-failed and skipped finalizing the SOF functions.
     _sofLoaded = _result isEqualTo true && {
-        (missionNamespace getVariable ["ITW_CLASH_SOFDoctrineVersion",-1]) == 2 && {
+        (missionNamespace getVariable ["ITW_CLASH_SOFDoctrineVersion",-1]) == 1 && {
             !isNil "ITW_CLASH_SOF_fnc_Classify" && {
                 !isNil "ITW_CLASH_SOF_fnc_IsSOF" && {
                     !isNil "ITW_CLASH_fnc_SelectAnchorGroup_SOFBase" && {
