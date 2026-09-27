@@ -196,6 +196,15 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-dispatcher-aa-fix-missing | HAL keeps measuring air risk against AT threats";
             };
+            // HAL rejects an air lift on a coin flip whenever it knows of any
+            // air or AA threat anywhere on the map. Patched in SCargo's own
+            // source to ask about the route instead; scheduled, because it has
+            // to wait for HAL's bind and for the Checkbook's cargo hook.
+            if (fileExists "ITW_CLASH_HALCargoDiceFix.sqf") then {
+                [] execVM "ITW_CLASH_HALCargoDiceFix.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-cargo-dice-fix-missing | troop lifts stay a map-wide dice roll";
+            };
             private _infantryDemandLoaded = false;
             if (fileExists "ITW_CLASH_InfantryDemand.sqf") then {
                 _infantryDemandLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_InfantryDemand.sqf";
