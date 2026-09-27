@@ -164,6 +164,21 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | spaa-overwatch-missing-or-prereq-failed | HAL keeps dispatching SPAA forward";
             };
+            // Rear-base C-RAM: a fixed, learnable no-go zone for air about 3 km
+            // around each side's rear base, so a jet loitering over the rear is
+            // covered instead of buying a fighter.
+            if (_airPictureLoaded isEqualTo true && {fileExists "ITW_CLASH_RearBaseCRAM.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_RearBaseCRAM.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | rear-base-cram-missing-or-prereq-failed | rear bases have no air defence";
+            };
+            // AA teams garrison FOBs: HAL's garrison routine digs a group in
+            // where it already stands, so nothing ever sent one to a FOB.
+            if (_halThreatCoverageLoaded isEqualTo true && {fileExists "ITW_CLASH_FOBAirDefence.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_FOBAirDefence.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | fob-air-defence-missing-or-prereq-failed | AA squads stay where they spawned";
+            };
             // HAL front: each commander's dispatcher answers threats only where
             // that side has something in play; SF raids ignore it.
             private _halFrontLoaded = false;
