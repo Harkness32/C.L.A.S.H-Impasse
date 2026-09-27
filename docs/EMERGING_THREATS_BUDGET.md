@@ -23,14 +23,19 @@ Each phase is its own commit and can be shipped on its own.
 | 5 | `ITW_CLASH_SPAAOverwatch.sqf` | Every SPAA on a side, the ETB's and Impasse's alike, stays behind the front. |
 | follow-on | `ITW_CLASH_RearBaseCRAM.sqf` | One static air defence piece per side at the rear base, outside HAL and unbilled, replaced 5 minutes after it dies. |
 | follow-on | `ITW_CLASH_FOBAirDefence.sqf` | Walks an idle AA squad to each FOB and hands it to HAL's own garrison routine on arrival. |
+| tiers | `ITW_CLASH_ThunderRunAirTiers.sqf` | Only a hard-kill system closes a resupply corridor; relaxes Thunder Run's blunt air denial, never tightens it. |
+| tiers | `ITW_CLASH_HALCargoDiceFix.sqf` | Replaces HAL's map-wide lift coin flip (`SCargo.sqf:186`) with the route's own corridor verdict. |
+| tiers | `ITW_CLASH_HotDrop.sqf` | The troop-insertion profile: low, fast, pop up, put the infantry out, egress. Separate from the logistics run. |
 
 A helicopter is never `HARD_KILL`, whatever it carries: an enemy gunship opens
 counter-air demand like any other combat aircraft, but it is treated as a CAS
 jet and never closes a corridor. Only fixed-wing interceptors do that.
 
-Not built, and deliberately: the helicopter threat tiers beyond classification,
-and the one-purchase overdraft on a full reserve (decision 7). Both are still
-Hark's call. Follow-on work — AA teams garrisoning FOBs, the rear-base C-RAM,
+Not built, and deliberately: the one-purchase overdraft on a full reserve
+(decision 7), which is still Hark's call, and the corridor reopen timers (10
+minutes for ground air defence, 3 for fighters) — the corridor reads live
+knowledge with no fade memory, so a threat that disappears reopens a route at
+once. Follow-on work — AA teams garrisoning FOBs, the rear-base C-RAM,
 the aircraft sortie fix, troop helicopters on the Thunder Run profile — ships
 separately. The air picture already classifies and weights a C-RAM and the
 tiers, so those land on rules that exist.
@@ -77,6 +82,13 @@ tiers, so those land on rules that exist.
 | `ITW_CLASH_HALFrontIncludeForward` | `false` |
 | `ITW_CLASH_HALFrontIncludeRear` | `false` |
 | `ITW_CLASH_HALFrontIncludeArtillery` | `false` |
+| `ITW_CLASH_ThunderRunAirTiersEnabled` | `true` |
+| `ITW_CLASH_HALCargoDiceEnabled` | `true` |
+| `ITW_CLASH_HotDropEnabled` | `true` |
+| `ITW_CLASH_HotDropStates` | `["CONTESTED","HOT","AIR_DENIED"]` |
+| `ITW_CLASH_HotDropTakeoverRadius` | `3000` m |
+| `ITW_CLASH_HotDropIngressHeight` | `25` m |
+| `ITW_CLASH_HotDropDropHeight` | `130` m |
 
 `ITW_CLASH_ETBDryRun = true` runs the whole economy and every decision and buys
 nothing: each authorization logs the purchase it would have made. Use it for the

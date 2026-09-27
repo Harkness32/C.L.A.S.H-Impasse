@@ -245,6 +245,18 @@ if (isServer) then {
                 diag_log "CLASH BOOT | thunder-run-missing-or-prereq-failed | native ammo air delivery retained";
             };
 
+            // HotDrop: the troop-insertion profile. Separate from the
+            // logistics Thunder Run - it borrows the flare machinery and the
+            // corridor, and owns its own entry, phases and release.
+            if (
+                _airPictureLoaded isEqualTo true
+                && {fileExists "ITW_CLASH_HotDrop.sqf"}
+            ) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_HotDrop.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hot-drop-missing-or-prereq-failed | troop lifts fly HAL's own profile into hot LZs";
+            };
+
             // Helicopter threat tiers over Thunder Run's air denial: only a
             // system built to kill aircraft closes a route. Loads last so it
             // wraps the enhancement layer's classifier, and only ever relaxes.
