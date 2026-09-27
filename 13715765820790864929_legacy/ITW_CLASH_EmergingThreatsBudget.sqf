@@ -624,12 +624,30 @@ ITW_CLASH_ETB_fnc_AssetIsEmployed = {
     One audit pass per commander. It answers four questions, in this order:
     is the asset still ours, is its crew still aboard, can it still move, and
     is HAL using it.
+
+    It walks the asset ids and fetches each asset from the live registry, rather
+    than iterating a copy of it. `+` is a DEEP copy, so mutating an asset reached
+    through one updates the copy and throws it away: every timestamp this pass
+    writes - lastCrewAt, lastMovedAt, idleSince, holdsReserve - would be lost,
+    and lastCrewAt frozen at the purchase time means every asset gets written off
+    as crewless exactly ITW_CLASH_ETBCrewWriteOff after it was bought. The
+    registry is also mutated during the walk, by Retire, which is the other
+    reason not to iterate it directly.
 */
+ITW_CLASH_ETB_fnc_AssetById = {
+    params ["_side","_id"];
+    private _assets = ([_side] call ITW_CLASH_ETB_fnc_Ledger) get "assets";
+    private _index = _assets findIf {(_x get "id") isEqualTo _id};
+    if (_index < 0) exitWith {createHashMap};
+    _assets#_index
+};
+
 ITW_CLASH_ETB_fnc_Audit = {
     params ["_side"];
     private _ledger = [_side] call ITW_CLASH_ETB_fnc_Ledger;
     {
-        private _asset = _x;
+        private _asset = [_side,_x] call ITW_CLASH_ETB_fnc_AssetById;
+        if (count _asset == 0) then {continue};
         private _veh = _asset get "vehicle";
         private _retire = "";
 
@@ -697,14 +715,18 @@ ITW_CLASH_ETB_fnc_Audit = {
                 ]] call ITW_CLASH_ETB_fnc_Log;
             };
         };
-    } forEach (+(_ledger get "assets"));
+    } forEach ((_ledger get "assets") apply {_x get "id"});
 
     // A reservation whose purchase never completed would hold money forever.
+    // Keys only: Cancel deletes from the map being walked.
     {
-        if ((time - (_y get "reservedAt")) > ITW_CLASH_ETBReservationTimeout) then {
+        private _reservation = (_ledger get "reservations") getOrDefault [_x,createHashMap];
+        if (count _reservation > 0 && {
+            (time - (_reservation get "reservedAt")) > ITW_CLASH_ETBReservationTimeout
+        }) then {
             [_side,_x,"reservation-timeout"] call ITW_CLASH_ETB_fnc_Cancel;
         };
-    } forEach (+(_ledger get "reservations"));
+    } forEach (keys (_ledger get "reservations"));
     true
 };
 
