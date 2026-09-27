@@ -338,3 +338,30 @@ def test_the_air_reaction_reoffers_and_publishes_but_recalls_nothing():
     # Flights already under way continue: that is the decided direction.
     assert "deleteWaypoint" not in body
     assert "doMove" not in body
+
+
+def test_the_etb_only_buys_against_threats_hal_will_act_on():
+    source = coverage()
+    # With a front set, HAL's dispatcher scores an out-of-front threat zero, so
+    # a counter bought for one is money burned: the asset is never tasked.
+    body = function_body(source, "ITW_CLASH_HALThreatCoverage_fnc_InFront")
+    assert "RydHQ_Front" in body
+    assert "_position in _front" in body
+    # No front set means HAL answers everything, so everything is answerable.
+    assert "if (isNull _front) exitWith {true};" in body
+    armor = function_body(source, "ITW_CLASH_HALThreatCoverage_fnc_ArmorThreats")
+    assert "ITW_CLASH_HALThreatCoverage_fnc_InFront" in armor
+
+
+def test_air_still_sees_out_of_front_threats_but_only_spaa_answers_them():
+    source = coverage()
+    # Aircraft cross a front in seconds and the corridors need all of them, so
+    # the air picture is not filtered - the provider choice is what bites.
+    air = function_body(source, "ITW_CLASH_HALThreatCoverage_fnc_AirThreats")
+    assert "ITW_CLASH_HALThreatCoverage_fnc_InFront" not in air
+    choose = function_body(source, "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider")
+    assert "_outsideFront" in choose
+    assert '_options select {_x isEqualTo "SPAA"}' in choose
+    assert '"outside-front"' in choose
+    # And the guard must exit at function scope, not inside a then block.
+    assert "if (_outsideFront) exitWith {" in choose

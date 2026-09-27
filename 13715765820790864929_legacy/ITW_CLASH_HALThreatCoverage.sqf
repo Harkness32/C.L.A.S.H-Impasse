@@ -121,10 +121,35 @@ ITW_CLASH_HALThreatCoverage_fnc_DescribeNeed = {
 // ----------------------------------------------------------------- threats
 
 /*
+    Is this threat one HAL will actually act on?
+
+    With a front set, HAL's dispatcher scores any threat outside it zero
+    (HAC_fnc.sqf:1485) and recalls squads whose target leaves it
+    (HAC_fnc.sqf:2119). So a counter bought for an out-of-front threat is money
+    burned: HAL takes the asset, tasks nothing at the threat, our offer reports
+    no commitment, the provider gets marked failed and the asset sits until its
+    idle release. The same test HAL uses is the one that belongs in front of a
+    purchase - the engine's own `in`, on the same location object.
+
+    No front set means HAL answers everything, so everything is answerable.
+*/
+ITW_CLASH_HALThreatCoverage_fnc_InFront = {
+    params ["_hq","_position"];
+    if (isNull _hq || {_position isEqualTo []}) exitWith {true};
+    private _front = _hq getVariable ["RydHQ_Front",locationNull];
+    if (isNull _front) exitWith {true};
+    _position in _front
+};
+
+/*
     Anti-armor threats: every enemy HAL knows about that our own test calls an
     armored vehicle carrying anti-armor weapons, rechecked as alive and still
     known at evaluation. HAL's lists refresh once per cycle, so a dead tank can
     still sit in them.
+
+    Filtered by the front, because every anti-armor provider is employed by HAL:
+    a tank the dispatcher will not answer is not a tank the ETB should buy
+    against.
 */
 ITW_CLASH_HALThreatCoverage_fnc_ArmorThreats = {
     params ["_hq"];
@@ -136,13 +161,22 @@ ITW_CLASH_HALThreatCoverage_fnc_ArmorThreats = {
         if (isNull _veh || {!alive _veh}) then {continue};
         if (_veh in _threats) then {continue};
         if !([_veh] call ITW_CLASH_AirPicture_fnc_IsArmoredThreat) then {continue};
+        if !([_hq,getPosATL _veh] call ITW_CLASH_HALThreatCoverage_fnc_InFront) then {continue};
         _threats pushBack _veh;
     } forEach _known;
     _threats
 };
 
-// Counter-air threats come from the air picture, which is the only thing fast
-// enough to see them. Each entry carries whether it may be funded at once.
+/*
+    Counter-air threats come from the air picture, which is the only thing fast
+    enough to see them. Each entry carries whether it may be funded at once.
+
+    Deliberately NOT filtered by the front, unlike armor: aircraft cross a front
+    in seconds, the coverage count and the helicopter corridors need to know
+    about all of them, and counter-air has one provider CLASH employs itself.
+    Where the front bites is the provider choice below - a CAP jet against an
+    out-of-front jet is handed to HAL and wasted, an SPAA is not.
+*/
 ITW_CLASH_HALThreatCoverage_fnc_AirThreats = {
     params ["_hq"];
     if (isNull _hq || {isNil "ITW_CLASH_AirPicture_fnc_Hostiles"}) exitWith {[]};
@@ -628,6 +662,25 @@ ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider = {
         !([_demand,_x] call ITW_CLASH_HALThreatCoverage_fnc_ProviderFailed)
     };
     if (_options isEqualTo []) exitWith {["","all-providers-failed"]};
+
+    // Outside the front, only a provider CLASH employs itself can answer: HAL's
+    // dispatcher scores an out-of-front threat zero, so anything handed to it is
+    // money spent on an asset that will never be tasked. SPAA is the one
+    // provider CLASH places itself, which is exactly why it still works here.
+    // (Flag and exit at function scope: an exitWith inside a then block would
+    // only leave the block, which has bitten this repo three times.)
+    private _outsideFront = !([_hq,getPosATL _threat] call
+        ITW_CLASH_HALThreatCoverage_fnc_InFront);
+    if (_outsideFront) then {
+        _options = _options select {_x isEqualTo "SPAA"};
+    };
+    if (_outsideFront) exitWith {
+        if (_options isEqualTo []) then {
+            ["","outside-front"]
+        } else {
+            ["SPAA","outside-front-clash-employed"]
+        }
+    };
 
     if (_need isEqualTo "COUNTER_AIR") exitWith {
         // CAP if we own an airport, SPAA otherwise: SPAA is what gives a side
