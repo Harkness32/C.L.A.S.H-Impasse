@@ -21,6 +21,8 @@ Each phase is its own commit and can be shipped on its own.
 | 3 | `ITW_CLASH_EmergingThreatsBudget.sqf` | The ledger: income, prices, reserve, row and safety limits, reservations, escrow, living assets, write-offs, idle release, authorization, logging. |
 | 4 | `ITW_CLASH_HALThreatCoverage.sqf` (rewritten), plus the ETB section of `ITW_CLASH_ForceGeneration.sqf` | Demand, coverage and the purchase transaction. |
 | 5 | `ITW_CLASH_SPAAOverwatch.sqf` | Every SPAA on a side, the ETB's and Impasse's alike, stays behind the front. |
+| follow-on | `ITW_CLASH_RearBaseCRAM.sqf` | One static air defence piece per side at the rear base, outside HAL and unbilled, replaced 5 minutes after it dies. |
+| follow-on | `ITW_CLASH_FOBAirDefence.sqf` | Walks an idle AA squad to each FOB and hands it to HAL's own garrison routine on arrival. |
 
 A helicopter is never `HARD_KILL`, whatever it carries: an enemy gunship opens
 counter-air demand like any other combat aircraft, but it is treated as a CAS
@@ -67,10 +69,35 @@ tiers, so those land on rules that exist.
 | `ITW_CLASH_ThreatCoverageGroundPersistence` | `90` s |
 | `ITW_CLASH_ThreatCoverageFailureMemory` | `600` s |
 | `ITW_CLASH_SPAAOverwatchStandoff` | `1500` m |
+| `ITW_CLASH_RearBaseCRAMEnabled` | `true` |
+| `ITW_CLASH_RearBaseCRAMRespawn` | `300` s |
+| `ITW_CLASH_FOBAirDefenceEnabled` | `true` |
+| `ITW_CLASH_FOBAirDefenceArrival` | `75` m |
+| `ITW_CLASH_FOBAirDefenceIncludeRear` | `true` |
+| `ITW_CLASH_HALFrontIncludeForward` | `false` |
+| `ITW_CLASH_HALFrontIncludeRear` | `false` |
+| `ITW_CLASH_HALFrontIncludeArtillery` | `false` |
 
 `ITW_CLASH_ETBDryRun = true` runs the whole economy and every decision and buys
 nothing: each authorization logs the purchase it would have made. Use it for the
 first live run of phase 3.
+
+## The front decides what the ETB may answer
+
+HAL's dispatcher scores any threat outside a commander's front zero
+(`HAC_fnc.sqf:1485`), so a counter bought for an out-of-front threat is never
+tasked. Anti-armor demand is therefore filtered by the front; counter-air demand
+is not, because aircraft cross a front in seconds and the coverage count and the
+helicopter corridors need all of them — instead the provider choice narrows to
+SPAA, the one provider CLASH places itself.
+
+The front now anchors on the contested objectives alone (plus
+`ITW_CLASH_HALFrontMargin`). That is deliberate: our own artillery inside our own
+front meant the main force answered enemy SF raids on the gun line, and HAL's SF
+routine ignores the front entirely. The consequence for the ETB is direct — a
+tighter front means fewer answerable armor threats and less spending. If a run
+shows the ETB idle with armor on the field, check whether those threats are
+outside the front before looking at the ledger.
 
 ## Reading a run
 
@@ -105,6 +132,8 @@ dispatcher patch reporting `already-fixed`, or any module logging
 
 ## What to check before trusting a run
 
+- `hal-front-ready` reports `anchors=objectives`, and the armor demands you
+  expect are inside it.
 - `hal-dispatcher-aa-fix-ready` says `patched=true`. If it says
   `hal-dispatcher-aa-fix-failed`, HAL's dispatcher text changed and the anchor
   needs revisiting; stock HAL is still compiled and nothing else is affected.
