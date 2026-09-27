@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Generation_fnc_Resolve" || {isNil "ITW_CLASH_Generation_fnc
 };
 
 ITW_CLASH_HALFrontStarted = true;
-ITW_CLASH_HALFrontVersion = 1;
+ITW_CLASH_HALFrontVersion = 2;
 
 /*
     HAL front for both commanders.
@@ -23,15 +23,36 @@ ITW_CLASH_HALFrontVersion = 1;
     RydHQ_FrontA stays off, so HAL still knows every enemy, and the SF raid
     routine never reads the front: only special forces go deep.
 
-    A side's front covers everything that side has in play, so a threat to
-    anything it owns is always answerable: the contested objectives, each one's
-    forward FOB and (by default) the rear FOB behind it on Impasse's base graph,
-    and the side's own artillery. One rectangle along the rear-to-objective
-    axis, plus a margin.
+    A side's front is the contested objectives, plus a margin, and by default
+    nothing else.
+
+    It used to span everything the side had in play - objectives, each one's
+    forward FOB, the rear FOB behind it, and the side's own artillery - which
+    made the box reach from the rear base to the front line and stop meaning
+    much. Worse, it defeated the thing it was meant to leave alone: HAL's SF
+    raid routine never reads the front (HAL/GoSFAttack.sqf contains no reference
+    to it), so enemy special forces go deep whatever the front says, and they are
+    artillery raiders above all. With our own artillery park inside our own
+    front, our dispatcher answered a deep raid on it with the main force, and the
+    raid stopped being a raid.
+
+    Keeping it to the objectives means the dispatcher stays on the fight it is
+    supposed to be having, our artillery shells what is at the objectives rather
+    than distant contacts (HAC_fnc.sqf:4046 sorts known enemies by front
+    membership), and a deep raid is a deep raid.
+
+    The trade, worth knowing: HAL will not answer a threat to a FOB or an
+    artillery position that falls outside the objectives plus the margin. Base
+    and rear defence belongs to Impasse's garrisons and to C.L.A.S.H.'s anchor
+    doctrine, not to the dispatcher. Each part can be switched back on
+    independently, and widening ITW_CLASH_HALFrontMargin is the gentler dial if
+    forward FOBs sit just outside.
 */
 
 ITW_CLASH_HALFrontMargin = missionNamespace getVariable ["ITW_CLASH_HALFrontMargin",1500];
-ITW_CLASH_HALFrontIncludeRear = missionNamespace getVariable ["ITW_CLASH_HALFrontIncludeRear",true];
+ITW_CLASH_HALFrontIncludeForward = missionNamespace getVariable ["ITW_CLASH_HALFrontIncludeForward",false];
+ITW_CLASH_HALFrontIncludeRear = missionNamespace getVariable ["ITW_CLASH_HALFrontIncludeRear",false];
+ITW_CLASH_HALFrontIncludeArtillery = missionNamespace getVariable ["ITW_CLASH_HALFrontIncludeArtillery",false];
 ITW_CLASH_HALFrontPoll = missionNamespace getVariable ["ITW_CLASH_HALFrontPoll",30];
 ITW_CLASH_HALFrontMarkers = missionNamespace getVariable ["ITW_CLASH_HALFrontMarkers",false];
 
@@ -67,21 +88,30 @@ ITW_CLASH_HALFront_fnc_Points = {
         if (_x < 0 || {_x >= count ITW_Objectives}) then {continue};
         private _objectivePos = +(ITW_Objectives#_x#ITW_OBJ_POS);
         _objectives pushBack _objectivePos;
-        private _graph = [_side,"FRONT","FORWARD",_objectivePos] call ITW_CLASH_Generation_fnc_Resolve;
-        if ((_graph getOrDefault ["status",""]) == "RESOLVED") then {
-            _forward pushBack (_graph getOrDefault ["forwardPosition",[]]);
-            if (ITW_CLASH_HALFrontIncludeRear) then {
-                _rear pushBack (_graph getOrDefault ["rearPosition",[]]);
+        if (ITW_CLASH_HALFrontIncludeForward || {ITW_CLASH_HALFrontIncludeRear}) then {
+            private _graph = [_side,"FRONT","FORWARD",_objectivePos] call ITW_CLASH_Generation_fnc_Resolve;
+            if ((_graph getOrDefault ["status",""]) == "RESOLVED") then {
+                if (ITW_CLASH_HALFrontIncludeForward) then {
+                    _forward pushBack (_graph getOrDefault ["forwardPosition",[]]);
+                };
+                if (ITW_CLASH_HALFrontIncludeRear) then {
+                    _rear pushBack (_graph getOrDefault ["rearPosition",[]]);
+                };
             };
         };
     } forEach (call ITW_CLASH_Generation_fnc_ActiveObjectiveIds);
 
+    // Our own artillery is deliberately NOT a front anchor by default: enemy SF
+    // ignore the front and come for it anyway, and pulling it inside means the
+    // main force answers a deep raid that should have bitten.
     private _artillery = [];
-    {
-        if (!isNull _x && {({alive _x} count units _x) > 0}) then {
-            _artillery pushBack getPosATL (vehicle leader _x);
-        };
-    } forEach (_hq getVariable ["RydHQ_ArtG",[]]);
+    if (ITW_CLASH_HALFrontIncludeArtillery) then {
+        {
+            if (!isNull _x && {({alive _x} count units _x) > 0}) then {
+                _artillery pushBack getPosATL (vehicle leader _x);
+            };
+        } forEach (_hq getVariable ["RydHQ_ArtG",[]]);
+    };
 
     [_objectives,_forward select {_x isNotEqualTo []},_rear select {_x isNotEqualTo []},_artillery]
 };
@@ -222,10 +252,12 @@ ITW_CLASH_HALFront_fnc_Update = {
 };
 
 diag_log format [
-    "CLASH BOOT | hal-front-ready | version=%1 margin=%2 includeRear=%3 poll=%4 markers=%5 dispatcherLeash=true sfIgnoresFront=true enemyKnowledgeKept=true",
+    "CLASH BOOT | hal-front-ready | version=%1 anchors=objectives margin=%2 includeForward=%3 includeRear=%4 includeArtillery=%5 poll=%6 markers=%7 dispatcherLeash=true sfIgnoresFront=true artilleryRaidable=true enemyKnowledgeKept=true",
     ITW_CLASH_HALFrontVersion,
     ITW_CLASH_HALFrontMargin,
+    ITW_CLASH_HALFrontIncludeForward,
     ITW_CLASH_HALFrontIncludeRear,
+    ITW_CLASH_HALFrontIncludeArtillery,
     ITW_CLASH_HALFrontPoll,
     ITW_CLASH_HALFrontMarkers
 ];
