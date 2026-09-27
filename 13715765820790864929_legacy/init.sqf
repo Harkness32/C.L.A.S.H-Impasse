@@ -236,6 +236,19 @@ if (isServer) then {
                 diag_log "CLASH BOOT | thunder-run-missing-or-prereq-failed | native ammo air delivery retained";
             };
 
+            // Helicopter threat tiers over Thunder Run's air denial: only a
+            // system built to kill aircraft closes a route. Loads last so it
+            // wraps the enhancement layer's classifier, and only ever relaxes.
+            if (
+                _thunderRunLoaded isEqualTo true
+                && {_airPictureLoaded isEqualTo true}
+                && {fileExists "ITW_CLASH_ThunderRunAirTiers.sqf"}
+            ) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_ThunderRunAirTiers.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | thunder-run-air-tiers-missing-or-prereq-failed | an unarmed enemy transport still grounds a resupply run";
+            };
+
             private _playerGarageLoaded = false;
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_PlayerGarageDeployment.sqf"}) then {
                 _playerGarageLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_PlayerGarageDeployment.sqf";
