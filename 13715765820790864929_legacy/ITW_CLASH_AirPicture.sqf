@@ -357,11 +357,18 @@ ITW_CLASH_AirPicture_fnc_AirDefenceProfile = {
     Helicopter threat tier, classified from the vehicle like the armor fix.
     Most air defence changes HOW helicopters fly, not WHETHER they fly: only a
     system built to kill aircraft closes a corridor.
-      TOLERATED: MANPADS, static AA guns, CAS jets and gunships with a
-                 self-defence pair, unarmed aircraft. Never blocks; near the
-                 landing zone it makes the LZ hot.
-      HARD_KILL: dedicated AA vehicles, radar SAM sites, and fighters with four
-                 or more loaded air-to-air missiles. Closes the corridor.
+      TOLERATED: MANPADS, static AA guns, every helicopter, CAS jets and
+                 gunships with a self-defence pair, unarmed aircraft. Never
+                 blocks; near the landing zone it makes the LZ hot.
+      HARD_KILL: dedicated AA vehicles, radar SAM sites, and FIXED-WING
+                 aircraft with four or more loaded air-to-air missiles. Closes
+                 the corridor.
+
+    A helicopter is never hard kill, whatever it is carrying. An enemy gunship
+    is a real and angry air threat - it opens counter-air demand like any other
+    combat aircraft - but it is not the kind of thing that should shut a
+    corridor down for ten minutes or until it dies. It is treated exactly like a
+    CAS jet: fought, not routed around.
 */
 ITW_CLASH_AirPicture_fnc_ThreatTier = {
     params ["_veh"];
@@ -370,7 +377,8 @@ ITW_CLASH_AirPicture_fnc_ThreatTier = {
 
     if (_veh isKindOf "Air") exitWith {
         if (
-            (_profile get "antiAirMissile")
+            (_veh isKindOf "Plane")
+            && {_profile get "antiAirMissile"}
             && {(_profile get "airToAirMissiles") >= ITW_CLASH_AirPictureHardKillMissiles}
         ) then {
             ["HARD_KILL",ITW_CLASH_AirPictureFighterEnvelope]

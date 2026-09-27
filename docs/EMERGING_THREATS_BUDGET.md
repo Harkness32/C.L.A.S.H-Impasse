@@ -22,6 +22,10 @@ Each phase is its own commit and can be shipped on its own.
 | 4 | `ITW_CLASH_HALThreatCoverage.sqf` (rewritten), plus the ETB section of `ITW_CLASH_ForceGeneration.sqf` | Demand, coverage and the purchase transaction. |
 | 5 | `ITW_CLASH_SPAAOverwatch.sqf` | Every SPAA on a side, the ETB's and Impasse's alike, stays behind the front. |
 
+A helicopter is never `HARD_KILL`, whatever it carries: an enemy gunship opens
+counter-air demand like any other combat aircraft, but it is treated as a CAS
+jet and never closes a corridor. Only fixed-wing interceptors do that.
+
 Not built, and deliberately: the helicopter threat tiers beyond classification,
 and the one-purchase overdraft on a full reserve (decision 7). Both are still
 Hark's call. Follow-on work — AA teams garrisoning FOBs, the rear-base C-RAM,

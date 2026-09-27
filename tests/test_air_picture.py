@@ -142,6 +142,23 @@ def test_only_systems_built_to_kill_aircraft_are_hard_kill():
     assert all("Manpad" not in line and "StaticGun" not in line for line in tiers)
 
 
+def test_a_helicopter_is_never_hard_kill_however_it_is_armed():
+    # An enemy gunship is a real air threat and opens counter-air demand like
+    # any other combat aircraft, but it must not shut a corridor down: only
+    # fixed-wing interceptors do that.
+    source = air_picture()
+    body = function_body(source, "ITW_CLASH_AirPicture_fnc_ThreatTier")
+    air = body.index('isKindOf "Air"')
+    hard = body.index("HARD_KILL", air)
+    assert 'isKindOf "Plane"' in body[air:hard]
+    # A helicopter is still combat air, so it still opens demand.
+    combat = function_body(source, "ITW_CLASH_AirPicture_fnc_IsCombatAircraft")
+    assert 'isKindOf "Plane"' not in combat
+    # And it can never be counted as one of our own fighter responders either.
+    fighter = function_body(source, "ITW_CLASH_AirPicture_fnc_IsFighter")
+    assert 'isKindOf "Plane"' in fighter
+
+
 def test_corridor_gate_adds_what_hal_does_not_know_about():
     source = air_picture()
     body = function_body(source, "ITW_CLASH_AirPicture_fnc_ClassifyCorridor")
