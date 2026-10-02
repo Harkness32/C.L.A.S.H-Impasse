@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo") exitWith {
 };
 
 ITW_CLASH_AirPictureStarted = true;
-ITW_CLASH_AirPictureVersion = 1;
+ITW_CLASH_AirPictureVersion = 2;
 ITW_CLASH_AirPictureReady = false;
 
 /*
@@ -64,17 +64,69 @@ ITW_CLASH_AirPictureCRAMUmbrella = missionNamespace getVariable ["ITW_CLASH_AirP
 // Hard-kill envelopes, for the corridor gate and the helicopter tiers.
 ITW_CLASH_AirPictureGroundEnvelope = missionNamespace getVariable ["ITW_CLASH_AirPictureGroundEnvelope",4000];
 ITW_CLASH_AirPictureFighterEnvelope = missionNamespace getVariable ["ITW_CLASH_AirPictureFighterEnvelope",6000];
-// Two helicopters lost close together in a short window close that area,
-// whatever shot them down: it catches a MANPADS nest and air defence nobody saw.
-ITW_CLASH_AirPictureLossRadius = missionNamespace getVariable ["ITW_CLASH_AirPictureLossRadius",1500];
+/*
+    Two helicopters lost close together in a short window close that area,
+    whatever shot them down: it catches a MANPADS nest and air defence nobody
+    saw. The radius is deliberately wider than one launcher's reach - a single
+    team can down two helicopters approaching from different directions, and
+    their crash sites land well over a kilometre apart.
+*/
+ITW_CLASH_AirPictureLossRadius = missionNamespace getVariable ["ITW_CLASH_AirPictureLossRadius",2500];
 ITW_CLASH_AirPictureLossWindow = missionNamespace getVariable ["ITW_CLASH_AirPictureLossWindow",600];
 ITW_CLASH_AirPictureLossClosure = missionNamespace getVariable ["ITW_CLASH_AirPictureLossClosure",600];
+/*
+    A flat closure lets a commander feed the same nest on a schedule: wait it
+    out, send another, lose it, wait it out again. Each time the same area trips
+    again inside the escalation window its closure doubles, up to the cap, so
+    the commander eventually gives up on that approach rather than learning its
+    timetable.
+*/
+ITW_CLASH_AirPictureLossEscalation = missionNamespace getVariable ["ITW_CLASH_AirPictureLossEscalation",1800];
+ITW_CLASH_AirPictureLossClosureMax = missionNamespace getVariable ["ITW_CLASH_AirPictureLossClosureMax",2400];
+
+/*
+    How long a hard-kill system keeps a corridor closed after it was last seen.
+
+    These are measured in HAL CYCLES, not minutes, because the corridor reads
+    HAL's own knowledge list and HAL refreshes that list exactly once per cycle.
+    A cycle is (groups x 5) + ((10 + groups) / (0.5 + reflex)) x commDelay
+    seconds (HAC_fnc2.sqf:1097) - about 2.2 minutes at 20 groups and 4.2 at 40 -
+    and HAL publishes the figure as RydHQ_myDelay, which is what we read. A flat
+    three-minute timer would be SHORTER than one cycle in a big game, so a
+    corridor could reopen before HAL has had a chance to look again.
+
+      Mobile hard-kill AA: three cycles, and never under the floor. Spotting
+      flickers as units lose line of sight; under three cycles corridors blink
+      open and shut, and much longer means one glimpse shuts a route for a
+      quarter of an hour.
+
+      A static SAM site: it cannot move, so "unseen" only means nobody is
+      looking. It stays closed until the site is dead, with a safety valve so a
+      site that died unseen cannot close a corridor forever.
+
+      A fighter: its last known position is stale within a minute whatever we
+      do, so the timer only stops a jet seen once from closing routes. The short
+      window applies while the air picture scans faster than HAL's cycle, which
+      is its whole purpose; if it is ever slowed past the cycle, one cycle is the
+      floor instead.
+*/
+ITW_CLASH_AirPictureDenialMobileCycles = missionNamespace getVariable ["ITW_CLASH_AirPictureDenialMobileCycles",3];
+ITW_CLASH_AirPictureDenialMobileFloor = missionNamespace getVariable ["ITW_CLASH_AirPictureDenialMobileFloor",480];
+ITW_CLASH_AirPictureDenialStaticValve = missionNamespace getVariable ["ITW_CLASH_AirPictureDenialStaticValve",1200];
+ITW_CLASH_AirPictureDenialFighterSeconds = missionNamespace getVariable ["ITW_CLASH_AirPictureDenialFighterSeconds",180];
+// Fallback cycle length for a commander that has not published one yet.
+ITW_CLASH_AirPictureDenialCycleFallback = missionNamespace getVariable ["ITW_CLASH_AirPictureDenialCycleFallback",130];
 
 // Contacts per side: sideKey -> (contact key -> [aircraft,position,firstSeenAt,
 // lastSeenAt,tier,immediate]).
 ITW_CLASH_AirPictureContacts = createHashMap;
 // Air losses: [position,time,class] - the loss counter's raw material.
 ITW_CLASH_AirPictureLosses = [];
+// Areas the loss counter has closed: [position,trippedAt,closureSeconds].
+ITW_CLASH_AirPictureLossAreas = [];
+// Remembered hard-kill systems per side, so a corridor stays shut while HAL is
+// merely not looking: sideKey -> (threat key -> entry).
+ITW_CLASH_AirPictureDenials = createHashMap;
 
 ITW_CLASH_AirPicture_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -517,56 +569,240 @@ ITW_CLASH_AirPicture_fnc_Hostiles = {
     _result
 };
 
-// Enemy air defence this commander knows about, as [vehicle,tier,envelope].
-// Read from HAL's own knowledge, so nothing is conjured.
+// HAL's own cycle length for this commander, as HAL itself computed it
+// (HAC_fnc2.sqf:1099). Read rather than re-derived, so it tracks the
+// commander's reflex and comms delay and survives an upstream formula change.
+ITW_CLASH_AirPicture_fnc_HALCycleSeconds = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {ITW_CLASH_AirPictureDenialCycleFallback};
+    private _delay = _hq getVariable ["RydHQ_myDelay",0];
+    if !(_delay isEqualType 0) exitWith {ITW_CLASH_AirPictureDenialCycleFallback};
+    if (_delay <= 0) exitWith {ITW_CLASH_AirPictureDenialCycleFallback};
+    _delay
+};
+
+// Which kind of denial this system is, because they expire on different rules.
+// A site that cannot move is not the same evidence as a vehicle that can.
+ITW_CLASH_AirPicture_fnc_DenialKind = {
+    params ["_veh"];
+    if (isNull _veh) exitWith {""};
+    ([_veh] call ITW_CLASH_AirPicture_fnc_ThreatTier) params ["_tier"];
+    if (_tier isNotEqualTo "HARD_KILL") exitWith {""};
+    if (_veh isKindOf "Air") exitWith {"FIGHTER"};
+    if (
+        _veh isKindOf "StaticWeapon"
+        || {([_veh] call ITW_CLASH_AirPicture_fnc_WeaponProfile) get "radar"}
+    ) exitWith {"STATIC_SAM"};
+    "MOBILE_AA"
+};
+
+// How long this kind of entry keeps its corridor shut once nobody can see it.
+ITW_CLASH_AirPicture_fnc_DenialWindow = {
+    params ["_hq","_kind"];
+    private _cycle = [_hq] call ITW_CLASH_AirPicture_fnc_HALCycleSeconds;
+    switch (_kind) do {
+        case "MOBILE_AA": {
+            (_cycle * ITW_CLASH_AirPictureDenialMobileCycles)
+                max ITW_CLASH_AirPictureDenialMobileFloor
+        };
+        // The valve only; a live site is held by the alive test below instead.
+        case "STATIC_SAM": {ITW_CLASH_AirPictureDenialStaticValve};
+        case "FIGHTER": {
+            if (ITW_CLASH_AirPicturePoll < _cycle) then {
+                ITW_CLASH_AirPictureDenialFighterSeconds
+            } else {
+                _cycle
+            }
+        };
+        default {_cycle};
+    }
+};
+
+ITW_CLASH_AirPicture_fnc_Denials = {
+    params ["_hq"];
+    private _key = [side _hq] call ITW_CLASH_AirPicture_fnc_SideKey;
+    private _denials = ITW_CLASH_AirPictureDenials getOrDefault [_key,createHashMap];
+    if (count _denials == 0) then {ITW_CLASH_AirPictureDenials set [_key,_denials]};
+    _denials
+};
+
+/*
+    Record every hard-kill system this commander can currently see, and drop the
+    ones whose evidence has gone stale. Called on the air picture's own clock, so
+    the memory is refreshed far more often than HAL refreshes its knowledge.
+
+    Seeing a threat again resets its timer, and a threat known dead reopens its
+    corridor at once - a dead system is not evidence of anything.
+*/
+ITW_CLASH_AirPicture_fnc_RefreshDenials = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {false};
+    private _denials = [_hq] call ITW_CLASH_AirPicture_fnc_Denials;
+    private _cycle = _hq getVariable ["RydHQ_Cyclecount",0];
+
+    // Ground systems, from HAL's knowledge; aircraft, from our own contacts.
+    private _seen = [];
+    {
+        private _veh = vehicle _x;
+        if (isNull _veh || {!alive _veh}) then {continue};
+        private _kind = [_veh] call ITW_CLASH_AirPicture_fnc_DenialKind;
+        if (_kind isEqualTo "") then {continue};
+        ([_veh] call ITW_CLASH_AirPicture_fnc_ThreatTier) params ["","_envelope"];
+        private _threatKey = [_veh] call ITW_CLASH_AirPicture_fnc_ContactKey;
+        _seen pushBackUnique _threatKey;
+        private _entry = _denials getOrDefault [_threatKey,createHashMap];
+        if (count _entry == 0) then {
+            _denials set [_threatKey,createHashMapFromArray [
+                ["vehicle",_veh],["kind",_kind],["position",getPosATL _veh],
+                ["envelope",_envelope],["firstSeenAt",time],["lastSeenAt",time],
+                ["lastSeenCycle",_cycle]
+            ]];
+            ["denial-opened",[
+                _hq getVariable ["RydHQ_CodeSign","?"],_kind,typeOf _veh,
+                (getPosATL _veh) apply {round _x},
+                round ([_hq,_kind] call ITW_CLASH_AirPicture_fnc_DenialWindow)
+            ]] call ITW_CLASH_AirPicture_fnc_Log;
+        } else {
+            _entry set ["position",getPosATL _veh];
+            _entry set ["lastSeenAt",time];
+            _entry set ["lastSeenCycle",_cycle];
+            _entry set ["envelope",_envelope];
+        };
+    } forEach (
+        (_hq getVariable ["RydHQ_KnEnemies",[]])
+        + (([_hq] call ITW_CLASH_AirPicture_fnc_Hostiles) apply {_x#0})
+    );
+
+    {
+        private _threatKey = _x;
+        private _entry = _denials getOrDefault [_threatKey,createHashMap];
+        if (count _entry == 0) then {continue};
+        private _veh = _entry get "vehicle";
+        private _kind = _entry get "kind";
+        private _drop = "";
+
+        // Known dead reopens at once, whatever the timer says.
+        if (isNull _veh || {!alive _veh}) then {_drop = "dead"};
+
+        if (_drop isEqualTo "" && {!(_threatKey in _seen)}) then {
+            private _unseen = time - (_entry get "lastSeenAt");
+            private _window = [_hq,_kind] call ITW_CLASH_AirPicture_fnc_DenialWindow;
+            if (_kind isEqualTo "MOBILE_AA") then {
+                // Three cycles AND the floor: whichever is longer.
+                private _cycles = _cycle - (_entry get "lastSeenCycle");
+                if (
+                    _cycles >= ITW_CLASH_AirPictureDenialMobileCycles
+                    && {_unseen >= _window}
+                ) then {_drop = "unseen"};
+            } else {
+                if (_unseen >= _window) then {
+                    _drop = if (_kind isEqualTo "STATIC_SAM") then {"safety-valve"} else {"unseen"};
+                };
+            };
+        };
+
+        if (_drop isNotEqualTo "") then {
+            _denials deleteAt _threatKey;
+            ["denial-closed",[
+                _hq getVariable ["RydHQ_CodeSign","?"],_kind,
+                if (isNull _veh) then {"<gone>"} else {typeOf _veh},
+                _drop,round (time - (_entry get "lastSeenAt"))
+            ]] call ITW_CLASH_AirPicture_fnc_Log;
+        };
+    } forEach (keys _denials);
+    true
+};
+
+/*
+    Enemy air defence that keeps a corridor shut, as [vehicle,kind,envelope].
+
+    Remembered rather than merely live: HAL refreshes its knowledge once per
+    cycle, so asking only "what does HAL know right now" reopened a route the
+    moment a system fell out of the list - which is nearly always, since
+    spotting flickers as units lose line of sight. The memory above decides
+    when the evidence has actually gone stale.
+*/
 ITW_CLASH_AirPicture_fnc_KnownAirDefence = {
     params ["_hq"];
     if (isNull _hq) exitWith {[]};
     private _result = [];
     {
-        private _veh = vehicle _x;
-        if (isNull _veh || {!alive _veh} || {_veh isKindOf "Air"}) then {continue};
-        ([_veh] call ITW_CLASH_AirPicture_fnc_ThreatTier) params ["_tier","_envelope"];
-        if (_tier isEqualTo "HARD_KILL") then {_result pushBack [_veh,_tier,_envelope]};
-    } forEach (_hq getVariable ["RydHQ_KnEnemies",[]]);
+        private _veh = _y get "vehicle";
+        if (isNull _veh || {!alive _veh}) then {continue};
+        if (_veh isKindOf "Air") then {continue};
+        _result pushBack [_veh,_y get "kind",_y get "envelope"];
+    } forEach ([_hq] call ITW_CLASH_AirPicture_fnc_Denials);
     _result
 };
 
-// An air loss, wherever it happened and whatever caused it.
+/*
+    An air loss, wherever it happened and whatever caused it.
+
+    Each loss is checked against the recent ones: a second loss within the
+    radius and the window trips that area. A trip inside the escalation window
+    of the last one for the same area DOUBLES its closure, up to the cap, so a
+    commander cannot learn the timetable and keep feeding the same nest.
+*/
 ITW_CLASH_AirPicture_fnc_RecordLoss = {
     params ["_veh"];
     if (isNull _veh) exitWith {false};
-    ITW_CLASH_AirPictureLosses pushBack [getPosATL _veh,time,typeOf _veh];
+    private _position = getPosATL _veh;
+    ITW_CLASH_AirPictureLosses pushBack [_position,time,typeOf _veh];
     ITW_CLASH_AirPictureLosses = ITW_CLASH_AirPictureLosses select {
-        (time - (_x#1)) <= (ITW_CLASH_AirPictureLossWindow + ITW_CLASH_AirPictureLossClosure)
+        (time - (_x#1)) <= (ITW_CLASH_AirPictureLossWindow + ITW_CLASH_AirPictureLossClosureMax)
     };
-    ["air-loss",[typeOf _veh,(getPosATL _veh) apply {round _x}]] call
+    ["air-loss",[typeOf _veh,_position apply {round _x}]] call
         ITW_CLASH_AirPicture_fnc_Log;
+
+    // Does this loss complete a pair, close together in space and in time?
+    private _pair = ITW_CLASH_AirPictureLosses select {
+        ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
+        && {(time - (_x#1)) <= ITW_CLASH_AirPictureLossWindow}
+    };
+    if (count _pair < 2) exitWith {true};
+
+    private _index = ITW_CLASH_AirPictureLossAreas findIf {
+        ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
+    };
+    private _closure = ITW_CLASH_AirPictureLossClosure;
+    if (_index >= 0) then {
+        private _area = ITW_CLASH_AirPictureLossAreas#_index;
+        if ((time - (_area#1)) <= ITW_CLASH_AirPictureLossEscalation) then {
+            _closure = ((_area#2) * 2) min ITW_CLASH_AirPictureLossClosureMax;
+        };
+        _area set [0,_position];
+        _area set [1,time];
+        _area set [2,_closure];
+    } else {
+        ITW_CLASH_AirPictureLossAreas pushBack [_position,time,_closure];
+    };
+
+    ["loss-area-closed",[
+        _position apply {round _x},round _closure,count _pair,
+        if (_index >= 0) then {"escalated"} else {"first"}
+    ]] call ITW_CLASH_AirPicture_fnc_Log;
     true
 };
 
 /*
-    Loss counter: two aircraft lost within ITW_CLASH_AirPictureLossRadius of
-    each other inside the window close that area for the closure period,
-    whatever shot them down. It catches a MANPADS nest the commander keeps
-    feeding, and air defence nobody has seen.
+    Loss counter: an area where two aircraft went down close together stays shut
+    for its closure period, whatever shot them down. It catches a MANPADS nest
+    the commander keeps feeding, and air defence nobody has seen.
 */
 ITW_CLASH_AirPicture_fnc_LossClosed = {
     params ["_position"];
     if (_position isEqualTo []) exitWith {false};
-    private _recent = ITW_CLASH_AirPictureLosses select {
-        (time - (_x#1)) <= ITW_CLASH_AirPictureLossClosure
-        && {((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius}
+    // An area is forgotten only once it can no longer escalate either. Pruning
+    // at the closure alone would lose the memory a later trip doubles from, so
+    // a commander feeding the same nest every twelve minutes would reset to the
+    // base closure every time.
+    ITW_CLASH_AirPictureLossAreas = ITW_CLASH_AirPictureLossAreas select {
+        (time - (_x#1)) <= ((_x#2) max ITW_CLASH_AirPictureLossEscalation)
     };
-    if (count _recent < 2) exitWith {false};
-    // The two have to be close to each other in time as well as in space.
-    private _newest = 0;
-    private _oldest = 1e12;
-    {
-        _newest = _newest max (_x#1);
-        _oldest = _oldest min (_x#1);
-    } forEach _recent;
-    (_newest - _oldest) <= ITW_CLASH_AirPictureLossWindow
+    (ITW_CLASH_AirPictureLossAreas findIf {
+        ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
+        && {(time - (_x#1)) <= (_x#2)}
+    }) >= 0
 };
 
 /*
@@ -715,6 +951,9 @@ addMissionEventHandler ["EntityKilled",{
                 private _hq = [_x] call ITW_CLASH_fnc_GetCommanderForSide;
                 if (!isNull _hq) then {
                     [_hq] call ITW_CLASH_AirPicture_fnc_Update;
+                    // The denial memory is refreshed on this clock, not HAL's:
+                    // that is the whole point of keeping it.
+                    [_hq] call ITW_CLASH_AirPicture_fnc_RefreshDenials;
                 };
             } forEach _sides;
         };
@@ -724,12 +963,19 @@ addMissionEventHandler ["EntityKilled",{
 
 ITW_CLASH_AirPictureReady = true;
 diag_log format [
-    "CLASH BOOT | air-picture-ready | version=%1 poll=%2 grace=%3 unseen=%4 knowledge=%5 ignoreFront=%6 observeOnly=true halCycleUntouched=true classification=vehicle",
+    "CLASH BOOT | air-picture-ready | version=%1 poll=%2 grace=%3 unseen=%4 knowledge=%5 ignoreFront=%6 denialCycles=%7 denialFloor=%8 staticValve=%9 fighterWindow=%10 lossRadius=%11 lossClosure=%12-%13 observeOnly=true halCycleUntouched=true classification=vehicle denialTimersInHALCycles=true",
     ITW_CLASH_AirPictureVersion,
     ITW_CLASH_AirPicturePoll,
     ITW_CLASH_AirPictureSightingGrace,
     ITW_CLASH_AirPictureUnseenTimeout,
     ITW_CLASH_AirPictureKnowledgeThreshold,
-    ITW_CLASH_AirPictureIgnoreFront
+    ITW_CLASH_AirPictureIgnoreFront,
+    ITW_CLASH_AirPictureDenialMobileCycles,
+    ITW_CLASH_AirPictureDenialMobileFloor,
+    ITW_CLASH_AirPictureDenialStaticValve,
+    ITW_CLASH_AirPictureDenialFighterSeconds,
+    ITW_CLASH_AirPictureLossRadius,
+    ITW_CLASH_AirPictureLossClosure,
+    ITW_CLASH_AirPictureLossClosureMax
 ];
 true

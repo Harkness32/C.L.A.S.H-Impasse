@@ -32,10 +32,7 @@ counter-air demand like any other combat aircraft, but it is treated as a CAS
 jet and never closes a corridor. Only fixed-wing interceptors do that.
 
 Not built, and deliberately: the one-purchase overdraft on a full reserve
-(decision 7), which is still Hark's call, and the corridor reopen timers (10
-minutes for ground air defence, 3 for fighters) — the corridor reads live
-knowledge with no fade memory, so a threat that disappears reopens a route at
-once. Follow-on work — AA teams garrisoning FOBs, the rear-base C-RAM,
+(decision 7), which is still Hark's call. Follow-on work — AA teams garrisoning FOBs, the rear-base C-RAM,
 the aircraft sortie fix, troop helicopters on the Thunder Run profile — ships
 separately. The air picture already classifies and weights a C-RAM and the
 tiers, so those land on rules that exist.
@@ -89,6 +86,12 @@ tiers, so those land on rules that exist.
 | `ITW_CLASH_HotDropTakeoverRadius` | `3000` m |
 | `ITW_CLASH_HotDropIngressHeight` | `25` m |
 | `ITW_CLASH_HotDropDropHeight` | `130` m |
+| `ITW_CLASH_AirPictureDenialMobileCycles` | `3` HAL cycles |
+| `ITW_CLASH_AirPictureDenialMobileFloor` | `480` s |
+| `ITW_CLASH_AirPictureDenialStaticValve` | `1200` s |
+| `ITW_CLASH_AirPictureDenialFighterSeconds` | `180` s |
+| `ITW_CLASH_AirPictureLossRadius` | `2500` m |
+| `ITW_CLASH_AirPictureLossClosure` | `600` s, doubling to `2400` |
 
 `ITW_CLASH_ETBDryRun = true` runs the whole economy and every decision and buys
 nothing: each authorization logs the purchase it would have made. Use it for the
@@ -110,6 +113,27 @@ routine ignores the front entirely. The consequence for the ETB is direct — a
 tighter front means fewer answerable armor threats and less spending. If a run
 shows the ETB idle with armor on the field, check whether those threats are
 outside the front before looking at the ledger.
+
+## Corridor timers run on HAL's clock, not the wall's
+
+A corridor stays shut after a hard-kill system was last seen, and those timers
+are measured in **HAL cycles** rather than minutes. The corridor reads HAL's own
+knowledge list, and HAL refreshes it exactly once per cycle — `(groups × 5) +
+((10 + groups) / (0.5 + reflex)) × commDelay` seconds, about 2.2 minutes at 20
+groups and 4.2 at 40. A flat three-minute timer would be *shorter than one
+cycle* in a large game, so a route could reopen before HAL had a chance to look
+again. HAL publishes the figure as `RydHQ_myDelay`; that is what gets read,
+so the timers follow the commander's reflex and comms delay too.
+
+| Threat | Rule |
+| --- | --- |
+| Mobile hard-kill AA | 3 HAL cycles **and** never under 8 minutes |
+| Static SAM site | closed until the site is dead; a 20-minute valve covers one that died unseen |
+| Fighter | 3 minutes while the air picture scans faster than a cycle, otherwise one full cycle |
+| Loss counter | 2 losses within 2.5 km inside 10 minutes; closure doubles on a repeat inside 30 minutes, to a 40-minute cap |
+
+Seeing a threat again resets its timer, a threat known dead reopens its corridor
+at once, and flights already under way are never recalled.
 
 ## Reading a run
 

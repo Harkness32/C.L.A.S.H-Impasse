@@ -174,12 +174,106 @@ def test_corridor_gate_adds_what_hal_does_not_know_about():
 
 def test_loss_counter_needs_two_losses_close_in_space_and_time():
     source = air_picture()
-    body = function_body(source, "ITW_CLASH_AirPicture_fnc_LossClosed")
-    assert "ITW_CLASH_AirPictureLossRadius" in body
-    assert "ITW_CLASH_AirPictureLossWindow" in body
-    assert "count _recent < 2" in body
-    assert 'ITW_CLASH_AirPictureLossRadius",1500' in source
+    # The pair is detected when a loss is recorded; LossClosed only reads the
+    # areas that detection tripped.
+    record = function_body(source, "ITW_CLASH_AirPicture_fnc_RecordLoss")
+    assert "ITW_CLASH_AirPictureLossRadius" in record
+    assert "ITW_CLASH_AirPictureLossWindow" in record
+    assert "count _pair < 2" in record
+    closed = function_body(source, "ITW_CLASH_AirPicture_fnc_LossClosed")
+    assert "ITW_CLASH_AirPictureLossRadius" in closed
     assert 'ITW_CLASH_AirPictureLossWindow",600' in source
+
+
+def test_the_loss_radius_spans_two_approaches_not_one_launcher():
+    # One team can down two helicopters coming in from different directions,
+    # and the crash sites land well over a kilometre apart.
+    assert 'ITW_CLASH_AirPictureLossRadius",2500' in air_picture()
+
+
+def test_a_repeatedly_fed_area_doubles_its_closure_up_to_a_cap():
+    source = air_picture()
+    record = function_body(source, "ITW_CLASH_AirPicture_fnc_RecordLoss")
+    assert "ITW_CLASH_AirPictureLossEscalation" in record
+    assert "((_area#2) * 2) min ITW_CLASH_AirPictureLossClosureMax" in record
+    assert '"escalated"' in record
+    assert 'ITW_CLASH_AirPictureLossEscalation",1800' in source
+    assert 'ITW_CLASH_AirPictureLossClosureMax",2400' in source
+    assert 'ITW_CLASH_AirPictureLossClosure",600' in source
+    # The area memory must outlive its own closure or a later trip would start
+    # again from the base value instead of doubling.
+    closed = function_body(source, "ITW_CLASH_AirPicture_fnc_LossClosed")
+    assert "(_x#2) max ITW_CLASH_AirPictureLossEscalation" in closed
+
+
+def test_denial_timers_are_measured_in_hal_cycles():
+    source = air_picture()
+    # A flat three minutes is shorter than one HAL cycle in a big game, so a
+    # corridor could reopen before HAL has looked again.
+    cycle = function_body(source, "ITW_CLASH_AirPicture_fnc_HALCycleSeconds")
+    assert 'RydHQ_myDelay' in cycle
+    window = function_body(source, "ITW_CLASH_AirPicture_fnc_DenialWindow")
+    assert "ITW_CLASH_AirPicture_fnc_HALCycleSeconds" in window
+    assert "_cycle * ITW_CLASH_AirPictureDenialMobileCycles" in window
+    assert "max ITW_CLASH_AirPictureDenialMobileFloor" in window
+    assert 'ITW_CLASH_AirPictureDenialMobileCycles",3' in source
+    assert 'ITW_CLASH_AirPictureDenialMobileFloor",480' in source
+
+
+def test_hal_publishes_the_cycle_length_we_read():
+    hal = (HAL / "HAC_fnc2.sqf").read_text(encoding="utf-8", errors="replace")
+    assert '_HQ setVariable ["RydHQ_myDelay",_delay];' in hal
+    assert "_delay = ((count _friends) * 5)" in hal
+    # And the cycle counter the mobile rule counts in is maintained per commander.
+    for name in ["HQSitRep.sqf", "HQSitRepB.sqf"]:
+        sitrep = (HAL / "HAL" / name).read_text(encoding="utf-8", errors="replace")
+        assert "RydHQ_Cyclecount" in sitrep
+
+
+def test_a_mobile_launcher_needs_both_three_cycles_and_the_floor():
+    body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_RefreshDenials")
+    assert '_cycles >= ITW_CLASH_AirPictureDenialMobileCycles' in body
+    assert "_unseen >= _window" in body
+    assert "RydHQ_Cyclecount" in body
+
+
+def test_a_static_site_stays_closed_until_it_is_dead():
+    source = air_picture()
+    kind = function_body(source, "ITW_CLASH_AirPicture_fnc_DenialKind")
+    assert 'isKindOf "StaticWeapon"' in kind
+    assert '"radar"' in kind
+    assert '"STATIC_SAM"' in kind
+    body = function_body(source, "ITW_CLASH_AirPicture_fnc_RefreshDenials")
+    # It cannot move, so unseen only means nobody is looking: only death, or the
+    # safety valve for a site that died unseen, reopens it.
+    assert '_drop = "dead"' in body
+    assert '"safety-valve"' in body
+    assert 'ITW_CLASH_AirPictureDenialStaticValve",1200' in source
+
+
+def test_a_fighters_window_is_short_only_while_we_scan_faster_than_hal():
+    source = air_picture()
+    window = function_body(source, "ITW_CLASH_AirPicture_fnc_DenialWindow")
+    assert "if (ITW_CLASH_AirPicturePoll < _cycle) then {" in window
+    assert "ITW_CLASH_AirPictureDenialFighterSeconds" in window
+    assert 'ITW_CLASH_AirPictureDenialFighterSeconds",180' in source
+
+
+def test_seeing_it_again_resets_the_timer_and_death_reopens_at_once():
+    body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_RefreshDenials")
+    assert '_entry set ["lastSeenAt",time];' in body
+    assert '_entry set ["lastSeenCycle",_cycle];' in body
+    reset = body.index('_entry set ["lastSeenAt",time];')
+    assert body.index('_drop = "dead"') > reset
+
+
+def test_the_corridor_reads_the_memory_not_just_live_knowledge():
+    source = air_picture()
+    body = function_body(source, "ITW_CLASH_AirPicture_fnc_KnownAirDefence")
+    assert "ITW_CLASH_AirPicture_fnc_Denials" in body
+    assert "RydHQ_KnEnemies" not in body
+    # And the memory is refreshed on the air picture's clock, not HAL's.
+    assert "[_hq] call ITW_CLASH_AirPicture_fnc_RefreshDenials;" in source
 
 
 def test_front_application_is_a_setting_with_the_open_question_recorded():
