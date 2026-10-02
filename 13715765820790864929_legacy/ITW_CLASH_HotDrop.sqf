@@ -36,6 +36,15 @@ ITW_CLASH_HotDropReady = false;
     hands it straight back afterwards. A clear route is left entirely alone:
     HAL's own profile is fine when nothing is shooting.
 
+    The line this sits on, and it is a decided one: a tasked helicopter's
+    MISSION is never changed. No recall, no diversion, no corridor shutdown that
+    grounds a flight already under way - a committed flight goes in, and the
+    corridor rules only ever gate a lift that has not launched yet. What HotDrop
+    changes is BEHAVIOUR: the same aircraft, the same troops, the same landing
+    zone, flown lower and faster and unloaded from the air. If a future change
+    here would move a destination, cancel a run or park an airframe to keep it
+    safe, it is the wrong change.
+
     Two rules come from the host, not from us:
       - ITW_ParamHelisUnload 0 means the host wants troops landed, never
         dropped. HotDrop then flies the profile and lands, and never forces a

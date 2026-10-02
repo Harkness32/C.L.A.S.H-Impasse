@@ -167,3 +167,23 @@ def test_it_loads_behind_the_air_picture():
     assert 'call compile preprocessFileLineNumbers "ITW_CLASH_HotDrop.sqf"' in init
     assert "hot-drop-missing-or-prereq-failed" in init
     assert init.index('"ITW_CLASH_AirPicture.sqf"') < init.index('"ITW_CLASH_HotDrop.sqf"')
+
+
+def test_the_mission_is_never_changed_only_the_behaviour():
+    source = hotdrop()
+    # The decided line: a committed flight goes in. HotDrop may change how it
+    # flies, never where it is going or whether it goes.
+    run = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
+    # Every doMove in the run is to a point derived from the lift's own
+    # destination - an initial point, the destination, or an egress away from
+    # it - never to a place of safety.
+    assert run.count("doMove") == 3
+    assert "_driver doMove _ip;" in run
+    assert "_driver doMove _destination;" in run
+    assert "_driver doMove _away;" in run
+    assert "_ip = _destination getPos" in run
+    assert "_away = _destination getPos" in run
+    # And nothing anywhere cancels the lift or sends it home.
+    code = code_only(source)
+    for forbidden in ["RTB", "ReturnHome", "_home", "land \"NONE\""]:
+        assert forbidden not in code, forbidden
