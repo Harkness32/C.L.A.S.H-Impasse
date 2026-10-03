@@ -222,6 +222,25 @@ ITW_CLASH_DebugPreflight_fnc_Report = {
     params [["_label","periodic"]];
     ["------------------------------------------------------------"] call
         ITW_CLASH_DebugPreflight_fnc_Log;
+    // Why AI see what they see. setSkill is applied flat at ITW_Attack.sqf:1558,
+    // so spotDistance and spotTime are whatever the difficulty param says - and
+    // the server's own coefficients scale the result again. A run where squads
+    // walk past each other at 25m is unreadable without these two numbers, and
+    // ITW_FncGetServerAiDifficultySetting already computes them from a probe
+    // logic's skillFinal; nothing logged them.
+    private _serverSkill = -1;
+    if (!isNil "ITW_FncGetServerAiDifficultySetting") then {
+        _serverSkill = call ITW_FncGetServerAiDifficultySetting;
+    };
+    private _coefficients = missionNamespace getVariable ["SERVER_AI_DIFFICULTY_SETTING",[]];
+    [format [
+        "ai | paramDifficulty=%1 paramFriendly=%2 serverSkill=%3 serverPrecision=%4",
+        missionNamespace getVariable ["ITW_ParamDifficulty",-1],
+        missionNamespace getVariable ["ITW_ParamFriendlySquadSkill",-1],
+        if (_serverSkill < 0) then {"unknown"} else {(round (_serverSkill * 100)) / 100},
+        if ((count _coefficients) < 2) then {"unknown"} else {(round ((_coefficients#1) * 100)) / 100}
+    ]] call ITW_CLASH_DebugPreflight_fnc_Log;
+
     [format [
         "%1 | t=%2s version=%3 paramLevel=%4 loudDebug=%5",
         _label,

@@ -693,6 +693,15 @@ then the front, group and known-enemy counts, the artillery count, the number
 of live air denials, the ETB's own ledger line, and how many objectives COLOSSUS
 has in its picture.
 
+It also reports what the AI can actually see: the two difficulty parameters and
+the server's own coefficients. `setSkill` is applied flat at
+`ITW_Attack.sqf:1558`, so `spotDistance` and `spotTime` are whatever the
+difficulty parameter says - and the server scales the result again.
+`ITW_FncGetServerAiDifficultySetting` already computes both from a probe
+logic's `skillFinal`, but nothing logged them, which made a run where squads
+walk past each other at 25 m impossible to read. A missing reading prints
+`unknown` rather than a number that is not true.
+
 It is read-only and asserted to be: no `setVariable` anywhere in the file, no
 dispatcher call, no purchase, no order. A diagnostic that can alter a run makes
 every number it prints suspect. Set `ITW_CLASH_DebugPreflightEnabled = false`

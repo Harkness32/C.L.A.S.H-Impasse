@@ -264,3 +264,30 @@ def test_the_rpt_report_does_not_depend_on_the_parameter():
     report = function_body(source, "ITW_CLASH_DebugPreflight_fnc_Report")
     index = report.index("ITW_CLASH_DebugPreflight_fnc_Modules")
     assert "fnc_Speaks" not in report[:index]
+
+
+def test_the_report_says_what_the_ai_can_actually_see():
+    # setSkill is applied flat, so spotDistance and spotTime are the difficulty
+    # param - and the server's coefficients scale the result again. Without
+    # both numbers a run where squads walk past each other is unreadable.
+    source = preflight()
+    body = function_body(source, "ITW_CLASH_DebugPreflight_fnc_Report")
+    assert "ITW_FncGetServerAiDifficultySetting" in body
+    assert "SERVER_AI_DIFFICULTY_SETTING" in body
+    assert "ITW_ParamDifficulty" in body
+    assert "ITW_ParamFriendlySquadSkill" in body
+    assert "serverSkill=%3" in body
+
+
+def test_a_missing_difficulty_reading_says_unknown_rather_than_lying():
+    body = function_body(preflight(), "ITW_CLASH_DebugPreflight_fnc_Report")
+    assert '{"unknown"}' in body
+    assert 'isNil "ITW_FncGetServerAiDifficultySetting"' in body
+
+
+def test_the_ai_line_is_still_read_only():
+    # It asks for a value the mission already computes; it must not set one.
+    # Code only - the comment above it legitimately names setSkill.
+    body = code_only(function_body(preflight(), "ITW_CLASH_DebugPreflight_fnc_Report"))
+    assert "SERVER_AI_DIFFICULTY_SETTING =" not in body
+    assert "setSkill" not in body
