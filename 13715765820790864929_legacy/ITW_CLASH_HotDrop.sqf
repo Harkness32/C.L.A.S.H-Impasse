@@ -84,6 +84,9 @@ ITW_CLASH_HotDrop_fnc_Log = {
     } else {
         diag_log format ["CLASH HOT DROP | %1 | %2",_event,_payload];
     };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["hot-drop",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
 };
 
 // The infantry riding in this helicopter, as their own group. Cargo is a group

@@ -56,6 +56,9 @@ ITW_CLASH_FOBAirDefence_fnc_Log = {
     } else {
         diag_log format ["CLASH FOB AIR DEFENCE | %1 | %2",_event,_payload];
     };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["fob-air-defence",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
 };
 
 ITW_CLASH_FOBAirDefence_fnc_FOBKey = {

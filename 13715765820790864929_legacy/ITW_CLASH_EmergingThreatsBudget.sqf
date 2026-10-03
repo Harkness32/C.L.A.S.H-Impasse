@@ -111,6 +111,9 @@ ITW_CLASH_ETB_fnc_Log = {
     } else {
         diag_log format ["CLASH ETB EVENT | %1 | %2",_event,_payload];
     };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["etb",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
 };
 
 ITW_CLASH_ETB_fnc_SideKey = {
@@ -577,6 +580,10 @@ ITW_CLASH_ETB_fnc_Commit = {
         round _livingBefore,
         _asset get "threat"
     ];
+    ["purchase",[
+        [_side] call ITW_CLASH_ETB_fnc_CodeSign,
+        typeOf _veh,_reservation get "capability",round _cost,_asset get "threat"
+    ]] call ITW_CLASH_ETB_fnc_Log;
     true
 };
 
@@ -605,6 +612,10 @@ ITW_CLASH_ETB_fnc_Retire = {
         round ((_ledger get "cash") + _livingAfter),
         _reason
     ];
+    ["loss",[
+        [_side] call ITW_CLASH_ETB_fnc_CodeSign,
+        _asset get "class",round (_asset get "cost"),_reason
+    ]] call ITW_CLASH_ETB_fnc_Log;
     true
 };
 

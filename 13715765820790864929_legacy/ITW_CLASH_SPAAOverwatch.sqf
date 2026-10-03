@@ -64,6 +64,9 @@ ITW_CLASH_SPAAOverwatch_fnc_Log = {
     } else {
         diag_log format ["CLASH SPAA OVERWATCH | %1 | %2",_event,_payload];
     };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["spaa-overwatch",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
 };
 
 // Take a group out of every pool HAL dispatches from, and keep it out. This is

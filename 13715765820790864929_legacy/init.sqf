@@ -131,6 +131,14 @@ if (isServer) then {
             if (_forceGenerationReady isEqualTo true && {fileExists "ITW_CLASH_HALLogistics.sqf"}) then {
                 _halLogisticsLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_HALLogistics.sqf";
             };
+            // The loud debugger: mirrors air and budget decisions to in-game
+            // chat in plain language. Off by default, and loaded before the
+            // modules that feed it so none of them misses an event.
+            if (fileExists "ITW_CLASH_LoudDebug.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_LoudDebug.sqf";
+            } else {
+                diag_log "CLASH BOOT | loud-debug-missing | air and budget decisions stay in the RPT only";
+            };
             // The air picture: observation only, on a 5-second clock, plus the
             // classification every later reader asks it for. HAL's own cycle is
             // far too slow for a jet over the rear.

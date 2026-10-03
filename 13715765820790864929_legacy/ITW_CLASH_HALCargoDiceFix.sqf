@@ -53,15 +53,26 @@ ITW_CLASH_HALCargoDiceLastLog = createHashMap;
 
 ITW_CLASH_HALCargoDice_fnc_Log = {
     params ["_event",["_payload",[]],["_key",""]];
+    // Flag and exit at function scope: an exitWith inside the then block below
+    // would only leave the block, so the rate limit never suppressed anything
+    // and this logger spammed the RPT once per group per HAL cycle.
+    private _muted = false;
     if (_key isNotEqualTo "") then {
         private _last = ITW_CLASH_HALCargoDiceLastLog getOrDefault [_key,-1e6];
-        if ((time - _last) < ITW_CLASH_HALCargoDiceLogInterval) exitWith {};
-        ITW_CLASH_HALCargoDiceLastLog set [_key,time];
+        if ((time - _last) < ITW_CLASH_HALCargoDiceLogInterval) then {
+            _muted = true;
+        } else {
+            ITW_CLASH_HALCargoDiceLastLog set [_key,time];
+        };
     };
+    if (_muted) exitWith {};
     if (!isNil "ITW_CLASH_DualHAL_fnc_Log") then {
         ["hal-cargo-dice-" + _event,_payload] call ITW_CLASH_DualHAL_fnc_Log;
     } else {
         diag_log format ["CLASH HAL CARGO DICE | %1 | %2",_event,_payload];
+    };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["hal-cargo-dice",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
     };
 };
 

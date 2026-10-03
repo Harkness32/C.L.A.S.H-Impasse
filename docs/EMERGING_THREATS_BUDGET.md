@@ -26,6 +26,7 @@ Each phase is its own commit and can be shipped on its own.
 | tiers | `ITW_CLASH_ThunderRunAirTiers.sqf` | Only a hard-kill system closes a resupply corridor; relaxes Thunder Run's blunt air denial, never tightens it. |
 | tiers | `ITW_CLASH_HALCargoDiceFix.sqf` | Replaces HAL's map-wide lift coin flip (`SCargo.sqf:186`) with the route's own corridor verdict. |
 | tiers | `ITW_CLASH_HotDrop.sqf` | The troop-insertion profile: low, fast, pop up, put the infantry out, egress. Separate from the logistics run. |
+| debug | `ITW_CLASH_LoudDebug.sqf` | Mirrors air and budget decisions to in-game chat in plain language. Off by default. |
 
 A helicopter is never `HARD_KILL`, whatever it carries: an enemy gunship opens
 counter-air demand like any other combat aircraft, but it is treated as a CAS
@@ -92,6 +93,9 @@ tiers, so those land on rules that exist.
 | `ITW_CLASH_AirPictureDenialFighterSeconds` | `180` s |
 | `ITW_CLASH_AirPictureLossRadius` | `2500` m |
 | `ITW_CLASH_AirPictureLossClosure` | `600` s, doubling to `2400` |
+| `ITW_CLASH_LoudDebugEnabled` | `false` |
+| `ITW_CLASH_LoudDebugSources` | `[]` (all) |
+| `ITW_CLASH_LoudDebugRepeat` | `8` s |
 
 `ITW_CLASH_ETBDryRun = true` runs the whole economy and every decision and buys
 nothing: each authorization logs the purchase it would have made. Use it for the
@@ -134,6 +138,30 @@ so the timers follow the commander's reflex and comms delay too.
 
 Seeing a threat again resets its timer, a threat known dead reopens its corridor
 at once, and flights already under way are never recalled.
+
+## Watching a run from inside the game
+
+The RPT is the record afterwards and useless while you are standing in the field
+watching a corridor close, so every air and budget decision can also be spoken
+in plain language to in-game chat:
+
+```
+CLASH: AIR CORRIDOR CLOSED BY B_APC_Tracked_01_AA_F (MOBILE_AA) at 4821,7190 - commander A, holds 480s
+CLASH: AIR CORRIDOR OPENED - O_SAM_System_04_F (STATIC_SAM) dead after 12s unseen - commander B
+CLASH: HELICOPTER LIFT REFUSED - route 3100,6050 to 4790,7210 is AIR_DENIED (recent-losses) - commander B
+CLASH: B_APC_Tracked_01_AA_F RESERVED FOR BACKLINE AA - overwatch, never dispatched - commander B
+CLASH: ETB REFUSED CAP_AIRCRAFT - ETB_RESERVE_CAP - commander B
+```
+
+Turn it on with `ITW_CLASH_LoudDebugEnabled = true`, or mid-mission from the
+debug console with `[true] call ITW_CLASH_LoudDebug_fnc_Toggle`. Narrow it to
+one subsystem with `ITW_CLASH_LoudDebugSources = ["air-picture"]`. It is a
+formatter on the tail of logging that already happened — it cannot change a
+decision, and every line is mirrored to the RPT prefixed `CLASH LOUD |` so a
+screenshot and the log line up afterwards.
+
+An event with no written sentence is still spoken, in a generic uppercase form,
+rather than silently dropped.
 
 ## Reading a run
 

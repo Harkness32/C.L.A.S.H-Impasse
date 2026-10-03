@@ -75,6 +75,9 @@ ITW_CLASH_ThunderRunAirTiers_fnc_Log = {
     } else {
         diag_log format ["CLASH THUNDER RUN AIR TIERS | %1 | %2",_event,_payload];
     };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["air-tiers",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
 };
 
 ITW_CLASH_ThunderRun_fnc_ClassifyTierBase = ITW_CLASH_ThunderRun_fnc_Classify;

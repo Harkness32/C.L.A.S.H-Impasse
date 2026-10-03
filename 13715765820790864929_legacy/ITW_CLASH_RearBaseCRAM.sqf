@@ -61,6 +61,9 @@ ITW_CLASH_RearBaseCRAM_fnc_Log = {
     } else {
         diag_log format ["CLASH REAR CRAM | %1 | %2",_event,_payload];
     };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["rear-cram",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
 };
 
 /*

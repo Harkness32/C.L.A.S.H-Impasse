@@ -92,6 +92,9 @@ ITW_CLASH_HALThreatCoverage_fnc_Log = {
     } else {
         diag_log format ["CLASH HAL THREAT COVERAGE | %1 | %2",_event,_payload];
     };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["hal-threat-coverage",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
 };
 
 ITW_CLASH_HALThreatCoverage_fnc_SideKey = {
