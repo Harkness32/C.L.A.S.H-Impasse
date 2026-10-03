@@ -11,6 +11,26 @@ ITW_CLASH_PlayerReconContactHistory = createHashMap;
 ITW_CLASH_PlayerReconHistoryPoll = missionNamespace getVariable [
     "ITW_CLASH_PlayerReconHistoryPoll",2
 ];
+/*
+    How long a contact must be absent from HAL's knowledge before it counts as
+    lost.
+
+    HAL rebuilds RydHQ_KnEnemiesG every cycle, and a pass that samples it mid
+    rebuild sees an empty or partial list and declares every tracked contact
+    lost at once. In a 70 minute run that produced 121 losses and 105 returns -
+    four contacts lost in the same second and back two seconds later, eight to
+    eleven times each.
+
+    It was not only noise. lostAt is what gates a contact becoming a player
+    recon task, and only after ITW_CLASH_PlayerReconStaleSeconds of staleness.
+    Every flap reset that clock, so a contact HAL had genuinely lost could keep
+    being marked found and never mature into a task at all.
+
+    Comfortably longer than a rebuild, far shorter than a HAL cycle.
+*/
+ITW_CLASH_PlayerReconLostGrace = missionNamespace getVariable [
+    "ITW_CLASH_PlayerReconLostGrace",20
+];
 ITW_CLASH_PlayerReconStaleSeconds = missionNamespace getVariable [
     "ITW_CLASH_PlayerReconStaleSeconds",60
 ];
@@ -67,6 +87,7 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_RecordKnown = {
     _record set ["lastKnownPos",getPosATL (vehicle _leader)];
     _record set ["lastKnownType",typeOf (vehicle _leader)];
     _record set ["lostAt",-1];
+    _record set ["missingSince",-1];
     ITW_CLASH_PlayerReconContactHistory set [_key,_record];
 
     if (_wasLost) then {
@@ -86,6 +107,11 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_UpdateHistory = {
         [_hq,_x] call ITW_CLASH_PlayerTaskRequestRecon_fnc_RecordKnown;
     } forEach _known;
 
+    // An empty list is the rebuild window itself. A commander that truly knows
+    // nothing has nothing to lose track of, so there is no sweep worth running
+    // and every tracked contact would be condemned together.
+    if (_known isEqualTo []) exitWith {true};
+
     {
         private _key = _x;
         private _record = ITW_CLASH_PlayerReconContactHistory getOrDefault [
@@ -99,14 +125,26 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_UpdateHistory = {
             continue;
         };
         if (_targetGroup in _known) then {continue};
-        if ((_record getOrDefault ["lostAt",-1]) < 0) then {
-            _record set ["lostAt",time];
+        if ((_record getOrDefault ["lostAt",-1]) >= 0) then {continue};
+
+        // Absent for one pass is a rebuilt list, not a lost contact. Start the
+        // clock, and only call it lost once it has stayed absent.
+        private _missing = _record getOrDefault ["missingSince",-1];
+        if (_missing < 0) then {
+            _record set ["missingSince",time];
             ITW_CLASH_PlayerReconContactHistory set [_key,_record];
-            ["contact-lost-by-hal",[
-                groupId _targetGroup,_key,
-                _record getOrDefault ["lastKnownPos",[]]
-            ]] call ITW_CLASH_PlayerTaskRequestRecon_fnc_Log;
+            continue
         };
+        if ((time - _missing) < ITW_CLASH_PlayerReconLostGrace) then {continue};
+
+        _record set ["lostAt",time];
+        _record set ["missingSince",-1];
+        ITW_CLASH_PlayerReconContactHistory set [_key,_record];
+        ["contact-lost-by-hal",[
+            groupId _targetGroup,_key,
+            _record getOrDefault ["lastKnownPos",[]],
+            round (time - _missing)
+        ]] call ITW_CLASH_PlayerTaskRequestRecon_fnc_Log;
     } forEach (keys ITW_CLASH_PlayerReconContactHistory);
     true
 };

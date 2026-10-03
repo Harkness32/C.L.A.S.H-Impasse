@@ -473,6 +473,35 @@ flee, and will not complete anything it is tasked with - so it is taken at once.
 Native HAL still gets whichever window applies, and an in-flight native delivery
 still restarts the clock in `fnc_Detect` regardless of which one it is.
 
+## Recon contacts stopped flapping
+
+`contact-lost-by-hal` fired 121 times and `contact-returned-to-hal` 105 times in
+one run - four contacts lost in the same second and back two seconds later,
+eight to eleven times each.
+
+`fnc_KnownGroups` reads `RydHQ_KnEnemiesG` straight off the commander, and HAL
+rebuilds that list every cycle. A pass that samples it mid-rebuild sees an empty
+or partial list and condemns every tracked contact at once.
+
+It was not only noise. `lostAt` is what gates a contact becoming a player recon
+task, and only after `ITW_CLASH_PlayerReconStaleSeconds` (60 s) of staleness.
+Every flap reset that clock, so a contact HAL had genuinely lost could keep
+being marked found and never mature into a task at all.
+
+Two guards:
+
+- **A grace window.** `ITW_CLASH_PlayerReconLostGrace` (20 s) - absent for one
+  pass starts a clock, and only staying absent past it counts as lost.
+  Comfortably longer than a rebuild, far shorter than the 124-148 s HAL cycle
+  this run measured, and well inside the staleness window so a real loss still
+  matures into a task.
+- **An empty list is the rebuild itself.** A commander that knows nothing has
+  nothing to lose track of, so the sweep is skipped rather than condemning
+  every contact together.
+
+Because `lostAt` is now only ever set after the grace, a two second flap never
+sets it and so can never reset it.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred
