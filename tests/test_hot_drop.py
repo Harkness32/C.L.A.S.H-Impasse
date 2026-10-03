@@ -83,20 +83,20 @@ def test_the_flare_state_keys_match_the_machinery_it_calls():
     assert '"RELEASE"' in flare
 
 
-def test_every_corridor_is_flown_including_a_clear_one():
-    # A paradrop into a quiet approach costs nothing and lands the squad sooner
-    # than a landing does, so refusing it only means a conventional landing
-    # somewhere it was not needed.
+def test_a_clear_approach_is_left_to_hal():
+    # COLD was briefly included; including it made HotDrop take essentially
+    # every troop lift on the map, which is more intervention than the profile
+    # is worth when nothing is shooting.
     source = hotdrop()
     body = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
     assert "ITW_CLASH_AirPicture_fnc_ClassifyCorridor" in body
-    assert 'ITW_CLASH_HotDropStates",["COLD","CONTESTED","HOT","AIR_DENIED"]' in source
+    assert 'ITW_CLASH_HotDropStates",["CONTESTED","HOT","AIR_DENIED"]' in source
     assert '"COLD"' in body
 
 
-def test_the_gate_survives_so_the_quiet_ones_can_be_handed_back():
-    # Narrowing ITW_CLASH_HotDropStates is how someone would return clear
-    # corridors to HAL, so the decline path has to stay wired.
+def test_the_quiet_ones_are_handed_back_at_launch():
+    # The decline fires on the real corridor, read from the real route, after
+    # the lift has launched - not at boarding where there was no route yet.
     body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Run")
     assert "if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {" in body
     assert '"declined"' in body
@@ -284,7 +284,7 @@ def test_the_decline_speaks():
 
 
 def test_the_version_moved():
-    assert "ITW_CLASH_HotDropVersion = 4;" in hotdrop()
+    assert "ITW_CLASH_HotDropVersion = 5;" in hotdrop()
     assert "claimedAt=boarding" in hotdrop()
     assert "seizesAirborne=false" in hotdrop()
 

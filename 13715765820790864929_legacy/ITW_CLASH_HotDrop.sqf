@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 4;
+ITW_CLASH_HotDropVersion = 5;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -22,10 +22,10 @@ ITW_CLASH_HotDropReady = false;
     parameterizing proven resupply code and risking the delivery path that
     currently works.
 
-    HotDrop is its own thing with the same idea: fly a troop lift low and fast,
-    pop up at the last moment, put the infantry out, and get away. It does this
-    for every corridor by default, not only the dangerous ones - a paradrop
-    into a quiet approach costs nothing and lands the squad sooner. Transport and logistics stay separate. What it
+    HotDrop is its own thing with the same idea: when a troop lift is going
+    somewhere dangerous, fly it low and fast, pop up at the last moment, put the
+    infantry out, and get away. A clear approach is left to HAL. Transport and
+    logistics stay separate. What it
     borrows is the machinery that never cared about the payload in the first
     place - countermeasure discovery, the flare budget and its per-phase cadence,
     and the corridor classifier - by calling those functions, not by copying
@@ -55,18 +55,6 @@ ITW_CLASH_HotDropReady = false;
 
 ITW_CLASH_HotDropEnabled = missionNamespace getVariable ["ITW_CLASH_HotDropEnabled",true];
 ITW_CLASH_HotDropPoll = missionNamespace getVariable ["ITW_CLASH_HotDropPoll",10];
-// Corridor verdicts worth flying the profile for. A COLD route is left to HAL.
-// Which corridors HotDrop will fly. Every one of them, by default.
-//
-// This was once the bad three only, on the reasoning that a clear approach is
-// HAL's to fly. That was the wrong instinct: a paradrop into a quiet corridor
-// costs nothing, puts the squad down faster than a landing does, and refusing
-// it only means the lift lands conventionally somewhere it did not need to.
-// If a commander wants to paradrop, let it paradrop.
-//
-// Air defence is identified reactively here, so COLD means "nothing has shot
-// at us yet" rather than "nothing is there". Flying the cautious profile
-// anyway is the cheap side of that bet.
 /*
     How far the lift has to actually be going.
 
@@ -86,16 +74,21 @@ ITW_CLASH_HotDropPoll = missionNamespace getVariable ["ITW_CLASH_HotDropPoll",10
 ITW_CLASH_HotDropMinRun = missionNamespace getVariable [
     "ITW_CLASH_HotDropMinRun",600
 ];
-// Long enough for a loaded aircraft to lift and be given its waypoint. If no
-// real destination appears by then the lift is handed back untouched.
-// Generous: this covers lift-off, the waypoint being given, AND the cruise to
+// Generous: covers lift-off, the waypoint being given, and the cruise to
 // within the takeover radius, so a long lift still gets its last leg flown.
 ITW_CLASH_HotDropLaunchTimeout = missionNamespace getVariable [
     "ITW_CLASH_HotDropLaunchTimeout",900
 ];
 
+// Corridor verdicts worth flying the profile for. A COLD route is left to HAL.
+//
+// COLD was briefly included, on the reasoning that a paradrop into a quiet
+// corridor costs nothing and lands the squad sooner. In practice that made
+// HotDrop take essentially every troop lift on the map, which is far more
+// intervention than the profile is worth when nothing is shooting. Narrowed
+// back: the profile exists for the approaches that need it.
 ITW_CLASH_HotDropStates = missionNamespace getVariable [
-    "ITW_CLASH_HotDropStates",["COLD","CONTESTED","HOT","AIR_DENIED"]
+    "ITW_CLASH_HotDropStates",["CONTESTED","HOT","AIR_DENIED"]
 ];
 // Take the airframe only for the last leg, the way Thunder Run does.
 ITW_CLASH_HotDropTakeoverRadius = missionNamespace getVariable ["ITW_CLASH_HotDropTakeoverRadius",3000];

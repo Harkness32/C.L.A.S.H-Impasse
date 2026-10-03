@@ -321,23 +321,18 @@ given and the cruise to the last leg. If no real destination appears by then,
 or the squad leaves or is lost while waiting, the lift is handed back with
 `NO_RUN` and nothing is flown.
 
-### Every corridor is flown, including a clear one
+### A clear approach is left to HAL
 
-`ITW_CLASH_HotDropStates` now defaults to **all four** states - `COLD`,
-`CONTESTED`, `HOT`, `AIR_DENIED`. It was once the bad three only, on the
-reasoning that a clear approach is HAL's to fly. That was the wrong instinct: a
-paradrop into a quiet corridor costs nothing, puts the squad down faster than a
-landing does, and refusing it only means the lift lands conventionally
-somewhere it did not need to. If a commander wants to paradrop, let it
-paradrop.
+`ITW_CLASH_HotDropStates` is `CONTESTED`, `HOT`, `AIR_DENIED`.
 
-Air defence is identified reactively here, so `COLD` means "nothing has shot at
-us yet" rather than "nothing is there" - flying the cautious profile anyway is
-the cheap side of that bet.
+`COLD` was briefly added, on the reasoning that a paradrop into a quiet corridor
+costs nothing and lands the squad sooner. In practice it made HotDrop take
+essentially **every troop lift on the map**, which is far more intervention than
+the profile is worth when nothing is shooting. Narrowed back: the profile exists
+for the approaches that need it.
 
-The decline path stays wired even though it now rarely fires, because narrowing
-`ITW_CLASH_HotDropStates` is how someone would hand the quiet corridors back to
-HAL.
+The decline now fires at launch, on the real corridor read from the real route,
+and hands the lift back untouched.
 
 Two defects found alongside it:
 
