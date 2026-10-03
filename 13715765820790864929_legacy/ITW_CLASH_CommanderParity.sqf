@@ -512,14 +512,34 @@ ITW_CLASH_CommanderParity_Anchor_fnc_ApplyCommanderDoctrine = {
 
     private _active = call ITW_CLASH_fnc_GetActiveObjectives;
     private _held = call ITW_CLASH_CommanderParity_Anchor_fnc_HeldObjectives;
-    private _order = if ((count _held) < (count _active)) then {
-        "ATTACK"
-    } else {
-        "DEFEND"
-    };
 
-    RydHQB_Order = _order;
-    _hq setVariable ["RydHQ_Order",_order];
+    /*
+        The order is COLOSSUS's when COLOSSUS is live.
+
+        This used to be "attack if we hold fewer objectives than are active,
+        otherwise defend", which never looked at the enemy. Holding everything
+        active is not a reason to stop fighting: in run4 both objectives read
+        held, so this said DEFEND for 88 consecutive assessments while COLOSSUS
+        was reporting one of them VULNERABLE with the force to take it.
+
+        This function is also called from the anchor audit, so leaving the
+        write here would stamp DEFEND back over COLOSSUS's order on the next
+        audit. The rest of the doctrine below still applies either way; only
+        the order moves.
+    */
+    private _colossusOwns = !(missionNamespace getVariable [
+        "ITW_CLASH_ColossusAdvisoryOnly",true
+    ]) && {missionNamespace getVariable ["ITW_CLASH_ColossusReady",false]};
+
+    if (!_colossusOwns) then {
+        private _order = if ((count _held) < (count _active)) then {
+            "ATTACK"
+        } else {
+            "DEFEND"
+        };
+        RydHQB_Order = _order;
+        _hq setVariable ["RydHQ_Order",_order];
+    };
     _hq setVariable ["RydHQ_Berserk",false];
     _hq setVariable ["RydHQ_AttackAlways",false];
     _hq setVariable ["RydHQ_IdleDef",true];

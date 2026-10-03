@@ -47,10 +47,17 @@ def test_v0_issues_no_orders_at_all():
         assert forbidden not in source, forbidden
 
 
+# v3 issues the ATTACK/DEFEND order, so RydHQ_Order is now a legitimate write.
+# Nothing else under RydHQ_ is: the pools are group membership, and writing one
+# would mean COLOSSUS was taking or tasking groups rather than advising.
+COLOSSUS_PERMITTED_HAL_WRITES = {"RydHQ_Order"}
+
+
 def test_it_never_writes_a_hal_pool():
     source = code_only(colossus())
-    # Every RydHQ_ reference must be a read. A write would be it acting.
     for write in re.findall(r'setVariable\s*\[\s*"(RydHQ_\w+)"', source):
+        if write in COLOSSUS_PERMITTED_HAL_WRITES:
+            continue
         raise AssertionError(f"writes HAL pool {write}")
     assert 'getVariable ["RydHQ_KnEnemies' in source
     assert 'getVariable ["RydHQ_Friends' in source
@@ -146,17 +153,25 @@ def test_it_loads_and_warns_when_it_cannot():
 
 # ------------------------------------------------- v2: consolidate posture
 
-def test_consolidate_still_issues_no_orders():
-    # The kill criterion holds for the new posture too.
+def test_it_orders_but_never_moves_a_group():
+    """v3 names the order; it still never touches a group.
+
+    This is the line that keeps COLOSSUS a planning layer. It may tell a
+    commander to attack, which HAL then carries out with its own dispatchers,
+    group selection and Busy locks. The moment it moves a group itself there
+    are two commanders issuing orders against the same units and neither run
+    is diagnosable.
+    """
     source = code_only(colossus())
     for forbidden in [
         "doMove", "commandMove", "addWaypoint", "deleteWaypoint",
         "RYD_Dispatcher", "setBehaviour", "setCombatMode", "HAL_GoSFAttack",
     ]:
         assert forbidden not in source, forbidden
-    # The only thing it writes is its own posture, never a HAL pool.
     for write in re.findall(r'setVariable\s*\[\s*"(\w+)"', source):
-        assert not write.startswith("RydHQ_"), write
+        if not write.startswith("RydHQ_"):
+            continue
+        assert write in COLOSSUS_PERMITTED_HAL_WRITES, write
 
 
 def test_the_ratio_is_measured_across_the_theatre_not_an_objective():
@@ -225,6 +240,10 @@ def test_a_posture_change_is_reported_once():
 
 def test_the_version_and_boot_line_moved():
     source = colossus()
-    assert "ITW_CLASH_ColossusVersion = 2;" in source
+    assert "ITW_CLASH_ColossusVersion = 3;" in source
     assert "postures=PUSH,CONSOLIDATE" in source
-    assert "ordersIssued=none" in source
+    # v3 reports which it is doing rather than claiming it issues nothing, and
+    # still says "none-advisory" when the kill switch is on.
+    assert "ordersIssued=%12" in source
+    assert '"none-advisory"' in source
+    assert '"attack-defend"' in source

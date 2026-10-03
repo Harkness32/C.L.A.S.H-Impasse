@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ColossusStarted",false]) exitWith {true};
 
 ITW_CLASH_ColossusStarted = true;
-ITW_CLASH_ColossusVersion = 2;
+ITW_CLASH_ColossusVersion = 3;
 ITW_CLASH_ColossusReady = false;
 
 /*
@@ -57,7 +57,10 @@ ITW_CLASH_ColossusReady = false;
 ITW_CLASH_ColossusEnabled = missionNamespace getVariable ["ITW_CLASH_ColossusEnabled",true];
 // v0 is advisory. This exists so v1 can be gated separately and so a run can
 // prove the picture before anything acts on it.
-ITW_CLASH_ColossusAdvisoryOnly = missionNamespace getVariable ["ITW_CLASH_ColossusAdvisoryOnly",true];
+// Now false: COLOSSUS issues the ATTACK/DEFEND order. Set it true to put the
+// layer back to observation only - that reverts the whole change in one
+// variable, and the parity layer's own ternary resumes ownership of the order.
+ITW_CLASH_ColossusAdvisoryOnly = missionNamespace getVariable ["ITW_CLASH_ColossusAdvisoryOnly",false];
 ITW_CLASH_ColossusPoll = missionNamespace getVariable ["ITW_CLASH_ColossusPoll",60];
 // How near an objective a unit has to be to count as contesting it.
 ITW_CLASH_ColossusObjectiveRadius = missionNamespace getVariable ["ITW_CLASH_ColossusObjectiveRadius",500];
@@ -101,6 +104,18 @@ ITW_CLASH_ColossusReleaseAt = missionNamespace getVariable [
 // Verdict thresholds, as our strength over theirs.
 ITW_CLASH_ColossusVulnerable = missionNamespace getVariable ["ITW_CLASH_ColossusVulnerable",2];
 ITW_CLASH_ColossusContested = missionNamespace getVariable ["ITW_CLASH_ColossusContested",0.8];
+
+/*
+    How long an order holds before COLOSSUS may change it again.
+
+    The posture already has hysteresis, but feasibility does not: a commander
+    one group short of sufficient would flip ATTACK/DEFEND on alternate
+    assessments. An army that changes its mind every minute reads worse than
+    one that is simply wrong, so the order sits for at least this long.
+*/
+ITW_CLASH_ColossusOrderDwell = missionNamespace getVariable [
+    "ITW_CLASH_ColossusOrderDwell",120
+];
 
 ITW_CLASH_ColossusPictures = createHashMap;
 
@@ -389,6 +404,94 @@ ITW_CLASH_Colossus_fnc_Recommend = {
     _plan
 };
 
+/*
+    The global HAL actually reads for this commander's order.
+
+    RydHQ_Order is not a decision HAL makes - HQSitRep copies it from a
+    mission-level global every cycle, so writing only the group variable is
+    undone on the next pass whenever that global is set. Commander A reads the
+    unlettered name, every other commander reads its own CodeSign suffix
+    (RydHQInit.sqf:235 onward assigns the signs; HQSitRep.sqf:493 and its
+    lettered siblings read the globals).
+*/
+ITW_CLASH_Colossus_fnc_OrderGlobal = {
+    params ["_hq"];
+    private _sign = toUpperANSI (_hq getVariable ["RydHQ_CodeSign","A"]);
+    if (_sign isEqualTo "A") exitWith {"RydHQ_Order"};
+    "RydHQ" + _sign + "_Order"
+};
+
+/*
+    ATTACK or DEFEND, from the picture rather than from a count of flags.
+
+    What this replaces, in ITW_CLASH_CommanderParity.sqf, was:
+
+        if ((count _held) < (count _active)) then {"ATTACK"} else {"DEFEND"}
+
+    which never looked at the enemy at all. Holding every active objective is
+    not a reason to stop fighting, and in run4 it meant one side defended for
+    88 consecutive assessments while COLOSSUS was reporting an objective
+    VULNERABLE with the force available to take it.
+
+    Three cases, and the third is the one that matters:
+      - CONSOLIDATE: outnumbered across the theatre, so mass rather than push.
+      - PUSH with the force for the objective: attack.
+      - PUSH but short: DEFEND. Attacking while short is what feeds groups in
+        one at a time, which is the trickle this is meant to stop, not cause.
+*/
+ITW_CLASH_Colossus_fnc_OrderFor = {
+    params ["_posture","_plan"];
+    if (count _plan == 0) exitWith {""};
+    if (_posture isEqualTo "CONSOLIDATE") exitWith {"DEFEND"};
+    if (_plan getOrDefault ["feasible",false]) exitWith {"ATTACK"};
+    "DEFEND"
+};
+
+/*
+    Write the order, or explain why not. Advisory mode is the kill switch: with
+    ITW_CLASH_ColossusAdvisoryOnly true this logs what it would have done and
+    changes nothing, which is how v0 through v2 shipped.
+*/
+ITW_CLASH_Colossus_fnc_Commit = {
+    params ["_hq","_posture","_plan"];
+    private _order = [_posture,_plan] call ITW_CLASH_Colossus_fnc_OrderFor;
+    if (_order isEqualTo "") exitWith {false};
+
+    private _sign = _hq getVariable ["RydHQ_CodeSign","?"];
+    private _current = _hq getVariable ["RydHQ_Order","ATTACK"];
+    if (ITW_CLASH_ColossusAdvisoryOnly) exitWith {
+        if !(_order isEqualTo _current) then {
+            ["would-order",[_sign,_current,_order,_posture,_plan getOrDefault ["objective",-1]]] call
+                ITW_CLASH_Colossus_fnc_Log;
+        };
+        false
+    };
+
+    if (_order isEqualTo _current) exitWith {false};
+    private _changedAt = _hq getVariable ["ITW_CLASH_ColossusOrderAt",-1e10];
+    if (time - _changedAt < ITW_CLASH_ColossusOrderDwell) exitWith {
+        ["order-held",[_sign,_current,_order,round (ITW_CLASH_ColossusOrderDwell - (time - _changedAt))]] call
+            ITW_CLASH_Colossus_fnc_Log;
+        false
+    };
+
+    private _global = [_hq] call ITW_CLASH_Colossus_fnc_OrderGlobal;
+    missionNamespace setVariable [_global,_order];
+    publicVariable _global;
+    _hq setVariable ["RydHQ_Order",_order];
+    _hq setVariable ["ITW_CLASH_ColossusOrderAt",time];
+
+    ["order",[
+        _sign,_current,_order,_posture,
+        _plan getOrDefault ["objective",-1],
+        _plan getOrDefault ["verdict",""],
+        round (_plan getOrDefault ["enemy",0]),
+        round (_plan getOrDefault ["available",0]),
+        _global
+    ]] call ITW_CLASH_Colossus_fnc_Log;
+    true
+};
+
 ITW_CLASH_Colossus_fnc_Assess = {
     params ["_hq"];
     if (isNull _hq) exitWith {false};
@@ -422,7 +525,8 @@ ITW_CLASH_Colossus_fnc_Assess = {
         ]] call ITW_CLASH_Colossus_fnc_Log;
     };
 
-    [_hq,_picture,_posture,_ratio] call ITW_CLASH_Colossus_fnc_Recommend;
+    private _plan = [_hq,_picture,_posture,_ratio] call ITW_CLASH_Colossus_fnc_Recommend;
+    [_hq,_posture,_plan] call ITW_CLASH_Colossus_fnc_Commit;
     true
 };
 
@@ -454,7 +558,7 @@ ITW_CLASH_Colossus_fnc_Assess = {
 
 ITW_CLASH_ColossusReady = true;
 diag_log format [
-    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=none halPoolsUntouched=true",
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 halPoolsUntouched=true",
     ITW_CLASH_ColossusVersion,
     ITW_CLASH_ColossusAdvisoryOnly,
     ITW_CLASH_ColossusPoll,
@@ -465,6 +569,8 @@ diag_log format [
     ITW_CLASH_ColossusWeightVehicle,
     ITW_CLASH_ColossusWeightStatic,
     ITW_CLASH_ColossusConsolidateAt,
-    ITW_CLASH_ColossusReleaseAt
+    ITW_CLASH_ColossusReleaseAt,
+    if (ITW_CLASH_ColossusAdvisoryOnly) then {"none-advisory"} else {"attack-defend"},
+    ITW_CLASH_ColossusOrderDwell
 ];
 true
