@@ -210,3 +210,97 @@ dispatcher patch reporting `already-fixed`, or any module logging
   rest of the run.
 - An `ETB_RESERVE_CAP` denial on a counter-air demand while armor counters are
   alive is the known open decision, not a bug.
+
+## The artillery block: planned, not built
+
+Nothing in this section exists in code yet. It is recorded so the decisions
+behind it are not re-litigated when it is built.
+
+### Two pots, and what each one buys
+
+Artillery is not free today: `ITW_CLASH_ForceGeneration.sqf:571` debits Impasse
+row tickets and counts the gun against its row max, and the provider re-checks
+affordability after the spawn and deletes the gun if the budget moved. The
+problem is that the price never binds. The default budget sits at maximum and
+artillery has its own Impasse row, so the ticket a gun spends was never
+competing with anything the commander wanted. The cost is idle, not absent.
+
+The fix is an alternative use for the money, not a higher price:
+
+- **Gun #1 per side stays Impasse-funded.** It is order of battle. Every side
+  has artillery. This also keeps ETB invariant 3 intact, because a gun bought
+  at boot against no observed enemy is exactly the speculative purchase the
+  ETB refuses.
+- **Guns past the first, and tier upgrades, draw on the ETB reserve.** A second
+  gun now costs SPAA when the enemy brings jets, or an armor counter when they
+  bring tanks. The trade is real and the ledger is genuinely scarce.
+- **Replacing a crew the enemy killed is reactive**, so it funds from the ETB
+  under the `COUNTER_ARTILLERY` need without straining invariant 3.
+
+Two pots with different rules is the planning surface: the Impasse budget
+fields the army, the ETB answers what the enemy actually did, and artillery
+expansion is the first decision that makes the commander choose between them.
+
+### Crew quality: randomised now, veterancy pinned
+
+Quality is **rolled**, three tiers onto AI skill — poor `0.3`, good `0.6`,
+elite `1.0`. Skill is the single derived source: the scoot odds and settle
+delay in `ITW_CLASH_ArtilleryScoot.sqf` read from it, so an elite crew
+displaces almost every time with no delay and a poor crew usually sits still.
+
+The roll fires when a gun group **first appears in `RydHQ_ArtG` with no tier
+stamped**, not at the moment of purchase. Two paths put guns in that pool:
+`ITW_CLASH_ForceGeneration.sqf:395` for guns CLASH buys, and `HAC_fnc2.sqf:551`
+where HAL sorts groups itself, which catches mission-start guns. Rolling at
+purchase would miss every gun a side starts with. Stamp the tier on the group
+and `setSkill` the crew; the group survives crew churn and scoot reads the
+stamp.
+
+The roll is not a lottery the AI can farm, because the purchase is gated on gun
+count rather than on money. `ITW_CLASH_ForceGeneration.sqf:637` tops a side up
+to `ITW_CLASH_ArtilleryMinimumPerSide` and buys nothing further, so a side
+lives with the crews it drew. The full default budget does not let it re-roll;
+only losing a gun does.
+
+Rejected funding models, for the record:
+
+- **Zone progression.** Time-based, not tactical. A side gets better guns for
+  the clock running, which is not a decision anyone made.
+- **Price tiers.** With the default budget at maximum, paying more is not a
+  trade-off; the AI would always buy the best tier available.
+
+**Pinned, not built: veterancy.** Crew quality earned by surviving the
+counter-battery exchange instead of rolled — a crew that fires and lives until
+the fix against it goes cold steps up, a crew that dies takes its skill with
+it, and a crew that survives its gun carries veterancy to the next one. That
+makes displacement a scored choice rather than a flavour setting. It is pinned
+because it snowballs: the side winning the artillery duel compounds its lead.
+Its counterplay is the SF counter-battery raid, which is designed and unbuilt —
+a raid that kills a veteran crew forces a fresh roll. Revisit veterancy once
+the raid exists.
+
+### Two guns per side
+
+`ITW_CLASH_ArtilleryMinimumPerSide` moves to `2`. Not for firepower: one gun
+per side means a side either drew elite or it did not, so the tier system is
+invisible in any single run, and two independent draws is the minimum that
+shows a spread. It also means losing a gun degrades the battery instead of
+deleting the capability, so the duel keeps running while a rebuy is pending,
+and it gives the SF raid a choice of target instead of an on/off switch.
+
+The setting's name lies — it is documented as a minimum and used as a hard cap.
+Rename it when the block is built.
+
+### Two rebuy defects to fix with it
+
+- **The rebuy cooldown starts at the purchase, not at the loss.** A successful
+  buy sets `retryAt = time + 300`, so a gun killed thirty seconds after it
+  arrives leaves the side with no artillery for about four and a half minutes,
+  while a late attrition kill is replaced at once. That is backwards from the
+  counter-battery design, which should reward a successful raid rather than
+  punish an early loss. The `+90` retry only applies after a *failed* request.
+- **A bailed crew blocks the rebuy entirely.** `ITW_CLASH_Generation_fnc_UsableGroups`
+  (`:604`) tests `vehicle leader _x`; with the crew dismounted that is the
+  *man*, who is alive and `canMove`, so the group still counts as usable. The
+  side has a wrecked gun, a crew standing beside it, and no rebuy.
+  Immobilised guns are caught by `canMove`, abandoned ones are not.
