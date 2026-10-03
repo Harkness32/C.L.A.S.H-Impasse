@@ -361,6 +361,16 @@ if (isServer) then {
                 diag_log "CLASH BOOT | hal-recon-latch-missing | capture orders stay on HAL's RapidCapt dice";
             };
 
+            // Eight files disable attack, two restore it, and neither of those
+            // two covers a medevac'd squad - so a group that gets picked up is
+            // unable to shoot for the rest of the mission. Restores the
+            // invariant for any group nothing currently owns.
+            if (fileExists "ITW_CLASH_AttackRestore.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_AttackRestore.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | attack-restore-missing | medevac'd squads stay unable to attack";
+            };
+
             // The preflight report: one greppable block saying which modules
             // came up and what each commander's state is. Read-only, and loaded
             // last so every other module has published its flag.

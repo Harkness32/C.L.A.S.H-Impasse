@@ -88,7 +88,7 @@ def test_every_shipped_module_is_in_the_manifest():
 def test_each_manifest_row_states_a_consequence():
     body = array_body(preflight(), "ITW_CLASH_DebugPreflightManifest")
     rows = re.findall(r'\["ITW_CLASH_\w+","([^"]+)","([^"]+)"\]', body)
-    assert len(rows) == 16, len(rows)
+    assert len(rows) == 17, len(rows)
     for label, consequence in rows:
         assert label.strip()
         # The consequence is the line worth reading; an empty one is useless.

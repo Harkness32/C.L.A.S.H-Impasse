@@ -614,6 +614,56 @@ HAL compiled, like the AA fix. The global is defined before the patch is
 written and never cleared, since a nil global inside the dispatcher would throw
 on every dispatch for the rest of the mission.
 
+## A medevac'd squad could never shoot again
+
+Run 2's combat diagnostics logged **345 contact anomalies naming
+`group-attack-disabled`**, including an APC cannon crew sitting 180 m from an
+enemy AT rifleman, combat mode RED, behaviour COMBAT, not engaging. That is what
+walking past the enemy looks like from the inside.
+
+Eight files in the mission call `enableAttack false`. Two call `enableAttack
+true`, and both belong to unrelated paths - the GTFO withdrawal's own
+completion and the reconstitution transit fix. Everything else disables and
+never restores.
+
+For a purpose-spawned CASEVAC helicopter crew or ground ambulance crew that is
+correct: they exist to carry casualties and should never stop to fight. But the
+same call lands on **the casualty's own squad**:
+
+```
+CASEVAC.sqf:764                [_group,_lz]    call fnc_OrderLZ    -> enableAttack false
+GroundMEDEVAC_Manager.sqf:112  [_group,_rally] call fnc_OrderRally -> enableAttack false
+```
+
+Those are line groups. They get picked up, they get released back to HAL, and
+they spend the rest of the mission unable to shoot at anything.
+
+`ITW_CLASH_AttackRestore.sqf` restores the invariant rather than patching each
+exit: a group that nothing currently owns should be able to defend itself.
+Fixing it at every release path would mean tracing every exit of two large
+managers and hoping none was missed - and the misses are precisely the problem.
+
+It is deliberately conservative, because HAL disables attack too and restores it
+itself (`GoRest.sqf:74/709`, `GoDefRecon.sqf:59/255`,
+`GoAttSniper.sqf:270/286`). Restoring a group mid-rest would break HAL's own
+behaviour, so a group is left alone while HAL is running an order on it
+(`Busy`), while it is resting, while any service still claims it
+(`CASEVAC_State`, `GroundMEDEVAC_State`, `Withdrawing`, `ResupplyClaimed`), and
+if it is a dedicated service crew. Players are never touched, and a group must
+sit unowned and disarmed for 30 seconds before anything is restored, so a
+handover in progress is never raced.
+
+### Also in run 2
+
+- **The recon latch fired for both commanders**, which was the whole point of
+  it: `RECON COMPLETE HELD FOR WEST` and `... FOR GUER`, capture orders
+  unblocked.
+- `close-but-no-unit-knowledge` and `close-but-no-group-knowledge` fired **783
+  times each** - units inside 75 m of an enemy with no knowledge of it - and
+  **311** of those also reported `hq-knows`: the commander knew and the group
+  did not. That is the sharing gap the brief, the cue and the wider radius
+  close; run 2 predates all three.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred
