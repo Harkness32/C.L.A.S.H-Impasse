@@ -716,15 +716,20 @@ A 100 minute run logged **783 contacts inside 75 m where neither unit knew the
 other was there**, 472 of them with no commander aware either. Squads walking
 past each other at 25 m in heavy vegetation.
 
-`spotTime` - "Spotting Speed" in that dialog - is now set to
-`ITW_CLASH_SpotTime` (default `0.9`) after the flat set, at all three spawn
-paths:
+`spotTime` - "Spotting Speed" in that dialog - is now **rolled per unit**
+across `ITW_CLASH_SpotTimeMin` to `ITW_CLASH_SpotTimeMax` (`0.6` to `0.8`)
+after the flat set, at all three spawn paths:
 
 | site | what it spawns |
 | --- | --- |
 | `ITW_Attack.sqf:1558` | every AI unit, both sides |
 | `ITW_Teammates.sqf:94` | the player's own squad |
 | `ITW_Functions.sqf:948` | the clone path |
+
+A band rather than one number, so a squad is not uniformly alert: one man
+notices before the others do, which a single difficulty value can never
+produce. A reversed band (Min above Max) clamps the width to zero rather than
+rolling a negative and pushing `spotTime` below the floor.
 
 **Only `spotTime` moves.** `aimingAccuracy`, `aimingSpeed` and `aimingShake`
 stay exactly where the difficulty parameter put them, and `spotDistance` is

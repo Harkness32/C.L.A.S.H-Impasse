@@ -94,7 +94,7 @@ ITW_TeammateCreated = {
         // Spotting Speed off the flat value: see ITW_Attack.sqf. Only how
         // fast they react changes, never how well they shoot.
         _unit setSkill (ITW_ParamFriendlySquadSkill);
-        _unit setSkill ["spotTime",missionNamespace getVariable ["ITW_CLASH_SpotTime",0.9]];
+        _unit setSkill ["spotTime",((missionNamespace getVariable ["ITW_CLASH_SpotTimeMin",0.6]) + random (((missionNamespace getVariable ["ITW_CLASH_SpotTimeMax",0.8]) - (missionNamespace getVariable ["ITW_CLASH_SpotTimeMin",0.6])) max 0))];
         _unit setSkill ["courage",1];
     };
 

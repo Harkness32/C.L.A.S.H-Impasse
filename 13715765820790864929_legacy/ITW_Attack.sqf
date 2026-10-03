@@ -1567,8 +1567,12 @@ ITW_AtkUnitToGroup = {
     // the difficulty parameter put them, so units react sooner without
     // shooting any better. The courage override on the next line is the same
     // pattern and has always been here.
+    //
+    // Rolled per unit across a band rather than set flat, so a squad is not
+    // uniformly alert: one man notices before the others do, which is what the
+    // single difficulty number can never produce.
     _unit setSkill _skill;
-    _unit setSkill ["spotTime",missionNamespace getVariable ["ITW_CLASH_SpotTime",0.9]];
+    _unit setSkill ["spotTime",((missionNamespace getVariable ["ITW_CLASH_SpotTimeMin",0.6]) + random (((missionNamespace getVariable ["ITW_CLASH_SpotTimeMax",0.8]) - (missionNamespace getVariable ["ITW_CLASH_SpotTimeMin",0.6])) max 0))];
     _unit setSkill ["courage",1]; 
     _unit setVariable ["ITW_loadout",getUnitLoadout _unit];
     [_unit,true,true] call ITW_FncInfiniteAmmo;
