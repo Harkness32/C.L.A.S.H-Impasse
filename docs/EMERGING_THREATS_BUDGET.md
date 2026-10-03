@@ -502,6 +502,45 @@ Two guards:
 Because `lostAt` is now only ever set after the grace, a two second flap never
 sets it and so can never reset it.
 
+## The commander tells its troops what it knows
+
+Two halves, both about an asset going into a fight blind.
+
+### An ETB counter was never told what it was bought to kill
+
+Nothing in C.L.A.S.H. called `reveal` at all. A counter purchased specifically
+to answer one threat was pushed into `RydHQ_AttackAv` and handed to
+`RYD_Dispatcher` against that threat's group - while knowing nothing about it.
+It spawns at the rear base, drives to the objective, and discovers what it is
+fighting by being engaged.
+
+`ITW_CLASH_HALThreatCoverage_fnc_Brief` now reveals the threat's own group to
+the asset, **before** the dispatcher runs, so HAL's risk assessment and the
+group's own behaviour both have it. It runs on every offer, so an idle asset
+re-offered later is briefed too, and SPAA is briefed as well even though it is
+placed rather than dispatched.
+
+Level 2, which is exactly what HAL's own `Rev.sqf` reveals at - the same brief a
+group would get for standing near the contact, delivered to the group that was
+bought for it. It reveals only that threat's group and only to that asset; it
+reads no commander knowledge pool and nothing map-wide.
+
+### HAL's sharing radius was too short to brief anyone in time
+
+`HAL/Rev.sqf` runs every 20 seconds per commander and reveals, at level 2, every
+enemy somebody on that side has actually seen. It is never omniscience - an
+enemy nobody observed is revealed to nobody - and both commanders run it.
+
+The limit was `RydxHQ_NEAware`, HAL's default of **500 m**, which C.L.A.S.H.
+never changed. A group dispatched two kilometres to an objective learned nothing
+until it was already inside engagement range of what was waiting.
+
+`ITW_CLASH_HALAwareRadius` (default `1500`) now sets it in
+`ITW_CLASH_fnc_ConfigureHAL`, beside the other HAL tuning. 1500 is the standoff
+the SPAA doctrine already treats as behind-the-fight-but-covering-it, which
+makes it the natural brief-before-contact distance. Distribution was never the
+bottleneck; the radius was.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

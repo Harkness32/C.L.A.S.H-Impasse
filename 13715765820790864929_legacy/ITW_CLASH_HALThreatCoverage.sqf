@@ -551,6 +551,50 @@ ITW_CLASH_HALThreatCoverage_fnc_ZoneGuard = {
 // -------------------------------------------------------- existing answers
 
 /*
+    Tell the asset what it was bought to kill.
+
+    Nothing in C.L.A.S.H. called reveal before this. A counter purchased
+    specifically to answer one threat was handed to HAL's dispatcher knowing
+    nothing about it: it spawns at the rear base, far outside the radius HAL's
+    own Rev.sqf shares knowledge within, drives to the objective and discovers
+    what it is fighting by being engaged by it.
+
+    Level 2 is what HAL itself reveals at (HAL/Rev.sqf), so this is the same
+    brief a group would get for standing near the contact - delivered to the
+    group that was bought for it, which is the one that needs it.
+
+    It reveals only this threat's own group, and only to the asset being
+    offered against it. Nothing here widens what the commander knows.
+*/
+ITW_CLASH_ThreatCoverageBriefLevel = missionNamespace getVariable [
+    "ITW_CLASH_ThreatCoverageBriefLevel",2
+];
+
+ITW_CLASH_HALThreatCoverage_fnc_Brief = {
+    params ["_group","_threat"];
+    if (isNull _group || {isNull _threat} || {!alive _threat}) exitWith {0};
+    private _targetGroup = group effectiveCommander _threat;
+    private _targets = [];
+    if (isNull _targetGroup) then {
+        _targets = [_threat];
+    } else {
+        {
+            if (alive _x) then {_targets pushBackUnique (vehicle _x)};
+        } forEach units _targetGroup;
+    };
+    _targets = _targets select {!isNull _x};
+    if (_targets isEqualTo []) exitWith {0};
+
+    {
+        private _unit = _x;
+        {
+            _unit reveal [_x,ITW_CLASH_ThreatCoverageBriefLevel];
+        } forEach _targets;
+    } forEach ((units _group) select {alive _x});
+    count _targets
+};
+
+/*
     Hand a group to HAL against the threat that caused the demand. HAL decides:
     the group enters AttackAv and RYD_Dispatcher is offered the commander's
     whole pool, keeping HAL's own terrain, weather, AT and AA resignation. If
@@ -569,6 +613,10 @@ ITW_CLASH_HALThreatCoverage_fnc_Offer = {
     private _targetGroup = group effectiveCommander _threat;
     if (isNull _targetGroup) exitWith {false};
     private _kind = if (_need isEqualTo "COUNTER_AIR") then {"Air"} else {"Armor"};
+
+    // Brief before the dispatcher runs, so the group goes in knowing what it
+    // was bought for rather than finding out when it is fired on.
+    private _briefed = [_group,_threat] call ITW_CLASH_HALThreatCoverage_fnc_Brief;
 
     if (!isNil "RYD_Dispatcher") then {
         private _snipersG  = _hq getVariable ["RydHQ_snipersG",[]];
@@ -626,7 +674,8 @@ ITW_CLASH_HALThreatCoverage_fnc_Offer = {
         _hq getVariable ["RydHQ_CodeSign","?"],_need,_source,
         typeOf (vehicle leader _group),groupId _group,
         [_threat] call ITW_CLASH_HALThreatCoverage_fnc_ThreatKey,
-        if (_busy) then {"hal-selected"} else {"available"}
+        if (_busy) then {"hal-selected"} else {"available"},
+        _briefed
     ]] call ITW_CLASH_HALThreatCoverage_fnc_Log;
     _busy
 };
@@ -816,6 +865,9 @@ ITW_CLASH_HALThreatCoverage_fnc_Cover = {
         if (!isNil "ITW_CLASH_SPAAOverwatch_fnc_Adopt") then {
             [_group,_hq,getPosATL _threat] call ITW_CLASH_SPAAOverwatch_fnc_Adopt;
         };
+        // SPAA is placed rather than dispatched, but it still ought to know
+        // what it was bought to shoot at.
+        [_group,_threat] call ITW_CLASH_HALThreatCoverage_fnc_Brief;
     } else {
         private _tasked = [_hq,_group,_threat,_need,"purchase"] call
             ITW_CLASH_HALThreatCoverage_fnc_Offer;
