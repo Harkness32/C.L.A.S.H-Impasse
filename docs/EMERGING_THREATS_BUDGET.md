@@ -541,6 +541,46 @@ the SPAA doctrine already treats as behind-the-fight-but-covering-it, which
 makes it the natural brief-before-contact distance. Distribution was never the
 bottleneck; the radius was.
 
+## Trucks stop driving up to tanks
+
+Only armour ever checked for armour. `RYD_Dispatcher`'s AT-risk resignation is
+gated on the chosen group being in `_LArmorG` or `_HArmorG`
+(`HAC_fnc.sqf:1650`). A soft-skinned vehicle group dispatched under an `INF`
+pattern is in neither pool, so it **never ran the check at all** - sent at a
+known tank with no risk assessment, into gun range, and killed. The armour
+branch beside it and the `ARM` pattern below it both do the check properly.
+
+The capability match added earlier only governs what the **ETB buys**. What HAL
+dispatches from its own order of battle was untouched, which is why soft
+vehicles kept going in.
+
+`ITW_CLASH_HALDispatcherSoftArmorFix.sqf` appends one list to that one
+expression:
+
+```sqf
+if ((_chosen in (_LArmorG + _HArmorG + ITW_CLASH_SoftVehicleGroups)) and ((count _ATthreat) > 0)) then
+```
+
+HAL's own resignation - its distances, its recklessness scaling, its random
+roll - then applies to soft vehicle groups exactly as it already does to
+armour. No new doctrine and no second opinion about whether to go; the smallest
+patch surface this could have.
+
+`ITW_CLASH_SoftVehicleGroups` holds groups whose leader rides in something the
+air picture grades as unprotected, rebuilt wholesale every 15 s so a group that
+dismounts or dies leaves with no bookkeeping. **Dismounted infantry is
+deliberately excluded** - the leader must actually be in a vehicle, because an
+AT team on foot is a legitimate answer to a tank and a man's own config armour
+would grade 0 and sweep in every rifle squad.
+
+The anchor is the one place the two armour pools are added together. It occurs
+exactly once, verified against both the raw and whitespace-collapsed forms of
+the real dispatcher, and the patch refuses unless there is precisely one pair
+with `_chosen` before it and `_ATthreat` after. Any miss logs and leaves stock
+HAL compiled, like the AA fix. The global is defined before the patch is
+written and never cleared, since a nil global inside the dispatcher would throw
+on every dispatch for the rest of the mission.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

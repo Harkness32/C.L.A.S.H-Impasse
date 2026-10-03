@@ -231,6 +231,15 @@ if (isServer) then {
             // air or AA threat anywhere on the map. Patched in SCargo's own
             // source to ask about the route instead; scheduled, because it has
             // to wait for HAL's bind and for the Checkbook's cargo hook.
+            // HAL's AT-risk resignation only ever runs for armour groups, so a
+            // soft-skinned vehicle is dispatched at a known tank with no risk
+            // check at all. Appends a CLASH-maintained list of soft-mounted
+            // groups to that one test; scheduled, like the other runtime patch.
+            if (fileExists "ITW_CLASH_HALDispatcherSoftArmorFix.sqf") then {
+                [] execVM "ITW_CLASH_HALDispatcherSoftArmorFix.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-soft-armor-fix-missing | soft vehicles keep driving at armor";
+            };
             if (fileExists "ITW_CLASH_HALCargoDiceFix.sqf") then {
                 [] execVM "ITW_CLASH_HALCargoDiceFix.sqf";
             } else {
