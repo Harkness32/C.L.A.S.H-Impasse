@@ -10,3 +10,9 @@
 *.hpp -text
 *.cpp -text
 *.rvmat -text
+
+# Vendored NR6 HAL. Upstream's bytes, line endings included: the mission never
+# edits this tree, it is patched at runtime instead, and the *.md rule above
+# was renormalising license.md into a permanent phantom diff that showed up as
+# uncommitted work every turn and once blocked a stash pop mid-task.
+"NR6 Hal/**" -text
