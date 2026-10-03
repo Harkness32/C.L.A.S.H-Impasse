@@ -88,7 +88,13 @@ def test_every_shipped_module_is_in_the_manifest():
 def test_each_manifest_row_states_a_consequence():
     body = array_body(preflight(), "ITW_CLASH_DebugPreflightManifest")
     rows = re.findall(r'\["ITW_CLASH_\w+","([^"]+)","([^"]+)"\]', body)
-    assert len(rows) == 18, len(rows)
+    prefixes = re.findall(r'\["(ITW_CLASH_\w+)","', body)
+    # A hard-coded count here just gets bumped every time a module lands, which
+    # tells us nothing. What matters is that every row parses, every module
+    # appears once, and every row says what breaks without it.
+    assert len(rows) == len(prefixes), (len(rows), len(prefixes))
+    assert len(prefixes) == len(set(prefixes)), "a module is listed twice"
+    assert len(rows) >= 19, len(rows)
     for label, consequence in rows:
         assert label.strip()
         # The consequence is the line worth reading; an empty one is useless.

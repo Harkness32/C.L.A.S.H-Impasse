@@ -195,6 +195,15 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | spaa-overwatch-missing-or-prereq-failed | HAL keeps dispatching SPAA forward";
             };
+            // HAL taxonomy: what HAL thinks each class IS. The curated
+            // RYD_WS_* lists missed 15 of the 61 classes run4 fielded, the
+            // Rooikat among them; CLASH seeds the buckets it already decides
+            // for itself, which also suppresses the autofill for those.
+            if (_airPictureLoaded isEqualTo true && {fileExists "ITW_CLASH_HALTaxonomy.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_HALTaxonomy.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-taxonomy-missing-or-prereq-failed | HAL classifies vehicles from its own config heuristics alone";
+            };
             // Rear-base C-RAM: a fixed, learnable no-go zone for air about 3 km
             // around each side's rear base, so a jet loitering over the rear is
             // covered instead of buying a fighter.
