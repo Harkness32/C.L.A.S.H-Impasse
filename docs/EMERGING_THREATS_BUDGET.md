@@ -291,6 +291,36 @@ v2 claims on the ground, before takeoff, and decides once:
   that launches into a corridor it was allowed to fly keeps the profile even if
   the corridor changes under it.
 
+### The destination is resolved at launch, not at boarding
+
+Claiming at boarding fixed one bug and caused another. At the pickup point the
+pilot's `expectedDestination` is still the LZ it just flew to, so the
+destination read as **the aircraft's own position**. The only distance check
+was a *maximum* - within `ITW_CLASH_HotDropTakeoverRadius` - and zero passes
+that, so the profile ran in place: the helicopter landed, flared over the
+pickup, lifted, and put the squad out in the air above where it had just
+boarded.
+
+The destination is no longer read at boarding at all. The lift is still claimed
+there, which is what keeps one owner from wheels-up, and `fnc_Run` opens with a
+LAUNCH wait that flies nothing until **all** of:
+
+- the aircraft is above `ITW_CLASH_HotDropBoardingHeight` (actually airborne),
+- its destination is at least `ITW_CLASH_HotDropMinRun` (600 m) from where the
+  squad boarded, **and** at least that far from where the aircraft is now,
+- and it is within `ITW_CLASH_HotDropTakeoverRadius` of that destination, so a
+  long lift flies HAL's own route until the last leg rather than crossing the
+  map at 25 m.
+
+The corridor is classified there too, because a corridor is a route and there
+was no route to classify at boarding. A lift the states exclude is handed back
+at that point, untouched.
+
+`ITW_CLASH_HotDropLaunchTimeout` (900 s) covers lift-off, the waypoint being
+given and the cruise to the last leg. If no real destination appears by then,
+or the squad leaves or is lost while waiting, the lift is handed back with
+`NO_RUN` and nothing is flown.
+
 ### Every corridor is flown, including a clear one
 
 `ITW_CLASH_HotDropStates` now defaults to **all four** states - `COLD`,

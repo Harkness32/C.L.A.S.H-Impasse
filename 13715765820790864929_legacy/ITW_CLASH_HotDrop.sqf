@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 3;
+ITW_CLASH_HotDropVersion = 4;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -67,6 +67,33 @@ ITW_CLASH_HotDropPoll = missionNamespace getVariable ["ITW_CLASH_HotDropPoll",10
 // Air defence is identified reactively here, so COLD means "nothing has shot
 // at us yet" rather than "nothing is there". Flying the cautious profile
 // anyway is the cheap side of that bet.
+/*
+    How far the lift has to actually be going.
+
+    Claiming at boarding fixed one bug and introduced another: at the pickup
+    point the pilot's expectedDestination is still the LZ it just flew to, so
+    the destination reads as the aircraft's own position. The takeover check
+    only tested that the destination was WITHIN the takeover radius - a
+    distance of zero passed it - and the profile ran in place. The helicopter
+    landed, flared over the pickup, lifted, and put the squad out in the air
+    above where they had just boarded.
+
+    So the destination is no longer read at boarding at all. The lift is
+    claimed there, which is what keeps one owner from wheels-up, and the real
+    destination is resolved after launch: airborne, and going somewhere at
+    least this far away.
+*/
+ITW_CLASH_HotDropMinRun = missionNamespace getVariable [
+    "ITW_CLASH_HotDropMinRun",600
+];
+// Long enough for a loaded aircraft to lift and be given its waypoint. If no
+// real destination appears by then the lift is handed back untouched.
+// Generous: this covers lift-off, the waypoint being given, AND the cruise to
+// within the takeover radius, so a long lift still gets its last leg flown.
+ITW_CLASH_HotDropLaunchTimeout = missionNamespace getVariable [
+    "ITW_CLASH_HotDropLaunchTimeout",900
+];
+
 ITW_CLASH_HotDropStates = missionNamespace getVariable [
     "ITW_CLASH_HotDropStates",["COLD","CONTESTED","HOT","AIR_DENIED"]
 ];
@@ -354,6 +381,72 @@ ITW_CLASH_HotDrop_fnc_Run = {
     };
     if !(call _alive) exitWith {["AIRFRAME_LOST"] call _abort};
 
+    /*
+        LAUNCH: wait for the lift to actually be going somewhere.
+
+        At the pickup the pilot's expectedDestination is the LZ it just landed
+        on, so reading it at boarding gives the aircraft's own position. Nothing
+        is flown until it is airborne AND pointed at least MinRun away, which is
+        what stops the profile running in place over the squad that just got in.
+    */
+    private _boardedAt = +(_state getOrDefault ["boardedAt",getPosATL _veh]);
+    private _launchBy = time + ITW_CLASH_HotDropLaunchTimeout;
+    waitUntil {
+        sleep 1;
+        if (call _alive) then {
+            private _now = [_veh] call ITW_CLASH_HotDrop_fnc_Destination;
+            if (
+                _now isNotEqualTo []
+                && {((getPosATL _veh)#2) > ITW_CLASH_HotDropBoardingHeight}
+                && {(_now distance2D _boardedAt) >= ITW_CLASH_HotDropMinRun}
+                && {(_now distance2D (getPosATL _veh)) >= ITW_CLASH_HotDropMinRun}
+                // Still the last leg only: the aircraft flies HAL's own route
+                // until it is this close, so a long lift is not flown at 25 m
+                // from end to end.
+                && {(_now distance2D (getPosATL _veh)) <= ITW_CLASH_HotDropTakeoverRadius}
+            ) then {
+                _destination = +_now;
+            };
+        };
+        !(call _alive)
+        || {_destination isNotEqualTo []}
+        || {time >= _launchBy}
+        // The squad got out or was lost while we waited: nothing left to fly.
+        || {([_veh,_state getOrDefault ["cargoGroup",grpNull]] call
+                ITW_CLASH_HotDrop_fnc_Aboard) isEqualTo []}
+    };
+    if !(call _alive) exitWith {["AIRFRAME_LOST"] call _abort};
+    if (_destination isEqualTo []) exitWith {["NO_RUN"] call _abort};
+    _state set ["destination",+_destination];
+
+    // Now the route exists, so the corridor can be read. A lift the states
+    // exclude is handed back here, untouched, rather than at boarding where
+    // there was nothing to classify.
+    private _hq = _state getOrDefault ["hq",grpNull];
+    private _corridor = createHashMap;
+    if (!isNull _hq && {!isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor"}) then {
+        _corridor = [_hq,getPosATL _veh,_destination] call
+            ITW_CLASH_AirPicture_fnc_ClassifyCorridor;
+    };
+    private _corridorState = _corridor getOrDefault ["state","COLD"];
+    _state set ["corridorState",_corridorState];
+    if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {
+        _veh setVariable ["ITW_CLASH_HotDropDeclined",true];
+        ["declined",[
+            _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,
+            groupId (_state getOrDefault ["cargoGroup",grpNull]),
+            _corridorState,_corridor getOrDefault ["reason",""]
+        ]] call ITW_CLASH_HotDrop_fnc_Log;
+        ["DECLINED"] call _abort
+    };
+
+    ["claimed",[
+        _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,
+        groupId (_state getOrDefault ["cargoGroup",grpNull]),
+        _corridorState,_corridor getOrDefault ["reason",""],
+        round ((getPosATL _veh) distance2D _destination)
+    ]] call ITW_CLASH_HotDrop_fnc_Log;
+
     // Take control: no autonomous target chasing on the way in.
     _veh disableAI "TARGET";
     _veh disableAI "AUTOTARGET";
@@ -444,42 +537,18 @@ ITW_CLASH_HotDrop_fnc_Consider = {
     // this is the one rejection that does not mark the lift declined.
     if (([_veh,_cargoGroup] call ITW_CLASH_HotDrop_fnc_Aboard) isEqualTo []) exitWith {false};
 
-    private _destination = [_veh] call ITW_CLASH_HotDrop_fnc_Destination;
-    if (_destination isEqualTo []) exitWith {false};
-    if ((getPosATL _veh) distance2D _destination > ITW_CLASH_HotDropTakeoverRadius) exitWith {false};
-
     private _hq = if (isNil "ITW_CLASH_fnc_GetCommanderForGroup") then {grpNull} else {
         [group effectiveCommander _veh] call ITW_CLASH_fnc_GetCommanderForGroup
     };
     if (isNull _hq) exitWith {false};
 
-    private _corridor = [
-        _hq,getPosATL _veh,_destination
-    ] call ITW_CLASH_AirPicture_fnc_ClassifyCorridor;
-    private _corridorState = _corridor getOrDefault ["state","COLD"];
-    // Read once at boarding and settled. Every corridor is flown by default,
-    // so this normally passes; it stays as a gate because narrowing
-    // ITW_CLASH_HotDropStates is how someone would hand the quiet ones back to
-    // HAL. A lift that launches into a corridor it was allowed to fly keeps
-    // the profile even if the corridor changes under it, which is the same
-    // decided-once rule as before.
-    if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {
-        _veh setVariable ["ITW_CLASH_HotDropDeclined",true];
-        ["declined",[
-            _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,groupId _cargoGroup,
-            _corridorState,_corridor getOrDefault ["reason",""]
-        ]] call ITW_CLASH_HotDrop_fnc_Log;
-        false
-    };
-
+    // The corridor cannot be read here: it is a route, and the route is not
+    // known until the aircraft has a destination. Classified at launch instead,
+    // which is also where a lift the states exclude is handed back.
     private _state = [
-        _veh,_cargoGroup,_destination,_hq,_corridorState
+        _veh,_cargoGroup,[],_hq,""
     ] call ITW_CLASH_HotDrop_fnc_Claim;
-    ["claimed",[
-        _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,groupId _cargoGroup,
-        _corridorState,_corridor getOrDefault ["reason",""],
-        round ((getPosATL _veh) distance2D _destination)
-    ]] call ITW_CLASH_HotDrop_fnc_Log;
+    _state set ["boardedAt",getPosATL _veh];
 
     [_state] spawn {
         scriptName "ITW_CLASH_HotDropRun";

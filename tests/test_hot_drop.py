@@ -88,7 +88,7 @@ def test_every_corridor_is_flown_including_a_clear_one():
     # than a landing does, so refusing it only means a conventional landing
     # somewhere it was not needed.
     source = hotdrop()
-    body = function_body(source, "ITW_CLASH_HotDrop_fnc_Consider")
+    body = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
     assert "ITW_CLASH_AirPicture_fnc_ClassifyCorridor" in body
     assert 'ITW_CLASH_HotDropStates",["COLD","CONTESTED","HOT","AIR_DENIED"]' in source
     assert '"COLD"' in body
@@ -97,14 +97,14 @@ def test_every_corridor_is_flown_including_a_clear_one():
 def test_the_gate_survives_so_the_quiet_ones_can_be_handed_back():
     # Narrowing ITW_CLASH_HotDropStates is how someone would return clear
     # corridors to HAL, so the decline path has to stay wired.
-    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Consider")
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Run")
     assert "if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {" in body
     assert '"declined"' in body
 
 
 def test_it_only_takes_the_airframe_for_the_last_leg():
     source = hotdrop()
-    body = function_body(source, "ITW_CLASH_HotDrop_fnc_Consider")
+    body = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
     code = code_only(source)
     assert "ITW_CLASH_HotDropTakeoverRadius" in body
     assert 'ITW_CLASH_HotDropTakeoverRadius",3000' in source
@@ -239,7 +239,7 @@ def test_passengers_must_actually_be_aboard_to_be_claimed():
 
 def test_a_declined_lift_is_not_reconsidered():
     source = hotdrop()
-    consider = function_body(source, "ITW_CLASH_HotDrop_fnc_Consider")
+    consider = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
     assert 'setVariable ["ITW_CLASH_HotDropDeclined",true]' in consider
     eligible = function_body(source, "ITW_CLASH_HotDrop_fnc_IsEligible")
     assert 'getVariable ["ITW_CLASH_HotDropDeclined",false]) exitWith {false}' in eligible
@@ -284,6 +284,58 @@ def test_the_decline_speaks():
 
 
 def test_the_version_moved():
-    assert "ITW_CLASH_HotDropVersion = 3;" in hotdrop()
+    assert "ITW_CLASH_HotDropVersion = 4;" in hotdrop()
     assert "claimedAt=boarding" in hotdrop()
     assert "seizesAirborne=false" in hotdrop()
+
+
+# ------------------------------------- v4: the lift has to be going somewhere
+
+def test_the_destination_is_not_read_at_boarding():
+    # At the pickup the pilot's expectedDestination is the LZ it just landed
+    # on, so reading it there gives the aircraft's own position.
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Consider")
+    assert "ITW_CLASH_HotDrop_fnc_Destination" not in body
+    assert "ITW_CLASH_HotDropTakeoverRadius" not in body
+    assert '_veh,_cargoGroup,[],_hq,""' in body
+    assert '_state set ["boardedAt",getPosATL _veh]' in body
+
+
+def test_nothing_flies_until_the_lift_is_airborne_and_going_somewhere():
+    source = hotdrop()
+    body = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
+    assert "ITW_CLASH_HotDrop_fnc_Destination" in body
+    assert "((getPosATL _veh)#2) > ITW_CLASH_HotDropBoardingHeight" in body
+    assert "(_now distance2D _boardedAt) >= ITW_CLASH_HotDropMinRun" in body
+    assert "(_now distance2D (getPosATL _veh)) >= ITW_CLASH_HotDropMinRun" in body
+    assert 'ITW_CLASH_HotDropMinRun",600' in source
+
+
+def test_the_launch_wait_comes_before_any_flying():
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Run")
+    assert body.index("ITW_CLASH_HotDropLaunchTimeout") < body.index('"INGRESS"')
+    assert body.index("ITW_CLASH_HotDropMinRun") < body.index("flyInHeight")
+
+
+def test_a_lift_that_never_launches_is_handed_back_untouched():
+    source = hotdrop()
+    body = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
+    assert 'if (_destination isEqualTo []) exitWith {["NO_RUN"] call _abort};' in body
+    assert 'ITW_CLASH_HotDropLaunchTimeout",900' in source
+
+
+def test_losing_the_squad_while_waiting_ends_the_run():
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Run")
+    assert "ITW_CLASH_HotDrop_fnc_Aboard) isEqualTo []" in body
+
+
+def test_the_corridor_is_read_from_the_real_route():
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Run")
+    assert body.index('_state set ["destination"') < body.index("ClassifyCorridor")
+
+
+def test_the_profile_is_still_only_the_last_leg():
+    # Claiming at boarding means owning the whole flight, but the 25 m ingress
+    # must not start until the aircraft is near the drop.
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Run")
+    assert "(_now distance2D (getPosATL _veh)) <= ITW_CLASH_HotDropTakeoverRadius" in body
