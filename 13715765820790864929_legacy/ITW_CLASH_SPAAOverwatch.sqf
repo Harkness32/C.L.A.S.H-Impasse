@@ -67,6 +67,10 @@ ITW_CLASH_SPAAOverwatchAdoptImpasse = missionNamespace getVariable ["ITW_CLASH_S
 ITW_CLASH_SPAAOverwatchMaxPerSide = missionNamespace getVariable [
     "ITW_CLASH_SPAAOverwatchMaxPerSide",1
 ];
+// What HAL itself reveals at: awareness, not a firing solution.
+ITW_CLASH_SPAAOverwatchCueLevel = missionNamespace getVariable [
+    "ITW_CLASH_SPAAOverwatchCueLevel",2
+];
 
 ITW_CLASH_SPAAOverwatchGroups = [];
 
@@ -88,6 +92,36 @@ ITW_CLASH_SPAAOverwatch_fnc_Held = {
 ITW_CLASH_SPAAOverwatch_fnc_AtCapacity = {
     params ["_side"];
     (count ([_side] call ITW_CLASH_SPAAOverwatch_fnc_Held)) >= ITW_CLASH_SPAAOverwatchMaxPerSide
+};
+
+/*
+    Cue the gun to the track.
+
+    fnc_Sector points an SPAA at the nearest hostile aircraft the commander
+    knows about and fnc_Station drives it there on RED - without ever telling
+    the group those aircraft exist. It arrives in the right place, facing the
+    right way, having to acquire from scratch.
+
+    The commander's air picture is built from side-wide observation already
+    (fnc_Observers asks every living unit on the side), so handing its tracks to
+    that side's air defence is the one piece of sharing an air defence network
+    is actually for. Level 2, the same as HAL's own Rev.sqf: awareness, not a
+    firing solution - range and line of sight still decide whether it shoots.
+*/
+ITW_CLASH_SPAAOverwatch_fnc_Cue = {
+    params ["_hq","_group"];
+    if (isNull _hq || {isNull _group}) exitWith {0};
+    if (isNil "ITW_CLASH_AirPicture_fnc_Hostiles") exitWith {0};
+    private _tracks = ([_hq] call ITW_CLASH_AirPicture_fnc_Hostiles) apply {_x#0};
+    _tracks = _tracks select {!isNull _x && {alive _x}};
+    if (_tracks isEqualTo []) exitWith {0};
+    {
+        private _unit = _x;
+        {
+            _unit reveal [_x,ITW_CLASH_SPAAOverwatchCueLevel];
+        } forEach _tracks;
+    } forEach ((units _group) select {alive _x});
+    count _tracks
 };
 
 ITW_CLASH_SPAAOverwatch_fnc_Log = {
@@ -289,11 +323,14 @@ ITW_CLASH_SPAAOverwatch_fnc_Station = {
     _group setCombatMode "RED";
     _group setBehaviour "AWARE";
 
+    private _cued = [_hq,_group] call ITW_CLASH_SPAAOverwatch_fnc_Cue;
+
     ["stationed",[
         _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,groupId _group,
         _target apply {round _x},
         if (_sector isEqualTo []) then {[]} else {_sector apply {round _x}},
-        if (_threatened) then {"withdraw"} else {"relocate"}
+        if (_threatened) then {"withdraw"} else {"relocate"},
+        _cued
     ]] call ITW_CLASH_SPAAOverwatch_fnc_Log;
     true
 };

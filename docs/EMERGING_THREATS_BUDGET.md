@@ -504,6 +504,11 @@ sets it and so can never reset it.
 
 ## The commander tells its troops what it knows
 
+Audited every `knowsAbout` reader and every place C.L.A.S.H. positions or buys
+something against a contact. Three real gaps, all the same shape: a decision
+made on the commander's knowledge, acted on by a group that was never told.
+
+
 Two halves, both about an asset going into a fight blind.
 
 ### An ETB counter was never told what it was bought to kill
@@ -525,6 +530,20 @@ group would get for standing near the contact, delivered to the group that was
 bought for it. It reveals only that threat's group and only to that asset; it
 reads no commander knowledge pool and nothing map-wide.
 
+### A stationed SPAA was never cued to the tracks it was covering
+
+`fnc_Sector` points an SPAA at the nearest hostile aircraft the commander knows
+about and `fnc_Station` drives it there on RED - without telling the group those
+aircraft exist. It arrives in the right place, facing the right way, having to
+acquire from scratch.
+
+`ITW_CLASH_SPAAOverwatch_fnc_Cue` hands it the air picture's live tracks on
+every stationing. The air picture is already built from side-wide observation
+(`fnc_Observers` asks every living unit on the side), so giving those tracks to
+that side's air defence is the one piece of sharing an air defence network
+exists for. Level 2 again - awareness, not a firing solution; range and line of
+sight still decide whether it shoots.
+
 ### HAL's sharing radius was too short to brief anyone in time
 
 `HAL/Rev.sqf` runs every 20 seconds per commander and reveals, at level 2, every
@@ -540,6 +559,20 @@ until it was already inside engagement range of what was waiting.
 the SPAA doctrine already treats as behind-the-fight-but-covering-it, which
 makes it the natural brief-before-contact distance. Distribution was never the
 bottleneck; the radius was.
+
+### Deliberately left alone
+
+- **The rear-base C-RAM.** It cannot move and anything entering its umbrella is
+  close enough to detect unaided. Cueing it would help against a fast jet, but
+  the case is weaker than for a mobile SPAA and it is not a defect.
+- **HotDrop's transport.** It flies an evasive profile *around* air defence
+  rather than engaging it; revealing that AA to the pilot would change how it
+  flies without making the insertion safer.
+- **Impasse's own `knowsAbout` readers** (`ITW_Radio.sqf`, `ITW_Objectives.sqf`,
+  `fn_BetterMoveTo.sqf`). Pre-existing, outside this layer, and none of them
+  showed a defect under reading.
+- **`ITW_CLASH_ReconObserver.sqf`** reads `knowsAbout` only to measure and
+  report. Read-only by design and correct.
 
 ## Trucks stop driving up to tanks
 

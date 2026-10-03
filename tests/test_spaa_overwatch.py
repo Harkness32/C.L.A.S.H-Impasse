@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -142,3 +143,38 @@ def test_the_cap_is_reported_at_boot():
     source = overwatch()
     assert "maxPerSide=%7" in source
     assert "ITW_CLASH_SPAAOverwatchMaxPerSide\n];" in source
+
+
+# ------------------------------------------- the gun is cued to the track
+
+def test_a_stationed_spaa_is_told_what_it_is_covering():
+    source = overwatch()
+    body = function_body(source, "ITW_CLASH_SPAAOverwatch_fnc_Cue")
+    assert "ITW_CLASH_AirPicture_fnc_Hostiles" in body
+    assert "_unit reveal [_x,ITW_CLASH_SPAAOverwatchCueLevel]" in body
+    assert 'ITW_CLASH_SPAAOverwatchCueLevel",2' in source
+    # Guarded, so a mission without the air picture still stations normally.
+    assert 'isNil "ITW_CLASH_AirPicture_fnc_Hostiles"' in body
+
+
+def test_the_cue_matches_hals_own_reveal_level():
+    source = overwatch()
+    level = int(re.search(r'ITW_CLASH_SPAAOverwatchCueLevel", *(\d+)', source).group(1))
+    rev = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "Rev.sqf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert level == int(re.search(r"_x reveal \[_KnU, *(\d+)\]", rev).group(1))
+
+
+def test_it_cues_only_live_tracks_the_commander_holds():
+    body = function_body(overwatch(), "ITW_CLASH_SPAAOverwatch_fnc_Cue")
+    assert "select {!isNull _x && {alive _x}}" in body
+    # Nothing map-wide and no unit sweep of its own.
+    assert "allUnits" not in body
+    assert "RydHQ_KnEnemies" not in body
+
+
+def test_stationing_cues_and_records_it():
+    body = function_body(overwatch(), "ITW_CLASH_SPAAOverwatch_fnc_Station")
+    assert "ITW_CLASH_SPAAOverwatch_fnc_Cue" in body
+    assert "_cued" in body
