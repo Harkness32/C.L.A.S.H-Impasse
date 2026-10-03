@@ -226,8 +226,28 @@ has in its picture.
 It is read-only and asserted to be: no `setVariable` anywhere in the file, no
 dispatcher call, no purchase, no order. A diagnostic that can alter a run makes
 every number it prints suspect. Set `ITW_CLASH_DebugPreflightEnabled = false`
-to silence it; with the loud debugger on it also mirrors a one-line summary to
-chat, and stays silent otherwise.
+to silence it entirely.
+
+## Turning the debug output on from the lobby
+
+**C.L.A.S.H. debug output**, in the mission parameters, next to the existing
+HAL control mode:
+
+| Level | What speaks |
+| --- | --- |
+| 0 — Off (RPT only) | Default. Everything still goes to the RPT. |
+| 1 — Preflight summary in chat | One line per preflight pass: all modules ready, or how many are not. |
+| 2 — Full | Level 1, plus the loud debugger's live decision chat - corridors opening and closing, SPAA reservations, ETB denials, the scoot and counter-battery exchange. |
+
+`params.sqf` converts every class in the `Params` block into an
+`ITW_Param<ClassName>` global and `init.sqf` waits for it before loading
+anything, so `ITW_ParamCLASHDebug` is set before either reader needs it. Both
+readers default it to `0` and type-check it, so a mission running without the
+parameter stays quiet rather than erroring.
+
+Nothing is lost by using the console instead: setting
+`ITW_CLASH_LoudDebugEnabled` before `init.sqf` still overrides the parameter,
+and `[true] call ITW_CLASH_LoudDebug_fnc_Toggle` still works mid-mission.
 
 ## What to check before trusting a run
 

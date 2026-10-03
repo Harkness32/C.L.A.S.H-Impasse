@@ -210,3 +210,57 @@ def test_no_exit_with_inside_a_then_block():
                 depth -= 1
             i += 1
         assert "exitWith" not in segment[:i], source[max(0, match.start() - 80):match.end()]
+
+
+def test_the_mission_parameter_exists_and_auto_converts():
+    ext = text("description.ext")
+    block = ext[ext.index("class CLASHDebug"):]
+    # The class ends at a closing brace on its own indented line, not at the
+    # first "};" which belongs to values[].
+    block = block[:re.search(r"\n\t\};", block).end()]
+    assert 'values[] = {0,1,2}' in block
+    assert "default = 0" in block
+    # Three texts for three values, or the lobby entry is broken.
+    texts = re.search(r"texts\[\] = \{([^}]*)\}", block).group(1)
+    assert len(re.findall(r'"[^"]*"', texts)) == 3
+    # params.sqf converts every Params class into ITW_Param<ClassName>, so the
+    # global the modules read is a consequence of the class name.
+    params = text("params.sqf")
+    assert 'ITW_Param%1 = %2;' in params
+    assert 'configClasses getMissionConfig "Params"' in params
+
+
+def test_the_parameter_is_read_before_any_module_needs_it():
+    init = text("init.sqf")
+    # params.sqf runs first and init waits for it, so ITW_ParamCLASHDebug is
+    # set by the time the loud debugger or the preflight load.
+    assert init.index('preprocessFileLineNumbers "params.sqf"') < init.index(
+        'preprocessFileLineNumbers "ITW_CLASH_LoudDebug.sqf"'
+    )
+    assert 'waitUntil {!isNil "ITW_Params_complete"}' in init
+
+
+def test_chat_is_asked_for_by_the_parameter_or_the_loud_debugger():
+    source = preflight()
+    body = function_body(source, "ITW_CLASH_DebugPreflight_fnc_Speaks")
+    assert "ITW_CLASH_DebugPreflightParamLevel >= 1" in body
+    assert 'getVariable ["ITW_CLASH_LoudDebugEnabled",false]' in body
+    # And the report asks the helper rather than re-deriving the condition.
+    report = function_body(source, "ITW_CLASH_DebugPreflight_fnc_Report")
+    assert "call ITW_CLASH_DebugPreflight_fnc_Speaks" in report
+
+
+def test_a_missing_parameter_defaults_to_quiet_not_to_an_error():
+    source = preflight()
+    assert 'getVariable ["ITW_ParamCLASHDebug",0]' in source
+    # A param read back as something other than a number must not poison a
+    # comparison later.
+    assert "isEqualType 0" in source
+
+
+def test_the_rpt_report_does_not_depend_on_the_parameter():
+    # Level 0 still writes the full report; the parameter only controls chat.
+    source = preflight()
+    report = function_body(source, "ITW_CLASH_DebugPreflight_fnc_Report")
+    index = report.index("ITW_CLASH_DebugPreflight_fnc_Modules")
+    assert "fnc_Speaks" not in report[:index]

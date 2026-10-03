@@ -27,7 +27,15 @@ ITW_CLASH_LoudDebugReady = false;
     what it does not recognise is worse than a noisy one.
 */
 
-ITW_CLASH_LoudDebugEnabled = missionNamespace getVariable ["ITW_CLASH_LoudDebugEnabled",false];
+// Driven by the "C.L.A.S.H. debug output" mission parameter: level 2 turns the
+// live decision chat on from the lobby, so a tester never has to edit a file or
+// remember a console command. An explicit ITW_CLASH_LoudDebugEnabled set before
+// this file loads still wins, and fnc_Toggle still overrides either mid-mission.
+ITW_CLASH_LoudDebugParamLevel = missionNamespace getVariable ["ITW_ParamCLASHDebug",0];
+if !(ITW_CLASH_LoudDebugParamLevel isEqualType 0) then {ITW_CLASH_LoudDebugParamLevel = 0};
+ITW_CLASH_LoudDebugEnabled = missionNamespace getVariable [
+    "ITW_CLASH_LoudDebugEnabled",ITW_CLASH_LoudDebugParamLevel >= 2
+];
 // Sources to speak. Empty means every source that reports.
 ITW_CLASH_LoudDebugSources = missionNamespace getVariable ["ITW_CLASH_LoudDebugSources",[]];
 // Events this noisy are worth muting even while debugging: a per-commander
@@ -214,11 +222,12 @@ ITW_CLASH_LoudDebug_fnc_Toggle = {
 
 ITW_CLASH_LoudDebugReady = true;
 diag_log format [
-    "CLASH BOOT | loud-debug-ready | version=%1 enabled=%2 sources=%3 muted=%4 repeat=%5 channel=systemChat decisionsUnaffected=true",
+    "CLASH BOOT | loud-debug-ready | version=%1 enabled=%2 paramLevel=%6 sources=%3 muted=%4 repeat=%5 channel=systemChat decisionsUnaffected=true",
     ITW_CLASH_LoudDebugVersion,
     ITW_CLASH_LoudDebugEnabled,
     ITW_CLASH_LoudDebugSources,
     ITW_CLASH_LoudDebugMuted,
-    ITW_CLASH_LoudDebugRepeat
+    ITW_CLASH_LoudDebugRepeat,
+    ITW_CLASH_LoudDebugParamLevel
 ];
 true

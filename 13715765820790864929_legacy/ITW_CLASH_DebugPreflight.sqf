@@ -37,6 +37,13 @@ ITW_CLASH_DebugPreflightReady = false;
 ITW_CLASH_DebugPreflightEnabled = missionNamespace getVariable [
     "ITW_CLASH_DebugPreflightEnabled",true
 ];
+// The "C.L.A.S.H. debug output" mission parameter. Level 1 puts the preflight
+// summary in chat, level 2 adds the live decision chat on top. The report
+// itself always goes to the RPT regardless, because it costs nothing.
+ITW_CLASH_DebugPreflightParamLevel = missionNamespace getVariable ["ITW_ParamCLASHDebug",0];
+if !(ITW_CLASH_DebugPreflightParamLevel isEqualType 0) then {
+    ITW_CLASH_DebugPreflightParamLevel = 0
+};
 // Long enough for the scheduled runtime patches to have bound against HAL.
 ITW_CLASH_DebugPreflightDelay = missionNamespace getVariable [
     "ITW_CLASH_DebugPreflightDelay",180
@@ -71,6 +78,14 @@ ITW_CLASH_DebugPreflightManifest = [
     ["ITW_CLASH_ArtilleryScoot","artillery scoot","gun lines fire from one grid all mission"],
     ["ITW_CLASH_Colossus","colossus v0","no ground picture"]
 ];
+
+// Chat is asked for either by the parameter or by the loud debugger already
+// being on, so turning either one on is enough and turning both on is not loud
+// twice.
+ITW_CLASH_DebugPreflight_fnc_Speaks = {
+    if (ITW_CLASH_DebugPreflightParamLevel >= 1) exitWith {true};
+    missionNamespace getVariable ["ITW_CLASH_LoudDebugEnabled",false]
+};
 
 ITW_CLASH_DebugPreflight_fnc_Log = {
     params ["_line"];
@@ -205,10 +220,11 @@ ITW_CLASH_DebugPreflight_fnc_Report = {
     ["------------------------------------------------------------"] call
         ITW_CLASH_DebugPreflight_fnc_Log;
     [format [
-        "%1 | t=%2s version=%3 loudDebug=%4",
+        "%1 | t=%2s version=%3 paramLevel=%4 loudDebug=%5",
         _label,
         round time,
         ITW_CLASH_DebugPreflightVersion,
+        ITW_CLASH_DebugPreflightParamLevel,
         missionNamespace getVariable ["ITW_CLASH_LoudDebugEnabled",false]
     ]] call ITW_CLASH_DebugPreflight_fnc_Log;
 
@@ -224,9 +240,9 @@ ITW_CLASH_DebugPreflight_fnc_Report = {
     ["------------------------------------------------------------"] call
         ITW_CLASH_DebugPreflight_fnc_Log;
 
-    // Mirrored to chat only when the loud debugger is already on, so this never
-    // speaks in a run nobody asked to be told about.
-    if (missionNamespace getVariable ["ITW_CLASH_LoudDebugEnabled",false]) then {
+    // Mirrored to chat only when it was asked for, so this never speaks in a run
+    // nobody asked to be told about.
+    if (call ITW_CLASH_DebugPreflight_fnc_Speaks) then {
         private _text = if (_problems > 0) then {
             format ["PREFLIGHT: %1 module(s) not ready - see RPT",_problems]
         } else {
@@ -273,10 +289,12 @@ ITW_CLASH_DebugPreflight_fnc_Now = {
 
 ITW_CLASH_DebugPreflightReady = true;
 diag_log format [
-    "CLASH BOOT | debug-preflight-ready | version=%1 delay=%2 repeat=%3 modules=%4 readOnly=true",
+    "CLASH BOOT | debug-preflight-ready | version=%1 delay=%2 repeat=%3 modules=%4 paramLevel=%5 chat=%6 readOnly=true",
     ITW_CLASH_DebugPreflightVersion,
     ITW_CLASH_DebugPreflightDelay,
     ITW_CLASH_DebugPreflightRepeat,
-    count ITW_CLASH_DebugPreflightManifest
+    count ITW_CLASH_DebugPreflightManifest,
+    ITW_CLASH_DebugPreflightParamLevel,
+    call ITW_CLASH_DebugPreflight_fnc_Speaks
 ];
 true

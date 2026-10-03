@@ -43,8 +43,15 @@ def function_body(source: str, name: str) -> str:
 
 
 def test_it_is_off_by_default():
-    # A debug surface must not ship loud.
-    assert 'ITW_CLASH_LoudDebugEnabled",false' in loud()
+    # A debug surface must not ship loud. The default now comes from the
+    # mission parameter, which itself defaults to 0, so the quiet default is
+    # asserted at both ends.
+    source = loud()
+    assert "ITW_CLASH_LoudDebugParamLevel >= 2" in source
+    ext = text("description.ext")
+    block = ext[ext.index("class CLASHDebug"):]
+    block = block[:re.search(r"\n\t\};", block).end()]
+    assert "default = 0" in block
     body = function_body(loud(), "ITW_CLASH_LoudDebug_fnc_Emit")
     assert "if (!ITW_CLASH_LoudDebugEnabled) exitWith {false};" in body
 
@@ -151,3 +158,19 @@ def test_it_loads_before_the_modules_that_feed_it():
     position = init.index('"ITW_CLASH_LoudDebug.sqf"')
     for name in ["ITW_CLASH_AirPicture.sqf", "ITW_CLASH_HotDrop.sqf", "ITW_CLASH_HALThreatCoverage.sqf"]:
         assert position < init.index(f'"{name}"'), name
+
+
+def test_level_two_turns_the_live_chat_on_from_the_lobby():
+    source = loud()
+    assert 'getVariable ["ITW_ParamCLASHDebug",0]' in source
+    assert "ITW_CLASH_LoudDebugParamLevel >= 2" in source
+    # An explicit pre-set still wins, so a console or init override is possible.
+    assert 'missionNamespace getVariable [\n    "ITW_CLASH_LoudDebugEnabled",ITW_CLASH_LoudDebugParamLevel >= 2\n]' in source
+    # And a non-numeric param cannot poison the comparison.
+    assert "isEqualType 0" in source
+
+
+def test_the_param_level_is_logged_at_boot():
+    source = loud()
+    assert "paramLevel=%6" in source
+    assert "ITW_CLASH_LoudDebugParamLevel\n];" in source
