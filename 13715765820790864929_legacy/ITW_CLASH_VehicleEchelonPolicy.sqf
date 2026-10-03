@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_VehicleEchelonPolicyStarted",false]
 
 ITW_CLASH_VehicleEchelonPolicyStarted = true;
 ITW_CLASH_VehicleEchelonPolicyReady = false;
-ITW_CLASH_VehicleEchelonPolicyVersion = 1;
+ITW_CLASH_VehicleEchelonPolicyVersion = 2;
 
 ITW_CLASH_VehicleEchelon_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -210,6 +210,7 @@ ITW_CLASH_VehicleEchelon_fnc_CleanupRecovery = {
         if (_ownsRally && {!isNull _group}) then {
             [_group] call ITW_CLASH_VehicleEchelon_fnc_CleanupRecovery;
         };
+        if (isNil "_result") exitWith {};
         _result
     };
 

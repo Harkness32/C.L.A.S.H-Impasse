@@ -25,6 +25,21 @@ ITW_CLASH_LastAnchorSignature = "";
 ITW_CLASH_AllocationDriftMargin = 150;
 ITW_CLASH_AllocationDriftCooldown = 60;
 ITW_CLASH_MinAnchorSoldiers = 6;
+/*
+    The strength an anchor must keep to stay an anchor.
+
+    Normally the full minimum, but a group accepted under a relaxed floor (see
+    ITW_CLASH_fnc_AnchorFloorFor) is judged against the floor it was accepted
+    at. Without this a 4 man team assigned to an objective that nothing
+    stronger would take gets demoted on the very next audit for being 4 men,
+    which flaps the slot every poll instead of holding the ground.
+*/
+ITW_CLASH_fnc_AnchorHoldFloor = {
+    params ["_group"];
+    if (isNull _group) exitWith {ITW_CLASH_MinAnchorSoldiers};
+    (_group getVariable ["ITW_CLASH_AnchorAcceptedFloor",ITW_CLASH_MinAnchorSoldiers])
+        min ITW_CLASH_MinAnchorSoldiers
+};
 ITW_CLASH_AnchorAuditGrace = 75;
 ITW_CLASH_AnchorOrderCooldown = 60;
 ITW_CLASH_AnchorRefillGrace = 120;
@@ -1582,13 +1597,14 @@ ITW_CLASH_fnc_AuditAnchors = {
         ] call ITW_CLASH_fnc_CountConscious;
         private _state = "UNCOVERED";
 
-        if (_anchorInside >= ITW_CLASH_MinAnchorSoldiers) then {
+        private _holdFloor = [_anchor] call ITW_CLASH_fnc_AnchorHoldFloor;
+        if (_anchorInside >= _holdFloor) then {
             _state = "COVERED";
         } else {
             if (isNull _anchor) then {
                 _state = "VACANT";
             } else {
-                if (_anchorAlive < ITW_CLASH_MinAnchorSoldiers) then {
+                if (_anchorAlive < _holdFloor) then {
                     _state = "DEGRADED";
                 } else {
                     _state = "MOVING";
@@ -1610,7 +1626,7 @@ ITW_CLASH_fnc_AuditAnchors = {
         } else {
             private _assignedAt = if (_entry isEqualTo []) then {0} else {_entry#2};
             if (isNull _anchor || {
-                _anchorAlive < ITW_CLASH_MinAnchorSoldiers || {
+                _anchorAlive < _holdFloor || {
                     time - _assignedAt >= ITW_CLASH_AnchorAuditGrace
                 }
             }) then {
@@ -2360,6 +2376,27 @@ ITW_CLASH_fnc_ConfigureHAL = {
     RydxHQ_SupportActions = false;
     RydxHQ_NoRestPlayers = true;
     RydxHQ_NoCargoPlayers = true;
+
+    /*
+        How far a commander's knowledge reaches its own troops.
+
+        HAL already shares: HAL/Rev.sqf runs every 20 seconds per commander and
+        reveals, at knowledge level 2, every enemy that somebody on that side
+        has actually seen. It is never omniscience - an enemy nobody observed is
+        never revealed to anyone - and it is symmetric, both commanders run it.
+
+        The limit is the radius. At HAL's own default of 500 a group dispatched
+        two kilometres to an objective learns nothing until it is already inside
+        engagement range of what is waiting: the commander knows, and its troops
+        find out by being shot at.
+
+        1500 is the standoff the SPAA doctrine already treats as "behind the
+        fight but covering it", which makes it the natural brief-before-contact
+        distance. Players are unaffected: they are revealed to separately and
+        unconditionally by the same script.
+    */
+    RydxHQ_NEAware = missionNamespace getVariable ["ITW_CLASH_HALAwareRadius",1500];
+    publicVariable "RydxHQ_NEAware";
     true
 };
 

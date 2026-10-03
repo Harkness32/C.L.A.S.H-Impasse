@@ -8,7 +8,8 @@ if (missionNamespace getVariable ["ITW_CLASH_HALNativeSFFixStarted",false]) exit
 ITW_CLASH_HALNativeSFFixStarted = true;
 ITW_CLASH_HALNativeSFFixReady = false;
 ITW_CLASH_HALNativeSFFixFinished = false;
-ITW_CLASH_HALNativeSFFixVersion = 3;
+ITW_CLASH_HALNativeSFFixVersion = 4;
+ITW_CLASH_HALStatusQuoSFPatched = false;
 ITW_CLASH_SFStandbyMinRadius = 90;
 ITW_CLASH_SFStandbyMaxRadius = 220;
 scriptName "ITW_CLASH_HALNativeSFFix";
@@ -116,6 +117,47 @@ _step = [
     "_posYWP3 = (_posYWP4 + (_BEnemyPos select 1))/2;",
     "_posYWP4 = (_posYWP4 + (_BEnemyPos select 1))/2;",
     "GoSFAttack-WP4-Y"
+] call _replaceExact;
+_results pushBack (_step#2);
+if !(_step#0) exitWith {[_step#2,_results] call _finishFailure};
+_attackSource = _step#1;
+
+// SF insertion by air: GoSFAttack sets its air carrier to land and let the
+// team out. When C.L.A.S.H. paradrop is ready, decide per insertion with the
+// same rules as GoAttInf (ITW land-only/parachute-only settings win) and count
+// it as threatened, since SF go behind the lines: mixed mode then drops.
+ITW_CLASH_HALNativeSF_fnc_ParadropStatement = {
+    params ["_carrier","_carrierGroup","_team","_statement"];
+    if (
+        isNull _carrier
+        || {isNull _carrierGroup}
+        || {isNull _team}
+        || {((_statement#1) find "land 'GET OUT'") < 0}
+        || {!(missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false])}
+        || {isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse"}
+        || {((units _team) findIf {isPlayer _x}) >= 0}
+        || {((units _carrierGroup) findIf {isPlayer _x}) >= 0}
+    ) exitWith {_statement};
+
+    ([_carrier,true] call ITW_CLASH_HALParadrop_fnc_ShouldUse) params ["_drop","_chance","_capacity"];
+    if (!_drop) exitWith {
+        _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+        _statement
+    };
+    _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_team];
+    _carrier flyInHeight (missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]);
+    if (!isNil "ITW_CLASH_HALParadrop_fnc_Log") then {
+        ["selected",[typeOf _carrier,groupId _team,_capacity,_chance,true,"sf-insertion"]] call
+            ITW_CLASH_HALParadrop_fnc_Log;
+    };
+    ["true","private _g = group this; private _v = vehicle this; [_g,_v] spawn ITW_CLASH_HALParadrop_fnc_Execute; deletewaypoint [(group this), 0]"]
+};
+
+_step = [
+    _attackSource,
+    "if (((group (assigneddriver _AV)) in (_HQ getVariable [""RydHQ_AirG"",[]])) and (_unitG in (_HQ getVariable [""RydHQ_NCrewInfG"",[]]))) then {_sts = [""true"",""(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]""]};",
+    "if (((group (assigneddriver _AV)) in (_HQ getVariable [""RydHQ_AirG"",[]])) and (_unitG in (_HQ getVariable [""RydHQ_NCrewInfG"",[]]))) then {_sts = [""true"",""(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]""]}; _sts = [_AV,_GDV,_unitG,_sts] call ITW_CLASH_HALNativeSF_fnc_ParadropStatement;",
+    "GoSFAttack-air-insertion-paradrop"
 ] call _replaceExact;
 _results pushBack (_step#2);
 if !(_step#0) exitWith {[_step#2,_results] call _finishFailure};
@@ -396,12 +438,58 @@ HAL_SFIdleOrd = {
     } forEach (_hq getVariable ["RydHQ_SpecForG",[]]);
 };
 
+// HAL's SF raid routine (RYD_StatusQuo, HAC_fnc2.sqf:1165-1251) loops over
+// enemy commanders with `_HQ = group _x;`. StatusQuo is called from each
+// commander's HQSitRep loop, which sets _HQ once, so with two HAL commanders
+// the first raid check turned that loop into the enemy commander for the rest
+// of the game. The raid block also read the SpecFor list StatusQuo builds from
+// HAL's class tables, never the commander's list the recon bridge adds
+// C.L.A.S.H. SOF to in HQOrders, which runs just before it. All four edits
+// apply or none do; unpatched, StatusQuo stays native and C.L.A.S.H. SOF never
+// reach the raid routine.
+private _statusQuoResults = [];
+if (isNil "RYD_StatusQuo") then {
+    _statusQuoResults pushBack "StatusQuo:missing";
+} else {
+    private _quo = toString RYD_StatusQuo;
+    private _ok = true;
+    {
+        if (!_ok) then {continue};
+        _x params ["_bad","_good","_label"];
+        private _edit = [_quo,_bad,_good,_label] call _replaceExact;
+        _statusQuoResults pushBack (_edit#2);
+        _ok = _edit#0;
+        _quo = _edit#1;
+    } forEach [
+        ["_HQ = group _x;","private _clashSFTargetHQ = group _x;","StatusQuo-SF-target-var"],
+        ["if (_HQ in _knownEG) then","if (_clashSFTargetHQ in _knownEG) then","StatusQuo-SF-target-test"],
+        ["_SFTgts pushBack _HQ","_SFTgts pushBack _clashSFTargetHQ","StatusQuo-SF-target-push"],
+        [
+            "_SFcount = {",
+            "_SpecForG = _HQ getVariable [""RydHQ_SpecForG"",_SpecForG]; _SFcount = {",
+            "StatusQuo-SF-commander-list"
+        ]
+    ];
+    if (_ok && {(_quo find "_HQ = group _x;") < 0}) then {
+        RYD_StatusQuo = compile _quo;
+        ITW_CLASH_HALStatusQuoSFPatched = true;
+    };
+};
+if (!ITW_CLASH_HALStatusQuoSFPatched) then {
+    diag_log format [
+        "CLASH BOOT | WARNING | native-sf-statusquo-unpatched | results=%1 clashSOFRaids=false",
+        _statusQuoResults
+    ];
+};
+
 ITW_CLASH_HALNativeSFFixReady = true;
 ITW_CLASH_HALNativeSFFixFinished = true;
 diag_log format [
-    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false sideAwareStandby=true goSFAttack=native-patched-observed nativeExecutorPreserved=true attackChars=%3",
+    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false sideAwareStandby=true goSFAttack=native-patched-observed nativeExecutorPreserved=true attackChars=%3 statusQuoPatched=%4 statusQuo=%5",
     ITW_CLASH_HALNativeSFFixVersion,
     _results,
-    count _attackSource
+    count _attackSource,
+    ITW_CLASH_HALStatusQuoSFPatched,
+    _statusQuoResults
 ];
 true

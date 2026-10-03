@@ -6,7 +6,7 @@ if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitStarted",fal
 };
 
 ITW_CLASH_DualHALCheckbookPreInitStarted = true;
-ITW_CLASH_DualHALCheckbookPreInitVersion = 1;
+ITW_CLASH_DualHALCheckbookPreInitVersion = 2;
 ITW_CLASH_DualHALCheckbookPreInitReady = false;
 
 /*
@@ -16,6 +16,12 @@ ITW_CLASH_DualHALCheckbookPreInitReady = false;
     writers are compiled/finalized here. These wrappers make no tactical
     decisions themselves: when the runtime dual-HAL layer is ready they offer
     the handoff to that layer; otherwise they fail open to untouched Impasse.
+
+    A handoff is total: once the layer takes a unit, Impasse's writer never
+    runs for it. The decision is returned at function scope, because an
+    exitWith inside a `then` block only leaves that block; that fell through
+    to Impasse, which gave every handed-off vehicle a search-and-destroy
+    order and sent empty transports to the front.
 */
 
 if (
@@ -34,6 +40,7 @@ ITW_CLASH_DualHAL_fnc_AtkEngageVehicleBase = ITW_AtkEngageVehicle;
 ITW_AtkAddVehicle = {
     params ["_vehInfo","_populateObjectives",["_teleportToAttackPos",true]];
 
+    private _handled = false;
     if (
         !isNil "ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter"
         && {!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle"}
@@ -43,20 +50,21 @@ ITW_AtkAddVehicle = {
         ) then {_vehInfo#VEHINFO_CREW_GRP} else {grpNull};
 
         if ([_crewGroup,_vehInfo] call ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter) then {
-            private _handled = [_vehInfo,_teleportToAttackPos,_populateObjectives] call
+            _handled = [_vehInfo,_teleportToAttackPos,_populateObjectives] call
                 ITW_CLASH_DualHAL_fnc_StageFieldVehicle;
-            if (_handled) exitWith {
-                private _veh = _vehInfo#VEHINFO_VEH;
-                if (
-                    !isNull _veh
-                    && {_vehInfo#VEHINFO_ROLE == ITW_VEH_ROLE_TRANSPORT}
-                    && {!isNil "ITW_AtkVehRemoveMagazines"}
-                ) then {
-                    [_veh] remoteExec ["ITW_AtkVehRemoveMagazines",_veh];
-                };
-                true
-            };
         };
+    };
+
+    if (_handled) exitWith {
+        private _veh = _vehInfo#VEHINFO_VEH;
+        if (
+            !isNull _veh
+            && {_vehInfo#VEHINFO_ROLE == ITW_VEH_ROLE_TRANSPORT}
+            && {!isNil "ITW_AtkVehRemoveMagazines"}
+        ) then {
+            [_veh] remoteExec ["ITW_AtkVehRemoveMagazines",_veh];
+        };
+        true
     };
 
     _this call ITW_CLASH_DualHAL_fnc_AtkAddVehicleBase
@@ -65,15 +73,16 @@ ITW_AtkAddVehicle = {
 ITW_AtkEngageInfantry = {
     params ["_group","_teleportToAttackPos",["_objToPopulate",[]]];
 
+    private _handled = false;
     if (
         !isNil "ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup"
         && {!isNil "ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry"}
         && {[_group] call ITW_CLASH_DualHAL_fnc_ShouldOwnFriendlyGroup}
     ) then {
-        private _handled = [_group,_teleportToAttackPos,_objToPopulate] call
+        _handled = [_group,_teleportToAttackPos,_objToPopulate] call
             ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry;
-        if (_handled) exitWith {true};
     };
+    if (_handled) exitWith {true};
 
     _this call ITW_CLASH_DualHAL_fnc_AtkEngageInfantryBase
 };
@@ -81,6 +90,7 @@ ITW_AtkEngageInfantry = {
 ITW_AtkEngageVehicle = {
     params ["_vehInfo",["_teleportToAttackPos",false],["_populateObjectives",false]];
 
+    private _handled = false;
     if (
         !isNil "ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter"
         && {!isNil "ITW_CLASH_DualHAL_fnc_StageFieldVehicle"}
@@ -90,11 +100,11 @@ ITW_AtkEngageVehicle = {
         ) then {_vehInfo#VEHINFO_CREW_GRP} else {grpNull};
 
         if ([_crewGroup,_vehInfo] call ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter) then {
-            private _handled = [_vehInfo,_teleportToAttackPos,_populateObjectives] call
+            _handled = [_vehInfo,_teleportToAttackPos,_populateObjectives] call
                 ITW_CLASH_DualHAL_fnc_StageFieldVehicle;
-            if (_handled) exitWith {true};
         };
     };
+    if (_handled) exitWith {true};
 
     _this call ITW_CLASH_DualHAL_fnc_AtkEngageVehicleBase
 };

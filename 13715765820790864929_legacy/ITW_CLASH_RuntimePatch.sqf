@@ -379,21 +379,72 @@ ITW_CLASH_fnc_AcknowledgeReconstitution = {
     ] call ITW_CLASH_fnc_AcknowledgeReconstitution_V6Base
 };
 
+/*
+    The strength floor relaxes the longer an objective goes unheld.
+
+    A fixed floor of 6 deadlocked objective 3 for an entire 24 minute run: the
+    only group that cleared it was special forces, which the doctrine excludes
+    from anchoring, and the three that offered themselves had 4, 4 and 1 men.
+    Each was rejected 45, 43 and 20 times against the same unchanging number
+    while the objective sat VACANT with its refill stuck on "pending".
+
+    A four man team holding the objective beats nobody holding it, so the floor
+    steps down per interval of waiting toward a hard minimum. It only relaxes
+    while a refill is actually pending - a healthy objective still demands the
+    full six, so this cannot quietly lower the standard everywhere.
+*/
+{
+    missionNamespace setVariable [_x#0,missionNamespace getVariable [_x#0,_x#1]];
+} forEach [
+    ["ITW_CLASH_AnchorFloorRelaxInterval",120],
+    ["ITW_CLASH_AnchorFloorMinimum",3]
+];
+
+ITW_CLASH_fnc_AnchorFloorFor = {
+    params ["_objectiveIndex"];
+    private _floor = ITW_CLASH_MinAnchorSoldiers;
+    if (_objectiveIndex < 0) exitWith {_floor};
+    if (ITW_CLASH_AnchorFloorRelaxInterval <= 0) exitWith {_floor};
+
+    private _key = [_objectiveIndex] call ITW_CLASH_fnc_AnchorKey;
+    private _entry = ITW_CLASH_AnchorRefills getOrDefault [_key,[]];
+    if (_entry isEqualTo [] || {!((_entry#0) isEqualTo "pending")}) exitWith {_floor};
+
+    private _steps = floor ((time - (_entry#2)) / ITW_CLASH_AnchorFloorRelaxInterval);
+    (_floor - _steps) max (ITW_CLASH_AnchorFloorMinimum min _floor)
+};
+
 // Preserve canonical strong-candidate scoring, but reject the weak fallback.
 ITW_CLASH_fnc_SelectAnchorGroup_V6Base = ITW_CLASH_fnc_SelectAnchorGroup;
 ITW_CLASH_fnc_SelectAnchorGroup = {
     private _candidate = _this call ITW_CLASH_fnc_SelectAnchorGroup_V6Base;
     if (isNull _candidate) exitWith {grpNull};
 
+    private _objectiveIndex = _candidate getVariable ["ITW_CLASH_AssignedObjective",-1];
+    private _floor = [_objectiveIndex] call ITW_CLASH_fnc_AnchorFloorFor;
     private _conscious = [units _candidate] call ITW_CLASH_fnc_CountConscious;
-    if (_conscious < ITW_CLASH_MinAnchorSoldiers) exitWith {
+    if (_conscious < _floor) exitWith {
         ["anchor-weak-candidate-rejected",[
             [_candidate] call ITW_CLASH_fnc_GroupId,
-            _candidate getVariable ["ITW_CLASH_AssignedObjective",-1],
+            _objectiveIndex,
             _conscious,
+            _floor,
             ITW_CLASH_MinAnchorSoldiers
         ]] call ITW_CLASH_fnc_Log;
         grpNull
+    };
+    // Stamp what it was accepted at, so the audit judges it by that and does
+    // not demote a relaxed anchor on the next poll for the strength it was
+    // knowingly taken on.
+    _candidate setVariable ["ITW_CLASH_AnchorAcceptedFloor",_floor];
+    if (_conscious < ITW_CLASH_MinAnchorSoldiers) then {
+        ["anchor-floor-relaxed",[
+            [_candidate] call ITW_CLASH_fnc_GroupId,
+            _objectiveIndex,
+            _conscious,
+            _floor,
+            ITW_CLASH_MinAnchorSoldiers
+        ]] call ITW_CLASH_fnc_Log;
     };
     _candidate
 };
@@ -422,7 +473,8 @@ ITW_CLASH_fnc_AuditAnchors = {
             private _group = _entry#0;
             if (isNull _group) then {continue};
             private _conscious = [units _group] call ITW_CLASH_fnc_CountConscious;
-            if (_conscious >= ITW_CLASH_MinAnchorSoldiers) then {continue};
+            private _holdFloor = [_group] call ITW_CLASH_fnc_AnchorHoldFloor;
+            if (_conscious >= _holdFloor) then {continue};
 
             private _id = [_group] call ITW_CLASH_fnc_GroupId;
             [_objectiveIndex,"below-minimum-strength"] call ITW_CLASH_fnc_ClearAnchorSlot;
@@ -435,6 +487,7 @@ ITW_CLASH_fnc_AuditAnchors = {
                 _objectiveIndex,
                 _id,
                 _conscious,
+                _holdFloor,
                 ITW_CLASH_MinAnchorSoldiers
             ]] call ITW_CLASH_fnc_Log;
         } forEach (call ITW_CLASH_fnc_GetHeldObjectives);

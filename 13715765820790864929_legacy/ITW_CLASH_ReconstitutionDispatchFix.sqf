@@ -213,7 +213,12 @@ ITW_AtkDispatchReconstitutionTransport = {
 
         private _crewGroup = group driver _veh;
         private _availableSeats = _veh emptyPositions "";
-        if (_availableSeats < _requiredSeats) then {
+        // This lift is born at the forward FOB: rear-echelon vehicles (IFVs
+        // and anything that can kill a tank) must path there instead.
+        private _rearEchelon = !isNil "ITW_CLASH_DualHAL_fnc_IsRearEchelon" && {
+            [_veh,"reconstitution-lift"] call ITW_CLASH_DualHAL_fnc_IsRearEchelon
+        };
+        if (_availableSeats < _requiredSeats || {_rearEchelon}) then {
             deleteVehicleCrew _veh;
             deleteVehicle _veh;
             if (!isNull _crewGroup && {units _crewGroup isEqualTo []}) then {deleteGroup _crewGroup};
