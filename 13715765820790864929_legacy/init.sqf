@@ -341,6 +341,15 @@ if (isServer) then {
                 diag_log "CLASH BOOT | resupply-missing-or-prereq-failed | dry HAL units rely on native resupply only";
             };
 
+            // The preflight report: one greppable block saying which modules
+            // came up and what each commander's state is. Read-only, and loaded
+            // last so every other module has published its flag.
+            if (fileExists "ITW_CLASH_DebugPreflight.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_DebugPreflight.sqf";
+            } else {
+                diag_log "CLASH BOOT | debug-preflight-missing | module readiness has to be read out of the full boot log";
+            };
+
             if (missionNamespace getVariable ["ITW_CLASH_CertificationMode",false] && {
                 fileExists "ITW_CLASH_ArtilleryCertification.sqf"
             }) then {

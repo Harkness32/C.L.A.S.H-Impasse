@@ -1,0 +1,212 @@
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+MISSION = ROOT / "13715765820790864929_legacy"
+
+
+def text(name: str) -> str:
+    return (MISSION / name).read_text(encoding="utf-8")
+
+
+def preflight() -> str:
+    return text("ITW_CLASH_DebugPreflight.sqf")
+
+
+def code_only(source: str) -> str:
+    source = re.sub(r"/\*.*?\*/", " ", source, flags=re.S)
+    return re.sub(r"//[^\n]*", " ", source)
+
+
+def function_body(source: str, name: str) -> str:
+    start = source.index(f"{name} = {{")
+    depth = 0
+    i = source.index("{", start)
+    while i < len(source):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:i + 1]
+        i += 1
+    raise AssertionError(f"unterminated {name}")
+
+
+def array_body(source: str, name: str) -> str:
+    start = source.index(f"{name} = [")
+    depth = 0
+    i = source.index("[", start)
+    while i < len(source):
+        if source[i] == "[":
+            depth += 1
+        elif source[i] == "]":
+            depth -= 1
+            if depth == 0:
+                return source[start:i + 1]
+        i += 1
+    raise AssertionError(f"unterminated {name}")
+
+
+def test_the_report_changes_nothing():
+    # A diagnostic that can alter a run is worse than no diagnostic: every
+    # number it prints would then be suspect.
+    source = code_only(preflight())
+    for forbidden in [
+        "doMove", "commandMove", "addWaypoint", "deleteWaypoint", "setBehaviour",
+        "setCombatMode", "setSkill", "createVehicle", "deleteVehicle",
+        "RYD_Dispatcher", "ITW_CLASH_ETB_fnc_Authorize", "ITW_CLASH_ETB_fnc_Commit",
+        "ITW_CLASH_fnc_RequestCapability",
+    ]:
+        assert forbidden not in source, forbidden
+    # No setVariable at all: not on a HAL pool, not anywhere.
+    assert "setVariable" not in source
+
+
+def test_every_shipped_module_is_in_the_manifest():
+    source = preflight()
+    body = array_body(source, "ITW_CLASH_DebugPreflightManifest")
+    for prefix in [
+        "ITW_CLASH_AirPicture",
+        "ITW_CLASH_ETB",
+        "ITW_CLASH_HALThreatCoverage",
+        "ITW_CLASH_SPAAOverwatch",
+        "ITW_CLASH_RearBaseCRAM",
+        "ITW_CLASH_FOBAirDefence",
+        "ITW_CLASH_HALFront",
+        "ITW_CLASH_HALDispatcherAAFix",
+        "ITW_CLASH_HALCargoDiceFix",
+        "ITW_CLASH_HotDrop",
+        "ITW_CLASH_ThunderRunAirTiers",
+        "ITW_CLASH_CounterBattery",
+        "ITW_CLASH_ArtilleryScoot",
+        "ITW_CLASH_Colossus",
+    ]:
+        assert f'["{prefix}"' in body, prefix
+
+
+def test_each_manifest_row_states_a_consequence():
+    body = array_body(preflight(), "ITW_CLASH_DebugPreflightManifest")
+    rows = re.findall(r'\["ITW_CLASH_\w+","([^"]+)","([^"]+)"\]', body)
+    assert len(rows) == 14, len(rows)
+    for label, consequence in rows:
+        assert label.strip()
+        # The consequence is the line worth reading; an empty one is useless.
+        assert len(consequence.split()) >= 3, (label, consequence)
+
+
+def test_every_manifest_prefix_is_a_flag_a_module_really_publishes():
+    body = array_body(preflight(), "ITW_CLASH_DebugPreflightManifest")
+    prefixes = re.findall(r'\["(ITW_CLASH_\w+)","', body)
+    published = set()
+    for path in MISSION.glob("ITW_CLASH_*.sqf"):
+        published.update(
+            re.findall(r"(ITW_CLASH_\w+)Ready\s*=", path.read_text(encoding="utf-8", errors="replace"))
+        )
+    for prefix in prefixes:
+        assert prefix in published, f"{prefix}Ready is never assigned by any module"
+
+
+def test_missing_is_distinguished_from_still_binding():
+    # The two runtime patches bind against HAL's own schedule, so "loaded but
+    # not ready yet" must not read the same as "never loaded".
+    body = function_body(preflight(), "ITW_CLASH_DebugPreflight_fnc_State")
+    assert '"READY"' in body
+    assert '"WAITING"' in body
+    assert '"MISSING"' in body
+    assert '_prefix + "Started"' in body
+    assert '_prefix + "Ready"' in body
+
+
+def test_it_reports_hal_cycle_length_first():
+    # Every corridor timer is measured in HAL cycles, so the cycle length is
+    # what makes the rest of the numbers legible.
+    body = function_body(preflight(), "ITW_CLASH_DebugPreflight_fnc_Commander")
+    assert "ITW_CLASH_AirPicture_fnc_HALCycleSeconds" in body
+    assert "halCycle=" in body
+    for field in ["front=", "groups=", "known=", "artillery=", "airDenials="]:
+        assert field in body, field
+
+
+def test_it_asks_the_etb_rather_than_recomputing_a_balance():
+    body = function_body(preflight(), "ITW_CLASH_DebugPreflight_fnc_Commander")
+    assert "ITW_CLASH_ETB_fnc_Status" in body
+    # Two sources for one balance would eventually disagree.
+    assert "ITW_CLASH_ETB_fnc_Cash" not in body
+    assert "ITW_CLASH_ETB_fnc_Reserve" not in body
+
+
+def test_optional_readers_are_guarded_both_ways():
+    source = preflight()
+    body = function_body(source, "ITW_CLASH_DebugPreflight_fnc_Commander")
+    # isNil on the function AND a defaulted read of the flag: a bare
+    # ITW_CLASH_ETBReady would throw when the ETB never loaded.
+    assert 'missionNamespace getVariable ["ITW_CLASH_ETBReady",false]' in body
+    assert 'missionNamespace getVariable ["ITW_CLASH_ColossusReady",false]' in body
+    assert "ITW_CLASH_ETBReady isEqualTo" not in source
+    assert "ITW_CLASH_ColossusReady isEqualTo" not in source
+
+
+def test_one_greppable_prefix():
+    source = preflight()
+    body = function_body(source, "ITW_CLASH_DebugPreflight_fnc_Log")
+    assert '"CLASH PREFLIGHT | %1"' in body
+    # And the reading instructions live in the file itself.
+    assert "CLASH PREFLIGHT" in source
+
+
+def test_chat_stays_quiet_unless_loud_debug_is_on():
+    body = function_body(preflight(), "ITW_CLASH_DebugPreflight_fnc_Report")
+    index = body.index("remoteExecCall")
+    guard = body[:index]
+    assert 'getVariable ["ITW_CLASH_LoudDebugEnabled",false]' in guard
+    assert '["systemChat",0]' in body
+
+
+def test_there_is_a_manual_trigger():
+    source = preflight()
+    assert "ITW_CLASH_DebugPreflight_fnc_Now" in source
+    assert '"on-demand"' in source
+
+
+def test_the_loop_survives_game_over():
+    source = preflight()
+    assert source.count("ITW_GameOver") >= 4
+    assert 'ITW_CLASH_DebugPreflightRepeat",600' in source
+    assert 'ITW_CLASH_DebugPreflightDelay",180' in source
+
+
+def test_it_can_be_switched_off():
+    source = preflight()
+    assert 'ITW_CLASH_DebugPreflightEnabled",true' in source
+    assert '"disabled | no preflight report this run"' in source
+
+
+def test_it_loads_last_and_warns_when_it_cannot():
+    init = text("init.sqf")
+    assert 'call compile preprocessFileLineNumbers "ITW_CLASH_DebugPreflight.sqf"' in init
+    assert "debug-preflight-missing" in init
+    # Loaded after the modules it reports on, or its flags are all MISSING.
+    for earlier in [
+        "ITW_CLASH_Colossus.sqf",
+        "ITW_CLASH_ArtilleryScoot.sqf",
+        "ITW_CLASH_HotDrop.sqf",
+        "ITW_CLASH_HALCargoDiceFix.sqf",
+    ]:
+        assert init.index(earlier) < init.index("ITW_CLASH_DebugPreflight.sqf"), earlier
+
+
+def test_no_exit_with_inside_a_then_block():
+    # The trap that has bitten this codebase three times.
+    source = code_only(preflight())
+    for match in re.finditer(r"then\s*\{", source):
+        segment = source[match.end():]
+        depth = 1
+        i = 0
+        while i < len(segment) and depth > 0:
+            if segment[i] == "{":
+                depth += 1
+            elif segment[i] == "}":
+                depth -= 1
+            i += 1
+        assert "exitWith" not in segment[:i], source[max(0, match.start() - 80):match.end()]

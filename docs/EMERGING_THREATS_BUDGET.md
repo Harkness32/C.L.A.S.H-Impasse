@@ -194,6 +194,41 @@ A warning rather than a failure on any of these is expected and harmless: the
 dispatcher patch reporting `already-fixed`, or any module logging
 `...-missing-or-prereq-failed`, which leaves the previous behaviour in place.
 
+## The preflight report
+
+Fourteen modules publish their own boot line among roughly two hundred
+`CLASH BOOT` lines, which makes "did it all load" an archaeology exercise.
+`ITW_CLASH_DebugPreflight.sqf` collapses that into one block under a single
+prefix. Grep the RPT for `CLASH PREFLIGHT`.
+
+It runs three times: once at `ITW_CLASH_DebugPreflightDelay` seconds (default
+`180`, long enough for the two scheduled runtime patches to have bound against
+HAL), then every `ITW_CLASH_DebugPreflightRepeat` seconds (default `600`) so a
+long run has checkpoints to diff, and on demand from the debug console via
+`call ITW_CLASH_DebugPreflight_fnc_Now`.
+
+Each module reads as one of three states:
+
+- **READY** — loaded and bound. Ready modules are collapsed onto one line,
+  because a healthy stack should not cost thirty lines of RPT.
+- **WAITING** — loaded but not bound yet. The dispatcher AA fix and the cargo
+  dice fix are scheduled against HAL's own bind, so WAITING is expected for the
+  first minute or two and a problem after that.
+- **MISSING** — never loaded. Printed with the consequence beside it, which is
+  the line actually worth reading.
+
+Then, per commander: HAL's cycle length first, because every corridor timer is
+measured in it and a 90-second cycle and a 20-second cycle are different games;
+then the front, group and known-enemy counts, the artillery count, the number
+of live air denials, the ETB's own ledger line, and how many objectives COLOSSUS
+has in its picture.
+
+It is read-only and asserted to be: no `setVariable` anywhere in the file, no
+dispatcher call, no purchase, no order. A diagnostic that can alter a run makes
+every number it prints suspect. Set `ITW_CLASH_DebugPreflightEnabled = false`
+to silence it; with the loud debugger on it also mirrors a one-line summary to
+chat, and stays silent otherwise.
+
 ## What to check before trusting a run
 
 - `hal-front-ready` reports `anchors=objectives`, and the armor demands you

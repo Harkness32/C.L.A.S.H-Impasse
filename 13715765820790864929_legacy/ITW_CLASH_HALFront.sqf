@@ -9,6 +9,7 @@ if (isNil "ITW_CLASH_Generation_fnc_Resolve" || {isNil "ITW_CLASH_Generation_fnc
 
 ITW_CLASH_HALFrontStarted = true;
 ITW_CLASH_HALFrontVersion = 2;
+ITW_CLASH_HALFrontReady = false;
 
 /*
     HAL front for both commanders.
@@ -251,6 +252,7 @@ ITW_CLASH_HALFront_fnc_Update = {
     };
 };
 
+ITW_CLASH_HALFrontReady = true;
 diag_log format [
     "CLASH BOOT | hal-front-ready | version=%1 anchors=objectives margin=%2 includeForward=%3 includeRear=%4 includeArtillery=%5 poll=%6 markers=%7 dispatcherLeash=true sfIgnoresFront=true artilleryRaidable=true enemyKnowledgeKept=true",
     ITW_CLASH_HALFrontVersion,
