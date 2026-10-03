@@ -87,7 +87,7 @@ def test_a_clear_approach_is_left_to_hal():
     source = hotdrop()
     body = function_body(source, "ITW_CLASH_HotDrop_fnc_Consider")
     assert "ITW_CLASH_AirPicture_fnc_ClassifyCorridor" in body
-    assert "if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {false};" in body
+    assert "if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {" in body
     assert 'ITW_CLASH_HotDropStates",["CONTESTED","HOT","AIR_DENIED"]' in source
     assert '"COLD"' in body
 
@@ -187,3 +187,93 @@ def test_the_mission_is_never_changed_only_the_behaviour():
     code = code_only(source)
     for forbidden in ["RTB", "ReturnHome", "_home", "land \"NONE\""]:
         assert forbidden not in code, forbidden
+
+
+# --------------------------------------------- v2: claimed at boarding
+
+def test_it_never_seizes_an_airborne_lift():
+    # The v1 defect: a map-wide scan found aircraft another system had already
+    # planned and flew them somewhere else two minutes into their own flight.
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_IsEligible")
+    assert "ITW_CLASH_HotDropBoardingHeight" in body
+    assert '((getPosATL _veh)#2) > ITW_CLASH_HotDropBoardingHeight' in body
+    # And the old inverted test is gone.
+    assert "< ITW_CLASH_HotDropIngressHeight) exitWith {false}" not in body
+
+
+def test_the_scan_only_looks_at_loading_aircraft():
+    source = hotdrop()
+    tail = source[source.index("while {isNil \"ITW_GameOver\""):]
+    assert "((getPosATL _x)#2) <= ITW_CLASH_HotDropBoardingHeight" in tail
+    assert 'ITW_CLASH_HotDropBoardingHeight",3' in source
+
+
+def test_it_yields_to_an_owner_that_already_has_the_lift():
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_IsEligible")
+    assert 'isNil {_crewGroup getVariable "ITW_CLASH_HALParadropCargoGroup"}' in body
+    # That marker is what the native SF insertion path sets on selection.
+    native = text("ITW_CLASH_HALNativeSFFix.sqf")
+    assert '_carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_team]' in native
+
+
+def test_passengers_must_actually_be_aboard_to_be_claimed():
+    source = hotdrop()
+    consider = function_body(source, "ITW_CLASH_HotDrop_fnc_Consider")
+    assert "ITW_CLASH_HotDrop_fnc_Aboard) isEqualTo []) exitWith {false}" in consider
+    aboard = function_body(source, "ITW_CLASH_HotDrop_fnc_Aboard")
+    # Same test the DROP phase uses, so the two cannot disagree.
+    assert "alive _x && {vehicle _x == _veh}" in aboard
+    run = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
+    assert "alive _x && {vehicle _x == _veh}" in run
+
+
+def test_a_declined_lift_is_not_reconsidered():
+    source = hotdrop()
+    consider = function_body(source, "ITW_CLASH_HotDrop_fnc_Consider")
+    assert 'setVariable ["ITW_CLASH_HotDropDeclined",true]' in consider
+    eligible = function_body(source, "ITW_CLASH_HotDrop_fnc_IsEligible")
+    assert 'getVariable ["ITW_CLASH_HotDropDeclined",false]) exitWith {false}' in eligible
+    assert '"declined"' in consider
+
+
+def test_still_boarding_is_not_a_decision():
+    # The occupancy rejection must NOT mark the lift declined, or a lift would
+    # be refused for the crime of not having finished loading yet.
+    consider = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_Consider")
+    head = consider[:consider.index("ITW_CLASH_HotDrop_fnc_Aboard) isEqualTo []")]
+    assert "ITW_CLASH_HotDropDeclined" not in head
+
+
+def test_land_fallback_actually_lands():
+    # The paradrop module lands for itself on exactly one of its false returns.
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_PutOut")
+    assert 'if (!_dropped && {([_veh,_cargoGroup] call ITW_CLASH_HotDrop_fnc_Aboard) isNotEqualTo []}) then {' in body
+    assert body.count('_veh land "GET OUT"') == 2
+    paradrop = text("ITW_CLASH_HALParadrop.sqf")
+    assert paradrop.count('_carrier land "GET OUT"') == 1
+
+
+def test_both_put_out_paths_report_a_real_altitude():
+    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_PutOut")
+    assert body.count('round ((getPosATL _veh)#2)') == 2
+    # The LAND branch used to log the unload setting where metres are printed.
+    assert 'groupId _cargoGroup,_unload]' not in body
+
+
+def test_the_put_out_sentence_is_not_misindexed():
+    loud = text("ITW_CLASH_LoudDebug.sqf")
+    line = [l for l in loud.splitlines() if "troops out by" in l][0]
+    placeholders = {int(p) for p in re.findall(r"%(\d)", line)}
+    supplied = len(re.findall(r"\d+ call _p", line))
+    assert max(placeholders) <= supplied, (placeholders, supplied)
+
+
+def test_the_decline_speaks():
+    loud = text("ITW_CLASH_LoudDebug.sqf")
+    assert 'case "hot-drop|declined"' in loud
+
+
+def test_the_version_moved():
+    assert "ITW_CLASH_HotDropVersion = 2;" in hotdrop()
+    assert "claimedAt=boarding" in hotdrop()
+    assert "seizesAirborne=false" in hotdrop()

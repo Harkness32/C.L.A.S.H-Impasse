@@ -176,7 +176,11 @@ ITW_CLASH_LoudDebug_fnc_Sentence = {
                 0 call _p,1 call _p,2 call _p,3 call _p,4 call _p,5 call _p]
         };
         case "hot-drop|put-out": {
-            format ["HOT DROP: troops out by %1 - %2 at %4m",0 call _p,1 call _p,3 call _p]
+            format ["HOT DROP: troops out by %1 - %2 at %3m",0 call _p,1 call _p,3 call _p]
+        };
+        case "hot-drop|declined": {
+            format ["HOT DROP DECLINED: %2 lift to a %4 corridor (%5) left with HAL - commander %1",
+                0 call _p,1 call _p,2 call _p,3 call _p,4 call _p]
         };
         case "hot-drop|handback": {
             format ["HOT DROP %1: %2 handed back to HAL after %3s",0 call _p,1 call _p,2 call _p]

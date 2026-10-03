@@ -253,6 +253,58 @@ widen the window in which a pre-contact recon still counts, but it cannot fix
 the trap - after first contact the flag is unearnable at any interval. Whoever
 set it to 30 did so for a reason worth knowing before moving it.
 
+## HotDrop claims at boarding, not in the air
+
+The first run flew a full contested-corridor profile for an empty helicopter
+and reported success. The cause was the acquisition model, not a missing
+check.
+
+v1 polled every helicopter on the map every 10 seconds, took any that was
+airborne, had someone aboard and was within 3 km of a destination, and never
+asked whose lift it was:
+
+```
+23:26:49  B Alpha 3-3 dispatched        AAInf
+23:28:36  native SF paradrop SELECTED   carrier + Alpha 3-3 -> [4014,12391]
+23:28:49  HotDrop CLAIMED the same pair -> [4891,10511]   (2.1 km away, 13s later)
+23:30:57  put-out LAND_FALLBACK, nobody aboard
+23:30:58  handback COMPLETE after 129s
+```
+
+`ITW_CLASH_HALNativeSFFix.sqf:147` had already selected that carrier and cargo
+pair for an SF insertion. Thirteen seconds later a map-wide scan found the same
+aircraft airborne and flew it somewhere else. DROP to EGRESS took zero seconds,
+which is the tell: the drop phase's own occupancy test exited immediately.
+
+v2 claims on the ground, before takeoff, and decides once:
+
+- **Boarding window.** Only aircraft at or below `ITW_CLASH_HotDropBoardingHeight`
+  (3 m) are considered. v1's altitude test was the exact inverse - it skipped
+  anything on the ground as "still loading or already finished".
+- **One owner.** A crew group that already carries
+  `ITW_CLASH_HALParadropCargoGroup` belongs to someone else and is left alone.
+  That marker answers for the native SF insertion path and for HotDrop itself.
+- **Loaded, not assigned.** The claim now runs the same occupancy test the DROP
+  phase uses, so an empty aircraft can never be taken. Still boarding is the one
+  rejection that does *not* mark the lift declined.
+- **Declined is final.** The corridor is read once at boarding. A lift that
+  launches into a quiet corridor stays HAL's even if it sours, and one that
+  launches into a bad corridor flies the profile even if the corridor clears.
+  Air defence is identified reactively, so a cautious profile flown into a
+  corridor that turns out to be cold costs nothing worth a second decision.
+
+Two defects found alongside it:
+
+- **`LAND_FALLBACK` did not land.** `ITW_CLASH_HALParadrop_fnc_Execute` returns
+  false from five places and lands for itself in exactly one of them - too low,
+  at `HALParadrop.sqf:110`. HotDrop called every false a fallback landing and
+  returned success, so troops could fly home still aboard with the log saying
+  they were delivered. It now lands for real unless they are already out.
+- **The put-out sentence was misindexed**, printing `at m`: the format string
+  referenced `%4` with three arguments. The `LAND` branch also logged the
+  unload *setting* in the slot the sentence labels as metres; both paths now
+  report a real altitude.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

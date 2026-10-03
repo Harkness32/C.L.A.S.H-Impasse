@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 1;
+ITW_CLASH_HotDropVersion = 2;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -61,6 +61,11 @@ ITW_CLASH_HotDropStates = missionNamespace getVariable [
 // Take the airframe only for the last leg, the way Thunder Run does.
 ITW_CLASH_HotDropTakeoverRadius = missionNamespace getVariable ["ITW_CLASH_HotDropTakeoverRadius",3000];
 ITW_CLASH_HotDropIngressHeight = missionNamespace getVariable ["ITW_CLASH_HotDropIngressHeight",25];
+// The claim window: on the ground, loaded, before takeoff. Decided here and
+// not revisited, so it has to be a height a loading aircraft is actually at.
+ITW_CLASH_HotDropBoardingHeight = missionNamespace getVariable [
+    "ITW_CLASH_HotDropBoardingHeight",3
+];
 ITW_CLASH_HotDropIPRadius = missionNamespace getVariable ["ITW_CLASH_HotDropIPRadius",1200];
 ITW_CLASH_HotDropPopupRadius = missionNamespace getVariable ["ITW_CLASH_HotDropPopupRadius",700];
 // Above the paradrop module's own 55 m minimum, so the pop-up puts the aircraft
@@ -147,9 +152,38 @@ ITW_CLASH_HotDrop_fnc_IsEligible = {
         (_crewGroup getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo ""
         || {(_crewGroup getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo ""}
     ) exitWith {false};
-    // On the ground it is still loading or already finished.
-    if (((getPosATL _veh)#2) < ITW_CLASH_HotDropIngressHeight) exitWith {false};
+    // Decided once, on the ground, before anyone commits to a profile.
+    //
+    // This used to claim airborne lifts, which is how an aircraft another
+    // system had already planned got taken two minutes into its own flight:
+    // ITW_CLASH_HALNativeSFFix.sqf:147 selected a carrier and cargo pair for
+    // an SF insertion, and thirteen seconds later a map-wide scan found the
+    // same aircraft airborne near a destination and flew it somewhere else.
+    // Seizing work in progress is the defect, not a missing check, so the
+    // window is now the ground before takeoff and nothing else.
+    if (((getPosATL _veh)#2) > ITW_CLASH_HotDropBoardingHeight) exitWith {false};
+    // Another owner already has this lift. The marker is set by the native SF
+    // insertion path and by this module, so it answers for both.
+    if !(isNil {_crewGroup getVariable "ITW_CLASH_HALParadropCargoGroup"}) exitWith {false};
+    // Declined once is declined for this lift: the corridor is read at
+    // boarding and not revisited, so re-asking every poll would only produce
+    // a different answer to a question already settled.
+    if (_veh getVariable ["ITW_CLASH_HotDropDeclined",false]) exitWith {false};
     true
+};
+
+/*
+    Are the passengers actually aboard?
+
+    Asked at claim time, which the airborne version never did - it tested that
+    a cargo group existed, not that anyone was in the aircraft, so an empty
+    helicopter could fly a full contested-corridor profile and report success.
+    Same test the DROP phase uses, so the two cannot disagree.
+*/
+ITW_CLASH_HotDrop_fnc_Aboard = {
+    params ["_veh","_cargoGroup"];
+    if (isNull _veh || {isNull _cargoGroup}) exitWith {[]};
+    (units _cargoGroup) select {alive _x && {vehicle _x == _veh}}
 };
 
 ITW_CLASH_HotDrop_fnc_Claim = {
@@ -267,18 +301,28 @@ ITW_CLASH_HotDrop_fnc_PutOut = {
 
     if (!_mayDrop) exitWith {
         _veh land "GET OUT";
-        ["put-out",["LAND",typeOf _veh,groupId _cargoGroup,_unload]] call
+        ["put-out",["LAND",typeOf _veh,groupId _cargoGroup,round ((getPosATL _veh)#2)]] call
             ITW_CLASH_HotDrop_fnc_Log;
         ["LAND",true]
     };
 
     _crewGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_cargoGroup];
     private _dropped = [_crewGroup,_veh] call ITW_CLASH_HALParadrop_fnc_Execute;
+    private _method = if (_dropped) then {"PARADROP"} else {"LAND_FALLBACK"};
+
+    // The paradrop module lands for itself on exactly one of its five false
+    // returns - too low, at HALParadrop.sqf:110. The others (no cargo group,
+    // nobody aboard) just return false, and this used to call all of them
+    // LAND_FALLBACK and report success, so troops could fly home still
+    // aboard with the log saying they were delivered. Land for real unless
+    // they are already out.
+    if (!_dropped && {([_veh,_cargoGroup] call ITW_CLASH_HotDrop_fnc_Aboard) isNotEqualTo []}) then {
+        _veh land "GET OUT";
+    };
     ["put-out",[
-        if (_dropped) then {"PARADROP"} else {"LAND_FALLBACK"},
-        typeOf _veh,groupId _cargoGroup,round ((getPosATL _veh)#2)
+        _method,typeOf _veh,groupId _cargoGroup,round ((getPosATL _veh)#2)
     ]] call ITW_CLASH_HotDrop_fnc_Log;
-    [if (_dropped) then {"PARADROP"} else {"LAND_FALLBACK"},true]
+    [_method,true]
 };
 
 ITW_CLASH_HotDrop_fnc_Run = {
@@ -384,6 +428,9 @@ ITW_CLASH_HotDrop_fnc_Consider = {
     private _cargoGroup = [_veh] call ITW_CLASH_HotDrop_fnc_CargoGroup;
     if (isNull _cargoGroup) exitWith {false};
     if (((units _cargoGroup) findIf {isPlayer _x}) >= 0) exitWith {false};
+    // Loaded, not merely assigned. Still boarding is not a decision point, so
+    // this is the one rejection that does not mark the lift declined.
+    if (([_veh,_cargoGroup] call ITW_CLASH_HotDrop_fnc_Aboard) isEqualTo []) exitWith {false};
 
     private _destination = [_veh] call ITW_CLASH_HotDrop_fnc_Destination;
     if (_destination isEqualTo []) exitWith {false};
@@ -398,8 +445,20 @@ ITW_CLASH_HotDrop_fnc_Consider = {
         _hq,getPosATL _veh,_destination
     ] call ITW_CLASH_AirPicture_fnc_ClassifyCorridor;
     private _corridorState = _corridor getOrDefault ["state","COLD"];
-    // A clear approach is HAL's to fly. HotDrop is for the bad ones.
-    if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {false};
+    // A clear approach is HAL's to fly. HotDrop is for the bad ones. Read once
+    // at boarding and settled: a lift that launches into a quiet corridor
+    // stays HAL's even if it sours, and one that launches into a bad one flies
+    // the profile even if the corridor clears. Air defence is identified
+    // reactively, so a cautious profile flown into a corridor that turns out
+    // to be cold costs nothing worth a second decision.
+    if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {
+        _veh setVariable ["ITW_CLASH_HotDropDeclined",true];
+        ["declined",[
+            _hq getVariable ["RydHQ_CodeSign","?"],typeOf _veh,groupId _cargoGroup,
+            _corridorState,_corridor getOrDefault ["reason",""]
+        ]] call ITW_CLASH_HotDrop_fnc_Log;
+        false
+    };
 
     private _state = [
         _veh,_cargoGroup,_destination,_hq,_corridorState
@@ -429,11 +488,16 @@ ITW_CLASH_HotDrop_fnc_Consider = {
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         if (ITW_CLASH_HotDropEnabled) then {
+            // Loading aircraft only. This is a boarding trigger that happens
+            // to be polled rather than a map-wide hunt for lifts to take over.
             {
                 [_x] call ITW_CLASH_HotDrop_fnc_Consider;
             } forEach (
                 vehicles select {
-                    _x isKindOf "Helicopter" && {alive _x} && {(crew _x) isNotEqualTo []}
+                    _x isKindOf "Helicopter"
+                    && {alive _x}
+                    && {((getPosATL _x)#2) <= ITW_CLASH_HotDropBoardingHeight}
+                    && {(crew _x) isNotEqualTo []}
                 }
             );
         };
@@ -443,13 +507,14 @@ ITW_CLASH_HotDrop_fnc_Consider = {
 
 ITW_CLASH_HotDropReady = true;
 diag_log format [
-    "CLASH BOOT | hot-drop-ready | version=%1 states=%2 takeover=%3 ingress=%4 popup=%5 dropHeight=%6 poll=%7 payload=troops logisticsUntouched=true borrows=flares,corridor,paradrop",
+    "CLASH BOOT | hot-drop-ready | version=%1 states=%2 takeover=%3 ingress=%4 popup=%5 dropHeight=%6 poll=%7 boardingHeight=%8 payload=troops claimedAt=boarding seizesAirborne=false logisticsUntouched=true borrows=flares,corridor,paradrop",
     ITW_CLASH_HotDropVersion,
     ITW_CLASH_HotDropStates,
     ITW_CLASH_HotDropTakeoverRadius,
     ITW_CLASH_HotDropIngressHeight,
     ITW_CLASH_HotDropPopupRadius,
     ITW_CLASH_HotDropDropHeight,
-    ITW_CLASH_HotDropPoll
+    ITW_CLASH_HotDropPoll,
+    ITW_CLASH_HotDropBoardingHeight
 ];
 true
