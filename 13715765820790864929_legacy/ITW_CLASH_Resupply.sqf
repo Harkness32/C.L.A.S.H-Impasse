@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_ResupplyStarted",false]) exitWith {
 
 ITW_CLASH_ResupplyStarted = true;
 ITW_CLASH_ResupplyReady = false;
-ITW_CLASH_ResupplyVersion = 1;
+ITW_CLASH_ResupplyVersion = 2;
 
 /*
     One owner for "HAL let this unit run dry and nothing is coming".
@@ -16,6 +16,15 @@ ITW_CLASH_ResupplyVersion = 1;
     flight; it is then held with HAL's own Busy lock (taken only after HAL's
     Break unwinds the running order), withdrawn to a clear rally, served by
     HAL's own Go*Supp delivery scripts or an ACE-magic crate, and released.
+
+    v2 (GFR) changes what a claimed VEHICLE group does while it waits. v1 sent
+    it to a threat-screened rally, which in one run meant ordering a damaged
+    Namer to withdraw 1250m - far enough that HAL sees the tank leave the line
+    and starts asking for a replacement. v2 holds a vehicle group where it
+    stands instead, and only lets it move for two reasons: a short break to
+    cover when it is actually being hit, and the bounded run toward a dispatched
+    ground truck so the two meet part way. Infantry keeps the v1 rally, which
+    works - a hollow squad has no armour to hide behind and wants the screen.
 
     Known unsolved: ground delivery is a physical service vehicle covering only
     its own kind, while an air-dropped crate covers all three. A unit needing
@@ -61,7 +70,24 @@ ITW_CLASH_ResupplyVersion = 1;
     ["ITW_CLASH_ResupplyPrimaryMags",6],
     ["ITW_CLASH_ResupplyHandgunMags",2],
     ["ITW_CLASH_ResupplyRoleAuditDelay",180],
-    ["ITW_CLASH_ResupplyUnwindTimeout",90]
+    ["ITW_CLASH_ResupplyUnwindTimeout",90],
+
+    // GFR. Hold a claimed vehicle group in place rather than withdrawing it.
+    ["ITW_CLASH_ResupplyGFRHold",true],
+    // A held group only moves when it is being hit, and then only to cover
+    // within this radius - never far enough for HAL to read it as gone.
+    ["ITW_CLASH_ResupplyGFRBreakRadius",300],
+    ["ITW_CLASH_ResupplyGFRMaxBreaks",2],
+    // Hull damage climbing by this much between ticks counts as effective fire
+    // on its own, so a group being shot at by something HAL has not spotted
+    // still gets to move.
+    ["ITW_CLASH_ResupplyGFRDamageEpsilon",0.02],
+    // Meeting part way: the share of the gap to the truck that the recipient
+    // covers. Weighted below half deliberately - the damaged or dry side should
+    // be the one that moves less.
+    ["ITW_CLASH_ResupplyGFRRendezvousWeight",0.35],
+    // and never further than this, whatever the weight works out to.
+    ["ITW_CLASH_ResupplyGFRMaxRecipientRun",600]
 ];
 ITW_CLASH_ResupplySweepOffsets = [0,-45,45,-90,90];
 
@@ -528,6 +554,137 @@ ITW_CLASH_Resupply_fnc_CurrentHALRoles = {
     _roles
 };
 
+/*
+    GFR holds. A claimed vehicle group sits where it is until resupply reaches
+    it, so HAL never watches the tank walk off the line.
+
+    fnc_Hold is deliberately heavier than a waypoint delete: HAL's own Go*
+    orders are gone (Busy is held by the claim), but the engine will still drift
+    a vehicle group toward whatever it last had. doStop on every vehicle is what
+    actually pins it.
+*/
+ITW_CLASH_Resupply_fnc_IsVehicleGroup = {
+    params ["_group"];
+    ([_group] call ITW_CLASH_Resupply_fnc_GroundVehicles) isNotEqualTo []
+};
+
+ITW_CLASH_Resupply_fnc_Damage = {
+    params ["_group"];
+    private _total = 0;
+    {_total = _total + damage _x} forEach ([_group] call ITW_CLASH_Resupply_fnc_GroundVehicles);
+    _total
+};
+
+// Being shot at, judged two ways: HAL knows an enemy is close enough that the
+// hold position no longer clears, or the group's hulls are taking damage right
+// now - which catches a shooter HAL has not spotted at all.
+ITW_CLASH_Resupply_fnc_UnderFire = {
+    params ["_claim"];
+    private _group = _claim get "group";
+    if (isNull _group) exitWith {false};
+
+    private _damage = [_group] call ITW_CLASH_Resupply_fnc_Damage;
+    private _was = _claim getOrDefault ["holdDamage",-1];
+    _claim set ["holdDamage",_damage];
+    if (_was >= 0 && {_damage - _was >= ITW_CLASH_ResupplyGFRDamageEpsilon}) exitWith {true};
+
+    private _pos = getPosATL vehicle leader _group;
+    !(([_pos,_claim get "hq"] call ITW_CLASH_Resupply_fnc_Clearance)#0)
+};
+
+ITW_CLASH_Resupply_fnc_Hold = {
+    params ["_claim"];
+    private _group = _claim get "group";
+    if (isNull _group) exitWith {false};
+    [_group] call RYD_WPdel;
+    {
+        if (alive _x) then {doStop _x};
+    } forEach ([_group] call ITW_CLASH_Resupply_fnc_GroundVehicles);
+    {
+        if (alive _x && {!isPlayer _x}) then {doStop _x};
+    } forEach units _group;
+    _claim set ["frozen",true];
+    _claim set ["holdDamage",[_group] call ITW_CLASH_Resupply_fnc_Damage];
+    _claim set ["frozenAt",time];
+    true
+};
+
+ITW_CLASH_Resupply_fnc_Unhold = {
+    params ["_claim"];
+    private _group = _claim get "group";
+    if (!(_claim getOrDefault ["frozen",false])) exitWith {false};
+    _claim set ["frozen",false];
+    if (isNull _group) exitWith {false};
+    {
+        if (alive _x) then {_x doFollow (leader _group)};
+    } forEach units _group;
+    true
+};
+
+/*
+    Meeting part way. The truck already homes on the recipient object, so the
+    only thing to decide is how far the recipient comes toward the truck. Travel
+    is the weighted share of the gap, capped, and the point is snapped to road
+    for a vehicle and dropped if it is wet or hot - a rendezvous that fails any
+    of that just means the recipient stays put and the truck does the driving,
+    which is still correct, only slower.
+*/
+// Cover for a held group that is being hit: the same walk-away-from-the-threat
+// sweep the v1 rally uses, but leashed to the break radius so the group is
+// still recognisably where HAL left it.
+ITW_CLASH_Resupply_fnc_BreakPoint = {
+    params ["_claim"];
+    private _group = _claim get "group";
+    private _hq = _claim get "hq";
+    if (isNull _group) exitWith {[]};
+    private _origin = getPosATL vehicle leader _group;
+
+    private _nearest = [_origin,(_hq getVariable ["RydHQ_KnEnemiesG",[]]),1000000] call RYD_CloseEnemyB;
+    private _bearing = if (isNull (_nearest#2)) then {
+        random 360
+    } else {
+        (getPosATL (leader (_nearest#2))) getDir _origin
+    };
+
+    private _isVehicle = [_group] call ITW_CLASH_Resupply_fnc_IsVehicleGroup;
+    private _best = [];
+    {
+        private _dist = ITW_CLASH_ResupplyGFRBreakRadius;
+        private _candidate = _origin getPos [_dist,_bearing + _x];
+        if (_isVehicle) then {_candidate = [_candidate,100] call ITW_CLASH_Resupply_fnc_SnapToRoad};
+        if (surfaceIsWater _candidate) then {continue};
+        if ((_candidate distance2D _origin) > ITW_CLASH_ResupplyGFRBreakRadius * 1.5) then {continue};
+        if (([_candidate,_hq] call ITW_CLASH_Resupply_fnc_Clearance)#0) exitWith {_best = _candidate};
+    } forEach ITW_CLASH_ResupplySweepOffsets;
+    _best
+};
+
+ITW_CLASH_Resupply_fnc_Rendezvous = {
+    params ["_claim","_truck"];
+    private _group = _claim get "group";
+    if (isNull _group || {isNull _truck}) exitWith {[]};
+    if (!ITW_CLASH_ResupplyGFRHold) exitWith {[]};
+    if (!([_group] call ITW_CLASH_Resupply_fnc_IsVehicleGroup)) exitWith {[]};
+    if (_claim getOrDefault ["inPlace",false] && {_claim get "rallySource" == "immobile"}) exitWith {[]};
+
+    private _vehicles = [_group] call ITW_CLASH_Resupply_fnc_GroundVehicles;
+    if (_vehicles findIf {fuel _x <= 0 || {!canMove _x}} >= 0) exitWith {[]};
+
+    private _origin = getPosATL vehicle leader _group;
+    private _truckPos = getPosATL _truck;
+    private _gap = _origin distance2D _truckPos;
+    if (_gap <= ITW_CLASH_ResupplyArrivalRadius) exitWith {[]};
+
+    private _run = (_gap * ITW_CLASH_ResupplyGFRRendezvousWeight) min ITW_CLASH_ResupplyGFRMaxRecipientRun;
+    if (_run <= ITW_CLASH_ResupplyArrivalRadius) exitWith {[]};
+
+    private _point = _origin getPos [_run,_origin getDir _truckPos];
+    _point = [_point] call ITW_CLASH_Resupply_fnc_SnapToRoad;
+    if (surfaceIsWater _point) exitWith {[]};
+    if (!(([_point,_claim get "hq"] call ITW_CLASH_Resupply_fnc_Clearance)#0)) exitWith {[]};
+    [_point,round _run,round _gap]
+};
+
 ITW_CLASH_Resupply_fnc_OrderMove = {
     params ["_group","_pos"];
     [_group] call RYD_WPdel;
@@ -551,7 +708,9 @@ ITW_CLASH_Resupply_fnc_Claim = {
         ["rally",[]],["rallySource",""],["inPlace",false],["arrivedAt",-1],
         ["relocations",0],["lastRallyCheck",time],["lastMoveOrder",-1],
         ["deliveryAt",-1],["deliveryMode",""],["retries",0],["lastDispatchTry",-1],
-        ["rolesCleared",[]]
+        ["rolesCleared",[]],
+        ["frozen",false],["frozenAt",-1],["holdDamage",-1],
+        ["breaks",0],["rendezvous",[]]
     ];
     ITW_CLASH_ResupplyClaims set [_id,_claim];
     _group setVariable ["ITW_CLASH_ResupplyClaimed",true];
@@ -561,7 +720,7 @@ ITW_CLASH_Resupply_fnc_Claim = {
         "%1 has needed %2 for %3s with nothing inbound - taking it from HAL for resupply",
         [_group] call ITW_CLASH_Resupply_fnc_Describe,
         _needs joinString "+",
-        round ITW_CLASH_ResupplyPatience
+        round ([_group,_needs] call ITW_CLASH_Resupply_fnc_Patience)
     ]] call ITW_CLASH_Resupply_fnc_Say;
 
     [_claim] spawn {
@@ -626,6 +785,9 @@ ITW_CLASH_Resupply_fnc_Release = {
 
     private _group = _claim get "group";
     if (!isNull _group) then {
+        // Unhold before Busy drops: a group handed back to HAL still under
+        // doStop would take its next order and not move.
+        [_claim] call ITW_CLASH_Resupply_fnc_Unhold;
         if (_claim get "busyOwned") then {
             [_group] call RYD_WPdel;
             _group setVariable ["Busy" + str _group,false];
@@ -748,6 +910,24 @@ ITW_CLASH_Resupply_fnc_StepResolve = {
         ]] call ITW_CLASH_Resupply_fnc_Say;
     };
 
+    // GFR: a vehicle group does not withdraw at all. v1 picked a screened rally
+    // and sent it there, which is how a damaged Namer came to be ordered 1250m
+    // off the line. It holds, and resupply comes to it.
+    if (ITW_CLASH_ResupplyGFRHold && {[_group] call ITW_CLASH_Resupply_fnc_IsVehicleGroup}) exitWith {
+        _claim set ["rally",_origin];
+        _claim set ["rallySource","gfr-hold"];
+        _claim set ["inPlace",true];
+        _claim set ["state","AT_RALLY"];
+        _claim set ["arrivedAt",time];
+        [_claim] call ITW_CLASH_Resupply_fnc_Hold;
+        ["gfr-hold",[_claim get "id",mapGridPosition _origin,count _vehicles]] call ITW_CLASH_Resupply_fnc_Log;
+        [format [
+            "%1 holding at %2 for resupply - not withdrawing",
+            [_group] call ITW_CLASH_Resupply_fnc_Describe,
+            mapGridPosition _origin
+        ]] call ITW_CLASH_Resupply_fnc_Say;
+    };
+
     private _rally = [_claim,_origin] call ITW_CLASH_Resupply_fnc_FindSharedRally;
     if (_rally isEqualTo [] && {([_origin,_hq] call ITW_CLASH_Resupply_fnc_Clearance)#0}) then {
         _rally = [_origin,"already-clear"];
@@ -796,6 +976,9 @@ ITW_CLASH_Resupply_fnc_StepMoving = {
     if (((vehicle leader _group) distance2D _rally) <= ITW_CLASH_ResupplyArrivalRadius) exitWith {
         _claim set ["state","AT_RALLY"];
         _claim set ["arrivedAt",time];
+        if (ITW_CLASH_ResupplyGFRHold && {[_group] call ITW_CLASH_Resupply_fnc_IsVehicleGroup}) then {
+            [_claim] call ITW_CLASH_Resupply_fnc_Hold;
+        };
         [format [
             "%1 reached rally %2",
             [_group] call ITW_CLASH_Resupply_fnc_Describe,
@@ -1039,6 +1222,25 @@ ITW_CLASH_Resupply_fnc_DispatchGround = {
 
         _mode = "GROUND:" + _kind;
         ["dispatch-ground",[_claim get "id",_kind,typeOf _truck,round _bestCost,_lastResort]] call ITW_CLASH_Resupply_fnc_Log;
+
+        // GFR: meet part way. The truck is already tasked onto the recipient
+        // object, so closing the gap from this end just makes them meet sooner;
+        // if the rendezvous does not resolve the recipient stays held and the
+        // truck does all the driving, which is the v1 behaviour.
+        private _rv = [_claim,_truck] call ITW_CLASH_Resupply_fnc_Rendezvous;
+        if (_rv isNotEqualTo []) then {
+            _rv params ["_rvPos","_rvRun","_rvGap"];
+            [_claim] call ITW_CLASH_Resupply_fnc_Unhold;
+            [_group,_rvPos] call ITW_CLASH_Resupply_fnc_OrderMove;
+            _claim set ["rendezvous",_rvPos];
+            _claim set ["lastMoveOrder",time];
+            ["gfr-rendezvous",[_claim get "id",_kind,_rvRun,_rvGap,mapGridPosition _rvPos]] call ITW_CLASH_Resupply_fnc_Log;
+            [format [
+                "%1 moving %2m of the %3m gap to meet its %4 truck at %5",
+                [_group] call ITW_CLASH_Resupply_fnc_Describe,
+                _rvRun,_rvGap,toLowerANSI _kind,mapGridPosition _rvPos
+            ]] call ITW_CLASH_Resupply_fnc_Say;
+        };
         [format [
             "Request approved for %1: %2 truck %3 driving to %4%5",
             [_group] call ITW_CLASH_Resupply_fnc_Describe,
@@ -1145,6 +1347,38 @@ ITW_CLASH_Resupply_fnc_RequestCapacity = {
 ITW_CLASH_Resupply_fnc_StepAtRally = {
     params ["_claim"];
     if ([_claim] call ITW_CLASH_Resupply_fnc_GoToCrate) exitWith {};
+
+    // A held group sits through everything except being hit. Then it gets one
+    // short move to cover, a bounded number of times, and holds again.
+    if (
+        (_claim getOrDefault ["frozen",false])
+        && {[_claim] call ITW_CLASH_Resupply_fnc_UnderFire}
+        && {(_claim getOrDefault ["breaks",0]) < ITW_CLASH_ResupplyGFRMaxBreaks}
+    ) exitWith {
+        private _point = [_claim] call ITW_CLASH_Resupply_fnc_BreakPoint;
+        private _group = _claim get "group";
+        if (_point isEqualTo []) exitWith {
+            ["gfr-break-nowhere",[_claim get "id",_claim getOrDefault ["breaks",0]]] call ITW_CLASH_Resupply_fnc_Log;
+        };
+        _claim set ["breaks",(_claim getOrDefault ["breaks",0]) + 1];
+        [_claim] call ITW_CLASH_Resupply_fnc_Unhold;
+        [_group,_point] call ITW_CLASH_Resupply_fnc_OrderMove;
+        _claim set ["rally",_point];
+        _claim set ["rallySource","gfr-break"];
+        _claim set ["lastMoveOrder",time];
+        _claim set ["lastRallyCheck",time];
+        _claim set ["state","MOVING"];
+        ["gfr-break",[
+            _claim get "id",round ((getPosATL vehicle leader _group) distance2D _point),_claim get "breaks"
+        ]] call ITW_CLASH_Resupply_fnc_Log;
+        [format [
+            "%1 is taking fire while held - breaking %2m to cover at %3",
+            [_group] call ITW_CLASH_Resupply_fnc_Describe,
+            round ((getPosATL vehicle leader _group) distance2D _point),
+            mapGridPosition _point
+        ]] call ITW_CLASH_Resupply_fnc_Say;
+    };
+
     if ([_claim get "group"] call ITW_CLASH_Resupply_fnc_InFlight) exitWith {};
     if (time - (_claim get "arrivedAt") < ITW_CLASH_ResupplyNativeGrace) exitWith {};
     if ([_claim] call ITW_CLASH_Resupply_fnc_PeerDeliveryPending) exitWith {};
@@ -1163,6 +1397,27 @@ ITW_CLASH_Resupply_fnc_StepAtRally = {
 
 ITW_CLASH_Resupply_fnc_StepAwait = {
     params ["_claim"];
+
+    // Reached the meeting point: stop there and let the truck close the rest.
+    private _rv = _claim getOrDefault ["rendezvous",[]];
+    if (_rv isNotEqualTo []) then {
+        private _group = _claim get "group";
+        if (
+            isNull _group
+            || {((vehicle leader _group) distance2D _rv) <= ITW_CLASH_ResupplyArrivalRadius}
+        ) then {
+            _claim set ["rendezvous",[]];
+            if (!isNull _group) then {
+                _claim set ["rally",getPosATL vehicle leader _group];
+                _claim set ["rallySource","gfr-rendezvous"];
+                if (ITW_CLASH_ResupplyGFRHold && {[_group] call ITW_CLASH_Resupply_fnc_IsVehicleGroup}) then {
+                    [_claim] call ITW_CLASH_Resupply_fnc_Hold;
+                };
+                ["gfr-rendezvous-reached",[_claim get "id",mapGridPosition _rv]] call ITW_CLASH_Resupply_fnc_Log;
+            };
+        };
+    };
+
     if ([_claim] call ITW_CLASH_Resupply_fnc_GoToCrate) exitWith {};
     if ([_claim get "group"] call ITW_CLASH_Resupply_fnc_InFlight) exitWith {};
     if (time - (_claim get "deliveryAt") < 60) exitWith {};
@@ -1464,7 +1719,7 @@ ITW_CLASH_Resupply_fnc_TickCrates = {
 
     ITW_CLASH_ResupplyReady = true;
     diag_log format [
-        "CLASH BOOT | resupply-ready | version=%1 patience=%2 repairPatience=%11 immobilePatience=%12 nativeGrace=%3 maxClaims=%4 maxDeliveries=%5 crateUses=%6 crateIdleLife=%7 magic=%8/%9/%10",
+        "CLASH BOOT | resupply-ready | version=%1 patience=%2 repairPatience=%11 immobilePatience=%12 nativeGrace=%3 maxClaims=%4 maxDeliveries=%5 crateUses=%6 crateIdleLife=%7 magic=%8/%9/%10 gfrHold=%13 gfrBreakRadius=%14 gfrMaxBreaks=%15 gfrWeight=%16 gfrMaxRun=%17",
         ITW_CLASH_ResupplyVersion,
         ITW_CLASH_ResupplyPatience,
         ITW_CLASH_ResupplyNativeGrace,
@@ -1476,7 +1731,12 @@ ITW_CLASH_Resupply_fnc_TickCrates = {
         missionNamespace getVariable ["RydxHQ_MagicRefuel",false],
         missionNamespace getVariable ["RydxHQ_MagicRepair",false],
         ITW_CLASH_ResupplyRepairPatience,
-        ITW_CLASH_ResupplyImmobilePatience
+        ITW_CLASH_ResupplyImmobilePatience,
+        ITW_CLASH_ResupplyGFRHold,
+        ITW_CLASH_ResupplyGFRBreakRadius,
+        ITW_CLASH_ResupplyGFRMaxBreaks,
+        ITW_CLASH_ResupplyGFRRendezvousWeight,
+        ITW_CLASH_ResupplyGFRMaxRecipientRun
     ];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
