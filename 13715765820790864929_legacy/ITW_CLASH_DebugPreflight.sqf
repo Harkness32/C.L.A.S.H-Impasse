@@ -79,7 +79,8 @@ ITW_CLASH_DebugPreflightManifest = [
     ["ITW_CLASH_Colossus","colossus v0","no ground picture"],
     ["ITW_CLASH_HALReconLatch","recon latch","capture orders stay on HAL's RapidCapt dice"],
     ["ITW_CLASH_HALSoftArmorFix","soft-armor fix","soft vehicles dispatched at tanks with no risk check"],
-    ["ITW_CLASH_AttackRestore","attack restore","medevac'd squads stay unable to attack"]
+    ["ITW_CLASH_AttackRestore","attack restore","medevac'd squads stay unable to attack"],
+    ["ITW_CLASH_HALWaypointGuard","waypoint guard","HAL drops capture waypoints on an undefined _wp0"]
 ];
 
 // Chat is asked for either by the parameter or by the loud debugger already

@@ -231,6 +231,15 @@ if (isServer) then {
             // air or AA threat anywhere on the map. Patched in SCargo's own
             // source to ask about the route instead; scheduled, because it has
             // to wait for HAL's bind and for the Checkbook's cargo hook.
+            // HAL drops a capture waypoint when _wp0 is undefined, so the
+            // group silently never goes. Stock HAL, but only hit now that the
+            // recon latch has capture orders being issued at all. Scheduled,
+            // like the other runtime patches.
+            if (fileExists "ITW_CLASH_HALWaypointGuardFix.sqf") then {
+                [] execVM "ITW_CLASH_HALWaypointGuardFix.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | hal-waypoint-guard-missing | HAL may drop capture waypoints on an undefined _wp0";
+            };
             // HAL's AT-risk resignation only ever runs for armour groups, so a
             // soft-skinned vehicle is dispatched at a known tank with no risk
             // check at all. Appends a CLASH-maintained list of soft-mounted

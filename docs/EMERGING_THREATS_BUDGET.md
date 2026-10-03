@@ -738,6 +738,43 @@ always been there.
 whose `skillFinal` derives the server's difficulty coefficients, which the
 preflight now reports. Changing it would corrupt the reading.
 
+## HAL drops a capture waypoint on an undefined _wp0
+
+```
+Error in expression <...(str _unitG),false])) then
+{if (_wp0 isEqualTo []) then {_wp0 = [_unitG,...
+Error Undefined variable in expression: _wp0
+```
+
+That line (`GoCapture.sqf:342`) is what adds the group's MOVE waypoint onto the
+objective. When it throws, the group gets no waypoint and simply does not go -
+silently.
+
+It is stock HAL, but C.L.A.S.H. is why it is being hit. Before
+`RydHQ_ReconDone` was held up, HAL almost never issued a capture order, so
+`GoCapture` almost never ran: the 100 minute run before the latch logged this
+**zero** times, and both runs after it logged it.
+
+`GoRest` shows the shape plainly - its `_wp0 = []` sits inside a conditional
+block (`GoRest.sqf:236`) while two later reads assume it ran. `GoCapture`'s
+initialiser looks top-level, so **why** its read is out of scope is not
+something this patch claims to understand. The guard does not depend on
+knowing: `isNil` is exactly as true when a variable is missing for a reason
+nobody has traced.
+
+Every read of `_wp0 isEqualTo []` becomes
+`isNil "_wp0" || {_wp0 isEqualTo []}` in `HAL_GoCapture`, `HAL_GoRecon`,
+`HAL_GoAttInf` and `HAL_GoRest` - five guards across the four. That is
+identical wherever `_wp0` is defined, and where it is not, an undefined `_wp0`
+now takes the same branch an empty one takes: the branch that creates the
+waypoint.
+
+The transformation is simulated against the real HAL sources in the tests, so a
+malformed rewrite fails there rather than in a mission. A target that is absent
+or already guarded is not a failure - a modpack need not ship every order, and
+HAL may fix it upstream - but a recompile or verification failure logs a
+warning and keeps the stock order.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred
