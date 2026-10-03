@@ -787,7 +787,7 @@ ITW_CLASH_Generation_fnc_ETBRejectClass = {
     row, only what the row says a thing costs and how many should exist.
 */
 ITW_CLASH_Generation_fnc_ETBCandidates = {
-    params ["_side","_capability"];
+    params ["_side","_capability",["_minGrade",0]];
     if (isNil "ITW_VehArrays" || {isNil "ITW_CLASH_ETB_fnc_Price"}) exitWith {[]};
     private _friendly = !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide};
     private _zonesOwned = [_friendly] call ITW_CLASH_Checkbook_fnc_GetZonesOwned;
@@ -813,12 +813,21 @@ ITW_CLASH_Generation_fnc_ETBCandidates = {
                 format ["%1|%2",_capability,_class],""
             ]) isNotEqualTo "") then {continue};
             if !([_class,_capability] call ITW_CLASH_Generation_fnc_ETBQualifiesClass) then {continue};
+            // Suitability, not just lethality. An AT missile kills a tank from
+            // any chassis; the chassis decides whether it is alive to fire a
+            // second one.
+            if (_minGrade > 0 && {!isNil "ITW_CLASH_AirPicture_fnc_ProtectionGrade"}) then {
+                if (([_class] call ITW_CLASH_AirPicture_fnc_ProtectionGrade) < _minGrade) then {
+                    continue
+                };
+            };
             _candidates pushBack [_class,_rowIndex,_price];
         } forEach (_row#ITW_VEH_CLASSES);
     } forEach ITW_VehArrays;
 
-    // Cheapest first, so a price above the capacity is skipped for a cheaper
-    // vehicle in the same capability instead of denying the whole need.
+    // Cheapest first WITHIN what is suitable, so the economy still prefers the
+    // affordable answer and a price above the capacity still falls back to a
+    // cheaper vehicle - it just can no longer fall back past the grade floor.
     [_candidates,[],{_x#2},"ASCEND"] call BIS_fnc_sortBy
 };
 
@@ -963,7 +972,29 @@ ITW_CLASH_Generation_fnc_ETBFulfil = {
     if (isNull _hq) exitWith {["NO_CANDIDATE",["no-commander"]] call _deny};
     private _side = side _hq;
 
-    private _candidates = [_side,_capability] call ITW_CLASH_Generation_fnc_ETBCandidates;
+    // Only ground armour answers need protection: an aircraft's survival is its
+    // corridor, which the air picture already rules on, and SPAA sits behind
+    // the front by doctrine.
+    private _minGrade = 0;
+    if (
+        _capability isEqualTo "GROUND_ANTI_ARMOR"
+        && {!isNull _threat}
+        && {!isNil "ITW_CLASH_AirPicture_fnc_RequiredGrade"}
+    ) then {
+        _minGrade = [typeOf _threat] call ITW_CLASH_AirPicture_fnc_RequiredGrade;
+    };
+
+    private _candidates = [_side,_capability,_minGrade] call ITW_CLASH_Generation_fnc_ETBCandidates;
+    if (_candidates isEqualTo [] && {_minGrade > 0}) exitWith {
+        // The faction can field an AT vehicle, just not one that survives this
+        // threat. Saying so beats spending the money on a vehicle that trades
+        // once and leaves the armour alive.
+        private _any = [_side,_capability,0] call ITW_CLASH_Generation_fnc_ETBCandidates;
+        [
+            if (_any isEqualTo []) then {"NO_CANDIDATE"} else {"NO_SUITABLE_COUNTER"},
+            [_capability,typeOf _threat,_minGrade]
+        ] call _deny
+    };
     if (_candidates isEqualTo []) exitWith {
         // No qualifying vehicle in the faction's own reachable rows. Honest
         // answer, not a silent retry: SPAA is what gives a side without an

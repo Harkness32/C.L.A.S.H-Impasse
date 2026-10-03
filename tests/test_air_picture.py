@@ -288,3 +288,30 @@ def test_air_picture_loads_before_threat_coverage():
     assert 'call compile preprocessFileLineNumbers "ITW_CLASH_AirPicture.sqf"' in init
     assert "air-picture-missing" in init
     assert init.index("ITW_CLASH_AirPicture.sqf") < init.index("ITW_CLASH_HALThreatCoverage.sqf")
+
+
+# ------------------------------------------------ protection grading
+
+def test_protection_is_graded_from_the_vehicle_not_a_class_list():
+    source = air_picture()
+    body = function_body(source, "ITW_CLASH_AirPicture_fnc_ProtectionGrade")
+    assert 'isKindOf "Tank"' in body
+    assert 'isKindOf "Wheeled_APC_F"' in body
+    assert 'configFile >> "CfgVehicles" >> _class >> "armor"' in body
+    assert "ITW_CLASH_AirPictureArmourHeavy" in body
+    assert "ITW_CLASH_AirPictureArmourLight" in body
+    assert 'ITW_CLASH_AirPictureArmourHeavy",400' in source
+    assert 'ITW_CLASH_AirPictureArmourLight",60' in source
+
+
+def test_the_grade_is_cached_like_every_other_class_lookup():
+    body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_ProtectionGrade")
+    assert "ITW_CLASH_AirPictureProtection getOrDefault" in body
+    assert "ITW_CLASH_AirPictureProtection set" in body
+    assert "if (_cached >= 0) exitWith {_cached};" in body
+
+
+def test_a_counter_may_be_one_grade_below_its_threat():
+    # Demanding a match would price most factions out of answering armour.
+    body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_RequiredGrade")
+    assert "ITW_CLASH_AirPicture_fnc_ProtectionGrade) - 1) max 0" in body

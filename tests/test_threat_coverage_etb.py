@@ -382,3 +382,30 @@ def test_the_capacity_gate_runs_before_the_front_branch():
     # branch exits early with SPAA as its only option.
     body = function_body(coverage(), "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider")
     assert body.index("_spaaFull") < body.index("_outsideFront")
+
+
+def test_an_unarmoured_counter_is_not_offered_against_armour():
+    source = generation()
+    body = function_body(source, "ITW_CLASH_Generation_fnc_ETBCandidates")
+    assert '["_minGrade",0]' in body
+    assert "ITW_CLASH_AirPicture_fnc_ProtectionGrade) < _minGrade" in body
+    # Guarded, so a mission without the air picture still buys as before.
+    assert 'isNil "ITW_CLASH_AirPicture_fnc_ProtectionGrade"' in body
+
+
+def test_price_still_decides_within_what_is_suitable():
+    body = function_body(generation(), "ITW_CLASH_Generation_fnc_ETBCandidates")
+    assert '[_candidates,[],{_x#2},"ASCEND"] call BIS_fnc_sortBy' in body
+
+
+def test_only_ground_armour_answers_need_protection():
+    body = function_body(generation(), "ITW_CLASH_Generation_fnc_ETBFulfil")
+    assert '_capability isEqualTo "GROUND_ANTI_ARMOR"' in body
+    assert "ITW_CLASH_AirPicture_fnc_RequiredGrade" in body
+    assert "private _minGrade = 0;" in body
+
+
+def test_no_suitable_counter_is_distinguished_from_no_counter_at_all():
+    body = function_body(generation(), "ITW_CLASH_Generation_fnc_ETBFulfil")
+    assert '"NO_SUITABLE_COUNTER"' in body
+    assert '[_side,_capability,0] call ITW_CLASH_Generation_fnc_ETBCandidates' in body

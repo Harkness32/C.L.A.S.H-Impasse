@@ -335,6 +335,43 @@ dying forward. `over-cap` is logged once per change rather than once per poll,
 so a side that permanently owns a spare says so once instead of every thirty
 seconds for the whole mission.
 
+## Capability match: price is not suitability
+
+Over a 70 minute run the ETB made nine purchases. All nine were
+`GROUND_ANTI_ARMOR`, and eight were the same `B_LSV_01_AT_F` - an unarmoured AT
+buggy. Seven died. Average life was about eight minutes; the shortest was 28
+seconds, bought at 23:43:18 and destroyed at 23:43:46. Roughly 43% of the run's
+income went into vehicles that traded once at best.
+
+`ITW_CLASH_Generation_fnc_ETBCandidates` sorted candidates cheapest first and
+the buy took the first affordable one, so the ETB had a notion of price and
+none of suitability. Lethality was never the problem - an AT missile kills a
+tank from any chassis. Survival was.
+
+`ITW_CLASH_AirPicture_fnc_ProtectionGrade` now grades a class 0 soft, 1
+protected, 2 heavy, read from the vehicle like every other classification here:
+`Tank` covers the tracked armour family, `Wheeled_APC_F` the wheeled carriers,
+and the config `armor` value is the fallback for anything inheriting from
+neither. Cached per class.
+
+`ITW_CLASH_AirPicture_fnc_RequiredGrade` asks for one grade below the threat's
+own. An IFV may answer a tank; a soft vehicle may not. Demanding a match would
+price most factions out of answering armour at all.
+
+The filter applies **only to `GROUND_ANTI_ARMOR`**. An aircraft's survival is
+its corridor, which the air picture already rules on, and SPAA sits behind the
+front by doctrine.
+
+Price still decides *within* what is suitable - the sort is unchanged, and a
+price above the reserve still falls back to a cheaper vehicle. It simply can no
+longer fall back past the grade floor.
+
+When the faction can field an AT vehicle but none that survives the threat, the
+denial is `NO_SUITABLE_COUNTER` rather than `NO_CANDIDATE`, so the two cases
+read differently in the log. Saying so beats spending the money on a vehicle
+that trades once and leaves the armour alive - and the budget has the room:
+the reserve sat at its 80/80 ceiling in 53 of 146 status lines that run.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

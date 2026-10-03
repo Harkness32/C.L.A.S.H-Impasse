@@ -321,6 +321,66 @@ ITW_CLASH_AirPicture_fnc_ClassProfile = {
     and count every Bobcat, so in the peer run its count would have been wrong
     in both directions (about 13 Rhinos and 8 Bobcats on the field).
 */
+/*
+    How much punishment a vehicle can take, as a grade: 0 soft, 1 protected,
+    2 heavy.
+
+    Read from the vehicle rather than a class list, like every other
+    classification here. The kind answers first because it is what mods keep
+    right - Tank covers the tracked armour family, Wheeled_APC_F the wheeled
+    carriers - and the config armour value is the fallback for anything that
+    inherits from neither.
+
+    This exists because price is not suitability. Over a 70 minute run the ETB
+    bought the same unarmoured AT buggy nine times to answer tanks, because
+    candidates are sorted cheapest first and it was always the cheapest thing
+    that carried an AT missile. Seven died, one of them 28 seconds after it was
+    bought. Lethality was never the problem - an AT launcher kills a tank from
+    any chassis - survival was.
+*/
+ITW_CLASH_AirPictureArmourHeavy = missionNamespace getVariable [
+    "ITW_CLASH_AirPictureArmourHeavy",400
+];
+ITW_CLASH_AirPictureArmourLight = missionNamespace getVariable [
+    "ITW_CLASH_AirPictureArmourLight",60
+];
+ITW_CLASH_AirPictureProtection = createHashMap;
+
+ITW_CLASH_AirPicture_fnc_ProtectionGrade = {
+    params ["_class"];
+    if (_class isEqualTo "") exitWith {0};
+    private _cached = ITW_CLASH_AirPictureProtection getOrDefault [_class,-1];
+    if (_cached >= 0) exitWith {_cached};
+
+    private _grade = 0;
+    if (_class isKindOf "Tank") then {
+        _grade = 2;
+    } else {
+        if (_class isKindOf "Wheeled_APC_F") then {
+            _grade = 1;
+        } else {
+            private _armour = getNumber (configFile >> "CfgVehicles" >> _class >> "armor");
+            if (_armour >= ITW_CLASH_AirPictureArmourHeavy) then {
+                _grade = 2;
+            } else {
+                if (_armour >= ITW_CLASH_AirPictureArmourLight) then {_grade = 1};
+            };
+        };
+    };
+    ITW_CLASH_AirPictureProtection set [_class,_grade];
+    _grade
+};
+
+/*
+    The grade a counter needs to answer this threat. One below the threat's own
+    is enough: an IFV may answer a tank, a soft vehicle may not. Demanding a
+    match would price most factions out of answering armour at all.
+*/
+ITW_CLASH_AirPicture_fnc_RequiredGrade = {
+    params ["_threatClass"];
+    (([_threatClass] call ITW_CLASH_AirPicture_fnc_ProtectionGrade) - 1) max 0
+};
+
 ITW_CLASH_AirPicture_fnc_IsArmoredThreat = {
     params ["_veh"];
     if (isNull _veh || {!alive _veh}) exitWith {false};
