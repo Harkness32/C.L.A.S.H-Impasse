@@ -105,3 +105,50 @@ def test_it_loads_behind_the_air_picture():
     assert 'call compile preprocessFileLineNumbers "ITW_CLASH_RearBaseCRAM.sqf"' in init
     assert "rear-base-cram-missing-or-prereq-failed" in init
     assert init.index("ITW_CLASH_AirPicture.sqf") < init.index("ITW_CLASH_RearBaseCRAM.sqf")
+
+
+# ------------------------------ a faction with no static AA still gets cover
+
+def test_it_falls_back_to_the_factions_own_aa_vehicle():
+    # 134 failed polls per side over 70 minutes, zero emplacements: these
+    # factions field no StaticAAWeapon at all, so static-only is an outage.
+    body = function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_SelectClass")
+    assert "va_pStaticAAClasses" in body and "va_eStaticAAClasses" in body
+    assert "va_pAAClasses" in body and "va_eAAClasses" in body
+    # Static is still preferred: the fallback only runs when static came back empty.
+    static = body.index("va_pStaticAAClasses")
+    mobile = body.index("va_pAAClasses")
+    assert static < mobile
+    assert "if (_classes isEqualTo []) then {" in body
+
+
+def test_the_fallback_still_has_to_shoot_at_aircraft():
+    body = function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_SelectClass")
+    assert '([_x] call ITW_CLASH_AirPicture_fnc_ClassProfile) get "antiAir"' in body
+    # Guarded, and parenthesised: "call f get x" does not bind as it reads.
+    assert 'isNil "ITW_CLASH_AirPicture_fnc_ClassProfile"' in body
+
+
+def test_a_crammed_vehicle_cannot_be_driven_away():
+    source = cram()
+    body = function_body(source, "ITW_CLASH_RearBaseCRAM_fnc_Spawn")
+    # Gunner only, no driver: it sits where it is placed, like a static.
+    assert "moveInGunner _veh" in body
+    assert "moveInDriver" not in body
+    assert '_veh setVariable ["ITW_CLASH_CRAM",true,true]' in source
+
+
+def test_the_overwatch_sweep_leaves_it_alone():
+    overwatch = text("ITW_CLASH_SPAAOverwatch.sqf")
+    body = function_body(overwatch, "ITW_CLASH_SPAAOverwatch_fnc_Adopt")
+    assert 'getVariable ["ITW_CLASH_CRAM",false]) exitWith {false}' in body
+    # And it is refused before the capacity test, so it never costs a slot.
+    assert body.index("ITW_CLASH_CRAM") < body.index("AtCapacity")
+
+
+def test_having_nothing_to_emplace_is_said_once_per_side():
+    source = cram()
+    body = function_body(source, "ITW_CLASH_RearBaseCRAM_fnc_Spawn")
+    assert "ITW_CLASH_RearBaseCRAMSilenced" in body
+    assert "if !(_key in ITW_CLASH_RearBaseCRAMSilenced) then {" in body
+    assert "ITW_CLASH_RearBaseCRAMSilenced = [];" in source

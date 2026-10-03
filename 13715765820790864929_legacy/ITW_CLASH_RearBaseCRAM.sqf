@@ -52,6 +52,8 @@ ITW_CLASH_RearBaseCRAMPlayerClass = missionNamespace getVariable ["ITW_CLASH_Rea
 ITW_CLASH_RearBaseCRAMEnemyClass = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnemyClass",""];
 
 // sideKey -> [vehicle, group, destroyedAt, position]
+// Sides already told they have nothing to emplace.
+ITW_CLASH_RearBaseCRAMSilenced = [];
 ITW_CLASH_RearBaseCRAMs = createHashMap;
 
 ITW_CLASH_RearBaseCRAM_fnc_Log = {
@@ -84,15 +86,49 @@ ITW_CLASH_RearBaseCRAM_fnc_SelectClass = {
         _override
     };
 
-    private _pool = if (_friendly) then {
-        missionNamespace getVariable ["va_pStaticAAClasses",[]]
-    } else {
-        missionNamespace getVariable ["va_eStaticAAClasses",[]]
+    private _usable = {
+        params ["_pool"];
+        (_pool apply {
+            [_x] call ITW_CLASH_Generation_fnc_NormalizeClass
+        }) select {
+            _x isEqualType "" && {_x isNotEqualTo ""}
+            && {isClass (configFile >> "CfgVehicles" >> _x)}
+        }
     };
-    private _classes = (_pool apply {
-        [_x] call ITW_CLASH_Generation_fnc_NormalizeClass
-    }) select {
-        _x isEqualType "" && {_x isNotEqualTo ""} && {isClass (configFile >> "CfgVehicles" >> _x)}
+
+    private _classes = [
+        if (_friendly) then {
+            missionNamespace getVariable ["va_pStaticAAClasses",[]]
+        } else {
+            missionNamespace getVariable ["va_eStaticAAClasses",[]]
+        }
+    ] call _usable;
+
+    // Most factions field no StaticAAWeapon at all. In a 70 minute run this
+    // selection failed on all 134 polls for both sides and the rear bases were
+    // never covered once, so a static-only rule is not a rule, it is an
+    // outage. Fall back to the faction's own AA vehicle, which is the same
+    // substitution Impasse makes for itself at VehicleArrays.sqf:734.
+    //
+    // It is crewed with a gunner and no driver, exactly as a static is, so it
+    // sits where it is placed and cannot be driven off. ITW_CLASH_CRAM keeps
+    // the SPAA overwatch sweep from adopting it and walking it to a sector.
+    if (_classes isEqualTo []) then {
+        _classes = [
+            if (_friendly) then {
+                missionNamespace getVariable ["va_pAAClasses",[]]
+            } else {
+                missionNamespace getVariable ["va_eAAClasses",[]]
+            }
+        ] call _usable;
+        if (_classes isNotEqualTo []) then {
+            // Parenthesised: "call f get x" does not bind the way it reads.
+            if (!isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") then {
+                _classes = _classes select {
+                    ([_x] call ITW_CLASH_AirPicture_fnc_ClassProfile) get "antiAir"
+                };
+            };
+        };
     };
     if (_classes isEqualTo []) exitWith {""};
 
@@ -128,7 +164,14 @@ ITW_CLASH_RearBaseCRAM_fnc_Spawn = {
     params ["_side"];
     private _class = [_side] call ITW_CLASH_RearBaseCRAM_fnc_SelectClass;
     if (_class isEqualTo "") exitWith {
-        ["no-candidate",[toUpperANSI str _side]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+        // Once per side. The class pools do not change mid-mission, so this
+        // answer will not either: the unfixed version said it 268 times in one
+        // run, a third of every line the loud debugger printed.
+        private _key = toUpperANSI str _side;
+        if !(_key in ITW_CLASH_RearBaseCRAMSilenced) then {
+            ITW_CLASH_RearBaseCRAMSilenced pushBack _key;
+            ["no-candidate",[_key]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+        };
         []
     };
     private _position = [_side] call ITW_CLASH_RearBaseCRAM_fnc_RearPosition;
@@ -256,7 +299,7 @@ ITW_CLASH_RearBaseCRAM_fnc_Maintain = {
 
 ITW_CLASH_RearBaseCRAMReady = true;
 diag_log format [
-    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=faction-static-aa halRegistered=false impasseBilled=false vehDefStamped=false",
+    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=faction-static-aa-then-faction-aa-vehicle halRegistered=false impasseBilled=false vehDefStamped=false gunnerOnly=true",
     ITW_CLASH_RearBaseCRAMVersion,
     ITW_CLASH_RearBaseCRAMRespawn,
     ITW_CLASH_RearBaseCRAMOffset,

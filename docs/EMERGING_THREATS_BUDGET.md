@@ -372,6 +372,35 @@ read differently in the log. Saying so beats spending the money on a vehicle
 that trades once and leaves the armour alive - and the budget has the room:
 the reserve sat at its 80/80 ceiling in 53 of 146 status lines that run.
 
+## Rear-base C-RAM: static if the faction has one, its own AA vehicle if not
+
+The module never worked. Over a 70 minute run it logged
+`rear-cram-no-candidate` **134 times for each side - every poll from 23:17:13 to
+0:24:15 - and emplaced nothing at all**. At 268 lines it was a third of
+everything the loud debugger printed, drowning the instrument being used to
+debug everything else.
+
+It was not the startup race first suspected. `va_pStaticAAClasses` and
+`va_eStaticAAClasses` are filtered by `isKindOf "StaticAAWeapon"`
+(`VehicleArrays.sqf:712`), and these factions field none, so the pool was empty
+permanently rather than briefly.
+
+Static AA is still preferred. When there is none, the selection now falls back
+to the faction's own AA vehicle from `va_pAAClasses` / `va_eAAClasses` - the
+same substitution Impasse makes for itself at `VehicleArrays.sqf:734` - and
+keeps only classes whose config says they can actually shoot at aircraft.
+
+The vehicle is crewed exactly as a static is: **a gunner and no driver**. It
+cannot be driven anywhere, so it behaves as the emplacement it is meant to be.
+`ITW_CLASH_CRAM` then keeps `ITW_CLASH_SPAAOverwatch_fnc_Adopt` from taking it,
+which matters twice over - an adopted C-RAM would consume one of the back
+line's capped mobile-AA slots and be ordered to a sector it can never drive to.
+The refusal is placed before the capacity test so it never costs a slot even
+transiently.
+
+Having nothing to emplace is now said **once per side**. The class pools do not
+change mid-mission, so neither does the answer.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

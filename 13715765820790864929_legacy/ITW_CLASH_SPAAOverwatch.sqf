@@ -135,6 +135,11 @@ ITW_CLASH_SPAAOverwatch_fnc_Adopt = {
     private _veh = vehicle leader _group;
     if (isNull _veh || {!alive _veh}) exitWith {false};
     if !([_veh] call ITW_CLASH_AirPicture_fnc_IsSPAA) exitWith {false};
+    // A rear-base C-RAM is an emplacement that happens to be a vehicle. It is
+    // crewed with a gunner and no driver so it cannot be driven anywhere, and
+    // adopting it would both consume a back-line slot and try to walk it to a
+    // sector it can never reach.
+    if (_veh getVariable ["ITW_CLASH_CRAM",false]) exitWith {false};
     // Already holding enough. Enforced here rather than at each caller, so the
     // sweep and a purchase cannot disagree about the limit.
     if (
