@@ -124,6 +124,15 @@ ITW_CLASH_LoudDebug_fnc_Sentence = {
             format ["RECON FLAG RELEASED FOR %1 - no enemy groups known, HAL may scout again (held %2x)",
                 0 call _p,1 call _p]
         };
+        // ---- the strategy layer's posture ----
+        case "colossus|posture": {
+            format ["COMMANDER %1 SWITCHES %2 -> %3 - enemy %5 vs own %6 (ratio %4, %7 contacts)",
+                0 call _p,1 call _p,2 call _p,3 call _p,4 call _p,5 call _p,6 call _p]
+        };
+        case "colossus|would-consolidate": {
+            format ["CONSOLIDATE: commander %1 massing at objective %2 (%3) - outnumbered %4 to 1 - %5 there, %6 free in %7 groups",
+                0 call _p,1 call _p,2 call _p,3 call _p,4 call _p,5 call _p,6 call _p]
+        };
         case "rear-cram|placed": {
             format ["%2 EMPLACED AS REAR-BASE AIR DEFENCE at %3 - %1",
                 0 call _p,1 call _p,2 call _at]

@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ColossusStarted",false]) exitWith {true};
 
 ITW_CLASH_ColossusStarted = true;
-ITW_CLASH_ColossusVersion = 1;
+ITW_CLASH_ColossusVersion = 2;
 ITW_CLASH_ColossusReady = false;
 
 /*
@@ -76,6 +76,28 @@ ITW_CLASH_ColossusWeightStatic = missionNamespace getVariable ["ITW_CLASH_Coloss
 // The force ratio a push is planned around. Attacking a prepared position at
 // parity is how an army is fed into a meat grinder one group at a time.
 ITW_CLASH_ColossusPushRatio = missionNamespace getVariable ["ITW_CLASH_ColossusPushRatio",2];
+/*
+    Consolidation.
+
+    A commander that is drastically outnumbered across the theatre should not
+    be feeding objectives one group at a time - that is the slugfest COLOSSUS
+    exists to name. When the enemy it knows about outweighs everything it could
+    send by this much, the posture becomes CONSOLIDATE: mass first, push after.
+
+    Two thresholds, not one, so the posture does not flap between assessments
+    while the ratio sits on the line. It enters consolidation at the higher
+    figure and only leaves below the lower one.
+
+    Measured across the whole theatre rather than per objective, because the
+    per-objective numbers already drive the push ranking. This is the question
+    the ranking cannot answer: whether to be pushing at all.
+*/
+ITW_CLASH_ColossusConsolidateAt = missionNamespace getVariable [
+    "ITW_CLASH_ColossusConsolidateAt",1.5
+];
+ITW_CLASH_ColossusReleaseAt = missionNamespace getVariable [
+    "ITW_CLASH_ColossusReleaseAt",1.1
+];
 // Verdict thresholds, as our strength over theirs.
 ITW_CLASH_ColossusVulnerable = missionNamespace getVariable ["ITW_CLASH_ColossusVulnerable",2];
 ITW_CLASH_ColossusContested = missionNamespace getVariable ["ITW_CLASH_ColossusContested",0.8];
@@ -226,13 +248,112 @@ ITW_CLASH_Colossus_fnc_Read = {
 };
 
 /*
+    The theatre, not an objective: everything this commander knows about against
+    everything it could field. Counted once per vehicle and once per group, so
+    neither side is double counted the way summing the per-objective numbers
+    would, since a unit within range of two objectives appears in both.
+*/
+ITW_CLASH_Colossus_fnc_Theatre = {
+    params ["_hq"];
+    private _enemy = 0;
+    private _counted = [];
+    {
+        private _unit = _x;
+        if (isNull _unit || {!alive _unit}) then {continue};
+        private _veh = vehicle _unit;
+        if (_veh in _counted) then {continue};
+        _counted pushBack _veh;
+        _enemy = _enemy + ([_unit] call ITW_CLASH_Colossus_fnc_Worth);
+    } forEach (_hq getVariable ["RydHQ_KnEnemies",[]]);
+
+    private _excluded = (_hq getVariable ["RydHQ_Exhausted",[]])
+        + (_hq getVariable ["RydHQ_SupportG",[]])
+        + (_hq getVariable ["RydHQ_SpecForG",[]])
+        + (_hq getVariable ["RydHQ_ArtG",[]])
+        + (_hq getVariable ["RydHQ_NavalG",[]])
+        + (_hq getVariable ["RydHQ_CargoOnly",[]])
+        + (_hq getVariable ["RydHQ_StaticG",[]]);
+    private _friendly = 0;
+    {
+        private _group = _x;
+        if (isNull _group || {_group in _excluded}) then {continue};
+        {
+            _friendly = _friendly + ([_x] call ITW_CLASH_Colossus_fnc_Worth);
+        } forEach ((units _group) select {alive _x});
+    } forEach (_hq getVariable ["RydHQ_Friends",[]]);
+
+    [_enemy,_friendly,count _counted]
+};
+
+/*
+    Mass first, or push now.
+
+    Hysteresis is the whole point of holding the previous posture: without it a
+    commander sitting on the threshold would consolidate and release on
+    alternate assessments and never do either.
+*/
+ITW_CLASH_Colossus_fnc_Posture = {
+    params ["_hq","_enemy","_friendly"];
+    private _was = _hq getVariable ["ITW_CLASH_ColossusPosture","PUSH"];
+    // Nothing known, or nothing left to send: no case for consolidating.
+    if (_enemy <= 0 || {_friendly <= 0}) exitWith {["PUSH",0]};
+    private _ratio = _enemy / _friendly;
+    private _posture = if (_was isEqualTo "CONSOLIDATE") then {
+        if (_ratio < ITW_CLASH_ColossusReleaseAt) then {"PUSH"} else {"CONSOLIDATE"}
+    } else {
+        if (_ratio >= ITW_CLASH_ColossusConsolidateAt) then {"CONSOLIDATE"} else {"PUSH"}
+    };
+    [_posture,_ratio]
+};
+
+/*
+    Where to mass. The objective the commander already holds most strongly, so
+    consolidating means thickening a position rather than abandoning everything
+    and starting again somewhere new.
+*/
+ITW_CLASH_Colossus_fnc_RallyPoint = {
+    params ["_picture"];
+    if (_picture isEqualTo []) exitWith {createHashMap};
+    private _ranked = [_picture,[],{-(_x get "committed")},"ASCEND"] call BIS_fnc_sortBy;
+    _ranked#0
+};
+
+/*
     The recommendation. In v0 this is the whole output: the objective worth
     pushing, what it would take, and whether the force exists to do it. It is
     logged and published, and nothing reads it yet.
 */
 ITW_CLASH_Colossus_fnc_Recommend = {
-    params ["_hq","_picture"];
+    params ["_hq","_picture",["_posture","PUSH"],["_ratio",0]];
     if (_picture isEqualTo []) exitWith {createHashMap};
+
+    // Outnumbered across the theatre: thicken what we already hold instead of
+    // naming the next objective to feed groups into one at a time.
+    if (_posture isEqualTo "CONSOLIDATE") exitWith {
+        private _rally = [_picture] call ITW_CLASH_Colossus_fnc_RallyPoint;
+        private _plan = createHashMapFromArray [
+            ["posture","CONSOLIDATE"],
+            ["objective",_rally get "objective"],
+            ["verdict",_rally get "verdict"],
+            ["enemy",_rally get "enemy"],
+            ["committed",_rally get "committed"],
+            ["available",_rally get "available"],
+            ["ratio",_ratio],
+            ["feasible",false],
+            ["at",time]
+        ];
+        ["would-consolidate",[
+            _hq getVariable ["RydHQ_CodeSign","?"],
+            _rally get "objective",
+            _rally get "verdict",
+            round ((_ratio * 100) / 100),
+            round (_rally get "committed"),
+            round (_rally get "available"),
+            _rally get "availableGroups"
+        ]] call ITW_CLASH_Colossus_fnc_Log;
+        _plan
+    };
+
     // The softest objective we could actually mass against, not the nearest.
     private _ranked = [_picture,[],{
         private _entry = _x;
@@ -243,6 +364,7 @@ ITW_CLASH_Colossus_fnc_Recommend = {
     private _best = _ranked#0;
 
     private _plan = createHashMapFromArray [
+        ["posture","PUSH"],
         ["objective",_best get "objective"],
         ["verdict",_best get "verdict"],
         ["enemy",_best get "enemy"],
@@ -285,7 +407,22 @@ ITW_CLASH_Colossus_fnc_Assess = {
         ]] call ITW_CLASH_Colossus_fnc_Log;
     } forEach _picture;
 
-    [_hq,_picture] call ITW_CLASH_Colossus_fnc_Recommend;
+    ([_hq] call ITW_CLASH_Colossus_fnc_Theatre) params ["_enemy","_friendly","_contacts"];
+    ([_hq,_enemy,_friendly] call ITW_CLASH_Colossus_fnc_Posture) params ["_posture","_ratio"];
+    private _was = _hq getVariable ["ITW_CLASH_ColossusPosture","PUSH"];
+    _hq setVariable ["ITW_CLASH_ColossusPosture",_posture];
+    // Said on the change, not every assessment: the posture is stable by design
+    // and repeating it each minute would bury the moment it moved.
+    if !(_posture isEqualTo _was) then {
+        ["posture",[
+            _hq getVariable ["RydHQ_CodeSign","?"],
+            _was,_posture,
+            round (_ratio * 100) / 100,
+            round _enemy,round _friendly,_contacts
+        ]] call ITW_CLASH_Colossus_fnc_Log;
+    };
+
+    [_hq,_picture,_posture,_ratio] call ITW_CLASH_Colossus_fnc_Recommend;
     true
 };
 
@@ -317,7 +454,7 @@ ITW_CLASH_Colossus_fnc_Assess = {
 
 ITW_CLASH_ColossusReady = true;
 diag_log format [
-    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 ordersIssued=none halPoolsUntouched=true",
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=none halPoolsUntouched=true",
     ITW_CLASH_ColossusVersion,
     ITW_CLASH_ColossusAdvisoryOnly,
     ITW_CLASH_ColossusPoll,
@@ -326,6 +463,8 @@ diag_log format [
     ITW_CLASH_ColossusWeightInfantry,
     ITW_CLASH_ColossusWeightArmor,
     ITW_CLASH_ColossusWeightVehicle,
-    ITW_CLASH_ColossusWeightStatic
+    ITW_CLASH_ColossusWeightStatic,
+    ITW_CLASH_ColossusConsolidateAt,
+    ITW_CLASH_ColossusReleaseAt
 ];
 true

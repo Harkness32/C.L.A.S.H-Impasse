@@ -17,6 +17,7 @@ FEEDERS = {
     "ITW_CLASH_HALThreatCoverage.sqf": ("ITW_CLASH_HALThreatCoverage_fnc_Log", "hal-threat-coverage"),
     "ITW_CLASH_HotDrop.sqf": ("ITW_CLASH_HotDrop_fnc_Log", "hot-drop"),
     "ITW_CLASH_HALReconLatch.sqf": ("ITW_CLASH_HALReconLatch_fnc_Log", "recon-latch"),
+    "ITW_CLASH_Colossus.sqf": ("ITW_CLASH_Colossus_fnc_Log", "colossus"),
 }
 
 

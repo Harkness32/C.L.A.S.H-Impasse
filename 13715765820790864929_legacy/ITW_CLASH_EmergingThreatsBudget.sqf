@@ -576,8 +576,8 @@ ITW_CLASH_ETB_fnc_Commit = {
         round _cost,
         round (_reservation get "cashBefore"),
         round (_ledger get "cash"),
-        round (_livingBefore - _cost),
         round _livingBefore,
+        round (_livingBefore + _cost),
         _asset get "threat"
     ];
     ["purchase",[

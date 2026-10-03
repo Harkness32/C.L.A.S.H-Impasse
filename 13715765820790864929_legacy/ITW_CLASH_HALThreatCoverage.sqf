@@ -164,6 +164,12 @@ ITW_CLASH_HALThreatCoverage_fnc_ArmorThreats = {
         if (isNull _veh || {!alive _veh}) then {continue};
         if (_veh in _threats) then {continue};
         if !([_veh] call ITW_CLASH_AirPicture_fnc_IsArmoredThreat) then {continue};
+        // Crewed, or it is not a threat. An abandoned hull is still alive and
+        // still armoured, and one run bought a counter for exactly that: the
+        // purchase logged a raw object instead of a group id, which is
+        // ThreatKey's fallback when effectiveCommander has no group.
+        if (isNull (effectiveCommander _veh)) then {continue};
+        if (!alive (effectiveCommander _veh)) then {continue};
         if !([_hq,getPosATL _veh] call ITW_CLASH_HALThreatCoverage_fnc_InFront) then {continue};
         _threats pushBack _veh;
     } forEach _known;

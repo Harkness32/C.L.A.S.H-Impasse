@@ -297,3 +297,17 @@ def test_etb_loads_before_threat_coverage_and_warns_when_it_cannot():
     assert init.index("ITW_CLASH_EmergingThreatsBudget.sqf") < init.index(
         "ITW_CLASH_HALThreatCoverage.sqf"
     )
+
+
+def test_the_purchase_line_reports_living_value_the_right_way_round():
+    # It printed (before - cost) -> before, so the very first purchase read
+    # "living -4->0" when the truth was 0->4, and every line was one asset low.
+    # The loss line disagreed with it, which is how it was caught.
+    source = etb()
+    body = function_body(source, "ITW_CLASH_ETB_fnc_Commit")
+    assert "round _livingBefore,\n        round (_livingBefore + _cost)," in body
+    assert "round (_livingBefore - _cost)" not in body
+    # _livingBefore is sampled before the asset joins the ledger.
+    assert body.index("_livingBefore = [_side] call ITW_CLASH_ETB_fnc_LivingValue") < body.index(
+        '(_ledger get "assets") pushBack _asset'
+    )

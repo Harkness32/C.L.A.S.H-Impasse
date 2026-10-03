@@ -401,6 +401,42 @@ transiently.
 Having nothing to emplace is now said **once per side**. The class pools do not
 change mid-mission, so neither does the answer.
 
+## COLOSSUS v2: CONSOLIDATE, still advisory
+
+A commander that is drastically outnumbered should not be naming the next
+objective to feed groups into one at a time - that is the slugfest COLOSSUS
+exists to name. v2 adds a posture above the push ranking: **PUSH** or
+**CONSOLIDATE**.
+
+`ITW_CLASH_Colossus_fnc_Theatre` measures the whole theatre rather than an
+objective, because the per-objective numbers already drive the push ranking and
+this is the question the ranking cannot answer - whether to be pushing at all.
+Everything the commander knows about, against everything it could send, counted
+once per vehicle so an infantry squad in a truck does not inflate either side,
+and excluding the same pools a push excludes.
+
+`fnc_Posture` enters consolidation at `ITW_CLASH_ColossusConsolidateAt` (`1.5`)
+and only leaves below `ITW_CLASH_ColossusReleaseAt` (`1.1`). **Two thresholds,
+not one**: a commander sitting on a single line would consolidate and release on
+alternate assessments and never do either. Knowing nothing is not a reason to
+consolidate - a zero on either side is PUSH.
+
+`fnc_RallyPoint` picks the objective the commander already holds most strongly,
+so consolidating thickens a position rather than abandoning everything to start
+again somewhere new.
+
+**It still issues no orders.** The recommendation becomes `would-consolidate`
+instead of `would-push`, and the only thing written anywhere is COLOSSUS's own
+`ITW_CLASH_ColossusPosture` on the commander - never a HAL pool, which is
+asserted. The posture change is logged once when it moves rather than every
+assessment, so the moment it flips is visible instead of buried.
+
+That staging is deliberate and matches the original plan: watch the trigger
+fire on a real run before anything acts on it. Executing a consolidation is v1's
+job and needs the hold lever (`RydHQ_Garrison`, verified as the only reliable
+one - the capture pool at `HQOrders.sqf:778` subtracts `Garrison` but not
+`NoAttack`).
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

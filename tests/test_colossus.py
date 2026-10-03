@@ -142,3 +142,89 @@ def test_it_loads_and_warns_when_it_cannot():
     init = text("init.sqf")
     assert 'call compile preprocessFileLineNumbers "ITW_CLASH_Colossus.sqf"' in init
     assert "colossus-missing-or-prereq-failed" in init
+
+
+# ------------------------------------------------- v2: consolidate posture
+
+def test_consolidate_still_issues_no_orders():
+    # The kill criterion holds for the new posture too.
+    source = code_only(colossus())
+    for forbidden in [
+        "doMove", "commandMove", "addWaypoint", "deleteWaypoint",
+        "RYD_Dispatcher", "setBehaviour", "setCombatMode", "HAL_GoSFAttack",
+    ]:
+        assert forbidden not in source, forbidden
+    # The only thing it writes is its own posture, never a HAL pool.
+    for write in re.findall(r'setVariable\s*\[\s*"(\w+)"', source):
+        assert not write.startswith("RydHQ_"), write
+
+
+def test_the_ratio_is_measured_across_the_theatre_not_an_objective():
+    body = function_body(colossus(), "ITW_CLASH_Colossus_fnc_Theatre")
+    # No radius filter: that is what makes it a theatre number.
+    assert "ITW_CLASH_ColossusObjectiveRadius" not in body
+    assert "ITW_CLASH_ColossusCommittedRadius" not in body
+    assert "RydHQ_KnEnemies" in body
+    assert "RydHQ_Friends" in body
+    # Counted once per vehicle, or an infantry squad in a truck inflates it.
+    assert "if (_veh in _counted) then {continue};" in body
+
+
+def test_the_same_groups_are_excluded_as_from_a_push():
+    push = function_body(colossus(), "ITW_CLASH_Colossus_fnc_FriendlyStrength")
+    theatre = function_body(colossus(), "ITW_CLASH_Colossus_fnc_Theatre")
+    for pool in [
+        "RydHQ_Exhausted", "RydHQ_SupportG", "RydHQ_SpecForG",
+        "RydHQ_ArtG", "RydHQ_NavalG", "RydHQ_CargoOnly", "RydHQ_StaticG",
+    ]:
+        assert pool in push and pool in theatre, pool
+
+
+def test_the_posture_has_hysteresis():
+    source = colossus()
+    body = function_body(source, "ITW_CLASH_Colossus_fnc_Posture")
+    assert "ITW_CLASH_ColossusConsolidateAt" in body
+    assert "ITW_CLASH_ColossusReleaseAt" in body
+    assert 'ITW_CLASH_ColossusConsolidateAt",1.5' in source
+    assert 'ITW_CLASH_ColossusReleaseAt",1.1' in source
+    # Entering is harder than leaving, or it would flap on the threshold.
+    enter = float(re.search(r'ITW_CLASH_ColossusConsolidateAt",([\d.]+)', source).group(1))
+    leave = float(re.search(r'ITW_CLASH_ColossusReleaseAt",([\d.]+)', source).group(1))
+    assert enter > leave, (enter, leave)
+    assert 'getVariable ["ITW_CLASH_ColossusPosture","PUSH"]' in body
+
+
+def test_knowing_nothing_is_not_a_reason_to_consolidate():
+    body = function_body(colossus(), "ITW_CLASH_Colossus_fnc_Posture")
+    assert 'if (_enemy <= 0 || {_friendly <= 0}) exitWith {["PUSH",0]};' in body
+
+
+def test_it_masses_where_it_is_already_strongest():
+    body = function_body(colossus(), "ITW_CLASH_Colossus_fnc_RallyPoint")
+    # Descending on committed: thicken a position rather than start a new one.
+    assert '{-(_x get "committed")},"ASCEND"' in body
+
+
+def test_the_recommendation_branches_on_posture():
+    source = colossus()
+    body = function_body(source, "ITW_CLASH_Colossus_fnc_Recommend")
+    assert '["_posture","PUSH"]' in body
+    assert 'if (_posture isEqualTo "CONSOLIDATE") exitWith {' in body
+    assert '"would-consolidate"' in body
+    assert '"would-push"' in body
+    assert '["posture","CONSOLIDATE"]' in body
+    assert '["posture","PUSH"]' in body
+
+
+def test_a_posture_change_is_reported_once():
+    body = function_body(colossus(), "ITW_CLASH_Colossus_fnc_Assess")
+    assert '_hq setVariable ["ITW_CLASH_ColossusPosture",_posture]' in body
+    assert "if !(_posture isEqualTo _was) then {" in body
+    assert '"posture"' in body
+
+
+def test_the_version_and_boot_line_moved():
+    source = colossus()
+    assert "ITW_CLASH_ColossusVersion = 2;" in source
+    assert "postures=PUSH,CONSOLIDATE" in source
+    assert "ordersIssued=none" in source

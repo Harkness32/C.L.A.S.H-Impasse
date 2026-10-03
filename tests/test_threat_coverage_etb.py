@@ -409,3 +409,9 @@ def test_no_suitable_counter_is_distinguished_from_no_counter_at_all():
     body = function_body(generation(), "ITW_CLASH_Generation_fnc_ETBFulfil")
     assert '"NO_SUITABLE_COUNTER"' in body
     assert '[_side,_capability,0] call ITW_CLASH_Generation_fnc_ETBCandidates' in body
+
+
+def test_an_abandoned_hull_is_not_a_threat():
+    body = function_body(coverage(), "ITW_CLASH_HALThreatCoverage_fnc_ArmorThreats")
+    assert "isNull (effectiveCommander _veh)" in body
+    assert "!alive (effectiveCommander _veh)" in body
