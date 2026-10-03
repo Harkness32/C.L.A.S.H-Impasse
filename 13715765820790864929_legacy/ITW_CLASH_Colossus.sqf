@@ -1,0 +1,331 @@
+#include "defines.hpp"
+
+if (!isServer) exitWith {false};
+if (missionNamespace getVariable ["ITW_CLASH_ColossusStarted",false]) exitWith {true};
+
+ITW_CLASH_ColossusStarted = true;
+ITW_CLASH_ColossusVersion = 1;
+ITW_CLASH_ColossusReady = false;
+
+/*
+    COLOSSUS - the strategy layer. Version 0: it states intent and does nothing.
+
+    Every other layer of this stack has an owner. Impasse sets the map and the
+    baseline army; the Checkbook and the ETB buy on demand; HAL fights; the
+    sustainment layer keeps the army alive. Strategy has had no owner at all -
+    HAL's own Big Boss is off and does not fit Impasse's zone model - so the war
+    is a slugfest: every HAL cycle, whatever groups happen to be free get sent,
+    they arrive one at a time and they die one at a time.
+
+    This is the first half of fixing that, and deliberately the harmless half.
+    It builds the thing that does not exist yet: a GROUND PICTURE. For each
+    contested objective, what the commander knows of the enemy there against
+    what it has itself. That is what turns "point B looks weak" into a number,
+    and nothing can plan without it.
+
+    What it does NOT do, in v0 and by design: give an order. It never writes a
+    HAL pool, never moves a group, never buys anything. It logs the push it
+    WOULD commit and leaves the war alone. A strategic layer stacked on top of
+    an execution layer that still drops orders would make every plan look bad,
+    so the picture ships first and gets read against a real run before anything
+    acts on it.
+
+    The kill criterion, stated up front: if COLOSSUS ever issues an order to a
+    group or duplicates HAL's dispatcher, it has failed and should be deleted.
+    It says what the commander wants. Other layers decide what to do about it.
+
+    ---------------------------------------------------------------------------
+    For v1 (hold, stage, release), the levers are verified and recorded here so
+    the next session does not have to re-derive them:
+
+      HOLD   RydHQ_Garrison is the lever, NOT RydHQ_NoAttack. The capture pool
+             at HQOrders.sqf:778 subtracts Garrison, Exhausted, SupportG,
+             NavalG, SpecForG, AmmoDrop, CargoOnly, AOnly and ROnly - but it
+             does not subtract NoAttack. Only the wide-attack pool at
+             HQOrders.sqf:1038 subtracts both. A group held with NoAttack alone
+             would still be pulled into a capture.
+      STAGE  Garrison is also what makes HAL dig a group in where it already
+             stands (HAL/Garrison.sqf:41), so moving a group to the forward FOB
+             and then adding it to Garrison stages it there. That is the same
+             mechanism ITW_CLASH_FOBAirDefence.sqf already uses successfully.
+      RELEASE Remove from Garrison and clear both "Garrisoned<group>" and
+             "NOGarrisoned<group>", then set RydHQ_Obj to the target in the same
+             cycle. HAL's own tactics take it from there.
+    ---------------------------------------------------------------------------
+*/
+
+ITW_CLASH_ColossusEnabled = missionNamespace getVariable ["ITW_CLASH_ColossusEnabled",true];
+// v0 is advisory. This exists so v1 can be gated separately and so a run can
+// prove the picture before anything acts on it.
+ITW_CLASH_ColossusAdvisoryOnly = missionNamespace getVariable ["ITW_CLASH_ColossusAdvisoryOnly",true];
+ITW_CLASH_ColossusPoll = missionNamespace getVariable ["ITW_CLASH_ColossusPoll",60];
+// How near an objective a unit has to be to count as contesting it.
+ITW_CLASH_ColossusObjectiveRadius = missionNamespace getVariable ["ITW_CLASH_ColossusObjectiveRadius",500];
+// Our own groups within this of an objective are already committed there.
+ITW_CLASH_ColossusCommittedRadius = missionNamespace getVariable ["ITW_CLASH_ColossusCommittedRadius",900];
+/*
+    Strength weights. A rifle squad is the unit of account; everything else is
+    priced against it. Armour counts for three because an unanswered tank
+    decides an objective on its own, and a static counts for less than a squad
+    because it cannot follow up.
+*/
+ITW_CLASH_ColossusWeightInfantry = missionNamespace getVariable ["ITW_CLASH_ColossusWeightInfantry",1];
+ITW_CLASH_ColossusWeightArmor = missionNamespace getVariable ["ITW_CLASH_ColossusWeightArmor",3];
+ITW_CLASH_ColossusWeightVehicle = missionNamespace getVariable ["ITW_CLASH_ColossusWeightVehicle",1.5];
+ITW_CLASH_ColossusWeightStatic = missionNamespace getVariable ["ITW_CLASH_ColossusWeightStatic",0.5];
+// The force ratio a push is planned around. Attacking a prepared position at
+// parity is how an army is fed into a meat grinder one group at a time.
+ITW_CLASH_ColossusPushRatio = missionNamespace getVariable ["ITW_CLASH_ColossusPushRatio",2];
+// Verdict thresholds, as our strength over theirs.
+ITW_CLASH_ColossusVulnerable = missionNamespace getVariable ["ITW_CLASH_ColossusVulnerable",2];
+ITW_CLASH_ColossusContested = missionNamespace getVariable ["ITW_CLASH_ColossusContested",0.8];
+
+ITW_CLASH_ColossusPictures = createHashMap;
+
+ITW_CLASH_Colossus_fnc_Log = {
+    params ["_event",["_payload",[]]];
+    if (!isNil "ITW_CLASH_DualHAL_fnc_Log") then {
+        ["colossus-" + _event,_payload] call ITW_CLASH_DualHAL_fnc_Log;
+    } else {
+        diag_log format ["CLASH COLOSSUS | %1 | %2",_event,_payload];
+    };
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["colossus",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
+};
+
+/*
+    What one unit is worth. Read from the vehicle, like every other
+    classification in C.L.A.S.H., so a modded faction prices correctly: armour
+    that can kill armour is the expensive thing, a static is cheap because it
+    cannot exploit, and a man is the unit of account.
+*/
+ITW_CLASH_Colossus_fnc_Worth = {
+    params ["_unit"];
+    if (isNull _unit || {!alive _unit}) exitWith {0};
+    private _veh = vehicle _unit;
+    if (_veh isEqualTo _unit) exitWith {ITW_CLASH_ColossusWeightInfantry};
+    if (_veh isKindOf "StaticWeapon") exitWith {ITW_CLASH_ColossusWeightStatic};
+    if (_veh isKindOf "Air") exitWith {0};
+    if (!isNil "ITW_CLASH_AirPicture_fnc_IsArmoredThreat" && {
+        [_veh] call ITW_CLASH_AirPicture_fnc_IsArmoredThreat
+    }) exitWith {ITW_CLASH_ColossusWeightArmor};
+    ITW_CLASH_ColossusWeightVehicle
+};
+
+// Enemy strength at an objective, counted from what this commander KNOWS.
+// Nothing here looks at the enemy's real order of battle.
+ITW_CLASH_Colossus_fnc_EnemyStrength = {
+    params ["_hq","_position"];
+    private _score = 0;
+    private _counted = [];
+    {
+        private _unit = _x;
+        if (isNull _unit || {!alive _unit}) then {continue};
+        private _veh = vehicle _unit;
+        if (_veh in _counted) then {continue};
+        if ((getPosATL _veh) distance2D _position > ITW_CLASH_ColossusObjectiveRadius) then {continue};
+        _counted pushBack _veh;
+        _score = _score + ([_unit] call ITW_CLASH_Colossus_fnc_Worth);
+    } forEach (_hq getVariable ["RydHQ_KnEnemies",[]]);
+    [_score,count _counted]
+};
+
+// Our own strength already at an objective, and what is free to be sent.
+ITW_CLASH_Colossus_fnc_FriendlyStrength = {
+    params ["_hq","_position"];
+    private _committed = 0;
+    private _available = 0;
+    private _availableGroups = 0;
+    private _attackAv = _hq getVariable ["RydHQ_AttackAv",[]];
+    // Everything the commander would not send anyway is out of the reckoning.
+    private _excluded = (_hq getVariable ["RydHQ_Exhausted",[]])
+        + (_hq getVariable ["RydHQ_SupportG",[]])
+        + (_hq getVariable ["RydHQ_SpecForG",[]])
+        + (_hq getVariable ["RydHQ_ArtG",[]])
+        + (_hq getVariable ["RydHQ_NavalG",[]])
+        + (_hq getVariable ["RydHQ_CargoOnly",[]])
+        + (_hq getVariable ["RydHQ_StaticG",[]]);
+
+    {
+        private _group = _x;
+        if (isNull _group || {_group in _excluded}) then {continue};
+        private _leader = leader _group;
+        if (isNull _leader || {!alive _leader}) then {continue};
+        private _worth = 0;
+        {
+            _worth = _worth + ([_x] call ITW_CLASH_Colossus_fnc_Worth);
+        } forEach ((units _group) select {alive _x});
+        if (_worth <= 0) then {continue};
+
+        if ((getPosATL (vehicle _leader)) distance2D _position <= ITW_CLASH_ColossusCommittedRadius) then {
+            _committed = _committed + _worth;
+        } else {
+            if (_group in _attackAv && {!(_group getVariable ["Busy" + str _group,false])}) then {
+                _available = _available + _worth;
+                _availableGroups = _availableGroups + 1;
+            };
+        };
+    } forEach (_hq getVariable ["RydHQ_Friends",[]]);
+    [_committed,_available,_availableGroups]
+};
+
+ITW_CLASH_Colossus_fnc_Verdict = {
+    params ["_friendly","_enemy"];
+    if (_enemy <= 0) exitWith {if (_friendly > 0) then {"OPEN"} else {"EMPTY"}};
+    private _ratio = _friendly / _enemy;
+    if (_ratio >= ITW_CLASH_ColossusVulnerable) exitWith {"VULNERABLE"};
+    if (_ratio >= ITW_CLASH_ColossusContested) exitWith {"CONTESTED"};
+    "HELD"
+};
+
+/*
+    The picture for one commander: every contested objective, what is known to
+    be there, what we have there, what is free to send, and what a push would
+    cost at the planned force ratio.
+*/
+ITW_CLASH_Colossus_fnc_Picture = {
+    params ["_hq"];
+    if (isNull _hq || {isNil "ITW_CLASH_Generation_fnc_ActiveObjectiveIds"}) exitWith {[]};
+    private _picture = [];
+    {
+        private _index = _x;
+        if (_index < 0 || {isNil "ITW_Objectives"} || {_index >= count ITW_Objectives}) then {continue};
+        private _position = +(ITW_Objectives#_index#ITW_OBJ_POS);
+        if (_position isEqualTo []) then {continue};
+
+        ([_hq,_position] call ITW_CLASH_Colossus_fnc_EnemyStrength) params ["_enemy","_enemyCount"];
+        ([_hq,_position] call ITW_CLASH_Colossus_fnc_FriendlyStrength) params [
+            "_committed","_available","_availableGroups"
+        ];
+        private _verdict = [_committed,_enemy] call ITW_CLASH_Colossus_fnc_Verdict;
+        // What taking it would want, over and above what is already there.
+        private _wanted = ((_enemy * ITW_CLASH_ColossusPushRatio) - _committed) max 0;
+
+        _picture pushBack createHashMapFromArray [
+            ["objective",_index],
+            ["position",_position],
+            ["enemy",_enemy],
+            ["enemyCount",_enemyCount],
+            ["committed",_committed],
+            ["available",_available],
+            ["availableGroups",_availableGroups],
+            ["verdict",_verdict],
+            ["wanted",_wanted],
+            ["sufficient",_available >= _wanted],
+            ["at",time]
+        ];
+    } forEach (call ITW_CLASH_Generation_fnc_ActiveObjectiveIds);
+    _picture
+};
+
+// The public read, for anything that later wants to plan against it.
+ITW_CLASH_Colossus_fnc_Read = {
+    params ["_side"];
+    ITW_CLASH_ColossusPictures getOrDefault [toUpperANSI str _side,[]]
+};
+
+/*
+    The recommendation. In v0 this is the whole output: the objective worth
+    pushing, what it would take, and whether the force exists to do it. It is
+    logged and published, and nothing reads it yet.
+*/
+ITW_CLASH_Colossus_fnc_Recommend = {
+    params ["_hq","_picture"];
+    if (_picture isEqualTo []) exitWith {createHashMap};
+    // The softest objective we could actually mass against, not the nearest.
+    private _ranked = [_picture,[],{
+        private _entry = _x;
+        private _score = _entry get "enemy";
+        if !(_entry get "sufficient") then {_score = _score + 1000};
+        _score
+    },"ASCEND"] call BIS_fnc_sortBy;
+    private _best = _ranked#0;
+
+    private _plan = createHashMapFromArray [
+        ["objective",_best get "objective"],
+        ["verdict",_best get "verdict"],
+        ["enemy",_best get "enemy"],
+        ["committed",_best get "committed"],
+        ["wanted",_best get "wanted"],
+        ["available",_best get "available"],
+        ["feasible",_best get "sufficient"],
+        ["at",time]
+    ];
+
+    ["would-push",[
+        _hq getVariable ["RydHQ_CodeSign","?"],
+        _best get "objective",
+        _best get "verdict",
+        round (_best get "enemy"),
+        round (_best get "committed"),
+        round (_best get "wanted"),
+        round (_best get "available"),
+        _best get "availableGroups",
+        if (_best get "sufficient") then {"force-available"} else {"short"}
+    ]] call ITW_CLASH_Colossus_fnc_Log;
+    _plan
+};
+
+ITW_CLASH_Colossus_fnc_Assess = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {false};
+    private _picture = [_hq] call ITW_CLASH_Colossus_fnc_Picture;
+    ITW_CLASH_ColossusPictures set [toUpperANSI str (side _hq),_picture];
+
+    {
+        ["objective",[
+            _hq getVariable ["RydHQ_CodeSign","?"],
+            _x get "objective",
+            _x get "verdict",
+            round (_x get "enemy"),
+            _x get "enemyCount",
+            round (_x get "committed"),
+            round (_x get "available")
+        ]] call ITW_CLASH_Colossus_fnc_Log;
+    } forEach _picture;
+
+    [_hq,_picture] call ITW_CLASH_Colossus_fnc_Recommend;
+    true
+};
+
+[] spawn {
+    scriptName "ITW_CLASH_Colossus";
+    waitUntil {
+        sleep 1;
+        (
+            !isNil "ITW_CLASH_fnc_GetCommanderForSide"
+            && {missionNamespace getVariable ["ITW_CLASH_ForceGenerationReady",false]}
+        ) || {missionNamespace getVariable ["ITW_GameOver",false]}
+    };
+
+    while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
+        if (ITW_CLASH_ColossusEnabled) then {
+            private _sides = [];
+            if (!isNil "ITW_PlayerSide") then {_sides pushBackUnique ITW_PlayerSide};
+            if (!isNil "ITW_EnemySide") then {_sides pushBackUnique ITW_EnemySide};
+            {
+                private _hq = [_x] call ITW_CLASH_fnc_GetCommanderForSide;
+                if (!isNull _hq) then {
+                    [_hq] call ITW_CLASH_Colossus_fnc_Assess;
+                };
+            } forEach _sides;
+        };
+        sleep ITW_CLASH_ColossusPoll;
+    };
+};
+
+ITW_CLASH_ColossusReady = true;
+diag_log format [
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 ordersIssued=none halPoolsUntouched=true",
+    ITW_CLASH_ColossusVersion,
+    ITW_CLASH_ColossusAdvisoryOnly,
+    ITW_CLASH_ColossusPoll,
+    ITW_CLASH_ColossusObjectiveRadius,
+    ITW_CLASH_ColossusPushRatio,
+    ITW_CLASH_ColossusWeightInfantry,
+    ITW_CLASH_ColossusWeightArmor,
+    ITW_CLASH_ColossusWeightVehicle,
+    ITW_CLASH_ColossusWeightStatic
+];
+true

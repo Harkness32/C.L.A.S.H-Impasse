@@ -163,6 +163,16 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
             };
+            // COLOSSUS: the strategy layer. v0 builds the ground picture and
+            // logs the push it would commit; it issues no orders at all.
+            if (
+                _forceGenerationReady isEqualTo true
+                && {fileExists "ITW_CLASH_Colossus.sqf"}
+            ) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_Colossus.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | colossus-missing-or-prereq-failed | no ground picture, no strategy layer";
+            };
             // Shoot and scoot, and counter-battery acquisition. Each is the
             // other's counterplay: a fix is taken on where a gun was, and a gun
             // that displaces leaves that fix stale.
