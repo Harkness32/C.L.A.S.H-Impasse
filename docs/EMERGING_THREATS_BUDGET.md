@@ -664,6 +664,39 @@ handover in progress is never raced.
   did not. That is the sharing gap the brief, the cue and the wider radius
   close; run 2 predates all three.
 
+## Spotting speed, raised off the flat value
+
+`setSkill` with a single number sets every sub-skill, so how fast a unit reacts
+to something it has seen is tied to how well it shoots. The in-game skill dialog
+shows the result exactly: every slider at 60% and Courage at 100%, which is
+`ITW_Attack.sqf:1558-1559` - a flat set followed by one override.
+
+A 100 minute run logged **783 contacts inside 75 m where neither unit knew the
+other was there**, 472 of them with no commander aware either. Squads walking
+past each other at 25 m in heavy vegetation.
+
+`spotTime` - "Spotting Speed" in that dialog - is now set to
+`ITW_CLASH_SpotTime` (default `0.9`) after the flat set, at all three spawn
+paths:
+
+| site | what it spawns |
+| --- | --- |
+| `ITW_Attack.sqf:1558` | every AI unit, both sides |
+| `ITW_Teammates.sqf:94` | the player's own squad |
+| `ITW_Functions.sqf:948` | the clone path |
+
+**Only `spotTime` moves.** `aimingAccuracy`, `aimingSpeed` and `aimingShake`
+stay exactly where the difficulty parameter put them, and `spotDistance` is
+untouched - units react sooner to what they see without seeing further or
+shooting better. It is placed *after* the flat set, because `setSkill` with a
+number overwrites every sub-skill and an override before it would be silently
+erased. The `courage` override on the next line is the same pattern and has
+always been there.
+
+`ITW_Functions.sqf:826` is deliberately left at skill 1: that is the probe logic
+whose `skillFinal` derives the server's difficulty coefficients, which the
+preflight now reports. Changing it would corrupt the reading.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

@@ -91,7 +91,10 @@ ITW_TeammateCreated = {
     if (local _unit) then {
         _unit doFollow leader _unit;
         _unit allowFleeing 0;
+        // Spotting Speed off the flat value: see ITW_Attack.sqf. Only how
+        // fast they react changes, never how well they shoot.
         _unit setSkill (ITW_ParamFriendlySquadSkill);
+        _unit setSkill ["spotTime",missionNamespace getVariable ["ITW_CLASH_SpotTime",0.9]];
         _unit setSkill ["courage",1];
     };
 

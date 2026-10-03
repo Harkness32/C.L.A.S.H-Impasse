@@ -1555,7 +1555,20 @@ ITW_AtkUnitToGroup = {
     #endif  
     
     ALLOW_DAMAGE(_unit,_allowDamage);
+    // Spotting Speed, raised off the flat value.
+    //
+    // setSkill with a single number sets every sub-skill, so how fast a unit
+    // reacts to something it has seen is tied to how well it shoots. A 100
+    // minute run logged 783 contacts inside 75 m where neither side knew the
+    // other was there, 472 of them with no commander aware either - squads
+    // walking past each other at 25 m in heavy vegetation.
+    //
+    // Only spotTime moves. Aiming accuracy, speed and shake stay exactly where
+    // the difficulty parameter put them, so units react sooner without
+    // shooting any better. The courage override on the next line is the same
+    // pattern and has always been here.
     _unit setSkill _skill;
+    _unit setSkill ["spotTime",missionNamespace getVariable ["ITW_CLASH_SpotTime",0.9]];
     _unit setSkill ["courage",1]; 
     _unit setVariable ["ITW_loadout",getUnitLoadout _unit];
     [_unit,true,true] call ITW_FncInfiniteAmmo;

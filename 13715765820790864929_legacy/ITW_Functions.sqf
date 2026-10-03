@@ -946,6 +946,8 @@ ITW_FncCloneReplacement = {
     _clone setSpeaker _voice;
     _clone setRank _rank;
     _clone setSkill _skill;
+    // Spotting Speed off the flat value: see ITW_Attack.sqf.
+    _clone setSkill ["spotTime",missionNamespace getVariable ["ITW_CLASH_SpotTime",0.9]];
     _clone setName _name;
     lockIdentity _clone;
 };
