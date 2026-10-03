@@ -780,6 +780,34 @@ or already guarded is not a failure - a modpack need not ship every order, and
 HAL may fix it upstream - but a recompile or verification failure logs a
 warning and keeps the stock order.
 
+## Launcher teams fight once a SPAA holds the back line
+
+An AA squad walked to a FOB is a squad not in the fight, and a mobile SPAA on
+overwatch covers the same sky far better: it relocates as the front moves, it
+re-points at the nearest known hostile every poll, and it is not three riflemen
+with a launcher.
+
+`ITW_CLASH_FOBAirDefence_fnc_Candidates` now returns nothing while
+`ITW_CLASH_SPAAOverwatch_fnc_Held` reports at least
+`ITW_CLASH_FOBAirDefenceSPAAFloor` (1) mobile SPAA for that commander, so the
+launcher teams stay available to HAL.
+
+**The rear-base C-RAM does not count.** It is bolted to one spot by design -
+gunner, no driver - so it covers the base and nothing else; leaving the FOBs to
+it would be covering a different place than the one at risk. The floor matches
+the back line's own cap, since requiring more than the doctrine ever keeps
+would never release anything.
+
+`ITW_CLASH_FOBAirDefenceYieldToSPAA` turns it off, and a mission without the
+overwatch module keeps the old behaviour.
+
+### The over-cap line was lying
+
+`spaa-overwatch-over-cap` logged `["B",1,0,1]` - one refused while holding zero,
+against a cap of one. The sweep counted *every* refusal from `fnc_Adopt`, and a
+rear-base C-RAM is refused there too. So the emplacement guard doing its job
+read as a cap that was broken. Only a genuine capacity refusal counts now.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

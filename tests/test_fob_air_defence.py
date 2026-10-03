@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,3 +108,39 @@ def test_it_loads_behind_threat_coverage():
     assert init.index("ITW_CLASH_HALThreatCoverage.sqf") < init.index(
         "ITW_CLASH_FOBAirDefence.sqf"
     )
+
+
+# ------------------------- launcher teams fight when a SPAA holds the back line
+
+def test_aa_squads_are_released_when_a_mobile_spaa_holds_the_back_line():
+    source = fob()
+    body = function_body(source, "ITW_CLASH_FOBAirDefence_fnc_Candidates")
+    assert "ITW_CLASH_FOBAirDefence_fnc_BacklineCovered) exitWith {[]}" in body
+    covered = function_body(source, "ITW_CLASH_FOBAirDefence_fnc_BacklineCovered")
+    assert "ITW_CLASH_SPAAOverwatch_fnc_Held" in covered
+    assert 'ITW_CLASH_FOBAirDefenceSPAAFloor",1' in source
+
+
+def test_a_cram_does_not_count_as_holding_the_back_line():
+    # It is bolted to one spot - gunner, no driver - so it covers the base and
+    # nothing else; leaving the FOBs to it covers the wrong place.
+    covered = function_body(fob(), "ITW_CLASH_FOBAirDefence_fnc_BacklineCovered")
+    assert 'getVariable ["ITW_CLASH_CRAM",false]' in covered
+
+
+def test_the_release_can_be_switched_off():
+    source = fob()
+    assert 'ITW_CLASH_FOBAirDefenceYieldToSPAA",true' in source
+    covered = function_body(source, "ITW_CLASH_FOBAirDefence_fnc_BacklineCovered")
+    assert "if (!ITW_CLASH_FOBAirDefenceYieldToSPAA) exitWith {false};" in covered
+    # And a mission without the overwatch module keeps the old behaviour.
+    assert 'isNil "ITW_CLASH_SPAAOverwatch_fnc_Held"' in covered
+
+
+def test_the_floor_matches_the_back_lines_own_cap():
+    source = fob()
+    overwatch = text("ITW_CLASH_SPAAOverwatch.sqf")
+    floor = int(re.search(r'ITW_CLASH_FOBAirDefenceSPAAFloor", *(\d+)', source).group(1))
+    cap = int(re.search(r'ITW_CLASH_SPAAOverwatchMaxPerSide", *(\d+)', overwatch).group(1))
+    # Requiring more than the doctrine ever keeps would never release anything.
+    assert floor <= cap, (floor, cap)

@@ -49,6 +49,16 @@ ITW_CLASH_FOBAirDefenceIncludeRear = missionNamespace getVariable ["ITW_CLASH_FO
 // sideKey -> (fob key -> [group, position, state, sinceTime])
 ITW_CLASH_FOBAirDefenceAssignments = createHashMap;
 
+// Release the launcher teams once a mobile SPAA holds the back line.
+ITW_CLASH_FOBAirDefenceYieldToSPAA = missionNamespace getVariable [
+    "ITW_CLASH_FOBAirDefenceYieldToSPAA",true
+];
+// How many mobile SPAA count as holding it. One, matching the back line's own
+// cap: the doctrine keeps exactly one, so requiring more would never release.
+ITW_CLASH_FOBAirDefenceSPAAFloor = missionNamespace getVariable [
+    "ITW_CLASH_FOBAirDefenceSPAAFloor",1
+];
+
 ITW_CLASH_FOBAirDefence_fnc_Log = {
     params ["_event",["_payload",[]]];
     if (!isNil "ITW_CLASH_DualHAL_fnc_Log") then {
@@ -105,9 +115,36 @@ ITW_CLASH_FOBAirDefence_fnc_FOBs = {
     tasked is left alone - the air defence gap is not worth pulling a squad off a
     mission for.
 */
+/*
+    Does a vehicle already hold the back line?
+
+    An AA squad walked to a FOB is a squad not in the fight, and a mobile SPAA
+    on overwatch covers the same sky far better: it relocates as the front
+    moves, it re-points at the nearest known hostile every poll, and it is not
+    three riflemen with a launcher. Where one is held, the launcher teams are
+    better employed as infantry.
+
+    The rear-base C-RAM does not count. It is bolted to one spot by design -
+    gunner, no driver - so it covers the base and nothing else, and leaving the
+    FOBs to it would be covering a different place than the one at risk.
+*/
+ITW_CLASH_FOBAirDefence_fnc_BacklineCovered = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {false};
+    if (!ITW_CLASH_FOBAirDefenceYieldToSPAA) exitWith {false};
+    if (isNil "ITW_CLASH_SPAAOverwatch_fnc_Held") exitWith {false};
+    private _held = ([side _hq] call ITW_CLASH_SPAAOverwatch_fnc_Held) select {
+        !(vehicle leader _x getVariable ["ITW_CLASH_CRAM",false])
+    };
+    (count _held) >= ITW_CLASH_FOBAirDefenceSPAAFloor
+};
+
 ITW_CLASH_FOBAirDefence_fnc_Candidates = {
     params ["_hq"];
     if (isNull _hq) exitWith {[]};
+    // A mobile SPAA already covers this commander's back line, so its launcher
+    // teams are released to fight rather than walked to a FOB.
+    if ([_hq] call ITW_CLASH_FOBAirDefence_fnc_BacklineCovered) exitWith {[]};
     (_hq getVariable ["RydHQ_AAInfG",[]]) select {
         private _group = _x;
         !isNull _group

@@ -178,3 +178,11 @@ def test_stationing_cues_and_records_it():
     body = function_body(overwatch(), "ITW_CLASH_SPAAOverwatch_fnc_Station")
     assert "ITW_CLASH_SPAAOverwatch_fnc_Cue" in body
     assert "_cued" in body
+
+
+def test_only_a_capacity_refusal_counts_as_over_cap():
+    # A C-RAM is refused too, and counting it reported "over-cap 1, holding 0" -
+    # a cap that looked broken when it was the emplacement guard working.
+    body = function_body(overwatch(), "ITW_CLASH_SPAAOverwatch_fnc_Sweep")
+    assert 'getVariable ["ITW_CLASH_CRAM",false]' in body
+    assert "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity" in body

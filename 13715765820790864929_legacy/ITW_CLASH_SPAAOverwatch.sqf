@@ -351,10 +351,18 @@ ITW_CLASH_SPAAOverwatch_fnc_Sweep = {
         private _veh = vehicle leader _group;
         if (isNull _veh || {!alive _veh}) then {continue};
         if !([_veh] call ITW_CLASH_AirPicture_fnc_IsSPAA) then {continue};
+        // Only a capacity refusal is over-cap. A C-RAM is refused too, and
+        // counting it here reported "over-cap 1, holding 0" - a cap that looked
+        // broken when it was the emplacement guard doing its job.
         if ([_group,_hq] call ITW_CLASH_SPAAOverwatch_fnc_Adopt) then {
             _adopted = _adopted + 1;
         } else {
-            _passed = _passed + 1;
+            if (
+                !(vehicle leader _group getVariable ["ITW_CLASH_CRAM",false])
+                && {[_side] call ITW_CLASH_SPAAOverwatch_fnc_AtCapacity}
+            ) then {
+                _passed = _passed + 1;
+            };
         };
     } forEach (allGroups select {side _x isEqualTo _side});
 
