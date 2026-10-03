@@ -143,11 +143,27 @@ ITW_CLASH_HALTaxonomy_fnc_Classify = {
                             case (_grade >= 1): {"LArmor"};
                             default {"Cars"};
                         };
-                        // The AT armour pool HAL's dispatcher draws on for an
-                        // armour threat. A soft vehicle with an AT launcher is
-                        // not put here: it would be dispatched to trade with a
-                        // tank, which is the behaviour we spent a run removing.
-                        if (_grade >= 1 && {_antiArmor}) then {_capabilities pushBack "LArmorAT"};
+                        /*
+                            LArmorAT is a PROMOTION, not a label for tank
+                            destroyers.
+
+                            HAL's anti-armour response pool is
+                            [airCAS, HArmorG, LArmorATG, ATInfG]
+                            (HAC_fnc.sqf:1382). Note what is absent: LArmorG.
+                            Plain light armour is never sent at tanks, and
+                            LArmorAT is the exception that lets a light hull
+                            which CAN kill armour be counted as an armour
+                            answer anyway.
+
+                            So it is added only where the primary is LArmor.
+                            A tank is already in HArmor, which is already in
+                            that pool at the same weight - adding it here too
+                            would enter the same vehicle twice and double its
+                            dispatch weight against armour.
+                        */
+                        if (_primary isEqualTo "LArmor" && {_antiArmor}) then {
+                            _capabilities pushBack "LArmorAT";
+                        };
                     };
                 };
             };

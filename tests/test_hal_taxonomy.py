@@ -137,11 +137,52 @@ def test_armour_is_decided_by_grade_not_by_chassis_name():
     assert 'default {"Cars"}' in body
 
 
-def test_a_soft_vehicle_with_a_launcher_is_not_put_in_the_at_armour_pool():
-    # That pool is what HAL dispatches at armour. A Prowler AT in it is the
+def test_larmorat_is_a_promotion_for_light_armour_only():
+    """HAL's anti-armour pool is [airCAS, HArmorG, LArmorATG, ATInfG]
+    (HAC_fnc.sqf:1382). LArmorG is absent, so plain light armour is never sent
+    at tanks and LArmorAT is the exception that promotes a light hull which can
+    kill armour into the response.
+
+    A tank is already in HArmor, which is already in that pool at the same
+    weight, so adding it to LArmorAT as well would enter the same vehicle twice
+    and double its dispatch weight against armour.
+    """
+    body = code_only(function_body(taxonomy(), "ITW_CLASH_HALTaxonomy_fnc_Classify"))
+    assert 'if (_primary isEqualTo "LArmor" && {_antiArmor}) then {' in body
+    # The grade-only form double-counted tank destroyers.
+    assert 'if (_grade >= 1 && {_antiArmor}) then {_capabilities pushBack "LArmorAT"}' not in body
+
+
+def test_a_soft_vehicle_with_a_launcher_is_not_promoted():
+    # A grade-0 hull gets primary Cars, so it can never reach the LArmor arm.
+    # That pool is what HAL dispatches at armour; a Prowler AT in it is the
     # "AT truck drives at a tank" behaviour we removed once already.
     body = code_only(function_body(taxonomy(), "ITW_CLASH_HALTaxonomy_fnc_Classify"))
-    assert 'if (_grade >= 1 && {_antiArmor}) then {_capabilities pushBack "LArmorAT"}' in body
+    promotion = body.index('_primary isEqualTo "LArmor" && {_antiArmor}')
+    primary = body.index('default {"Cars"}')
+    assert primary < promotion, "the primary must be settled before promoting"
+
+
+def test_the_promotion_is_what_hal_cannot_reach_on_its_own():
+    """The substantive difference, and the reason this module exists.
+
+    HAL decides AT by guidance:
+        _isAT = ((irLock + laserLock) > 0) and ...      HAC_fnc2.sqf
+    CLASH decides it by role, from BI's own AI usage hint:
+        (floor (_flags / 512)) mod 2 == 1               aiAmmoUsageFlags
+
+    A tank gun firing APFSDS has no irLock and no laserLock, so a gun-armed
+    wheeled AFV is not AT to HAL, is therefore never promoted into LArmorAT,
+    and sits in LArmor - which is not in the anti-armour pool at all. HAL will
+    not send it against tanks. This module will.
+    """
+    body = code_only(function_body(taxonomy(), "ITW_CLASH_HALTaxonomy_fnc_Classify"))
+    assert "ITW_CLASH_AirPicture_fnc_ClassProfile" in body
+    # Which routes to IsAntiArmourAmmo, not to any lock test.
+    profile = code_only(function_body(text("ITW_CLASH_AirPicture.sqf"),
+                                      "ITW_CLASH_AirPicture_fnc_ClassProfile"))
+    assert "ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo" in profile
+    assert "irLock" not in profile and "laserLock" not in profile
 
 
 def test_artillery_is_decided_by_its_scanner():
