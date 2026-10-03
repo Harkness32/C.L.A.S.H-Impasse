@@ -97,3 +97,48 @@ def test_overwatch_is_loaded_and_adopted_from_the_purchase_path():
     spaa = cover.index('_capability isEqualTo "SPAA"')
     branch = cover[spaa:cover.index("} else {", spaa)]
     assert "ITW_CLASH_HALThreatCoverage_fnc_Offer" not in branch
+
+
+# ------------------------------------------- one mobile AA in the back line
+
+def test_the_back_line_holds_one_by_default():
+    source = overwatch()
+    assert 'ITW_CLASH_SPAAOverwatchMaxPerSide",1' in source
+    body = function_body(source, "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity")
+    assert "ITW_CLASH_SPAAOverwatchMaxPerSide" in body
+    assert "ITW_CLASH_SPAAOverwatch_fnc_Held" in body
+
+
+def test_what_is_held_is_counted_live():
+    # Counted from the live roster rather than a tally, so a loss frees the
+    # slot at the next sweep with no bookkeeping to go stale.
+    body = function_body(overwatch(), "ITW_CLASH_SPAAOverwatch_fnc_Held")
+    assert "ITW_CLASH_SPAAOverwatchGroups select" in body
+    assert "{alive _x} count units _x" in body
+    assert "alive _veh" in body
+    assert "side _x isEqualTo _side" in body
+
+
+def test_the_cap_is_enforced_at_one_chokepoint():
+    # Every caller goes through Adopt, so the sweep and a purchase cannot
+    # disagree about the limit.
+    body = function_body(overwatch(), "ITW_CLASH_SPAAOverwatch_fnc_Adopt")
+    assert "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity" in body
+    # Re-adopting one already held is not a new hold and must not be refused.
+    assert "!(_group in ITW_CLASH_SPAAOverwatchGroups)" in body
+
+
+def test_a_spare_is_left_with_hal_and_said_once():
+    source = overwatch()
+    body = function_body(source, "ITW_CLASH_SPAAOverwatch_fnc_Sweep")
+    assert '"over-cap"' in body
+    # Once per change, not once per poll: a side that permanently owns a spare
+    # would otherwise repeat this every 30 seconds all mission.
+    assert 'getVariable ["ITW_CLASH_SPAAOverwatchPassed",-1]' in body
+    assert 'setVariable ["ITW_CLASH_SPAAOverwatchPassed",_passed]' in body
+
+
+def test_the_cap_is_reported_at_boot():
+    source = overwatch()
+    assert "maxPerSide=%7" in source
+    assert "ITW_CLASH_SPAAOverwatchMaxPerSide\n];" in source

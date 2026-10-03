@@ -365,3 +365,20 @@ def test_air_still_sees_out_of_front_threats_but_only_spaa_answers_them():
     assert '"outside-front"' in choose
     # And the guard must exit at function scope, not inside a then block.
     assert "if (_outsideFront) exitWith {" in choose
+
+
+def test_no_spaa_is_bought_that_the_back_line_would_not_hold():
+    source = coverage()
+    body = function_body(source, "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider")
+    assert "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity" in body
+    assert '_options select {!(_x isEqualTo "SPAA")}' in body
+    assert '"spaa-at-capacity"' in body
+    # Guarded, so a mission without the overwatch module still buys normally.
+    assert 'isNil "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity"' in body
+
+
+def test_the_capacity_gate_runs_before_the_front_branch():
+    # Otherwise an out-of-front threat would still buy a second one, since that
+    # branch exits early with SPAA as its only option.
+    body = function_body(coverage(), "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider")
+    assert body.index("_spaaFull") < body.index("_outsideFront")

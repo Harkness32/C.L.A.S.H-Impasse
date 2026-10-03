@@ -666,6 +666,17 @@ ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider = {
     };
     if (_options isEqualTo []) exitWith {["","all-providers-failed"]};
 
+    // The back line already holds its mobile AA. A second would park behind the
+    // front covering a sector the first one re-points onto every poll, and the
+    // overwatch doctrine would refuse to adopt it anyway - so the money would
+    // buy an asset nothing employs.
+    private _spaaFull = !isNil "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity"
+        && {[_side] call ITW_CLASH_SPAAOverwatch_fnc_AtCapacity};
+    if (_spaaFull) then {
+        _options = _options select {!(_x isEqualTo "SPAA")};
+    };
+    if (_spaaFull && {_options isEqualTo []}) exitWith {["","spaa-at-capacity"]};
+
     // Outside the front, only a provider CLASH employs itself can answer: HAL's
     // dispatcher scores an out-of-front threat zero, so anything handed to it is
     // money spent on an asset that will never be tasked. SPAA is the one

@@ -305,6 +305,36 @@ Two defects found alongside it:
   unload *setting* in the slot the sentence labels as metres; both paths now
   report a real altitude.
 
+## One mobile AA in the back line
+
+The first run left one commander holding two Cheetahs behind the front and the
+other holding one, all three idle. Neither of the pair was bought - the ETB
+made no SPAA purchase at all that run. Both came from Impasse's own spawner and
+`ITW_CLASH_SPAAOverwatch_fnc_Sweep` adopted every SPAA it found, with no limit.
+
+A second one adds no cover the first did not already have.
+`ITW_CLASH_SPAAOverwatch_fnc_Sector` re-points the held SPAA at the nearest
+known hostile aircraft every poll, so one vehicle already tracks the air
+picture; a second just parks.
+
+`ITW_CLASH_SPAAOverwatchMaxPerSide` (default `1`) is now the limit, enforced
+inside `fnc_Adopt` so the sweep and a purchase cannot disagree about it.
+Capacity is counted from the live roster rather than tracked, so a loss frees
+the slot at the next sweep with nothing to go stale, and re-adopting a group
+already held is not treated as a new hold.
+
+`ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider` drops SPAA from its options at
+capacity and denies with `spaa-at-capacity`, since money spent on a vehicle the
+doctrine would refuse to adopt buys an asset nothing employs. The gate runs
+before the out-of-front branch, which would otherwise still buy one - that
+branch exits early with SPAA as its only option.
+
+**The trade is real.** Over the cap, a vehicle is left with HAL, and HAL has no
+SPAA doctrine - it will dispatch it as armor. Raise the cap if spares are seen
+dying forward. `over-cap` is logged once per change rather than once per poll,
+so a side that permanently owns a spare says so once instead of every thirty
+seconds for the whole mission.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

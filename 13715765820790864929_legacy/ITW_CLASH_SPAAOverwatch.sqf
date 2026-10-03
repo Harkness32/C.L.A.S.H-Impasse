@@ -54,8 +54,41 @@ ITW_CLASH_SPAAOverwatchHysteresis = missionNamespace getVariable ["ITW_CLASH_SPA
 // movement toward anything the doctrine allows it to refuse.
 ITW_CLASH_SPAAOverwatchWithdrawAt = missionNamespace getVariable ["ITW_CLASH_SPAAOverwatchWithdrawAt",800];
 ITW_CLASH_SPAAOverwatchAdoptImpasse = missionNamespace getVariable ["ITW_CLASH_SPAAOverwatchAdoptImpasse",true];
+// How many mobile AA a commander keeps in its back line. One tracks the air
+// picture on its own - fnc_Sector re-points it at the nearest known hostile
+// aircraft every poll - so a second adds no cover it did not already have, it
+// just parks another vehicle. In the first run one commander held two Cheetahs
+// while the other held one, and neither of the pair was bought: both came from
+// Impasse's own spawner and this sweep adopted every SPAA it found.
+//
+// Over the cap, a vehicle is left with HAL rather than held. That is a real
+// trade - HAL has no SPAA doctrine and will dispatch it as armor - so the cap
+// is the dial to raise if the spares are seen dying forward.
+ITW_CLASH_SPAAOverwatchMaxPerSide = missionNamespace getVariable [
+    "ITW_CLASH_SPAAOverwatchMaxPerSide",1
+];
 
 ITW_CLASH_SPAAOverwatchGroups = [];
+
+// What this commander already holds. Counted live rather than tracked, so a
+// loss frees the slot at the next sweep with no bookkeeping to go stale.
+ITW_CLASH_SPAAOverwatch_fnc_Held = {
+    params ["_side"];
+    ITW_CLASH_SPAAOverwatchGroups select {
+        !isNull _x
+        && {side _x isEqualTo _side}
+        && {({alive _x} count units _x) > 0}
+        && {
+            private _veh = vehicle leader _x;
+            !isNull _veh && {alive _veh}
+        }
+    }
+};
+
+ITW_CLASH_SPAAOverwatch_fnc_AtCapacity = {
+    params ["_side"];
+    (count ([_side] call ITW_CLASH_SPAAOverwatch_fnc_Held)) >= ITW_CLASH_SPAAOverwatchMaxPerSide
+};
 
 ITW_CLASH_SPAAOverwatch_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -102,6 +135,12 @@ ITW_CLASH_SPAAOverwatch_fnc_Adopt = {
     private _veh = vehicle leader _group;
     if (isNull _veh || {!alive _veh}) exitWith {false};
     if !([_veh] call ITW_CLASH_AirPicture_fnc_IsSPAA) exitWith {false};
+    // Already holding enough. Enforced here rather than at each caller, so the
+    // sweep and a purchase cannot disagree about the limit.
+    if (
+        !(_group in ITW_CLASH_SPAAOverwatchGroups)
+        && {[side _hq] call ITW_CLASH_SPAAOverwatch_fnc_AtCapacity}
+    ) exitWith {false};
 
     _group setVariable ["ITW_CLASH_SPAAOverwatch",true];
     _veh setVariable ["ITW_CLASH_SPAAOverwatch",true,true];
@@ -262,6 +301,7 @@ ITW_CLASH_SPAAOverwatch_fnc_Sweep = {
     if (isNull _hq || {!ITW_CLASH_SPAAOverwatchAdoptImpasse}) exitWith {0};
     private _side = side _hq;
     private _adopted = 0;
+    private _passed = 0;
     {
         private _group = _x;
         if (_group getVariable ["ITW_CLASH_SPAAOverwatch",false]) then {continue};
@@ -271,8 +311,24 @@ ITW_CLASH_SPAAOverwatch_fnc_Sweep = {
         if !([_veh] call ITW_CLASH_AirPicture_fnc_IsSPAA) then {continue};
         if ([_group,_hq] call ITW_CLASH_SPAAOverwatch_fnc_Adopt) then {
             _adopted = _adopted + 1;
+        } else {
+            _passed = _passed + 1;
         };
     } forEach (allGroups select {side _x isEqualTo _side});
+
+    // Said once per change, not once per poll: a side that permanently owns a
+    // spare would otherwise repeat this every 30 seconds for the whole mission.
+    if (_passed != (_hq getVariable ["ITW_CLASH_SPAAOverwatchPassed",-1])) then {
+        _hq setVariable ["ITW_CLASH_SPAAOverwatchPassed",_passed];
+        if (_passed > 0) then {
+            ["over-cap",[
+                _hq getVariable ["RydHQ_CodeSign","?"],
+                _passed,
+                count ([_side] call ITW_CLASH_SPAAOverwatch_fnc_Held),
+                ITW_CLASH_SPAAOverwatchMaxPerSide
+            ]] call ITW_CLASH_SPAAOverwatch_fnc_Log;
+        };
+    };
     _adopted
 };
 
@@ -309,12 +365,13 @@ ITW_CLASH_SPAAOverwatch_fnc_Sweep = {
 
 ITW_CLASH_SPAAOverwatchReady = true;
 diag_log format [
-    "CLASH BOOT | spaa-overwatch-ready | version=%1 standoff=%2 depth=%3 withdrawAt=%4 poll=%5 adoptImpasseSPAA=%6 halDispatchPools=none neverAdvances=true",
+    "CLASH BOOT | spaa-overwatch-ready | version=%1 standoff=%2 depth=%3 withdrawAt=%4 poll=%5 adoptImpasseSPAA=%6 maxPerSide=%7 halDispatchPools=none neverAdvances=true",
     ITW_CLASH_SPAAOverwatchVersion,
     ITW_CLASH_SPAAOverwatchStandoff,
     ITW_CLASH_SPAAOverwatchDepth,
     ITW_CLASH_SPAAOverwatchWithdrawAt,
     ITW_CLASH_SPAAOverwatchPoll,
-    ITW_CLASH_SPAAOverwatchAdoptImpasse
+    ITW_CLASH_SPAAOverwatchAdoptImpasse,
+    ITW_CLASH_SPAAOverwatchMaxPerSide
 ];
 true
