@@ -163,6 +163,19 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
             };
+            // Shoot and scoot, and counter-battery acquisition. Each is the
+            // other's counterplay: a fix is taken on where a gun was, and a gun
+            // that displaces leaves that fix stale.
+            if (fileExists "ITW_CLASH_CounterBattery.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_CounterBattery.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | counter-battery-missing | shelling never reveals a firing position";
+            };
+            if (fileExists "ITW_CLASH_ArtilleryScoot.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_ArtilleryScoot.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | artillery-scoot-missing | gun lines fire from one grid square all mission";
+            };
             // SPAA overwatch: every air defence vehicle on a side, the ETB's
             // and Impasse's alike, stays behind the front instead of being
             // dispatched forward as another armored group.
