@@ -287,11 +287,27 @@ v2 claims on the ground, before takeoff, and decides once:
 - **Loaded, not assigned.** The claim now runs the same occupancy test the DROP
   phase uses, so an empty aircraft can never be taken. Still boarding is the one
   rejection that does *not* mark the lift declined.
-- **Declined is final.** The corridor is read once at boarding. A lift that
-  launches into a quiet corridor stays HAL's even if it sours, and one that
-  launches into a bad corridor flies the profile even if the corridor clears.
-  Air defence is identified reactively, so a cautious profile flown into a
-  corridor that turns out to be cold costs nothing worth a second decision.
+- **Decided once.** The corridor is read at boarding and not revisited. A lift
+  that launches into a corridor it was allowed to fly keeps the profile even if
+  the corridor changes under it.
+
+### Every corridor is flown, including a clear one
+
+`ITW_CLASH_HotDropStates` now defaults to **all four** states - `COLD`,
+`CONTESTED`, `HOT`, `AIR_DENIED`. It was once the bad three only, on the
+reasoning that a clear approach is HAL's to fly. That was the wrong instinct: a
+paradrop into a quiet corridor costs nothing, puts the squad down faster than a
+landing does, and refusing it only means the lift lands conventionally
+somewhere it did not need to. If a commander wants to paradrop, let it
+paradrop.
+
+Air defence is identified reactively here, so `COLD` means "nothing has shot at
+us yet" rather than "nothing is there" - flying the cautious profile anyway is
+the cheap side of that bet.
+
+The decline path stays wired even though it now rarely fires, because narrowing
+`ITW_CLASH_HotDropStates` is how someone would hand the quiet corridors back to
+HAL.
 
 Two defects found alongside it:
 

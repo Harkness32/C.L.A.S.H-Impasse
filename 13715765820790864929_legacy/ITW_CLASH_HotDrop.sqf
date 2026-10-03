@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 2;
+ITW_CLASH_HotDropVersion = 3;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -22,9 +22,10 @@ ITW_CLASH_HotDropReady = false;
     parameterizing proven resupply code and risking the delivery path that
     currently works.
 
-    HotDrop is its own thing with the same idea: when a troop lift is going
-    somewhere dangerous, fly it low and fast, pop up at the last moment, put the
-    infantry out, and get away. Transport and logistics stay separate. What it
+    HotDrop is its own thing with the same idea: fly a troop lift low and fast,
+    pop up at the last moment, put the infantry out, and get away. It does this
+    for every corridor by default, not only the dangerous ones - a paradrop
+    into a quiet approach costs nothing and lands the squad sooner. Transport and logistics stay separate. What it
     borrows is the machinery that never cared about the payload in the first
     place - countermeasure discovery, the flare budget and its per-phase cadence,
     and the corridor classifier - by calling those functions, not by copying
@@ -55,8 +56,19 @@ ITW_CLASH_HotDropReady = false;
 ITW_CLASH_HotDropEnabled = missionNamespace getVariable ["ITW_CLASH_HotDropEnabled",true];
 ITW_CLASH_HotDropPoll = missionNamespace getVariable ["ITW_CLASH_HotDropPoll",10];
 // Corridor verdicts worth flying the profile for. A COLD route is left to HAL.
+// Which corridors HotDrop will fly. Every one of them, by default.
+//
+// This was once the bad three only, on the reasoning that a clear approach is
+// HAL's to fly. That was the wrong instinct: a paradrop into a quiet corridor
+// costs nothing, puts the squad down faster than a landing does, and refusing
+// it only means the lift lands conventionally somewhere it did not need to.
+// If a commander wants to paradrop, let it paradrop.
+//
+// Air defence is identified reactively here, so COLD means "nothing has shot
+// at us yet" rather than "nothing is there". Flying the cautious profile
+// anyway is the cheap side of that bet.
 ITW_CLASH_HotDropStates = missionNamespace getVariable [
-    "ITW_CLASH_HotDropStates",["CONTESTED","HOT","AIR_DENIED"]
+    "ITW_CLASH_HotDropStates",["COLD","CONTESTED","HOT","AIR_DENIED"]
 ];
 // Take the airframe only for the last leg, the way Thunder Run does.
 ITW_CLASH_HotDropTakeoverRadius = missionNamespace getVariable ["ITW_CLASH_HotDropTakeoverRadius",3000];
@@ -445,12 +457,12 @@ ITW_CLASH_HotDrop_fnc_Consider = {
         _hq,getPosATL _veh,_destination
     ] call ITW_CLASH_AirPicture_fnc_ClassifyCorridor;
     private _corridorState = _corridor getOrDefault ["state","COLD"];
-    // A clear approach is HAL's to fly. HotDrop is for the bad ones. Read once
-    // at boarding and settled: a lift that launches into a quiet corridor
-    // stays HAL's even if it sours, and one that launches into a bad one flies
-    // the profile even if the corridor clears. Air defence is identified
-    // reactively, so a cautious profile flown into a corridor that turns out
-    // to be cold costs nothing worth a second decision.
+    // Read once at boarding and settled. Every corridor is flown by default,
+    // so this normally passes; it stays as a gate because narrowing
+    // ITW_CLASH_HotDropStates is how someone would hand the quiet ones back to
+    // HAL. A lift that launches into a corridor it was allowed to fly keeps
+    // the profile even if the corridor changes under it, which is the same
+    // decided-once rule as before.
     if !(_corridorState in ITW_CLASH_HotDropStates) exitWith {
         _veh setVariable ["ITW_CLASH_HotDropDeclined",true];
         ["declined",[
