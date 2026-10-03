@@ -982,3 +982,89 @@ Rename it when the block is built.
   *man*, who is alive and `canMove`, so the group still counts as usable. The
   side has a wrecked gun, a crew standing beside it, and no rebuy.
   Immobilised guns are caught by `canMove`, abandoned ones are not.
+
+## AT teams as an ETB provider — PINNED, not built
+
+Hark's concern, in his words: *"I'm a bit worried this might devolve the
+current combat into 'whoops, all AT teams on ridgelines'."* That is the
+correct worry and it is why this is pinned rather than built. The rest of
+this section is the design as far as it got, so the thinking is not lost.
+
+### What is already in place
+
+Nothing needs building for HAL to *use* an AT team. `RydHQ_LArmorATG` is the
+pool HAL's dispatcher draws on for an armor threat, and the existing
+`GROUND_ANTI_ARMOR` purchase already registers into it. A group placed in that
+pool is invoked against armor with no new tasking code at all.
+
+The purchase hook is also already there, as a denial: `ETBFulfil` returns
+`NO_SUITABLE_COUNTER` when a faction has qualifying AT vehicles but none whose
+`ProtectionGrade` survives the threat. Today that case spends nothing and the
+enemy armor lives.
+
+### Why it is a sibling path, not a tweak
+
+The ETB is vehicle-shaped end to end. `ETBCandidates` walks `ITW_VehArrays`
+rows filtered to `ITW_VEH_ROLE_ATTACK`/`DUAL`; `ETBFulfil` spawns a vehicle,
+inspects its pylons, calls `TrackAsset _veh` and registers into vehicle pools.
+An infantry team is `objNull` through all of that, and `ITW_CLASH_ETB_fnc_Price`
+is keyed on a vehicle row index that infantry does not have.
+
+Estimated at 250-350 lines plus tests, and unlike the standalone doctrine
+modules it edits a live load-bearing file at its transaction core. `ETBFulfil`
+reserves money and the row slot *before* anything that can pause, precisely so
+a yield cannot leak either; an infantry branch must honour the same discipline
+or the accounting drifts quietly.
+
+### Decided
+
+- **Team size: two.** A gunner and an assistant. Cheap, concealable, and the
+  assistant keeps it firing after the gunner goes down. Note it sits below
+  `ITW_CLASH_MinAnchorSoldiers` by design, so it can never be mistaken for a
+  garrison even under the relaxed anchor floor.
+- **Price: derived, not tabled.** A fraction of the faction's cheapest
+  qualifying AT vehicle row, so it tracks faction progression and whatever
+  Impasse charges with no new table to drift. A flat setting would be wrong on
+  some factions and a per-man cost would mean inventing a baseline Impasse
+  does not have.
+
+### Rejected, with the reason
+
+- **Buy on `NO_SUITABLE_COUNTER` alone.** Too passive. It answers "our vehicles
+  cannot survive this" but not "this particular vehicle is the problem".
+- **First-class peer, cheapest wins.** A two-man team would be the cheapest
+  option nearly every time, which reproduces the "every purchase was the
+  cheapest possible option" complaint the capability matching was built to fix.
+- **Peer against elevated or static armor.** Right instinct, wrong trigger:
+  it keys on where the armor *is* rather than what it has *done*, so it fires
+  on a parked vehicle nobody cares about.
+
+### Open, and the reason it is pinned
+
+**Persistent-pain tracking.** Hark's proposal, and the right trigger: score
+enemy armor by the harm it has actually caused over time, and dispatch a team
+against the specific vehicle that keeps hurting us, with eyes on, to kill that
+vehicle. Not a standing ridgeline doctrine - a named target with a reason.
+
+This is also the answer to the degeneracy worry, and it should be settled with
+data before any of it is built. If only one or two vehicles per run score as a
+persistent pain, "all AT teams on ridgelines" cannot happen, because the
+trigger is rare by construction. If a dozen qualify, the worry is real and the
+scoring is wrong. That question is answerable by an observation-only tracker
+that writes nothing - the COLOSSUS v0 pattern - and it should be answered that
+way first.
+
+**Guided versus unguided AT, which is a portability bug waiting to happen.**
+Hark: *"when I port this to a new faction, I can absolutely see normal non
+guided launcher try to perform this."* An unguided launcher cannot hold
+standoff against armor; a team built from one is a team sent to die. This
+distinction must be config-derived from the launcher's own magazines - the same
+way `ETBQualifiesProfile` reads `antiArmor` off a weapon profile today, and the
+same way `RearBaseCRAM` falls back to `va_*AAClasses` rather than naming
+classes. `va_pInfClasses`/`va_eInfClasses` are the candidate source; a
+hardcoded class list is not acceptable here and would not survive the port that
+motivated the requirement.
+
+Worth noting this primitive stands alone and is useful before any of the rest:
+it is pure classification, writes nothing, and anything that later reasons
+about AT infantry needs it.
