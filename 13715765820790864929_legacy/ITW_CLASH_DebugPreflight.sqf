@@ -76,7 +76,8 @@ ITW_CLASH_DebugPreflightManifest = [
     ["ITW_CLASH_ThunderRunAirTiers","thunder run air tiers","supply runs blocked by any air contact"],
     ["ITW_CLASH_CounterBattery","counter-battery","shelling never reveals a firing position"],
     ["ITW_CLASH_ArtilleryScoot","artillery scoot","gun lines fire from one grid all mission"],
-    ["ITW_CLASH_Colossus","colossus v0","no ground picture"]
+    ["ITW_CLASH_Colossus","colossus v0","no ground picture"],
+    ["ITW_CLASH_HALReconLatch","recon latch","capture orders stay on HAL's RapidCapt dice"]
 ];
 
 // Chat is asked for either by the parameter or by the loud debugger already

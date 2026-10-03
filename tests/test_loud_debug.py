@@ -16,6 +16,7 @@ FEEDERS = {
     "ITW_CLASH_EmergingThreatsBudget.sqf": ("ITW_CLASH_ETB_fnc_Log", "etb"),
     "ITW_CLASH_HALThreatCoverage.sqf": ("ITW_CLASH_HALThreatCoverage_fnc_Log", "hal-threat-coverage"),
     "ITW_CLASH_HotDrop.sqf": ("ITW_CLASH_HotDrop_fnc_Log", "hot-drop"),
+    "ITW_CLASH_HALReconLatch.sqf": ("ITW_CLASH_HALReconLatch_fnc_Log", "recon-latch"),
 }
 
 

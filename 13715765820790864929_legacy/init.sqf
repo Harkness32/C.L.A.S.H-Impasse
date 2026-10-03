@@ -341,6 +341,17 @@ if (isServer) then {
                 diag_log "CLASH BOOT | resupply-missing-or-prereq-failed | dry HAL units rely on native resupply only";
             };
 
+            // RydHQ_ReconDone decides whether HAL issues capture orders at all.
+            // HAL only scouts while blind, HQReset clears the flag anyway, and
+            // CLASH runs that reset every 30s - so once a commander makes
+            // contact the flag never comes back and nothing attacks. Held up
+            // while the commander has contact; never written false.
+            if (fileExists "ITW_CLASH_HALReconLatch.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_HALReconLatch.sqf";
+            } else {
+                diag_log "CLASH BOOT | hal-recon-latch-missing | capture orders stay on HAL's RapidCapt dice";
+            };
+
             // The preflight report: one greppable block saying which modules
             // came up and what each commander's state is. Read-only, and loaded
             // last so every other module has published its flag.

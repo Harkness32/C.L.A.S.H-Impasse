@@ -194,6 +194,65 @@ A warning rather than a failure on any of these is expected and harmless: the
 dispatcher patch reporting `already-fixed`, or any module logging
 `...-missing-or-prereq-failed`, which leaves the previous behaviour in place.
 
+## Why nothing was attacking: RydHQ_ReconDone
+
+Found in the first real run, and the reason a commander could sit on 29 groups
+with two attack-available and almost never push.
+
+HAL will not issue a capture order unless `RydHQ_ReconDone` is true
+(`HQOrders.sqf:775-777`). The only alternative branch is a dice roll -
+`RapidCapt` (10, `HQSitRepF.sqf:389`) times `Recklessness + 0.01` (0.5, set by
+`ITW_CLASH.sqf:418`) - about **5.1% per HAL cycle**. GUER ran ten cycles in
+twenty minutes, so roughly a 40% chance of a single capture order in the whole
+run.
+
+Three things hold the flag down, and only the third is ours:
+
+1. **HAL only scouts while completely blind.** `HQOrders.sqf:356` gates the
+   entire recon dispatch block - every tier, `RAirG`, `reconG`, `FOG`,
+   `snipersG` - on `count RydHQ_KnEnemiesG == 0`. After first contact,
+   `RydHQ_ReconStage` can never climb, so `GoRecon.sqf:732` can never set the
+   flag.
+2. **`HAL_HQReset` clears it unconditionally** (`HQReset.sqf:17-18`). It resets
+   `ReconStage` but *not* `ReconStage2`, which is the fingerprint this was
+   diagnosed by.
+3. **C.L.A.S.H. runs that reset every 30 seconds** (`ITW_CLASH.sqf:2337`)
+   against HAL's own default of 600 (`HQSitRepF.sqf:434`).
+
+The run's own timeline, from `CLASH DIAG | hq-state`:
+
+```
+23:17:38  stage 1, 0 known    recon starts
+23:18:44  stage 4, 0 known    recon complete, flag earned
+23:22:56  stage 1, 5 known    reset wiped it; contact made; gate now shut
+23:25:37+ stage 1, 5-6 known  dead for the rest of the run
+```
+
+`ReconStage2` stays pinned at 4 from 23:18 onward while `ReconStage` sits at 1.
+Nothing in HAL but `HQReset` does that.
+
+`ITW_CLASH_HALReconLatch.sqf` holds the flag up while a commander has contact.
+The rule is the flag's own meaning - `ReconDone` says "I have scouted enough to
+attack", and a commander that knows where five enemy groups are has scouted
+enough by any reading. It counts `RydHQ_KnEnemiesG`, the same thing the gate
+counts, so it cannot disagree with the gate it is reasoning about.
+
+It is a latch, not a controller: it **only ever writes true**, which is
+asserted. When a commander goes blind again it stands off and leaves the flag
+as HAL left it, so HAL's own recon loop can run and set it the ordinary way - a
+commander that has genuinely lost the enemy should scout again, and clearing
+the flag ourselves would be us making that call instead of HAL.
+
+It polls every 10 s, which has to stay under `RydHQ_ResetTime`, and that
+relationship is asserted rather than assumed. The first latch is announced at
+once; the relatches (one every 30 s, forever, because the reset keeps coming)
+are summarised every 5 minutes instead of twice a minute.
+
+**`RydHQ_ResetTime = 30` has deliberately not been changed.** Raising it would
+widen the window in which a pre-contact recon still counts, but it cannot fix
+the trap - after first contact the flag is unearnable at any interval. Whoever
+set it to 30 did so for a reason worth knowing before moving it.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

@@ -111,6 +111,19 @@ ITW_CLASH_LoudDebug_fnc_Sentence = {
             format ["BACKLINE AA %1 %2 to %3 covering %4",
                 1 call _p,5 call _p,3 call _at,4 call _at]
         };
+        // ---- the flag that decides whether anyone attacks at all ----
+        case "recon-latch|latched": {
+            format ["RECON COMPLETE HELD FOR %1 - %2 enemy groups known, HAL stage %3 - capture orders unblocked",
+                0 call _p,1 call _p,2 call _p]
+        };
+        case "recon-latch|holding": {
+            format ["RECON FLAG RESTORED %2x FOR %1 - %3 enemy groups known - HAL reset every %4s keeps clearing it",
+                0 call _p,1 call _p,2 call _p,3 call _p]
+        };
+        case "recon-latch|blind": {
+            format ["RECON FLAG RELEASED FOR %1 - no enemy groups known, HAL may scout again (held %2x)",
+                0 call _p,1 call _p]
+        };
         case "rear-cram|placed": {
             format ["%2 EMPLACED AS REAR-BASE AIR DEFENCE at %3 - %1",
                 0 call _p,1 call _p,2 call _at]
