@@ -63,6 +63,11 @@ ITW_CLASH_AirPictureSPAAUmbrella = missionNamespace getVariable ["ITW_CLASH_AirP
 ITW_CLASH_AirPictureCRAMUmbrella = missionNamespace getVariable ["ITW_CLASH_AirPictureCRAMUmbrella",3000];
 // Hard-kill envelopes, for the corridor gate and the helicopter tiers.
 ITW_CLASH_AirPictureGroundEnvelope = missionNamespace getVariable ["ITW_CLASH_AirPictureGroundEnvelope",4000];
+// How close something of ours, or a known enemy, has to be to the destination
+// before we call the place observed rather than unlooked-at. Generous on
+// purpose: this decides whether a corridor is honestly UNKNOWN, and calling a
+// place observed when it is not is how helicopters land into surprises.
+ITW_CLASH_AirPictureObservedRadius = missionNamespace getVariable ["ITW_CLASH_AirPictureObservedRadius",800];
 ITW_CLASH_AirPictureFighterEnvelope = missionNamespace getVariable ["ITW_CLASH_AirPictureFighterEnvelope",6000];
 /*
     Two helicopters lost close together in a short window close that area,
@@ -882,6 +887,36 @@ ITW_CLASH_AirPicture_fnc_LossClosed = {
       HOT:        ground only.
       AIR_DENIED: ground only.
 */
+/*
+    Is anyone actually looking at this place?
+
+    Three ways to have eyes on it, cheapest first: we know of an enemy near it
+    (so something of ours saw one), we have a unit of our own close enough to
+    see it, or it is ground we hold. None of those and we are flying blind,
+    whatever the threat lists say.
+*/
+ITW_CLASH_AirPicture_fnc_Observed = {
+    params ["_hq","_destination"];
+    if (isNull _hq || {_destination isEqualTo []}) exitWith {false};
+    private _radius = ITW_CLASH_AirPictureObservedRadius;
+
+    // A known enemy near it means something of ours saw one.
+    if ((_hq getVariable ["RydHQ_KnEnemies",[]]) findIf {
+        !isNull _x && {alive _x}
+        && {(getPosATL vehicle _x) distance2D _destination <= _radius}
+    } >= 0) exitWith {true};
+
+    // Or one of ours is close enough to be looking at it.
+    private _seen = false;
+    {
+        if (isNull _x) then {continue};
+        if ((units _x) findIf {
+            alive _x && {(getPosATL vehicle _x) distance2D _destination <= _radius}
+        } >= 0) exitWith {_seen = true};
+    } forEach (_hq getVariable ["RydHQ_Friends",[]]);
+    _seen
+};
+
 ITW_CLASH_AirPicture_fnc_ClassifyCorridor = {
     params ["_hq","_origin","_destination"];
     private _result = createHashMapFromArray [
@@ -947,6 +982,26 @@ ITW_CLASH_AirPicture_fnc_ClassifyCorridor = {
         _result set ["reason","aa-contested-corridor"];
         _result
     };
+
+    /*
+        Clear and unlooked-at are not the same answer.
+
+        Every test above is a function of what this commander KNOWS. A corridor
+        nobody has observed fails all of them and used to come back
+        COLD/corridor-clear - the same verdict as a corridor verified empty. So
+        HotDrop declined it, HAL flew an ordinary landing approach, and the
+        helicopter found out what was there by being shot at. That is where the
+        Littlebirds were going.
+
+        UNKNOWN is the honest answer when we have neither seen a threat near
+        the destination nor anyone looking at it. It is deliberately NOT a
+        denial: callers that only care about measured threat can treat it as
+        COLD, while callers with something to lose - an airframe full of
+        infantry - can insist on a profile that survives being wrong.
+    */
+    if ([_hq,_destination] call ITW_CLASH_AirPicture_fnc_Observed) exitWith {_result};
+    _result set ["state","UNKNOWN"];
+    _result set ["reason","destination-unobserved"];
     _result
 };
 

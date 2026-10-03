@@ -87,8 +87,26 @@ ITW_CLASH_HotDropLaunchTimeout = missionNamespace getVariable [
 // HotDrop take essentially every troop lift on the map, which is far more
 // intervention than the profile is worth when nothing is shooting. Narrowed
 // back: the profile exists for the approaches that need it.
+//
+// UNKNOWN is included: an unobserved destination is exactly where a landing
+// approach finds out what is there the hard way, and it is where the
+// Littlebirds were being lost. It is still not COLD - a corridor measured
+// quiet stays HAL's.
 ITW_CLASH_HotDropStates = missionNamespace getVariable [
-    "ITW_CLASH_HotDropStates",["CONTESTED","HOT","AIR_DENIED"]
+    "ITW_CLASH_HotDropStates",["CONTESTED","HOT","AIR_DENIED","UNKNOWN"]
+];
+/*
+    Corridors where landing is not an acceptable fallback.
+
+    The profile has two endings: PARADROP, or LAND_FALLBACK when the paradrop
+    module refuses. Landing is a reasonable ending in a corridor we have
+    measured, and an unacceptable one where we either know it is dangerous or
+    do not know anything at all - which is the whole reason the lift was taken
+    off HAL. In those, a refused paradrop aborts and hands the lift back
+    instead of putting the aircraft on the ground forward.
+*/
+ITW_CLASH_HotDropNoLandStates = missionNamespace getVariable [
+    "ITW_CLASH_HotDropNoLandStates",["HOT","AIR_DENIED","UNKNOWN"]
 ];
 // Take the airframe only for the last leg, the way Thunder Run does.
 ITW_CLASH_HotDropTakeoverRadius = missionNamespace getVariable ["ITW_CLASH_HotDropTakeoverRadius",3000];
@@ -331,7 +349,20 @@ ITW_CLASH_HotDrop_fnc_PutOut = {
         && {!isNil "ITW_CLASH_HALParadrop_fnc_Execute"}
         && {missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]};
 
+    // The corridor this lift was claimed for. A landing is not an acceptable
+    // ending in the ones listed, so a mission configured against parachutes
+    // gets the lift handed back rather than a bird put down forward.
+    private _corridorState = _state getOrDefault ["corridorState",""];
+    private _noLand = _corridorState in ITW_CLASH_HotDropNoLandStates;
+
     if (!_mayDrop) exitWith {
+        if (_noLand) exitWith {
+            ["land-refused",[
+                typeOf _veh,groupId _cargoGroup,_corridorState,
+                if (_unload <= 0) then {"host-disabled-parachutes"} else {"paradrop-unavailable"}
+            ]] call ITW_CLASH_HotDrop_fnc_Log;
+            ["NO_LAND",false]
+        };
         _veh land "GET OUT";
         ["put-out",["LAND",typeOf _veh,groupId _cargoGroup,round ((getPosATL _veh)#2)]] call
             ITW_CLASH_HotDrop_fnc_Log;
@@ -341,6 +372,7 @@ ITW_CLASH_HotDrop_fnc_PutOut = {
     _crewGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_cargoGroup];
     private _dropped = [_crewGroup,_veh] call ITW_CLASH_HALParadrop_fnc_Execute;
     private _method = if (_dropped) then {"PARADROP"} else {"LAND_FALLBACK"};
+    // Reassigned below when a refused paradrop may not fall back to landing.
 
     // The paradrop module lands for itself on exactly one of its five false
     // returns - too low, at HALParadrop.sqf:110. The others (no cargo group,
@@ -349,6 +381,12 @@ ITW_CLASH_HotDrop_fnc_PutOut = {
     // aboard with the log saying they were delivered. Land for real unless
     // they are already out.
     if (!_dropped && {([_veh,_cargoGroup] call ITW_CLASH_HotDrop_fnc_Aboard) isNotEqualTo []}) then {
+        if (_noLand) exitWith {
+            _method = "NO_LAND";
+            ["land-refused",[
+                typeOf _veh,groupId _cargoGroup,_corridorState,"paradrop-refused"
+            ]] call ITW_CLASH_HotDrop_fnc_Log;
+        };
         _veh land "GET OUT";
     };
     ["put-out",[
@@ -485,6 +523,11 @@ ITW_CLASH_HotDrop_fnc_Run = {
     [_state,"DROP"] call ITW_CLASH_HotDrop_fnc_Flare;
     ([_state] call ITW_CLASH_HotDrop_fnc_PutOut) params ["_method"];
     _state set ["method",_method];
+    // Nobody left the aircraft and landing is refused for this corridor. Hand
+    // the lift back rather than fall into the wait below, which would time out
+    // and egress with the troops still aboard - the failure the LAND_FALLBACK
+    // comment above exists to prevent.
+    if (_method isEqualTo "NO_LAND") exitWith {["NO_LAND"] call _abort};
 
     private _cargoGroup = _state getOrDefault ["cargoGroup",grpNull];
     _deadline = time + ITW_CLASH_HotDropPhaseTimeout;

@@ -49,8 +49,10 @@ def test_the_cram_is_furniture_not_a_purchase():
 def test_hal_is_never_told_about_it():
     source = code_only(cram())
     assert "ITW_CLASH_DualHAL_fnc_RegisterGroup" not in source
-    # Held out of the dispatch pools defensively in case something else adopts it.
-    body = function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_Spawn")
+    # Held out of the dispatch pools defensively in case something else adopts
+    # it. Set in fnc_Crew since v2, so a re-crewed piece is held out too - a
+    # replacement crew that HAL could dispatch would walk the gun off its base.
+    body = function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_Crew")
     assert '"RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"' in body
     for pool in ["RydHQ_AttackAv", "RydHQ_FlankAv", "RydHQ_Garrison"]:
         assert pool not in source, pool
@@ -131,10 +133,11 @@ def test_the_fallback_still_has_to_shoot_at_aircraft():
 
 def test_a_crammed_vehicle_cannot_be_driven_away():
     source = cram()
-    body = function_body(source, "ITW_CLASH_RearBaseCRAM_fnc_Spawn")
-    # Gunner only, no driver: it sits where it is placed, like a static.
+    # Crewing moved into fnc_Crew in v2 so an uncrewed piece can be re-crewed
+    # in place rather than replaced; the gunner-only rule is unchanged.
+    body = function_body(source, "ITW_CLASH_RearBaseCRAM_fnc_Crew")
     assert "moveInGunner _veh" in body
-    assert "moveInDriver" not in body
+    assert "moveInDriver" not in code_only(source)
     assert '_veh setVariable ["ITW_CLASH_CRAM",true,true]' in source
 
 

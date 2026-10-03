@@ -86,11 +86,16 @@ def test_the_flare_state_keys_match_the_machinery_it_calls():
 def test_a_clear_approach_is_left_to_hal():
     # COLD was briefly included; including it made HotDrop take essentially
     # every troop lift on the map, which is more intervention than the profile
-    # is worth when nothing is shooting.
+    # is worth when nothing is shooting. That is the rule being guarded here -
+    # not the exact membership of the list, which gained UNKNOWN when the
+    # classifier learned to distinguish "measured quiet" from "nobody looked".
+    import re as _re
     source = hotdrop()
     body = function_body(source, "ITW_CLASH_HotDrop_fnc_Run")
     assert "ITW_CLASH_AirPicture_fnc_ClassifyCorridor" in body
-    assert 'ITW_CLASH_HotDropStates",["CONTESTED","HOT","AIR_DENIED"]' in source
+    states = _re.search(r'"ITW_CLASH_HotDropStates",\[([^\]]*)\]', source).group(1)
+    assert '"COLD"' not in states, "a corridor measured quiet stays HAL's"
+    assert '"CONTESTED"' in states and '"HOT"' in states and '"AIR_DENIED"' in states
     assert '"COLD"' in body
 
 
