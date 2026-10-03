@@ -31,9 +31,42 @@ ITW_CLASH_RoadDistanceVersion = 2;
     or distance. Confirmed by reading it, not assumed from the name.
 */
 
+/*
+    300 nodes could not reach 2.2km.
+
+    In run4 a resupply truck 2220m from an MLRS came back -1 with
+    search-exhausted at exactly 300 nodes, and the caller correctly read that
+    as "ground access unproven" and fell back to straight-line. But the route
+    was almost certainly fine: Arma road segments run roughly 10-25m, so 2.2km
+    is already 100-200 segments along the direct line alone, and a Dijkstra
+    expands sideways as well. The budget was inconsistent with both
+    ITW_CLASH_RoadDistanceMaxDistance (20000) and the 5000m ceiling the
+    resupply caller asks about - it claimed a range it could not search.
+
+    The budget now scales with the straight-line gap and keeps the old value as
+    the floor for short queries. The divisor is deliberately coarse: it only
+    needs to be the right order of magnitude, since the search still ends the
+    moment it pops the goal.
+
+    Known cost: the open list is a linear scan, so a call is O(n^2) in nodes
+    expanded. That is free at 300 and acceptable at this cap, but raising the
+    cap much further wants a real priority queue first.
+*/
 ITW_CLASH_RoadDistanceMaxNodes = missionNamespace getVariable [
     "ITW_CLASH_RoadDistanceMaxNodes",300
 ];
+ITW_CLASH_RoadDistanceNodesPerMetre = missionNamespace getVariable [
+    "ITW_CLASH_RoadDistanceNodesPerMetre",0.35
+];
+ITW_CLASH_RoadDistanceMaxNodesCap = missionNamespace getVariable [
+    "ITW_CLASH_RoadDistanceMaxNodesCap",2000
+];
+
+ITW_CLASH_RoadDistance_fnc_NodeBudget = {
+    params ["_posA","_posB"];
+    private _scaled = (_posA distance2D _posB) * ITW_CLASH_RoadDistanceNodesPerMetre;
+    round ((_scaled max ITW_CLASH_RoadDistanceMaxNodes) min ITW_CLASH_RoadDistanceMaxNodesCap)
+};
 ITW_CLASH_RoadDistanceMaxDistance = missionNamespace getVariable [
     "ITW_CLASH_RoadDistanceMaxDistance",20000
 ];
@@ -87,10 +120,11 @@ ITW_CLASH_RoadDistance_fnc_Calculate = {
     private _visited = createHashMap;
     private _result = -1;
     private _nodesExpanded = 0;
+    private _budget = [_posA,_posB] call ITW_CLASH_RoadDistance_fnc_NodeBudget;
 
     while {
         count _open > 0
-        && {_nodesExpanded < ITW_CLASH_RoadDistanceMaxNodes}
+        && {_nodesExpanded < _budget}
         && {_result < 0}
     } do {
         private _bestIdx = 0;
@@ -129,18 +163,20 @@ ITW_CLASH_RoadDistance_fnc_Calculate = {
     };
 
     if (_result < 0) then {
-        ["search-exhausted",[_posA,_posB,_nodesExpanded]] call ITW_CLASH_RoadDistance_fnc_Log;
+        ["search-exhausted",[_posA,_posB,_nodesExpanded,_budget,round (_posA distance2D _posB)]] call ITW_CLASH_RoadDistance_fnc_Log;
     };
     _result
 };
 
 ITW_CLASH_RoadDistanceReady = true;
 diag_log format [
-    "CLASH BOOT | road-distance-ready | version=%1 maxNodes=%2 maxDistance=%3 searchRadius=%4",
+    "CLASH BOOT | road-distance-ready | version=%1 minNodes=%2 nodesPerMetre=%5 nodeCap=%6 maxDistance=%3 searchRadius=%4",
     ITW_CLASH_RoadDistanceVersion,
     ITW_CLASH_RoadDistanceMaxNodes,
     ITW_CLASH_RoadDistanceMaxDistance,
-    ITW_CLASH_RoadDistanceSearchRadius
+    ITW_CLASH_RoadDistanceSearchRadius,
+    ITW_CLASH_RoadDistanceNodesPerMetre,
+    ITW_CLASH_RoadDistanceMaxNodesCap
 ];
 
 true

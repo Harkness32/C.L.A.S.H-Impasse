@@ -117,7 +117,11 @@ def test_search_is_bounded_on_both_node_count_and_cumulative_distance():
     fn_start = source.index("ITW_CLASH_RoadDistance_fnc_Calculate = {")
     fn_end = source.index("\nITW_CLASH_RoadDistanceReady", fn_start)
     fn = source[fn_start:fn_end]
-    assert "_nodesExpanded < ITW_CLASH_RoadDistanceMaxNodes" in fn
+    # The node bound is now a per-query budget scaled to the gap rather than a
+    # flat constant - 300 could not reach 2.2km - but it is still a hard bound,
+    # and it is still independent of the cumulative distance cap.
+    assert "_nodesExpanded < _budget" in fn
+    assert "ITW_CLASH_RoadDistance_fnc_NodeBudget" in fn
     assert "_currentCost <= ITW_CLASH_RoadDistanceMaxDistance" in fn
 
 

@@ -271,8 +271,16 @@ ITW_CLASH_Diag_fnc_Group = {
     ]
 };
 
+/*
+    Takes the commander to describe. Defaulting to fnc_HQ is why every run so
+    far logged one side: hq-state sampled whichever commander fnc_HQ resolved
+    to and the other was simply invisible, so a run where one side defended for
+    88 straight samples said nothing at all about what the other was doing.
+    fnc_HQCycle beside it always looped both; this now matches.
+*/
 ITW_CLASH_Diag_fnc_HQSnapshot = {
-    private _hq = call ITW_CLASH_Diag_fnc_HQ;
+    params [["_hq",grpNull]];
+    if (isNull _hq) then {_hq = call ITW_CLASH_Diag_fnc_HQ};
     if (isNull _hq) exitWith {["<no-hal-hq>"]};
 
     [
@@ -483,7 +491,12 @@ ITW_CLASH_Diag_fnc_DumpAll = {
 
         if (time - _lastHQ >= ITW_CLASH_CombatDiagnosticsHQInterval) then {
             _lastHQ = time;
-            ["hq-state",call ITW_CLASH_Diag_fnc_HQSnapshot] call ITW_CLASH_Diag_fnc_Log;
+            {
+                private _hq = missionNamespace getVariable [_x,grpNull];
+                if (!isNull _hq) then {
+                    ["hq-state",[_hq] call ITW_CLASH_Diag_fnc_HQSnapshot] call ITW_CLASH_Diag_fnc_Log;
+                };
+            } forEach ["ITW_CLASH_HALHQ","ITW_CLASH_BLUFORHQ"];
         };
 
         private _groups = allGroups select {
