@@ -42,7 +42,9 @@ def test_one_owner_replaces_the_dormant_withdrawal_file():
 def test_native_hal_gets_first_chance_before_a_claim():
     detect = fn("ITW_CLASH_Resupply_fnc_Detect")
     in_flight = detect.index("ITW_CLASH_Resupply_fnc_InFlight")
-    patience = detect.index("ITW_CLASH_ResupplyPatience")
+    # The window itself is now per-need - repair waits far less than ammo - but
+    # it still sits between the in-flight check and the claim.
+    patience = detect.index("ITW_CLASH_Resupply_fnc_Patience")
     claim = detect.index("ITW_CLASH_Resupply_fnc_Claim")
     assert in_flight < patience < claim
     # patience restarts while a native delivery is actually running

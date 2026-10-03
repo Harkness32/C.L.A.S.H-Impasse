@@ -437,6 +437,42 @@ job and needs the hold lever (`RydHQ_Garrison`, verified as the only reliable
 one - the capture pool at `HQOrders.sqf:778` subtracts `Garrison` but not
 `NoAttack`).
 
+## Repair is more urgent than ammo
+
+A group that asks for repair stops being HAL's and either freezes or withdraws.
+Both halves of that were already built - `fnc_Claim` sets `Break` to unwind
+HAL's running order, takes `Busy` the instant it frees, and clears the group's
+HAL roles; `StepResolve` holds an immobilised or dry group in place and brings
+the service to it rather than ordering a move it cannot make.
+
+What was missing was urgency. Every need waited the same 120 seconds, and a
+damaged vehicle spends that window still taking HAL orders. The single repair
+claim in a 70 minute run shows the cost:
+
+```
+23:49:26  claim     G71 (Rooikat 120 UP), needed REPAIR for 120s
+23:49:32  withdraw  238m to a rendezvous
+23:51:16  release   group-lost
+23:45:27  earlier:  resupply-dead-recipient-aborted (repair truck inbound)
+```
+
+Both repair cases that run ended with the recipient dead.
+
+Patience is now per need, taking the shortest any of them asks for:
+
+| need | window |
+| --- | --- |
+| ammo, fuel | `ITW_CLASH_ResupplyPatience` — 120 s |
+| repair | `ITW_CLASH_ResupplyRepairPatience` — 30 s |
+| immobilised or out of fuel | `ITW_CLASH_ResupplyImmobilePatience` — 0 s |
+
+A dry rifle can wait out a native delivery. A vehicle at half damage is losing
+the fight it is standing in, and an immobilised one cannot withdraw, cannot
+flee, and will not complete anything it is tasked with - so it is taken at once.
+
+Native HAL still gets whichever window applies, and an in-flight native delivery
+still restarts the clock in `fnc_Detect` regardless of which one it is.
+
 ## The preflight report
 
 Fourteen modules publish their own boot line among roughly two hundred

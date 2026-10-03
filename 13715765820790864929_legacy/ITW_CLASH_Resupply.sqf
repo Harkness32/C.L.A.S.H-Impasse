@@ -27,6 +27,16 @@ ITW_CLASH_ResupplyVersion = 1;
 } forEach [
     ["ITW_CLASH_ResupplyTick",5],
     ["ITW_CLASH_ResupplyPatience",120],
+    // Repair is not ammo. A dry rifle can wait out a native delivery; a vehicle
+    // at half damage or immobilised is losing the fight it is standing in. In
+    // one 70 minute run the only repair claim came after the full 120s, the
+    // group withdrew 238m and was released as group-lost 110s later, and a
+    // separate repair truck arrived to a recipient already dead. Patience is
+    // what the group spends still taking HAL orders while broken.
+    ["ITW_CLASH_ResupplyRepairPatience",30],
+    // Immobilised is not a judgement call: it cannot withdraw, cannot flee, and
+    // nothing it is tasked with is going to happen. Take it at once.
+    ["ITW_CLASH_ResupplyImmobilePatience",0],
     ["ITW_CLASH_ResupplyNativeGrace",45],
     ["ITW_CLASH_ResupplyClaimTimeout",900],
     ["ITW_CLASH_ResupplyMaxRetries",2],
@@ -653,6 +663,29 @@ ITW_CLASH_Resupply_fnc_Release = {
     true
 };
 
+/*
+    How long this group waits before C.L.A.S.H. takes it off HAL.
+
+    The shortest patience any of its needs asks for, because a group that is
+    both dry and broken should be taken on the urgent one. Native HAL still gets
+    that whole window, and an in-flight native delivery still restarts the clock
+    in fnc_Detect regardless of which window applies.
+*/
+ITW_CLASH_Resupply_fnc_Patience = {
+    params ["_group","_needs"];
+    private _patience = ITW_CLASH_ResupplyPatience;
+    if ("REPAIR" in _needs) then {
+        _patience = _patience min ITW_CLASH_ResupplyRepairPatience;
+        private _stuck = ([_group] call ITW_CLASH_Resupply_fnc_GroundVehicles) findIf {
+            !canMove _x || {fuel _x <= 0}
+        };
+        if (_stuck >= 0) then {
+            _patience = _patience min ITW_CLASH_ResupplyImmobilePatience;
+        };
+    };
+    _patience max 0
+};
+
 ITW_CLASH_Resupply_fnc_Detect = {
     params ["_hq"];
     private _groups = [];
@@ -687,7 +720,7 @@ ITW_CLASH_Resupply_fnc_Detect = {
             continue
         };
         _group setVariable ["ITW_CLASH_ResupplyNeedSince",[_seen#0,time]];
-        if (time - (_seen#0) < ITW_CLASH_ResupplyPatience) then {continue};
+        if (time - (_seen#0) < ([_group,_needs] call ITW_CLASH_Resupply_fnc_Patience)) then {continue};
         if (([_hq] call ITW_CLASH_Resupply_fnc_CountClaims) >= ITW_CLASH_ResupplyMaxClaimsPerHQ) exitWith {};
 
         [_group,_hq,_needs] call ITW_CLASH_Resupply_fnc_Claim;
@@ -1431,7 +1464,7 @@ ITW_CLASH_Resupply_fnc_TickCrates = {
 
     ITW_CLASH_ResupplyReady = true;
     diag_log format [
-        "CLASH BOOT | resupply-ready | version=%1 patience=%2 nativeGrace=%3 maxClaims=%4 maxDeliveries=%5 crateUses=%6 crateIdleLife=%7 magic=%8/%9/%10",
+        "CLASH BOOT | resupply-ready | version=%1 patience=%2 repairPatience=%11 immobilePatience=%12 nativeGrace=%3 maxClaims=%4 maxDeliveries=%5 crateUses=%6 crateIdleLife=%7 magic=%8/%9/%10",
         ITW_CLASH_ResupplyVersion,
         ITW_CLASH_ResupplyPatience,
         ITW_CLASH_ResupplyNativeGrace,
@@ -1441,7 +1474,9 @@ ITW_CLASH_Resupply_fnc_TickCrates = {
         ITW_CLASH_ResupplyCrateIdleLife,
         missionNamespace getVariable ["RydxHQ_MagicRearm",false],
         missionNamespace getVariable ["RydxHQ_MagicRefuel",false],
-        missionNamespace getVariable ["RydxHQ_MagicRepair",false]
+        missionNamespace getVariable ["RydxHQ_MagicRepair",false],
+        ITW_CLASH_ResupplyRepairPatience,
+        ITW_CLASH_ResupplyImmobilePatience
     ];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
