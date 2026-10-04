@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALCargoDiceFixStarted",false]) exi
 
 ITW_CLASH_HALCargoDiceFixStarted = true;
 ITW_CLASH_HALCargoDiceFixReady = false;
-ITW_CLASH_HALCargoDiceFixVersion = 1;
+ITW_CLASH_HALCargoDiceFixVersion = 2;
 scriptName "ITW_CLASH_HALCargoDiceFix";
 
 /*
@@ -51,6 +51,17 @@ ITW_CLASH_HALCargoDiceLogInterval = missionNamespace getVariable [
 ];
 ITW_CLASH_HALCargoDiceLastLog = createHashMap;
 
+// Inside a live Impasse base, boarding is logistics bookkeeping rather than a
+// tactical movement problem. HAL still selects the carrier and owns the mission;
+// this only collapses the final walk-to-vehicle step for AI infantry when both
+// parties are already inside the same friendly base.
+ITW_CLASH_BaseEmbarkFastPathEnabled = missionNamespace getVariable [
+    "ITW_CLASH_BaseEmbarkFastPathEnabled",true
+];
+ITW_CLASH_BaseEmbarkRadius = missionNamespace getVariable [
+    "ITW_CLASH_BaseEmbarkRadius",150
+];
+
 ITW_CLASH_HALCargoDice_fnc_Log = {
     params ["_event",["_payload",[]],["_key",""]];
     // Flag and exit at function scope: an exitWith inside the then block below
@@ -74,6 +85,96 @@ ITW_CLASH_HALCargoDice_fnc_Log = {
     if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
         ["hal-cargo-dice",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
     };
+};
+
+/*
+    A base is resolved from Impasse's live base graph at the moment SCargo asks.
+    No startup coordinate is cached, so when ITW advances its bases this fast
+    path advances with them. The radius only abstracts the last bit of staging
+    movement inside a secured logistics node.
+*/
+ITW_CLASH_HALCargoDice_fnc_BaseAtPosition = {
+    params ["_side","_position"];
+    if (
+        isNil "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase"
+        || {isNil "ITW_CLASH_ServiceHome_fnc_BaseValidForSide"}
+        || {isNil "ITW_Bases"}
+        || {_position isEqualTo []}
+    ) exitWith {-1};
+
+    private _baseIndex = [_side,_position] call
+        ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase;
+    if (_baseIndex < 0 || {_baseIndex >= count ITW_Bases}) exitWith {-1};
+    if !([_side,_baseIndex] call ITW_CLASH_ServiceHome_fnc_BaseValidForSide) exitWith {-1};
+
+    private _basePos = +(ITW_Bases#_baseIndex#ITW_BASE_POS);
+    if (_basePos isEqualTo [] || {
+        (_position distance2D _basePos) > ITW_CLASH_BaseEmbarkRadius
+    }) exitWith {-1};
+    _baseIndex
+};
+
+ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {
+    params ["_unitG","_vehicle",["_hq",grpNull]];
+    if (!ITW_CLASH_BaseEmbarkFastPathEnabled) exitWith {false};
+    if (isNull _unitG || {isNull _vehicle} || {!alive _vehicle}) exitWith {false};
+
+    // This is deliberately not a recovery shortcut. Native SCargo passes
+    // _withdraw/_request guards before calling us; these extra state guards
+    // keep a future caller from bypassing GTFO/CASEVAC ownership accidentally.
+    if (_unitG getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {false};
+
+    private _troops = (units _unitG) select {alive _x};
+    if (_troops isEqualTo []) exitWith {false};
+    if ((_troops findIf {isPlayer _x}) >= 0) exitWith {false};
+    if ((_troops findIf {
+        !(_x isKindOf "CAManBase") || {vehicle _x != _x}
+    }) >= 0) exitWith {false};
+
+    // Only accelerate a real HAL transport. Empty vehicles use SCargo's
+    // separate driver/gunner assignment path and must remain untouched.
+    private _driver = assignedDriver _vehicle;
+    if (isNull _driver) exitWith {false};
+    private _carrierG = group _driver;
+    if (isNull _carrierG || {_carrierG == _unitG}) exitWith {false};
+    if (side _carrierG != side _unitG) exitWith {false};
+    if ((_vehicle emptyPositions "Cargo") < count _troops) exitWith {false};
+
+    private _side = side _unitG;
+    private _troopBase = [_side,getPosATL (leader _unitG)] call
+        ITW_CLASH_HALCargoDice_fnc_BaseAtPosition;
+    if (_troopBase < 0) exitWith {false};
+    private _carrierBase = [_side,getPosATL _vehicle] call
+        ITW_CLASH_HALCargoDice_fnc_BaseAtPosition;
+    if (_carrierBase != _troopBase) exitWith {false};
+
+    {
+        _x assignAsCargo _vehicle;
+        _x moveInCargo _vehicle;
+    } forEach _troops;
+
+    private _failed = _troops select {vehicle _x != _vehicle};
+    if (_failed isNotEqualTo []) exitWith {
+        // Fail open back to native physical boarding. Roll back a partial
+        // embarkation so SCargo never inherits a split squad.
+        {
+            if (vehicle _x == _vehicle) then {moveOut _x};
+            [_x] remoteExecCall ["RYD_MP_unassignVehicle",0];
+        } forEach _troops;
+        diag_log format [
+            "CLASH HAL CARGO | base-embark-failed | group=%1 vehicle=%2 base=%3 failed=%4",
+            str _unitG,typeOf _vehicle,_troopBase,count _failed
+        ];
+        false
+    };
+
+    _unitG setVariable ["ITW_CLASH_BaseEmbarkFastPathed",true];
+    _vehicle setVariable ["ITW_CLASH_BaseEmbarkLastAt",time];
+    diag_log format [
+        "CLASH HAL CARGO | base-embark-fastpath | group=%1 vehicle=%2 base=%3 troops=%4 radius=%5",
+        str _unitG,typeOf _vehicle,_troopBase,count _troops,ITW_CLASH_BaseEmbarkRadius
+    ];
+    true
 };
 
 /*
@@ -205,6 +306,28 @@ private _step = [
 if !(_step#0) exitWith {[_step#2,[count _source]] call _finishFailure};
 _source = _step#1;
 
+private _embarkStep = [
+    _source,
+    'if ((_enmyNrb) and not (_request)) exitwith {_unitG setVariable ["CargoChosen",false,true];_unitG setVariable [("CC" + (str _unitG)), true, true]};\n\n_lz = objNull;',
+    'if ((_enmyNrb) and not (_request)) exitwith {_unitG setVariable ["CargoChosen",false,true];_unitG setVariable [("CC" + (str _unitG)), true, true]};\n\nprivate _clashBaseEmbarked = false; if (not (_withdraw) and not (_request) and not (_emptyV) and {!isNil "ITW_CLASH_HALCargoDice_fnc_BaseEmbark"}) then {_clashBaseEmbarked = [_unitG,_ChosenOne,_HQ] call ITW_CLASH_HALCargoDice_fnc_BaseEmbark;};\n\n_lz = objNull;',
+    "SCargo-base-embark-entry"
+] call _replaceExact;
+if !(_embarkStep#0) exitWith {
+    [_embarkStep#2,[count _source]] call _finishFailure
+};
+_source = _embarkStep#1;
+
+private _assignStep = [
+    _source,
+    'if (((_ChosenOne emptyPositions "Cargo") > 0) and not (_request)) then',
+    'if (not (_clashBaseEmbarked) and (((_ChosenOne emptyPositions "Cargo") > 0) and not (_request))) then',
+    "SCargo-base-embark-physical-fallback"
+] call _replaceExact;
+if !(_assignStep#0) exitWith {
+    [_assignStep#2,[count _source]] call _finishFailure
+};
+_source = _assignStep#1;
+
 private _compiled = compile _source;
 if !(_compiled isEqualType {}) exitWith {
     ["recompile-failed",[typeName _compiled]] call _finishFailure
@@ -218,9 +341,11 @@ if (_hooked) then {
 
 ITW_CLASH_HALCargoDiceFixReady = true;
 diag_log format [
-    "CLASH BOOT | hal-cargo-dice-fix-ready | version=%1 result=%2 target=%3 routeAware=true nr6Untouched=true",
+    "CLASH BOOT | hal-cargo-dice-fix-ready | version=%1 result=%2 embark=%3/%4 target=%5 routeAware=true baseEmbark=true liveImpasseBases=true nr6Untouched=true",
     ITW_CLASH_HALCargoDiceFixVersion,
     _step#2,
+    _embarkStep#2,
+    _assignStep#2,
     if (_hooked) then {"checkbook-native-scargo"} else {"hal-scargo"}
 ];
 true
