@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ColossusStarted",false]) exitWith {true};
 
 ITW_CLASH_ColossusStarted = true;
-ITW_CLASH_ColossusVersion = 3;
+ITW_CLASH_ColossusVersion = 4;
 ITW_CLASH_ColossusReady = false;
 
 /*
@@ -117,7 +117,39 @@ ITW_CLASH_ColossusOrderDwell = missionNamespace getVariable [
     "ITW_CLASH_ColossusOrderDwell",120
 ];
 
+/*
+    Concentration: making the chosen objective the appetising one.
+
+    HAL does not score objectives, so there is no weight to bias. In
+    SimpleMode - which C.L.A.S.H. sets - HQOrders.sqf:328 takes the candidate
+    list, sorts it by DISTANCE from the commander, and truncates it:
+
+        _toRecon = _objectives - _taken;
+        _toRecon = [_toRecon,(leader _HQ),250000] call RYD_DistOrdD;
+        if (MaxSimpleObjs < count _toRecon) then {_toRecon resize MaxSimpleObjs};
+
+    So "I want this attacked" has exactly two honest expressions: be in the
+    candidate set, and have no rivals in it. Reordering the list does nothing
+    because RYD_DistOrdD re-sorts it.
+
+    This is deliberately NOT a second writer. The candidate globals have one
+    owner each already - ITW_CLASH_fnc_MirrorObjectives for commander A and the
+    dual-HAL mirror pass for commander B - and those owners consult the
+    function below before they write. COLOSSUS stays a pure opinion: no
+    waypoint, no claim, no global of its own, and no state machine racing HAL
+    for the same units.
+*/
+ITW_CLASH_ColossusConcentrate = missionNamespace getVariable [
+    "ITW_CLASH_ColossusConcentrate",true
+];
+ITW_CLASH_ColossusConcentrateMax = missionNamespace getVariable [
+    "ITW_CLASH_ColossusConcentrateMax",1
+];
+
 ITW_CLASH_ColossusPictures = createHashMap;
+// side key -> the last plan, so the mirror writers can ask what this
+// commander wants without recomputing the picture on their own clock.
+ITW_CLASH_ColossusPlans = createHashMap;
 
 ITW_CLASH_Colossus_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -492,6 +524,89 @@ ITW_CLASH_Colossus_fnc_Commit = {
     true
 };
 
+/*
+    Which mirror in this list stands for that objective index.
+
+    Commander B's mirrors are C.L.A.S.H.'s own objects and carry the index
+    directly. Commander A's are Impasse's real objective flags, so they are
+    matched against ITW_Objectives instead. Returns objNull when the objective
+    is not in this commander's list at all, which is a legitimate answer - a
+    held or out-of-zone objective is not a candidate.
+*/
+ITW_CLASH_Colossus_fnc_ResolveMirror = {
+    params ["_mirrors","_index"];
+    if (_index < 0 || {_mirrors isEqualTo []}) exitWith {objNull};
+
+    private _found = objNull;
+    {
+        if ((_x getVariable ["ITW_CLASH_ObjectiveIndex",-1]) isEqualTo _index) exitWith {
+            _found = _x;
+        };
+    } forEach _mirrors;
+    if (!isNull _found) exitWith {_found};
+
+    if (isNil "ITW_Objectives" || {_index >= count ITW_Objectives}) exitWith {objNull};
+    private _objective = ITW_Objectives#_index;
+    if (count _objective <= ITW_OBJ_FLAG) exitWith {objNull};
+    private _flag = _objective#ITW_OBJ_FLAG;
+    if (isNull _flag || {!(_flag in _mirrors)}) exitWith {objNull};
+    _flag
+};
+
+/*
+    The candidate list this commander should actually be offered.
+
+    Returns [mirrors, maxObjectives]. A maxObjectives of -1 means "no opinion":
+    the caller keeps its own list and its own default, which is exactly the
+    pre-COLOSSUS behaviour. Every reason to decline is a reason the caller is
+    better off unmodified, and each one is logged.
+
+    The observation gate is the important one. COLOSSUS reads RydHQ_KnEnemies,
+    so an objective with no known enemy reads EMPTY - and EMPTY does not mean
+    undefended, it means nobody has looked. Concentrating an entire side onto
+    an unobserved objective is how an army gets fed into something nobody
+    scouted, so an unobserved choice declines rather than concentrates.
+*/
+ITW_CLASH_Colossus_fnc_Concentrate = {
+    params ["_hq","_mirrors"];
+    private _pass = [_mirrors,-1];
+    if (isNull _hq || {_mirrors isEqualTo []}) exitWith {_pass};
+    if (!ITW_CLASH_ColossusConcentrate) exitWith {_pass};
+    if (ITW_CLASH_ColossusAdvisoryOnly) exitWith {_pass};
+
+    private _sign = _hq getVariable ["RydHQ_CodeSign","?"];
+    private _plan = ITW_CLASH_ColossusPlans getOrDefault [toUpperANSI str (side _hq),createHashMap];
+    private _decline = {
+        params ["_reason"];
+        ["concentrate-declined",[_sign,_reason]] call ITW_CLASH_Colossus_fnc_Log;
+        _pass
+    };
+
+    if (count _plan == 0) exitWith {["no-picture"] call _decline};
+    if ((_plan getOrDefault ["posture","PUSH"]) isEqualTo "CONSOLIDATE") exitWith {
+        ["consolidating"] call _decline
+    };
+    if (!(_plan getOrDefault ["feasible",false])) exitWith {["short-of-force"] call _decline};
+
+    private _index = _plan getOrDefault ["objective",-1];
+    private _mirror = [_mirrors,_index] call ITW_CLASH_Colossus_fnc_ResolveMirror;
+    if (isNull _mirror) exitWith {["objective-not-a-candidate"] call _decline};
+
+    // Unobserved is not undefended. See the note above.
+    if (
+        !isNil "ITW_CLASH_AirPicture_fnc_Observed"
+        && {!([_hq,getPosATL _mirror] call ITW_CLASH_AirPicture_fnc_Observed)}
+    ) exitWith {["objective-unobserved"] call _decline};
+
+    ["concentrate",[
+        _sign,_index,
+        _plan getOrDefault ["verdict",""],
+        count _mirrors,
+        ITW_CLASH_ColossusConcentrateMax
+    ]] call ITW_CLASH_Colossus_fnc_Log;
+    [[_mirror],ITW_CLASH_ColossusConcentrateMax]
+};
+
 ITW_CLASH_Colossus_fnc_Assess = {
     params ["_hq"];
     if (isNull _hq) exitWith {false};
@@ -526,6 +641,9 @@ ITW_CLASH_Colossus_fnc_Assess = {
     };
 
     private _plan = [_hq,_picture,_posture,_ratio] call ITW_CLASH_Colossus_fnc_Recommend;
+    // Carry the posture on the plan so the mirror writers need only the plan.
+    if (count _plan > 0) then {_plan set ["posture",_posture]};
+    ITW_CLASH_ColossusPlans set [toUpperANSI str (side _hq),_plan];
     [_hq,_posture,_plan] call ITW_CLASH_Colossus_fnc_Commit;
     true
 };
@@ -558,7 +676,7 @@ ITW_CLASH_Colossus_fnc_Assess = {
 
 ITW_CLASH_ColossusReady = true;
 diag_log format [
-    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 halPoolsUntouched=true",
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 halPoolsUntouched=true",
     ITW_CLASH_ColossusVersion,
     ITW_CLASH_ColossusAdvisoryOnly,
     ITW_CLASH_ColossusPoll,
@@ -571,6 +689,8 @@ diag_log format [
     ITW_CLASH_ColossusConsolidateAt,
     ITW_CLASH_ColossusReleaseAt,
     if (ITW_CLASH_ColossusAdvisoryOnly) then {"none-advisory"} else {"attack-defend"},
-    ITW_CLASH_ColossusOrderDwell
+    ITW_CLASH_ColossusOrderDwell,
+    ITW_CLASH_ColossusConcentrate,
+    ITW_CLASH_ColossusConcentrateMax
 ];
 true

@@ -240,7 +240,11 @@ def test_a_posture_change_is_reported_once():
 
 def test_the_version_and_boot_line_moved():
     source = colossus()
-    assert "ITW_CLASH_ColossusVersion = 3;" in source
+    # The exact number is pinned once, in test_colossus_concentration.py, so
+    # a version bump touches one test rather than two. Here it only has to be
+    # at or past the version that started issuing orders.
+    version = int(re.search(r"ITW_CLASH_ColossusVersion = (\d+);", source).group(1))
+    assert version >= 3, version
     assert "postures=PUSH,CONSOLIDATE" in source
     # v3 reports which it is doing rather than claiming it issues nothing, and
     # still says "none-advisory" when the kill switch is on.

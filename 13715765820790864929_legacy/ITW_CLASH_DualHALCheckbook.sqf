@@ -342,9 +342,22 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
         };
     } forEach +(keys ITW_CLASH_BLUFORObjectiveMirrors);
 
-    RydHQB_SimpleObjs = +_mirrors;
+    // COLOSSUS may narrow the candidate list before it is offered. This stays
+    // the sole writer of RydHQB_SimpleObjs; COLOSSUS returns the list
+    // unchanged with -1 when it has no opinion. Commander B's own picture
+    // decides, so the two commanders can concentrate on different objectives.
+    private _offered = +_mirrors;
+    if (!isNil "ITW_CLASH_Colossus_fnc_Concentrate") then {
+        ([ITW_CLASH_BLUFORHQ,_offered] call ITW_CLASH_Colossus_fnc_Concentrate) params [
+            "_colossusMirrors","_colossusMax"
+        ];
+        _offered = _colossusMirrors;
+        if (_colossusMax > 0) then {RydHQB_MaxSimpleObjs = _colossusMax};
+    };
+
+    RydHQB_SimpleObjs = +_offered;
     if (!isNull ITW_CLASH_BLUFORHQ) then {
-        ITW_CLASH_BLUFORHQ setVariable ["RydHQ_SimpleObjs",+_mirrors];
+        ITW_CLASH_BLUFORHQ setVariable ["RydHQ_SimpleObjs",+_offered];
     };
     _mirrors
 };

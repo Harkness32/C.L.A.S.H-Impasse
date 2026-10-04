@@ -584,8 +584,27 @@ ITW_CLASH_fnc_MirrorObjectives = {
     ITW_CLASH_LastHeldObjectives = +_heldIndices;
     private _commanderObjective = [_heldObjectives] call ITW_CLASH_fnc_SyncCommanderObjective;
 
+    /*
+        COLOSSUS may narrow the candidate list before it is offered.
+
+        This stays the sole writer of RydHQ_SimpleObjs; COLOSSUS only supplies
+        an opinion, and returns the list unchanged with -1 when it has none.
+        Narrowing is how "attack this one" is expressed, because HAL sorts
+        candidates by distance and truncates rather than scoring them.
+    */
+    private _offered = +_mirrors;
+    private _maxObjs = -1;
+    if (!isNil "ITW_CLASH_Colossus_fnc_Concentrate") then {
+        ([ITW_CLASH_HALHQ,_offered] call ITW_CLASH_Colossus_fnc_Concentrate) params [
+            "_colossusMirrors","_colossusMax"
+        ];
+        _offered = _colossusMirrors;
+        _maxObjs = _colossusMax;
+    };
+
     RydHQ_SimpleMode = true;
-    RydHQ_SimpleObjs = +_mirrors;
+    RydHQ_SimpleObjs = +_offered;
+    if (_maxObjs > 0) then {RydHQ_MaxSimpleObjs = _maxObjs};
     RydHQ_Taken = +_taken;
     if (_zoneChanged) then {
         RydHQ_NObj = 1;
@@ -593,8 +612,8 @@ ITW_CLASH_fnc_MirrorObjectives = {
 
     if (!isNull ITW_CLASH_HALHQ) then {
         ITW_CLASH_HALHQ setVariable ["RydHQ_SimpleMode",true];
-        ITW_CLASH_HALHQ setVariable ["RydHQ_SimpleObjs",+_mirrors];
-        ITW_CLASH_HALHQ setVariable ["RydHQ_Objectives",+_mirrors];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_SimpleObjs",+_offered];
+        ITW_CLASH_HALHQ setVariable ["RydHQ_Objectives",+_offered];
         ITW_CLASH_HALHQ setVariable ["RydHQ_Taken",+_taken];
         if (_zoneChanged) then {
             ITW_CLASH_HALHQ setVariable ["RydHQ_NObj",1];
