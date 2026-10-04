@@ -109,3 +109,40 @@ def test_it_is_loaded_scheduled():
     init = text("init.sqf")
     assert '[] execVM "ITW_CLASH_HALCargoDiceFix.sqf";' in init
     assert "hal-cargo-dice-fix-missing" in init
+
+
+
+def test_same_live_impasse_base_can_fast_embark_ai_infantry():
+    source = fix()
+    body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
+    resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
+
+    assert "ITW_CLASH_HALCargoDiceFixVersion = 2;" in source
+    assert "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase" in resolver
+    assert "ITW_CLASH_ServiceHome_fnc_BaseValidForSide" in resolver
+    assert "ITW_Bases#_baseIndex#ITW_BASE_POS" in resolver
+    assert "ITW_CLASH_BaseEmbarkRadius" in resolver
+    assert "_carrierBase != _troopBase" in body
+    assert '(_vehicle emptyPositions "Cargo") < count _troops' in body
+    assert "_x assignAsCargo _vehicle;" in body
+    assert "_x moveInCargo _vehicle;" in body
+    assert "isPlayer _x" in body
+    assert 'ITW_CLASH_Withdrawing' in body
+
+
+def test_scargo_fastpath_is_only_for_normal_crewed_transport_and_falls_back_cleanly():
+    source = fix()
+    assert 'not (_withdraw) and not (_request) and not (_emptyV)' in source
+    assert 'SCargo-base-embark-entry' in source
+    assert 'SCargo-base-embark-physical-fallback' in source
+    assert 'not (_clashBaseEmbarked) and (((_ChosenOne emptyPositions "Cargo") > 0)' in source
+    assert 'remoteExecCall ["RYD_MP_unassignVehicle",0]' in source
+    assert 'base-embark-fastpath' in source
+
+
+def test_base_embark_uses_live_base_arrays_not_cached_coordinates():
+    source = fix()
+    resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
+    assert "ITW_Bases#_baseIndex#ITW_BASE_POS" in resolver
+    assert "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase" in resolver
+    assert "ServiceBaseHint" not in resolver
