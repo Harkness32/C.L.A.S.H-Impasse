@@ -183,3 +183,70 @@ def test_version_and_boot_line_report_concentration():
     assert "ITW_CLASH_ColossusVersion = 4;" in source
     assert "concentrate=%14/%15" in source
     assert '"ITW_CLASH_ColossusConcentrateMax",1' in source
+
+
+# --- holding what we took ------------------------------------------------
+
+def test_concentration_waits_for_held_ground_to_be_anchored():
+    """Hark: "how will we make sure it won't leave the other, newly captured,
+    defenceless."
+
+    Four things already prevent defenceless: HAL's defence reads RydHQ_Taken
+    rather than the candidate list (HQOrdersDef.sqf:171), an anchored group is
+    leashed to its position (HAC_fnc.sqf:1593), HQOrdersDef is not suppressed
+    by an ATTACK order, and RydHQ_CRDefRes withholds a reserve.
+
+    What concentration CAN do is starve the anchor refill, since the refill and
+    the attack draw on the same free groups - leaving ground HAL routes
+    defenders past but nothing actually holds. So the next objective waits
+    until the last one is anchored.
+    """
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_Concentrate"))
+    assert "ITW_CLASH_ColossusRequireAnchored" in body
+    assert "ITW_CLASH_Colossus_fnc_HoldingUnanchored" in body
+    assert "holding-unanchored" in body
+
+
+def test_the_anchor_gate_runs_before_the_objective_is_chosen():
+    # Declining for unanchored ground must not depend on which objective was
+    # picked; it is a reason not to concentrate at all.
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_Concentrate"))
+    assert body.index("holding-unanchored") < body.index("fnc_ResolveMirror")
+
+
+def test_it_reads_both_commanders_anchor_registries():
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_HoldingUnanchored"))
+    assert "ITW_CLASH_CommanderParity_AnchorGroups" in body
+    assert "ITW_CLASH_AnchorGroups" in body
+    assert "ITW_CLASH_CommanderParity_Anchor_fnc_HeldObjectives" in body
+    assert "ITW_CLASH_fnc_GetHeldObjectives" in body
+
+
+def test_an_anchor_with_no_living_men_counts_as_unanchored():
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_HoldingUnanchored"))
+    assert "isNull _anchor" in body
+    assert "{alive _x} count units _anchor) == 0" in body
+
+
+def test_the_anchor_gate_fails_open():
+    """A missing registry reader is not evidence of an undefended objective."""
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_HoldingUnanchored"))
+    # Both unreadable paths exit with the empty list, i.e. nothing unanchored.
+    assert body.count("exitWith {}") == 2
+    assert 'isNil "ITW_CLASH_CommanderParity_Anchor_fnc_HeldObjectives"' in body
+    assert 'isNil "ITW_CLASH_fnc_GetHeldObjectives"' in body
+
+
+def test_the_anchor_gate_is_read_only():
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_HoldingUnanchored"))
+    assert "setVariable" not in body
+
+
+def test_the_relaxed_anchor_floor_is_what_makes_the_gate_releasable():
+    """With a flat floor of 6 the gate could deadlock: nothing qualifies, so the
+    objective stays unanchored and concentration never resumes. The relaxed
+    floor means a thin team eventually qualifies and the gate clears."""
+    patch = (MISSION / "ITW_CLASH_RuntimePatch.sqf").read_text(encoding="utf-8")
+    assert "ITW_CLASH_fnc_AnchorFloorFor" in patch
+    minimum = int(re.search(r'\["ITW_CLASH_AnchorFloorMinimum",(\d+)\]', patch).group(1))
+    assert minimum < 6, minimum

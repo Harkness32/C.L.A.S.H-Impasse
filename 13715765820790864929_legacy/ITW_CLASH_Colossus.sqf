@@ -145,6 +145,12 @@ ITW_CLASH_ColossusConcentrate = missionNamespace getVariable [
 ITW_CLASH_ColossusConcentrateMax = missionNamespace getVariable [
     "ITW_CLASH_ColossusConcentrateMax",1
 ];
+// Do not concentrate on a new objective while ground already held has no
+// anchor. Concentration cannot strip HAL's defence, but it can starve the
+// anchor refill of the groups it needs.
+ITW_CLASH_ColossusRequireAnchored = missionNamespace getVariable [
+    "ITW_CLASH_ColossusRequireAnchored",true
+];
 
 ITW_CLASH_ColossusPictures = createHashMap;
 // side key -> the last plan, so the mirror writers can ask what this
@@ -567,6 +573,56 @@ ITW_CLASH_Colossus_fnc_ResolveMirror = {
     an unobserved objective is how an army gets fed into something nobody
     scouted, so an unobserved choice declines rather than concentrates.
 */
+/*
+    Is any ground this commander already holds without an anchor?
+
+    Concentration cannot leave a captured objective undefended - HAL's defence
+    reads RydHQ_Taken, not the candidate list, and an anchored group is leashed
+    to its position by HAC_fnc.sqf:1593 - but it CAN starve the anchor refill,
+    because the refill and the attack draw on the same free groups. The result
+    is ground that HAL routes defenders past but nothing actually holds, which
+    is the VACANT state objective 3 sat in for an entire run.
+
+    So the rule is: take the next objective once the last one is held properly,
+    not before. This reads the anchor registries rather than keeping its own
+    record, and the two commanders genuinely have separate ones.
+
+    Fails open. If the registry for this commander cannot be read, the answer
+    is "nothing unanchored" and concentration proceeds, because a missing
+    reader is not evidence of an undefended objective.
+*/
+ITW_CLASH_Colossus_fnc_HoldingUnanchored = {
+    params ["_hq"];
+    if (isNull _hq) exitWith {[]};
+
+    private _isB = !isNil "ITW_CLASH_BLUFORHQ" && {_hq isEqualTo ITW_CLASH_BLUFORHQ};
+    private _held = [];
+    private _registry = createHashMap;
+
+    if (_isB) then {
+        if (isNil "ITW_CLASH_CommanderParity_Anchor_fnc_HeldObjectives") exitWith {};
+        _held = call ITW_CLASH_CommanderParity_Anchor_fnc_HeldObjectives;
+        _registry = missionNamespace getVariable [
+            "ITW_CLASH_CommanderParity_AnchorGroups",createHashMap
+        ];
+    } else {
+        if (isNil "ITW_CLASH_fnc_GetHeldObjectives") exitWith {};
+        _held = call ITW_CLASH_fnc_GetHeldObjectives;
+        _registry = missionNamespace getVariable ["ITW_CLASH_AnchorGroups",createHashMap];
+    };
+
+    private _unanchored = [];
+    {
+        private _index = _x#0;
+        private _entry = _registry getOrDefault [str _index,[]];
+        private _anchor = if (_entry isEqualTo []) then {grpNull} else {_entry#0};
+        if (isNull _anchor || {({alive _x} count units _anchor) == 0}) then {
+            _unanchored pushBack _index;
+        };
+    } forEach _held;
+    _unanchored
+};
+
 ITW_CLASH_Colossus_fnc_Concentrate = {
     params ["_hq","_mirrors"];
     private _pass = [_mirrors,-1];
@@ -587,6 +643,16 @@ ITW_CLASH_Colossus_fnc_Concentrate = {
         ["consolidating"] call _decline
     };
     if (!(_plan getOrDefault ["feasible",false])) exitWith {["short-of-force"] call _decline};
+
+    // Hold what we took before reaching for the next one.
+    if (ITW_CLASH_ColossusRequireAnchored) then {
+        private _unanchored = [_hq] call ITW_CLASH_Colossus_fnc_HoldingUnanchored;
+        if (_unanchored isNotEqualTo []) exitWith {
+            ["concentrate-declined",[_sign,"holding-unanchored",_unanchored]] call
+                ITW_CLASH_Colossus_fnc_Log;
+            _pass
+        };
+    };
 
     private _index = _plan getOrDefault ["objective",-1];
     private _mirror = [_mirrors,_index] call ITW_CLASH_Colossus_fnc_ResolveMirror;
@@ -676,7 +742,7 @@ ITW_CLASH_Colossus_fnc_Assess = {
 
 ITW_CLASH_ColossusReady = true;
 diag_log format [
-    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 halPoolsUntouched=true",
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 requireAnchored=%16 halPoolsUntouched=true",
     ITW_CLASH_ColossusVersion,
     ITW_CLASH_ColossusAdvisoryOnly,
     ITW_CLASH_ColossusPoll,
@@ -691,6 +757,7 @@ diag_log format [
     if (ITW_CLASH_ColossusAdvisoryOnly) then {"none-advisory"} else {"attack-defend"},
     ITW_CLASH_ColossusOrderDwell,
     ITW_CLASH_ColossusConcentrate,
-    ITW_CLASH_ColossusConcentrateMax
+    ITW_CLASH_ColossusConcentrateMax,
+    ITW_CLASH_ColossusRequireAnchored
 ];
 true
