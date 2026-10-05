@@ -9,11 +9,14 @@
 */
 
 private _swapped = [];
+CLASH_HALAdd_SourcePaths = createHashMap;
 {
 	_x params ["_global","_file"];
+	private _sourcePath = "\clash_hal_additions\hal\" + _file;
+	CLASH_HALAdd_SourcePaths set [_global,_sourcePath];
 	missionNamespace setVariable [
 		_global,
-		compile preprocessFileLineNumbers ("\clash_hal_additions\hal\" + _file)
+		compile preprocessFileLineNumbers _sourcePath
 	];
 	_swapped pushBack _global;
 } forEach [
