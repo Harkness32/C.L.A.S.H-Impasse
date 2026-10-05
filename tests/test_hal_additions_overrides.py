@@ -80,6 +80,7 @@ def test_paradrop_override_chain_is_runtime_self_proving():
     assert "ITW_CLASH_HALParadropReady" in attack
     assert "ITW_CLASH_HALParadrop_fnc_ShouldUse" in attack
     assert 'missionNamespace getVariable ["ITW_ParamHelisUnload",-999]' in attack
+    assert "CLASHHALADD | air-unload-waypoint" in attack
     assert "_clashParaAirCarrier" in attack
     assert "_clashParaInfantry" in attack
     assert "_clashParaCargoPlayer" in attack
