@@ -40,7 +40,7 @@ def test_ground_medevac_doctrine_gates_are_explicit():
         "ITW_CLASH_GroundMEDEVAC_EnemyClearance = 700;",
         "ITW_CLASH_GroundMEDEVAC_InboundAbortClearance = 500;",
         "ITW_CLASH_GroundMEDEVAC_ObjectiveClearance = 500;",
-        "ITW_CLASH_GroundMEDEVAC_MinEgressDistance = 900;",
+        "ITW_CLASH_GroundMEDEVAC_MinEgressDistance = 400;",
         "ITW_CLASH_GroundMEDEVAC_MaxPreferredEgressDistance = 3500;",
         "ITW_CLASH_GroundMEDEVAC_RallyOffset = 30;",
     ]
@@ -48,9 +48,11 @@ def test_ground_medevac_doctrine_gates_are_explicit():
         assert token in source
 
 
-def test_ground_medevac_requires_local_land_corridor_and_roadside_pickup():
+def test_ground_medevac_requires_forward_fob_land_spawn_and_roadside_pickup():
     source = ground_text()
-    assert '(_source find "support-corridor-land") != 0' in source
+    assert "ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn" in source
+    assert 'surfaceIsWater _spawnPos' in source
+    assert 'ITW_OBJ_V_SPAWN' in source
     assert "nearRoads ITW_CLASH_GroundMEDEVAC_RoadSearchRadius" in source
     assert "BIS_fnc_nearestPosition" in source
     assert "ITW_CLASH_GroundMEDEVAC_RallyOffset" in source
@@ -182,3 +184,36 @@ def test_ground_failure_restores_physical_foot_withdrawal():
     assert "_dismountDeadline = time + 8" in source
     assert "moveOut _" not in source
     assert "ITW_CLASH_GroundMEDEVAC_RetryCooldown = 120;" in source
+
+def test_ground_medevac_claims_both_arbitration_gates_before_spawn_can_yield():
+    main = text("ITW_CLASH_GroundMEDEVAC.sqf")
+    manager = text("ITW_CLASH_GroundMEDEVAC_Manager.sqf")
+    dispatch = manager.split("ITW_CLASH_GroundMEDEVAC_fnc_Dispatch = {", 1)[1].split(
+        "// Air/ground arbitration.", 1
+    )[0]
+
+    assert "ITW_CLASH_GroundMEDEVAC_Version = 3;" in main
+    ground_claim = '_group setVariable ["ITW_CLASH_GroundMEDEVAC_State","ground-spawning"];'
+    air_gate = '_group setVariable ["ITW_CLASH_CASEVAC_State","ground-spawning"];'
+    spawn = "] call ITW_CLASH_GroundMEDEVAC_fnc_SpawnVehicle;"
+    assert dispatch.index(ground_claim) < dispatch.index(spawn)
+    assert dispatch.index(air_gate) < dispatch.index(spawn)
+    assert '_group setVariable ["ITW_CLASH_GroundMEDEVAC_State",nil];' in dispatch
+    assert '_group setVariable ["ITW_CLASH_CASEVAC_State",nil];' in dispatch
+
+
+def test_ground_medevac_uses_shared_modular_capacity_estimator():
+    policy = text("ITW_CLASH_GroundMEDEVAC_VehiclePolicy.sqf")
+    assert "ITW_CLASH_GroundMEDEVAC_VehiclePolicyVersion = 3;" in policy
+    assert "ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats" in policy
+    assert "sharedCapacityEstimator=true" in policy
+
+
+def test_ground_medevac_fast_tracks_shattered_remnants_but_keeps_safety_gates():
+    manager = text("ITW_CLASH_GroundMEDEVAC_Manager.sqf")
+    assert 'getVariable ["ITW_CLASH_RemnantEvac",false]' in manager
+    assert "ITW_CLASH_RemnantEvacMinWithdrawalTime" in manager
+    assert "if (!_remnantEvac && {" in manager
+    assert "_moved < ITW_CLASH_GroundMEDEVAC_MinDisengageDistance" in manager
+    assert "_enemyDistance < ITW_CLASH_GroundMEDEVAC_EnemyClearance" in manager
+    assert "_objectiveClearance < ITW_CLASH_GroundMEDEVAC_ObjectiveClearance" in manager

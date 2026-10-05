@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPhase0Started",false]) exitWith {};
 
 ITW_CLASH_ReconPhase0Started = true;
-ITW_CLASH_ReconPhase0Version = 5;
+ITW_CLASH_ReconPhase0Version = 6;
 ITW_CLASH_ReconPollInterval = 2;
 ITW_CLASH_ReconActiveGroups = createHashMap;
 
@@ -305,7 +305,11 @@ ITW_CLASH_Recon_fnc_EndMission = {
     _group setVariable ["ITW_CLASH_PlayerNativeJobType",nil,true];
     _group setVariable ["ITW_CLASH_PlayerNativeJobCancelRequested",nil,true];
 
-    if (!isNil "ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState") then {
+    // Player employment is re-synced only for a player's recon job. The sync
+    // sets HAL's Unable from the group's player-task subscriptions, and an AI
+    // group has none, so syncing every recon squad benched them for good (the
+    // 2026-09-26 run lost 9 WEST squads this way: no attack, defence or rest).
+    if (_jobId isNotEqualTo "" && {!isNil "ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState"}) then {
         [_group,"native-recon-ended"] call
             ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
     };

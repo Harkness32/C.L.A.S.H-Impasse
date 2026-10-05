@@ -1175,7 +1175,49 @@ ITW_CLASH_EnemyAmmoHeloClasses = va_eHeliClasses select {
     getNumber (_cfg >> "transportAmmo") > 100
     || {getNumber (_cfg >> "slingLoadMaxCargoMass") > 0}
 };
+
+// GROUND_ATTACK_LIGHT / CAS_AIRCRAFT export.
+//
+// Revised: the first version of this export used va_pInfClassesForWeights
+// (infantry - wrong provider, this is a vehicle-billing pipeline that spawns
+// via ITW_AtkSpawnVeh) and va_pTankClasses (MBTs - not "light", and Impasse
+// tracks va_pApcClasses as an explicitly separate bucket from va_pTankClasses,
+// which the first pass missed entirely). Corrected to use Impasse's own
+// role-tagged Attack/Dual variants - va_p<Kind>ClassesAttack /
+// va_p<Kind>ClassesDual - which already are Impasse's authoritative "armed
+// and in the fight" rosters (driven by ITW_ParamAttack*SpawnAdjustment /
+// ITW_ParamTransport*SpawnAdjustment), so no config heuristic (weapons[]
+// checks, etc.) is needed for either capability - Impasse already decided
+// which classes count as attack-capable.
+//
+// GROUND_ATTACK_LIGHT: Apc + Car, Attack+Dual roles only, no Tank (heavy,
+// stays Impasse's own concern), no infantry. Explicitly subtracts
+// va_[pe]AAClasses - VehicleArrays.sqf:420-421/425-426 push wheeled AA
+// vehicles into va_[pe]ApcClasses directly, so without this subtraction an
+// AA truck could get bought and registered as a ground-attack asset.
+ITW_CLASH_PlayerGroundAttackLightClasses = (
+    (+va_pApcClassesAttack) + (+va_pApcClassesDual)
+    + (+va_pCarClassesAttack) + (+va_pCarClassesDual)
+) - va_pAAClasses;
+ITW_CLASH_EnemyGroundAttackLightClasses = (
+    (+va_eApcClassesAttack) + (+va_eApcClassesDual)
+    + (+va_eCarClassesAttack) + (+va_eCarClassesDual)
+) - va_eAAClasses;
+
+// CAS_AIRCRAFT: Plane + Heli, Attack+Dual roles only - same reasoning, no
+// weapons[] heuristic needed since Impasse already separates these from the
+// Transport-role variants.
+ITW_CLASH_PlayerCASAircraftClasses = (
+    (+va_pPlaneClassesAttack) + (+va_pPlaneClassesDual)
+    + (+va_pHeliClassesAttack) + (+va_pHeliClassesDual)
+);
+ITW_CLASH_EnemyCASAircraftClasses = (
+    (+va_ePlaneClassesAttack) + (+va_ePlaneClassesDual)
+    + (+va_eHeliClassesAttack) + (+va_eHeliClassesDual)
+);
+
 ITW_CLASH_CapabilityPoolsReady = true;
+
 
 VEHICLE_ARRAYS_COMPLETE = true;
 

@@ -21,7 +21,7 @@ def test_casevac_requires_real_disengagement_before_dispatch():
     assert "ITW_CLASH_CASEVAC_MinDisengageDistance = 500;" in source
     assert "ITW_CLASH_CASEVAC_EnemyClearance = 650;" in source
     assert "ITW_CLASH_CASEVAC_ObjectiveClearance = 500;" in source
-    assert "ITW_CLASH_CASEVAC_MinEgressDistance = 1000;" in source
+    assert "ITW_CLASH_CASEVAC_MinEgressDistance = 400;" in source
     assert "_moved < ITW_CLASH_CASEVAC_MinDisengageDistance" in source
     assert "_enemyDistance < ITW_CLASH_CASEVAC_EnemyClearance" in source
     assert "_objectiveClearance < ITW_CLASH_CASEVAC_ObjectiveClearance" in source
@@ -105,3 +105,67 @@ def test_casevac_rear_handoff_never_deletes_loaded_survivors():
     assert '"rear-absorption-timeout"' in source
     assert '_heli land "GET OUT";' in source
     assert '_x action ["GetOut",_heli];' in source
+
+
+def test_casevac_claims_group_before_spawn_can_yield():
+    source = text("ITW_CLASH_CASEVAC.sqf")
+    dispatch = source.split("ITW_CLASH_CASEVAC_fnc_Dispatch = {", 1)[1].split(
+        "[] spawn {", 1
+    )[0]
+
+    assert "ITW_CLASH_CASEVAC_Version = 5;" in source
+    claim = '_group setVariable ["ITW_CLASH_CASEVAC_State","air-spawning"];'
+    spawn = "] call ITW_CLASH_CASEVAC_fnc_SpawnHeli;"
+    assert dispatch.index(claim) < dispatch.index(spawn)
+    assert dispatch.count('_group setVariable ["ITW_CLASH_CASEVAC_State",nil];') >= 2
+
+
+def test_casevac_prefers_smallest_sufficient_faction_helicopter_by_capacity():
+    source = text("ITW_CLASH_CASEVAC.sqf")
+    assert "ITW_CLASH_CASEVAC_Version = 5;" in source
+    assert "ITW_CLASH_ServiceCapacity_fnc_RankVariants" in source
+    assert '[_seatCount,_candidates,"AIR","CASEVAC"]' in source
+    assert "private _spawnDef = +_vehDef;" in source
+    assert "_spawnDef set [ITW_VEH_CLASSES,[_variant]];" in source
+    assert '"aircraft-selected"' in source
+    for hardcoded in ["Huron", "Chinook", "LittleBird", "GhostHawk"]:
+        assert hardcoded not in source
+
+
+def test_shattered_squads_use_formation_recovery_and_keep_casevac_compatibility():
+    formation = text("ITW_CLASH_FormationRecovery.sqf")
+    compat = text("ITW_CLASH_RemnantEvac.sqf")
+    casevac = text("ITW_CLASH_CASEVAC.sqf")
+    init = text("init.sqf")
+
+    assert "ITW_CLASH_FormationRecoveryVersion = 1;" in formation
+    assert '"ITW_CLASH_FormationRecoveryMaxShatteredSurvivors"' in formation
+    assert '"ITW_CLASH_FormationRecoveryMaxShatteredFraction"' in formation
+    assert '"ITW_CLASH_FormationRecoveryMinOriginalStrength"' in formation
+    assert '[_group,"shattered-squad"] call ITW_CLASH_fnc_StartWithdrawal' in formation
+    assert 'setVariable ["ITW_CLASH_Shattered",true,true]' in formation
+    assert 'getVariable ["ITW_CLASH_DeploymentRemnant",false]' in formation
+    assert 'getVariable ["ITW_CLASH_VehicleCrewGroup",false]' in formation
+    assert 'findIf {isPlayer _x}' in formation
+
+    # CASEVAC v5 still consumes the legacy projection. The canonical detector
+    # owns that projection until CASEVAC migrates in a later compatibility pass.
+    assert 'setVariable ["ITW_CLASH_RemnantEvac",true,true]' in formation
+    assert 'getVariable ["ITW_CLASH_RemnantEvac",false]' in casevac
+    assert "ITW_CLASH_RemnantEvacMinWithdrawalTime" in casevac
+    assert "if (!_remnantEvac && {" in casevac
+    assert "_moved < ITW_CLASH_CASEVAC_MinDisengageDistance" in casevac
+
+    # Shattered squads skip only the self-movement proof. Hot-zone safety remains.
+    assert "_enemyDistance < ITW_CLASH_CASEVAC_EnemyClearance" in casevac
+    assert "_objectiveClearance < ITW_CLASH_CASEVAC_ObjectiveClearance" in casevac
+
+    assert 'preprocessFileLineNumbers "ITW_CLASH_FormationRecovery.sqf"' in compat
+    assert 'execVM "ITW_CLASH_RemnantEvac.sqf"' in init
+
+
+def test_formation_recovery_source_delimiters_balance():
+    source = text("ITW_CLASH_FormationRecovery.sqf")
+    pairs = [("(", ")"), ("[", "]"), ("{", "}")]
+    for left, right in pairs:
+        assert source.count(left) == source.count(right)

@@ -2,7 +2,7 @@
 
 if (!isServer) exitWith {false};
 ITW_CLASH_SOFDoctrineVersion = 1;
-ITW_CLASH_SOFClassifierVersion = 2;
+ITW_CLASH_SOFClassifierVersion = 3;
 
 /*
     Shared SOF identity + C.L.A.S.H. anchor doctrine.
@@ -16,6 +16,22 @@ ITW_CLASH_SOFClassifierVersion = 2;
     formation must not turn the whole group into SpecFor. Automatic SOF identity
     therefore requires a majority of the formation template to resolve to the
     same SOF family. Explicit group policy still wins.
+
+    Classifier v3 also reads the identity every modpack already declares:
+    vanilla files recon, CTRG and Spetsnaz recon under
+    EdSubcat_Personnel_SpecialForces, and CUP, RHS, 3CB and most faction mods
+    reuse it or name theirs recon/SF/SOF/MARSOC/KSK. Checked against 6551
+    CfgGroups squads from vanilla, CUP, RHS, 3CB, BWMod and TFC: every squad
+    it marks is special forces. Snipers and spotters sit under the same
+    subcategory but stay HAL snipers.
+
+    SpecForG is withheld from HAL's attack, defense, capture and reserve
+    tasking, so a faction that is mostly special forces would leave its
+    commander nothing to fight with. Each side keeps at most
+    ITW_CLASH_SOFMaxShare of its groups as SOF, but never fewer than
+    ITW_CLASH_SOFMinTeams (HAL's raid odds only open up around four free
+    teams, HAC_fnc2.sqf:1203) and never more than half. Extra SOF-capable
+    groups fight as line infantry until a slot frees up.
 */
 
 ITW_CLASH_SOFTokenFamilies = [
@@ -30,8 +46,91 @@ ITW_CLASH_SOFClassPrefixes = [
     ["viper",["o_v_"]]
 ];
 
+// Words from the class name, display name, faction, editor subcategory and
+// vehicle class. Adjacent words are also joined, so "Special Forces",
+// "Force Recon" and "Delta Force" match as one word.
+ITW_CLASH_SOFGenericWords = [
+    "specialforces","specialoperations","specops","sf","sof",
+    "recon","menrecon","forcerecon","marsoc","ksk","deltaforce",
+    "especas","spetsnaz","ctrg","commando","commandos"
+];
+ITW_CLASH_SOFSniperWords = ["sniper","snipers","spotter","ghillie","mensniper"];
+
+ITW_CLASH_SOFMaxShare = missionNamespace getVariable ["ITW_CLASH_SOFMaxShare",0.25];
+ITW_CLASH_SOFMinTeams = missionNamespace getVariable ["ITW_CLASH_SOFMinTeams",4];
+
 if (isNil "ITW_CLASH_SOFExactClasses") then {ITW_CLASH_SOFExactClasses = []};
 if (isNil "ITW_CLASH_SOFDoctrineLogged") then {ITW_CLASH_SOFDoctrineLogged = []};
+ITW_CLASH_SOFClassFamilyCache = createHashMap;
+
+// SOF families one unit class belongs to, from its config identity. Cached.
+ITW_CLASH_SOF_fnc_ClassFamilies = {
+    params ["_className"];
+    private _key = toLowerANSI _className;
+    private _cached = ITW_CLASH_SOFClassFamilyCache get _key;
+    if (!isNil "_cached") exitWith {_cached};
+
+    private _cfg = configFile >> "CfgVehicles" >> _className;
+    private _identity = toLowerANSI ([
+        _className,
+        getText (_cfg >> "displayName"),
+        getText (_cfg >> "faction"),
+        getText (_cfg >> "editorSubcategory"),
+        getText (_cfg >> "vehicleClass")
+    ] joinString " ");
+    private _words = _identity splitString " _-/\\.:()[]{},";
+    private _pairs = [];
+    for "_i" from 0 to ((count _words) - 2) do {
+        private _first = _words#_i;
+        private _second = _words#(_i + 1);
+        if ((count _first) >= 3 && {(count _second) >= 3}) then {
+            _pairs pushBack (_first + _second);
+        };
+    };
+    _words append _pairs;
+
+    private _families = [];
+    {
+        _x params ["_family","_prefixes"];
+        if ((_prefixes findIf {(_key find _x) == 0}) >= 0) then {
+            _families pushBackUnique _family;
+        };
+    } forEach ITW_CLASH_SOFClassPrefixes;
+    {
+        _x params ["_family","_aliases"];
+        if ((_aliases findIf {_x in _words}) >= 0) then {
+            _families pushBackUnique _family;
+        };
+    } forEach ITW_CLASH_SOFTokenFamilies;
+    if (
+        (ITW_CLASH_SOFGenericWords findIf {_x in _words}) >= 0 &&
+        {(ITW_CLASH_SOFSniperWords findIf {_x in _words}) < 0}
+    ) then {
+        _families pushBackUnique "special-forces";
+    };
+
+    ITW_CLASH_SOFClassFamilyCache set [_key,_families];
+    _families
+};
+
+// [slot free, SOF groups held by the side (not counting _group), cap, side groups]
+ITW_CLASH_SOF_fnc_SideSlot = {
+    params ["_group"];
+    private _side = side _group;
+    private _groups = [];
+    {
+        _groups append (missionNamespace getVariable [_x,[]]);
+    } forEach ["ITW_CLASH_ManagedGroups","ITW_CLASH_DualHALBLUFORGroups","ITW_CLASH_DualHALOPFORExtraGroups"];
+    _groups = (_groups arrayIntersect _groups) select {
+        !isNull _x && {side _x == _side} && {({alive _x} count units _x) > 0}
+    };
+    private _total = count _groups;
+    private _cap = (ITW_CLASH_SOFMinTeams max (floor (ITW_CLASH_SOFMaxShare * _total))) min (floor (_total / 2));
+    private _held = {
+        _x != _group && {_x getVariable ["ITW_CLASH_ReconSOFLatched",false]}
+    } count _groups;
+    [_held < _cap,_held,_cap,_total]
+};
 
 ITW_CLASH_SOF_fnc_Classify = {
     params ["_group"];
@@ -95,49 +194,15 @@ ITW_CLASH_SOF_fnc_Classify = {
         };
     };
 
+    private _familyCounts = createHashMap;
     {
-        _x params ["_family","_prefixes"];
-        private _matched = 0;
         {
-            private _class = toLowerANSI _x;
-            if ((_prefixes findIf {(_class find _x) == 0}) >= 0) then {
-                _matched = _matched + 1;
-            };
-        } forEach _sourceClasses;
-        if (_matched > 0) then {
-            _candidates pushBack [_family,_matched];
-        };
-    } forEach ITW_CLASH_SOFClassPrefixes;
-
+            _familyCounts set [_x,(_familyCounts getOrDefault [_x,0]) + 1];
+        } forEach ([_x] call ITW_CLASH_SOF_fnc_ClassFamilies);
+    } forEach _sourceClasses;
     {
-        _x params ["_family","_aliases"];
-        private _matched = 0;
-        {
-            private _className = _x;
-            private _cfg = configFile >> "CfgVehicles" >> _className;
-            private _identity = toLowerANSI ([
-                _className,
-                getText (_cfg >> "displayName"),
-                getText (_cfg >> "faction"),
-                getText (_cfg >> "editorSubcategory"),
-                getText (_cfg >> "vehicleClass")
-            ] joinString " ");
-            private _words = _identity splitString " _-/\\.:()[]{}";
-            if ((_aliases findIf {_x in _words}) >= 0) then {
-                _matched = _matched + 1;
-            };
-        } forEach _sourceClasses;
-        if (_matched > 0) then {
-            private _existing = _candidates findIf {(_x#0) isEqualTo _family};
-            if (_existing >= 0) then {
-                if (_matched > ((_candidates#_existing)#1)) then {
-                    _candidates set [_existing,[_family,_matched]];
-                };
-            } else {
-                _candidates pushBack [_family,_matched];
-            };
-        };
-    } forEach ITW_CLASH_SOFTokenFamilies;
+        _candidates pushBack [_x,_y];
+    } forEach _familyCounts;
 
     private _minimum = if (_sourceCount <= 2) then {
         _sourceCount
@@ -158,15 +223,38 @@ ITW_CLASH_SOF_fnc_Classify = {
     private _isSOF = _qualifying isNotEqualTo [];
     private _family = "non-sof";
     if (_isSOF) then {
-        _family = if ((count _qualifying) > 1) then {"mixed-sof"} else {(_qualifying#0)#0};
+        // A named family (seal, viper...) labels the group over the generic one.
+        private _named = _qualifying select {(_x#0) != "special-forces"};
+        private _labelled = if (_named isNotEqualTo []) then {_named} else {_qualifying};
+        _family = if ((count _labelled) > 1) then {"mixed-sof"} else {(_labelled#0)#0};
         private _bestQualified = 0;
         {
             if ((_x#1) > _bestQualified) then {
                 _bestQualified = _x#1;
-                if ((count _qualifying) == 1) then {_family = _x#0};
             };
         } forEach _qualifying;
         _bestCount = _bestQualified;
+    };
+
+    // Side cap, and never pull a group off an objective it is anchoring.
+    if (_isSOF) then {
+        private _slot = [_group] call ITW_CLASH_SOF_fnc_SideSlot;
+        private _anchorObjective = _group getVariable ["ITW_CLASH_AnchorObjective",-1];
+        if (!(_slot#0) || {_anchorObjective >= 0}) then {
+            if !(_group getVariable ["ITW_CLASH_SOFHeldLogged",false]) then {
+                _group setVariable ["ITW_CLASH_SOFHeldLogged",true];
+                ["sof-doctrine-held-conventional",[
+                    [_group] call ITW_CLASH_fnc_GroupId,
+                    _family,
+                    _slot#1,
+                    _slot#2,
+                    _slot#3,
+                    _anchorObjective
+                ]] call ITW_CLASH_fnc_Log;
+            };
+            _isSOF = false;
+            _family = "held-conventional";
+        };
     };
 
     _group setVariable ["ITW_CLASH_ReconSOF",_isSOF];
@@ -257,9 +345,11 @@ ITW_CLASH_fnc_AuditAnchors = {
 };
 
 diag_log format [
-    "CLASH BOOT | sof-doctrine-ready | version=%1 classifier=%2 compositionBased=true spawnArchetypePreferred=true majorityRequired=true latched=true anchors=false emergencyFallback=false",
+    "CLASH BOOT | sof-doctrine-ready | version=%1 classifier=%2 compositionBased=true spawnArchetypePreferred=true majorityRequired=true latched=true anchors=false emergencyFallback=false configIdentity=true maxShare=%3 minTeams=%4",
     ITW_CLASH_SOFDoctrineVersion,
-    ITW_CLASH_SOFClassifierVersion
+    ITW_CLASH_SOFClassifierVersion,
+    ITW_CLASH_SOFMaxShare,
+    ITW_CLASH_SOFMinTeams
 ];
 
 true

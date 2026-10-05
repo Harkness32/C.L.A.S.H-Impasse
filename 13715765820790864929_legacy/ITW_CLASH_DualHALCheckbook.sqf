@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 5;
+ITW_CLASH_DualHALCheckbookVersion = 6;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -15,6 +15,15 @@ ITW_CLASH_DualHALBLUFORGroups = [];
 ITW_CLASH_DualHALOPFORExtraGroups = [];
 ITW_CLASH_CheckbookAssets = [];
 ITW_CLASH_CheckbookRequestSerial = 0;
+
+private _serviceCapacityPolicyLoaded = false;
+if (fileExists "ITW_CLASH_ServiceCapacityPolicy.sqf") then {
+    _serviceCapacityPolicyLoaded = call compile preprocessFileLineNumbers
+        "ITW_CLASH_ServiceCapacityPolicy.sqf";
+};
+if !(_serviceCapacityPolicyLoaded isEqualTo true) then {
+    diag_log "CLASH BOOT | service-capacity-policy-missing | transport selection falls back to legacy order";
+};
 
 ITW_CLASH_DualHAL_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -113,6 +122,97 @@ ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter = {
     if (!isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide}) then {_supported = true};
     if (!isNil "ITW_EnemySide" && {side _group == ITW_EnemySide}) then {_supported = true};
     _supported
+};
+
+ITW_CLASH_DualHAL_fnc_MarkVehicleCrew = {
+    params ["_group","_veh",["_source","vehicle"]];
+    if (isNull _group) exitWith {false};
+    _group setVariable ["ITW_CLASH_VehicleCrewGroup",true];
+    _group setVariable ["ITW_CLASH_CrewVehicle",_veh];
+    _group setVariable ["ITW_CLASH_CrewSource",_source];
+    {
+        _x setVariable ["ITW_CLASH_VehicleCrewUnit",true];
+    } forEach units _group;
+    true
+};
+
+// HAL's class autofill counts only transportSoldier seats as cargo, so an
+// unarmed Prowler (every passenger seat is fire-from-vehicle) lands in its car
+// list and HAL sends ammo trucks to it. An unarmed vehicle with passenger
+// seats goes on HAL's own non-combat cargo list (RHQ_NCCargo), which keeps it
+// out of HAL's attacks and ammo runs and marks it as lift. Weapons are read
+// from the live vehicle: stripped magazines leave the weapons, so an armed
+// class used as a disarmed transport is never listed.
+ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL = {
+    params ["_veh"];
+    if (isNull _veh || {isNil "RHQ_NCCargo"}) exitWith {false};
+    private _class = toLowerANSI (typeOf _veh);
+    if (_class in RHQ_NCCargo) exitWith {false};
+
+    private _weaponMags = (magazinesAllTurrets _veh) select {
+        private _name = toLowerANSI (_x#0);
+        !("smoke" in _name) && {!("flare" in _name)} && {!("laserbatteries" in _name)}
+    };
+    if (_weaponMags isNotEqualTo [] || {((getPylonMagazines _veh) - [""]) isNotEqualTo []}) exitWith {false};
+
+    private _weapons = _veh weaponsTurret [-1];
+    {_weapons append (_veh weaponsTurret _x)} forEach allTurrets [_veh,false];
+    private _combat = _weapons findIf {
+        private _weapon = _x;
+        (["CarHorn","SmokeLauncher","CMFlareLauncher","Laserdesignator_mounted"] findIf {
+            _weapon isKindOf [_x,configFile >> "CfgWeapons"]
+        }) < 0
+    };
+    if (_combat >= 0) exitWith {false};
+
+    private _seats = count (fullCrew [_veh,"cargo",true])
+        + count ((fullCrew [_veh,"turret",true]) select {_x#4});
+    if (_seats == 0) exitWith {false};
+
+    RHQ_NCCargo pushBackUnique _class;
+    ["hal-noncombat-cargo-class",[_class,_seats]] call ITW_CLASH_DualHAL_fnc_Log;
+    true
+};
+
+ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine = {
+    params ["_group",["_enabled",true],["_source","transport"]];
+    if (isNull _group) exitWith {false};
+
+    private _suffixes = ["CargoOnly","NoAttack","NoRecon","NoDef"];
+    if (_enabled) then {
+        _group setVariable ["ITW_CLASH_HALTransportOnly",true];
+        _group setVariable ["ITW_CLASH_HALTransportDoctrineSource",_source];
+
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,_suffixes,true] call
+                ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        } else {
+            private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+            if (!isNull _hq) then {
+                {
+                    private _name = "RydHQ_" + _x;
+                    private _arr = +(_hq getVariable [_name,[]]);
+                    _arr pushBackUnique _group;
+                    _hq setVariable [_name,_arr];
+                } forEach _suffixes;
+            };
+        };
+
+        private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+        if (!isNull _hq) then {
+            private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
+            _cargo pushBackUnique _group;
+            _hq setVariable ["RydHQ_CargoG",_cargo];
+        };
+    } else {
+        _group setVariable ["ITW_CLASH_HALTransportOnly",nil];
+        _group setVariable ["ITW_CLASH_HALTransportDoctrineSource",nil];
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,_suffixes,false] call
+                ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        };
+    };
+    true
 };
 
 ITW_CLASH_DualHAL_fnc_RegisterGroup = {
@@ -502,6 +602,118 @@ ITW_CLASH_DualHAL_fnc_TrackAsset = {
     true
 };
 
+// Engine's own anti-armour designation: CfgAmmo aiAmmoUsageFlags bit 512
+// ("64 + 128 + 512" style text or a number), checked on the ammo and its
+// submunition so tank guns, IFV APFSDS, ATGMs and AT rockets all qualify.
+ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo = {
+    params ["_ammo"];
+    private _flagsOf = {
+        params ["_entry"];
+        if (isNumber _entry) exitWith {getNumber _entry};
+        private _sum = 0;
+        {_sum = _sum + parseNumber _x} forEach ((getText _entry) splitString "+ ");
+        _sum
+    };
+    private _config = configFile >> "CfgAmmo" >> _ammo;
+    private _flags = [_config >> "aiAmmoUsageFlags"] call _flagsOf;
+    if ((floor (_flags / 512)) mod 2 == 1) exitWith {true};
+    private _sub = _config >> "submunitionAmmo";
+    if !(isText _sub) exitWith {false};
+    _flags = [configFile >> "CfgAmmo" >> getText _sub >> "aiAmmoUsageFlags"] call _flagsOf;
+    (floor (_flags / 512)) mod 2 == 1
+};
+
+// Echelon rule (both sides): artillery and anything that can kill a tank
+// (IFVs and above, AT carriers, AT-armed aircraft) stage at the rear FOB;
+// APCs and lighter stage forward. Decided from the spawned vehicle's real
+// weapons, not its ITW row: ITW fills a car-typed dual row with APC/IFV
+// classes when a faction has no dual cars, which sent IFVs forward.
+ITW_CLASH_DualHAL_fnc_IsRearEchelon = {
+    params ["_veh",["_context","field-handoff"]];
+    if (isNull _veh) exitWith {false};
+    private _class = typeOf _veh;
+    private _reason = "";
+    if (getNumber (configFile >> "CfgVehicles" >> _class >> "artilleryScanner") == 1) then {
+        _reason = "artillery-scanner";
+    };
+    if (_reason == "" && {_class in (
+        (missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryClasses",[]])
+        + (missionNamespace getVariable ["ITW_CLASH_EnemyArtilleryClasses",[]])
+    )}) then {
+        _reason = "artillery-class";
+    };
+    // [magazine, turret path, rounds]; pylon magazines carry path "pylon".
+    private _entries = ((magazinesAllTurrets _veh) apply {[_x#0,_x#1,_x#2]}) select {_x#0 != ""};
+    {_entries pushBack [_x,"pylon",-1]} forEach ((getPylonMagazines _veh) - [""]);
+    private _decider = [];
+    if (_reason == "") then {
+        private _index = _entries findIf {
+            [getText (configFile >> "CfgMagazines" >> _x#0 >> "ammo")] call
+                ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo
+        };
+        if (_index >= 0) then {
+            _decider = _entries#_index;
+            _reason = "anti-armour-magazine";
+        };
+    };
+    [_veh,_context,_reason,_decider,_entries] call ITW_CLASH_DualHAL_fnc_LogEchelon;
+    _reason != ""
+};
+
+// Diagnostic: in the 2026-09-25 peer run identical classes split between
+// rear and forward (Rhino 4/6, Panther 5/13, unarmed Huron rear 2/4). Logs
+// the deciding magazine, its turret and who sits there, beside the verdict
+// the class config alone gives; "echelon-mismatch" marks a live-state cause.
+ITW_CLASH_DualHAL_fnc_LogEchelon = {
+    params ["_veh","_context","_reason","_decider","_entries"];
+    private _cfg = configFile >> "CfgVehicles" >> typeOf _veh;
+    private _configMags = getArray (_cfg >> "magazines");
+    private _walk = {
+        params ["_turrets"];
+        {
+            if (getNumber (_x >> "isPersonTurret") == 0) then {
+                _configMags append getArray (_x >> "magazines");
+            };
+            [_x >> "Turrets"] call _walk;
+        } forEach ("true" configClasses _turrets);
+    };
+    [_cfg >> "Turrets"] call _walk;
+    _configMags = _configMags arrayIntersect _configMags;
+    private _configIndex = _configMags findIf {
+        [getText (configFile >> "CfgMagazines" >> _x >> "ammo")] call
+            ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo
+    };
+    private _configMag = if (_configIndex >= 0) then {_configMags#_configIndex} else {""};
+
+    private _deciderAmmo = "";
+    private _deciderSeat = [];
+    if (_decider isNotEqualTo []) then {
+        _deciderAmmo = getText (configFile >> "CfgMagazines" >> _decider#0 >> "ammo");
+        private _seats = fullCrew [_veh,"",true];
+        private _seat = _seats findIf {(_x#3) isEqualTo (_decider#1)};
+        if (_seat >= 0) then {
+            (_seats#_seat) params ["_unit","_role","","","_personTurret"];
+            _deciderSeat = [_role,_personTurret,if (isNull _unit) then {""} else {typeOf _unit}];
+        };
+    };
+
+    private _artillery = _reason in ["artillery-scanner","artillery-class"];
+    private _mismatch = !_artillery && {
+        (_reason == "" && {_configIndex >= 0})
+        || {_reason != "" && {(_decider#1) isNotEqualTo "pylon"} && {_configIndex < 0}}
+    };
+    private _names = _entries apply {_x#0};
+    [if (_mismatch) then {"echelon-mismatch"} else {"echelon-decided"},[
+        [group effectiveCommander _veh] call ITW_CLASH_DualHAL_fnc_GroupId,
+        _context,typeOf _veh,_reason != "",_reason,
+        _decider,_deciderAmmo,_deciderSeat,
+        _configIndex >= 0,_configMag,
+        local _veh,count crew _veh,
+        count ((fullCrew [_veh,"turret",false]) select {_x#4}),
+        count _entries,_names arrayIntersect _names
+    ]] call ITW_CLASH_DualHAL_fnc_Log;
+};
+
 ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
     params ["_vehInfo"];
     if !(_vehInfo isEqualType [] && {count _vehInfo > VEHINFO_CARGO_GRPS}) exitWith {[]};
@@ -510,78 +722,41 @@ ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
     private _crewGroup = _vehInfo#VEHINFO_CREW_GRP;
     if (isNull _veh || {isNull _crewGroup}) exitWith {[]};
 
-    private _vehType = _vehInfo#VEHINFO_TYPE;
-    private _class = typeOf _veh;
-    private _artilleryClasses = if (
-        !isNil "ITW_PlayerSide" && {side _crewGroup == ITW_PlayerSide}
-    ) then {
-        missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryClasses",[]]
-    } else {
-        missionNamespace getVariable ["ITW_CLASH_EnemyArtilleryClasses",[]]
-    };
-    private _isArtillery = _class in _artilleryClasses;
-
-    private _profile = if (_isArtillery) then {
-        "INTERSTITIAL"
-    } else {
-        if (_vehType in [ITW_TYPE_VEH_TANK,ITW_TYPE_VEH_APC]) then {
-            "REAR"
-        } else {
-            "FORWARD"
-        }
-    };
-
-    if (_profile == "FORWARD") exitWith {
+    private _air = _veh isKindOf "Air";
+    if !([_veh] call ITW_CLASH_DualHAL_fnc_IsRearEchelon) exitWith {
         [
             side _crewGroup,
-            if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"},
+            if (_air) then {"AIR"} else {"GROUND"},
             getPosATL _veh
         ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn
     };
 
+    // Assigned, then returned at function scope: an exitWith inside the
+    // `then` block only left that block, so a resolved rear node was
+    // discarded and every armor hand-off fell through to native origin.
+    private _rear = [];
     if (!isNil "ITW_CLASH_Generation_fnc_Resolve") then {
         private _resolved = [
             side _crewGroup,
-            if (_isArtillery) then {"ARTILLERY"} else {"FIELD_ARMOR"},
-            _profile,
+            "FIELD_ARMOR",
+            if (_air) then {"REAR_AIR"} else {"REAR"},
             getPosATL _veh
         ] call ITW_CLASH_Generation_fnc_Resolve;
         if (_resolved isEqualType createHashMap && {
             (_resolved getOrDefault ["status",""]) == "RESOLVED"
-        }) exitWith {
-            private _baseIndex = if (_profile == "REAR") then {
-                _resolved getOrDefault ["rearBase",-1]
-            } else {
-                _resolved getOrDefault ["forwardBase",-1]
-            };
-            [
+        }) then {
+            _rear = [
                 +(_resolved getOrDefault ["origin",[]]),
-                _baseIndex,
+                _resolved getOrDefault ["rearBase",-1],
                 _resolved getOrDefault ["objective",-1],
-                format [
-                    "field-%1-%2",
-                    toLowerANSI _profile,
-                    _resolved getOrDefault ["source","generation-node"]
-                ]
-            ]
+                "field-rear-" + (_resolved getOrDefault ["source","generation-node"])
+            ];
         };
     };
+    if (_rear isNotEqualTo []) exitWith {_rear};
 
-    // Never deliberately fall artillery back into a protected FOB when the
-    // interstitial geometry cannot be resolved. Preserve its native physical
-    // origin and let HAL own tactical employment from there.
-    if (_isArtillery) exitWith {
-        [
-            getPosATL _veh,
-            -1,
-            VAR_GET_OBJ_IDX(_crewGroup),
-            "field-interstitial-unresolved-native-origin"
-        ]
-    };
-
-    // Rear armor resolution should normally be available once ForceGeneration
-    // is live. Fail open to native field position instead of moving heavy armor
-    // forward in violation of the echelon contract.
+    // Never fail forward: keep the native home-base origin so the vehicle
+    // paths to the front like any other rear-echelon asset.
     [
         getPosATL _veh,
         -1,
@@ -663,28 +838,25 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     _veh setVariable ["ITW_CLASH_DualHALManaged",true];
 
     private _role = _vehInfo#VEHINFO_ROLE;
-    if (_role in [ITW_VEH_ROLE_TRANSPORT,ITW_VEH_ROLE_DUAL]) then {
+    private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
+    private _transportDeployment = _role == ITW_VEH_ROLE_TRANSPORT || {
+        _role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}
+    };
+
+    [_crewGroup,_veh,"impasse-field"] call ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    [_veh] call ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL;
+
+    if (_transportDeployment) then {
+        [_crewGroup,true,"impasse-field"] call
+            ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+    };
+
+    if (_veh isKindOf "Air") then {
         private _hq = [_crewGroup] call ITW_CLASH_fnc_GetCommanderForGroup;
         if (!isNull _hq) then {
-            private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
-            _cargo pushBackUnique _crewGroup;
-            _hq setVariable ["RydHQ_CargoG",_cargo];
-
-            private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-            _cargoOnly pushBackUnique _crewGroup;
-            _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
-
-            {
-                private _arr = +(_hq getVariable [_x,[]]);
-                _arr pushBackUnique _crewGroup;
-                _hq setVariable [_x,_arr];
-            } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
-
-            if (_veh isKindOf "Air") then {
-                private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
-                _air pushBackUnique _crewGroup;
-                _hq setVariable ["RydHQ_AirG",_air];
-            };
+            private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
+            _air pushBackUnique _crewGroup;
+            _hq setVariable ["RydHQ_AirG",_air];
         };
     };
 
@@ -736,6 +908,19 @@ ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {
         VAR_SET_OBJ_IDX(_crewGroup,-1);
         [_crewGroup,"managed-vehicle-migration"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
         _veh setVariable ["ITW_CLASH_DualHALManaged",true];
+        [_crewGroup,_veh,"managed-vehicle-migration"] call
+            ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+        [_veh] call ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL;
+
+        private _role = _vehInfo#VEHINFO_ROLE;
+        private _dualAsTransport = _vehInfo param [VEHINFO_IS_DUAL_AS_TRANSPORT,false];
+        if (
+            _role == ITW_VEH_ROLE_TRANSPORT
+            || {_role == ITW_VEH_ROLE_DUAL && {_dualAsTransport}}
+        ) then {
+            [_crewGroup,true,"managed-vehicle-migration"] call
+                ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+        };
 
         private _vehDef = _veh getVariable ["ITW_VehDef",[]];
         [_veh,_vehDef,"managed-vehicle-migration"] call ITW_CLASH_DualHAL_fnc_TrackAsset;
@@ -792,6 +977,37 @@ ITW_CLASH_Checkbook_fnc_SelectTransportDefs = {
     },"ASCEND"] call BIS_fnc_sortBy
 };
 
+ITW_CLASH_Checkbook_fnc_RankTransportVariants = {
+    params ["_side","_mode","_seatCount"];
+    private _defs = [_side,_mode,_seatCount] call
+        ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
+    if (_defs isEqualTo []) exitWith {[]};
+
+    if (
+        missionNamespace getVariable ["ITW_CLASH_ServiceCapacityPolicyReady",false]
+        && {!isNil "ITW_CLASH_ServiceCapacity_fnc_RankVariants"}
+    ) exitWith {
+        [_seatCount,_defs,_mode,"TRANSPORT"] call
+            ITW_CLASH_ServiceCapacity_fnc_RankVariants
+    };
+
+    private _fallback = [];
+    {
+        private _vehDef = _x;
+        {
+            private _class = if (_x isEqualType []) then {
+                if (_x isEqualTo []) then {""} else {_x#0}
+            } else {_x};
+            if (_class isEqualTo "") then {continue};
+            _fallback pushBack [
+                0,_vehDef,_x,_class,-1,false,
+                _vehDef#ITW_VEH_REQD_TICKETS,0
+            ];
+        } forEach (_vehDef#ITW_VEH_CLASSES);
+    } forEach _defs;
+    _fallback
+};
+
 ITW_CLASH_Checkbook_fnc_GetCrewTypes = {
     params ["_side"];
     private _friendly = !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide};
@@ -806,13 +1022,33 @@ ITW_CLASH_Checkbook_fnc_GetCrewTypes = {
     } else {
         call FACTION_UNIT_FALLBACK_SUBF_OPF
     };
-    private _unitTypes = ([_factions,["Crewman","Diver"],true,_fallback] call FactionUnits) apply {
+    private _rawUnitTypes = ([_factions,["Crewman","Diver"],true,_fallback] call FactionUnits) apply {
         toLowerANSI _x
     };
-    private _crewTypes = ([
+    private _rawCrewTypes = ([
         _factions,["Crewman"],false,call FACTION_UNIT_FALLBACK_ROLE_REQ
     ] call FactionUnits) apply {toLowerANSI _x};
+    private _validManClass = {
+        params ["_class"];
+        _class isEqualType "" && {
+            _class isNotEqualTo "" && {
+                isClass (configFile >> "CfgVehicles" >> _class) && {
+                    _class isKindOf "CAManBase"
+                }
+            }
+        }
+    };
+    private _unitTypes = _rawUnitTypes select {[_x] call _validManClass};
+    private _crewTypes = _rawCrewTypes select {[_x] call _validManClass};
     if (_crewTypes isEqualTo []) then {_crewTypes = +_unitTypes};
+    if (
+        count _unitTypes != count _rawUnitTypes
+        || {count _crewTypes != count _rawCrewTypes}
+    ) then {
+        ["crew-pool-sanitized",[
+            _side,count _unitTypes,count _rawUnitTypes,count _crewTypes,count _rawCrewTypes
+        ]] call ITW_CLASH_DualHAL_fnc_Log;
+    };
     [_crewTypes,_unitTypes]
 };
 
@@ -826,22 +1062,17 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     _crewGroup setVariable ["ITW_CLASH_CheckbookAsset",true];
     _crewGroup setVariable ["ITW_CLASH_CheckbookRequest",_requestId];
     _crewGroup setVariable ["START" + str _crewGroup,getPosATL _veh];
+    private _injectCycle = _hq getVariable ["RydHQ_Cyclecount",-1];
+    _crewGroup setVariable ["ITW_CLASH_CheckbookInjectedCycle",_injectCycle];
+    _veh setVariable ["ITW_CLASH_CheckbookInjectedCycle",_injectCycle,true];
 
     [_crewGroup,"checkbook-transport"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
 
-    private _cargo = +(_hq getVariable ["RydHQ_CargoG",[]]);
-    _cargo pushBackUnique _crewGroup;
-    _hq setVariable ["RydHQ_CargoG",_cargo];
-
-    private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-    _cargoOnly pushBackUnique _crewGroup;
-    _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
-
-    {
-        private _arr = +(_hq getVariable [_x,[]]);
-        _arr pushBackUnique _crewGroup;
-        _hq setVariable [_x,_arr];
-    } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+    [_crewGroup,_veh,"checkbook-transport"] call
+        ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+    [_veh] call ITW_CLASH_DualHAL_fnc_ClassifyUnarmedForHAL;
+    [_crewGroup,true,"checkbook-transport"] call
+        ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
 
     if (_veh isKindOf "Air") then {
         private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
@@ -854,6 +1085,11 @@ ITW_CLASH_Checkbook_fnc_RegisterTransport = {
     };
 
     [_veh,_vehDef,_source] call ITW_CLASH_DualHAL_fnc_TrackAsset;
+
+    // ITW_AtkSpawnVeh deliberately creates vehicles damage-protected and the
+    // normal Impasse field pipeline releases that protection later. Checkbook
+    // bypasses that pipeline, so the HAL handoff is the matching release point.
+    ALLOW_DAMAGE(_veh,true);
     true
 };
 
@@ -864,7 +1100,8 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     if !(_mode in ["AIR","GROUND"]) exitWith {objNull};
 
     private _side = side _requester;
-    private _defs = [_side,_mode,_seatCount] call ITW_CLASH_Checkbook_fnc_SelectTransportDefs;
+    private _ranked = [_side,_mode,_seatCount] call
+        ITW_CLASH_Checkbook_fnc_RankTransportVariants;
     private _requestId = _externalRequestId;
     if (_requestId isEqualTo "") then {
         ITW_CLASH_CheckbookRequestSerial = ITW_CLASH_CheckbookRequestSerial + 1;
@@ -873,7 +1110,7 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
         ];
     };
 
-    if (_defs isEqualTo []) exitWith {
+    if (_ranked isEqualTo []) exitWith {
         ["checkbook-denied",[
             _requestId,[_requester] call ITW_CLASH_DualHAL_fnc_GroupId,
             side _requester,_mode,_seatCount,"no-affordable-capability"
@@ -906,8 +1143,13 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
     private _result = objNull;
     {
         if (!isNull _result) then {continue};
-        private _vehDef = _x;
-        private _veh = [_vehDef,_crewTypes,_unitTypes,_side,_spawn] call ITW_AtkSpawnVeh;
+        _x params [
+            "_capacityScore","_vehDef","_variant","_class",
+            "_estimatedCapacity","_capacityKnown","_ticketCost","_maxSpeed"
+        ];
+        private _spawnDef = +_vehDef;
+        _spawnDef set [ITW_VEH_CLASSES,[_variant]];
+        private _veh = [_spawnDef,_crewTypes,_unitTypes,_side,_spawn] call ITW_AtkSpawnVeh;
         if (isNull _veh) then {continue};
 
         private _crewGroup = group driver _veh;
@@ -917,7 +1159,11 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
         } else {
             _veh isKindOf "LandVehicle"
         };
-        if (!_kindOK || {_capacity < _seatCount}) then {
+        // Transports spawn at the forward FOB; a dual-role IFV or AT-armed
+        // helicopter must not arrive there without driving (echelon rule).
+        if (!_kindOK || {_capacity < _seatCount} || {
+            [_veh,"checkbook-transport"] call ITW_CLASH_DualHAL_fnc_IsRearEchelon
+        }) then {
             deleteVehicleCrew _veh;
             deleteVehicle _veh;
             if (!isNull _crewGroup && {units _crewGroup isEqualTo []}) then {
@@ -948,9 +1194,10 @@ ITW_CLASH_Checkbook_fnc_RequestTransport = {
             _requestId,[_requester] call ITW_CLASH_DualHAL_fnc_GroupId,
             side _requester,_mode,_seatCount,typeOf _veh,_capacity,
             _baseIndex,_objectiveIndex,_spawnSource,
-            _vehDef#ITW_VEH_REQD_TICKETS,_vehDef#ITW_VEH_CURR_TICKETS
+            _vehDef#ITW_VEH_REQD_TICKETS,_vehDef#ITW_VEH_CURR_TICKETS,
+            round _capacityScore,_estimatedCapacity,_maxSpeed
         ]] call ITW_CLASH_DualHAL_fnc_Log;
-    } forEach _defs;
+    } forEach _ranked;
 
     if (isNull _result) then {
         ["checkbook-denied",[

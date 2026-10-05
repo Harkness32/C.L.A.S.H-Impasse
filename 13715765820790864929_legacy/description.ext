@@ -767,6 +767,13 @@ class Params
 		texts[] = {"HAL disabled (compatibility only)","Observer only (RPT logging; HAL disabled)","Live dual-HAL campaign (recommended)"};
 		default = 2;
 	};
+	class CLASHDebug
+	{
+		title = "C.L.A.S.H. debug output";
+		values[] = {0,1,2};
+		texts[] = {"Off (RPT only)","Preflight summary in chat","Full: preflight + live decisions in chat"};
+		default = 0;
+	};
 	class HeadlessClient
 	{
 		title = "$STR_ITW_PARAM_HeadlessClient";
