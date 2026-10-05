@@ -64,3 +64,23 @@ def test_overridden_task_init_carries_clash_fixes():
     assert copy != read(NR6 / "TaskInitNR6.sqf")
     assert '"_this isEqualTo _target"' in copy
     assert '["TASKINIT_GROUND",false,false]' in copy
+
+
+
+def test_paradrop_override_chain_is_runtime_self_proving():
+    init = read(ADD / "hal" / "RydHQInit.sqf")
+    overrides_source = read(ADD / "functions" / "fnc_overrides.sqf")
+    attack = read(ADD / "hal" / "GoAttInf.sqf")
+
+    assert "CLASHHALADD | halcore-entered | source=clash_hal_additions" in init
+    assert "CLASHHALADD | hal-overrides-applied" in overrides_source
+    assert "CLASHHALADD | goattinf-entered" in attack
+    assert "CLASHHALADD | paradrop-gate" in attack
+    assert "CLASHHALADD | paradrop-decision" in attack
+    assert "ITW_CLASH_HALParadropReady" in attack
+    assert "ITW_CLASH_HALParadrop_fnc_ShouldUse" in attack
+    assert 'missionNamespace getVariable ["ITW_ParamHelisUnload",-999]' in attack
+    assert "_clashParaAirCarrier" in attack
+    assert "_clashParaInfantry" in attack
+    assert "_clashParaCargoPlayer" in attack
+    assert "_clashParaCrewPlayer" in attack
