@@ -150,7 +150,7 @@ def test_hal_ai_transport_uses_native_itw_paradrop_through_one_unload_seam():
     attack = mission("ITW_Attack.sqf")
     ally = mission("ITW_Ally.sqf")
 
-    version = int(re.search(r"ITW_CLASH_HALParadropVersion = (\\d+);", policy).group(1))
+    version = int(re.search(r"ITW_CLASH_HALParadropVersion = (\d+);", policy).group(1))
     assert version >= 4, version
     assert 'missionNamespace getVariable ["ITW_ParamHelisUnload",50]' in policy
     assert "ITW_CLASH_HALParadrop_HeavyCargoSeats" in policy

@@ -173,3 +173,54 @@ def test_sof_repair_publishes_source_instead_of_owning_air_unload():
     assert "ITW_CLASH_HALNativeSF_fnc_ParadropStatement" not in source
     assert "ITW_CLASH_HALNativeSF_Source = _attackSource;" in source
     assert "ITW_CLASH_HALUnload_fnc_PatchSource" in source
+
+
+# --------------------------------------- the arity contract between the two owners
+
+def test_execute_declares_every_argument_the_unload_owner_passes():
+    """The defect that made this a silent failure.
+
+    fnc_Execute's fallback branch was given an _allowLandFallback test without
+    the parameter being declared, so it read an undefined local: a type error
+    that aborted the exitWith block and the spawned thread running it. Nothing
+    landed, nothing was released, the cargo-group stamp stayed on the carrier,
+    and the one-line-per-lift trace below never printed. The symptom was
+    silence, which is the worst shape a helicopter bug can take.
+    """
+    policy = read(MISSION / "ITW_CLASH_HALParadrop.sqf")
+    body = function_body(policy, "ITW_CLASH_HALParadrop_fnc_Execute")
+    params = re.search(r"params \[(.*?)\];", body, re.S).group(1)
+    assert '"_carrierGroup"' in params
+    assert '"_carrier"' in params
+    assert '["_allowLandFallback",true]' in params
+    # Every local the branch reads has to be in that one params line.
+    assert "_allowLandFallback" in params
+
+
+def test_the_two_argument_caller_keeps_the_old_behaviour():
+    """HotDrop.sqf:445 passes two arguments. The default has to be true, or
+    fixing the declaration would silently forbid its landing fallback."""
+    policy = read(MISSION / "ITW_CLASH_HALParadrop.sqf")
+    body = function_body(policy, "ITW_CLASH_HALParadrop_fnc_Execute")
+    assert '["_allowLandFallback",true]' in body
+    hotdrop = read(MISSION / "ITW_CLASH_HotDrop.sqf")
+    assert "[_crewGroup,_veh] call ITW_CLASH_HALParadrop_fnc_Execute" in hotdrop
+
+
+def test_the_unload_owner_passes_the_no_land_decision_through():
+    """UNKNOWN corridors parachute and never land - Hark's rule after the
+    Littlebird losses - so PARADROP forwards !_noLand and HOT_PARADROP, which
+    only runs in HOT or AIR_DENIED, forwards a hard false."""
+    body = function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload")
+    assert "[_carrierGroup,_carrier,!_noLand] call" in body
+    assert "[_carrierGroup,_carrier,false] call" in body
+
+
+def test_the_refusal_branch_leaves_the_airframe_flying():
+    policy = read(MISSION / "ITW_CLASH_HALParadrop.sqf")
+    body = function_body(policy, "ITW_CLASH_HALParadrop_fnc_Execute")
+    refusal = body[body.index("if (!_allowLandFallback) then {"):]
+    refusal = refusal[:refusal.index("} else {")]
+    assert '_carrier land "NONE";' in refusal
+    assert "fallback-refused" in refusal
+    assert '_carrier land "GET OUT"' not in refusal

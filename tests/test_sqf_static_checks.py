@@ -44,7 +44,13 @@ def undefined_locals(path: Path):
     findings = []
     text = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
     for name, body in top_level_functions(text):
+        # SQF string literals come in both quote styles, and a runtime-patch
+        # module holds whole HAL statements in them. Stripping only the
+        # double-quoted ones reported _AV/_HQ/_unitG inside
+        # ITW_CLASH_HALUnload_fnc_PatchSource's single-quoted anchor as
+        # undeclared reads.
         no_strings = re.sub(r'"(?:[^"]|"")*"', '""', body)
+        no_strings = re.sub(r"'(?:[^']|'')*'", "''", no_strings)
         declared = {m.lower() for m in MAGIC}
         declared |= {m.lower() for m in re.findall(r"\b(_\w+)\s*=(?!=)", no_strings)}
         declared |= {m.lower() for m in re.findall(r'"(_\w+)"', body)}  # params / private / for "_i"

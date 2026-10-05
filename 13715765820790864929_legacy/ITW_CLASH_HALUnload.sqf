@@ -401,8 +401,6 @@ ITW_CLASH_HALUnload_fnc_Unload = {
     _result
 };
 
-private _anchor = 'if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then {_sts = ["true","(vehicle this) land ''GET OUT'';deletewaypoint [(group this), 0]"]};';
-
 ITW_CLASH_HALUnload_fnc_PatchSource = {
     params ["_source","_orderFile"];
     private _anchor = 'if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then {_sts = ["true","(vehicle this) land ''GET OUT'';deletewaypoint [(group this), 0]"]};';

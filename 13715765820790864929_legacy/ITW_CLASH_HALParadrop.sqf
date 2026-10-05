@@ -146,7 +146,17 @@ ITW_CLASH_HALParadrop_fnc_ReleaseCarrier = {
 };
 
 ITW_CLASH_HALParadrop_fnc_Execute = {
-    params ["_carrierGroup","_carrier"];
+    /*
+        _allowLandFallback defaults TRUE so the two-argument caller
+        (HotDrop.sqf:445) keeps the behaviour it has always had. It was added
+        to the fallback branch below without being declared here, which made
+        `if (!_allowLandFallback)` a read of an undefined local: a type error
+        that aborted the exitWith block AND the spawned thread it runs in. No
+        land "NONE", no land "GET OUT", no carrier release, the cargo-group
+        stamp left on the carrier, and the one-line-per-lift trace in
+        HALUnload never reached - the symptom was silence.
+    */
+    params ["_carrierGroup","_carrier",["_allowLandFallback",true]];
     if (
         isNull _carrierGroup
         || {isNull _carrier}
@@ -247,7 +257,7 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
     [_carrier,_cargoGroup] call ITW_AllyParadropCargo;
     _carrier land "NONE";
     _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
-        _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
 
     ["executed",[
         typeOf _carrier,
