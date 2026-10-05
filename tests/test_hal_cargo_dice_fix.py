@@ -174,3 +174,42 @@ def test_base_embark_recognizes_impasse_staging_anchors():
     assert "ITW_BASE_A_SPAWN" in resolver
     assert "ITW_BASE_GARAGE_POS" in resolver
     assert "ITW_CLASH_BaseEmbarkRadius" in resolver
+
+
+# ------------------------------------------------ one lift, one squad
+
+def test_the_fastpath_refuses_a_carrier_that_already_has_a_squad():
+    """emptyPositions counts occupied seats, so this path would never OVERFILL
+    a carrier - it would add a second group into whatever was spare. That is
+    how one vehicle ends up with two squads, which Hark hit on the air side
+    ("alpha 2-5 has two different groups in his helo") and which was reachable
+    here for ground vehicles by the same route."""
+    source = text("ITW_CLASH_HALCargoDiceFix.sqf")
+    body = source[source.index("ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {"):]
+    body = body[:body.index("\n};")]
+    assert '["already-carrying"] call _decline' in body
+    assert "group _x isNotEqualTo _carrierG" in body
+    assert "group _x isNotEqualTo _unitG" in body
+
+
+def test_the_carriers_own_crew_is_not_mistaken_for_a_squad():
+    source = text("ITW_CLASH_HALCargoDiceFix.sqf")
+    body = source[source.index("private _riders ="):]
+    body = body[:body.index("];")]
+    assert "_carrierG" in body
+    assert '"Turret"' in body, "a door gunner is not a passenger"
+
+
+def test_the_check_runs_before_anyone_is_moved():
+    source = text("ITW_CLASH_HALCargoDiceFix.sqf")
+    body = source[source.index("ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {"):]
+    assert body.index('["already-carrying"]') < body.index("_x moveInCargo _vehicle")
+
+
+def test_the_fastpath_line_names_the_vehicle_not_just_its_class():
+    """Two B_Truck_01_transport_F lines in one run could be two trucks or one
+    truck twice, and the class alone cannot tell them apart - which is exactly
+    the shape of the bug above."""
+    source = text("ITW_CLASH_HALCargoDiceFix.sqf")
+    assert "base-embark-fastpath | group=%1 vehicle=%2 id=%3" in source
+    assert "BIS_fnc_netId" in source

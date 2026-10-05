@@ -235,7 +235,10 @@ def test_every_base_embark_gate_names_itself():
     body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
     # No gate may return a bare false any more.
     assert "exitWith {false}" not in body
-    assert body.count("call _decline") == 12, body.count("call _decline")
+    # A floor, not an exact count: the point is that no gate is silent, and
+    # the assertion above already proves that. Pinning the number meant a
+    # NEW gate ("already-carrying") failed a test about old ones.
+    assert body.count("call _decline") >= 12, body.count("call _decline")
     for reason in (
         "disabled", "null-or-dead", "withdrawing", "no-living-troops",
         "player-in-squad", "not-all-on-foot", "no-assigned-driver",

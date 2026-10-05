@@ -184,6 +184,27 @@ ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {
     if (isNull _carrierG || {_carrierG == _unitG}) exitWith {["carrier-is-cargo"] call _decline};
     if (side _carrierG != side _unitG) exitWith {["side-mismatch"] call _decline};
     if ((_vehicle emptyPositions "Cargo") < count _troops) exitWith {["not-enough-seats"] call _decline};
+    /*
+        Somebody else's squad is already riding in this one.
+
+        emptyPositions counts occupied seats, so this path would never OVERFILL
+        a carrier - it would simply add a second group into whatever was left.
+        That is how one vehicle ends up with two squads in it, which Hark hit on
+        the air side ("alpha 2-5 has two different groups in his helo") and which
+        is reachable here for ground vehicles by exactly the same route.
+
+        One lift, one squad. A carrier already carrying infantry that is neither
+        its own crew nor this group is not available, however many seats are
+        spare.
+    */
+    private _riders = (crew _vehicle) select {
+        alive _x
+        && {_x isKindOf "CAManBase"}
+        && {group _x isNotEqualTo _carrierG}
+        && {group _x isNotEqualTo _unitG}
+        && {((assignedVehicleRole _x) param [0,""]) isNotEqualTo "Turret"}
+    };
+    if (_riders isNotEqualTo []) exitWith {["already-carrying"] call _decline};
 
     private _side = side _unitG;
     private _troopBase = [_side,getPosATL (leader _unitG)] call
@@ -215,9 +236,16 @@ ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {
 
     _unitG setVariable ["ITW_CLASH_BaseEmbarkFastPathed",true];
     _vehicle setVariable ["ITW_CLASH_BaseEmbarkLastAt",time];
+    /*
+        The vehicle ID, not just its class. Two B_Truck_01_transport_F lines in
+        one run could be two trucks or one truck twice, and the class alone
+        cannot tell them apart - which is the shape of the double-loading bug
+        above, so the log has to be able to show it.
+    */
     diag_log format [
-        "CLASH HAL CARGO | base-embark-fastpath | group=%1 vehicle=%2 base=%3 troops=%4 radius=%5",
-        str _unitG,typeOf _vehicle,_troopBase,count _troops,ITW_CLASH_BaseEmbarkRadius
+        "CLASH HAL CARGO | base-embark-fastpath | group=%1 vehicle=%2 id=%3 base=%4 troops=%5 radius=%6",
+        str _unitG,typeOf _vehicle,_vehicle call BIS_fnc_netId,
+        _troopBase,count _troops,ITW_CLASH_BaseEmbarkRadius
     ];
     true
 };
