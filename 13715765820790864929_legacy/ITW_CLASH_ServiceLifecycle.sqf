@@ -46,6 +46,37 @@ ITW_CLASH_ServiceInitialStorageGrace = missionNamespace getVariable [
 ITW_CLASH_ServiceIdleSpeedMax = missionNamespace getVariable [
     "ITW_CLASH_ServiceIdleSpeedMax",3
 ];
+/*
+    A leased asset stranded in the field.
+
+    Hark, watching a Littlebird do nothing: "why isnt he being tasked?"
+
+    Measured: SVC-1 registered TRANSPORT at 7:33:05, and HAL tried to task it
+    for recon at 7:33:06, 7:33:07 and 7:34:00. ServiceStability's execution
+    guard rejected all three, because a leased group is barred from GoRecon,
+    GoDefRecon and the whole attack family. Meanwhile all three transport
+    demands chose ground carriers, so it never got the one job it was allowed
+    to do.
+
+    That alone would be survivable - the idle drain exists for exactly this.
+    But the drain only reaches assets that have come HOME: this monitor is
+    passive on purpose ("HAL owns pickup, delivery and RTB"), and HAL cannot
+    send it home either, because we are the ones refusing every order it
+    offers. Leased, untaskable, unsendable, unrecyclable. Immortal and useless.
+
+    So an asset that has NEVER had a job - everBusy false, not merely
+    taskSeen - is virtualized where it stands once it has had long enough.
+    That needs no movement writer, which is the boundary this file keeps, and
+    reactivation spawns it wherever it is next wanted anyway. fnc_Retire
+    already refuses while a player is within 75m of a transport, so nothing
+    vanishes in front of anyone.
+
+    Deliberately NOT a lease release. Hark's call: "keep the lease, let
+    virtualization recycle it." This makes that recycling actually reachable.
+*/
+ITW_CLASH_ServiceStrandedFieldGrace = missionNamespace getVariable [
+    "ITW_CLASH_ServiceStrandedFieldGrace",300
+];
 ITW_CLASH_ServiceRetirePlayerRadius = missionNamespace getVariable [
     "ITW_CLASH_ServiceRetirePlayerRadius",100
 ];
@@ -379,6 +410,26 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                 };
                 _entry set ["idleSince",-1];
                 ITW_CLASH_ServicePool set [_i,_entry];
+
+                // Stranded: parked outside any storage zone, never once given a
+                // job, and old enough that it is not simply waiting to start.
+                // taskSeen is no use here - it is set by merely being away from
+                // a base, which is the condition itself.
+                private _strandedSince = _entry getOrDefault ["spawnedAt",time];
+                if (
+                    !_busy && {!_cargo} && {_settled}
+                    && {!(_entry getOrDefault ["everBusy",false])}
+                    && {(time - _strandedSince) >= ITW_CLASH_ServiceStrandedFieldGrace}
+                ) then {
+                    ["stranded-in-field",[
+                        _entry getOrDefault ["id","?"],
+                        _entry getOrDefault ["capability","?"],
+                        typeOf _veh,
+                        round _storageDistance,
+                        round (time - _strandedSince)
+                    ]] call ITW_CLASH_Service_fnc_Log;
+                    [_i,"stranded-never-tasked"] call ITW_CLASH_Service_fnc_Retire;
+                };
                 continue;
             };
 

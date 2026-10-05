@@ -162,6 +162,35 @@ ITW_CLASH_PlayerTransport_fnc_RegisterITWPassengerState = {
     reconciler only restores missing memberships and never rewrites
     ITW_CLASH_TransportRetaskOwned.
 */
+/*
+    How long a carrier may sit still with a squad aboard before the contract
+    is written off.
+
+    Hark: "the squad inside of it never had a move mark, why is that?"
+
+    Because EnsureRetaskLock puts the CARGO group into RydHQ_NoAttack,
+    RydHQ_NoRecon and RydHQ_NoDef for the life of the contract. That is right
+    in itself - a squad riding to a destination must not be re-tasked halfway -
+    and it means the squad has no orders of its own by design. Its movement is
+    supposed to come from the carrier.
+
+    When the carrier does not move, nothing does. The watch had no opinion
+    about that: expiresAt is only consulted for an INACTIVE contract, so a
+    stalled-but-assigned one ran to the 1800s hard deadline. Thirty minutes of
+    a squad with no move marker, inside an aircraft with no orders.
+
+    A carrier that has not moved 50m in this long, with passengers aboard, is
+    not flying them anywhere. Ending the contract releases the lock and gives
+    the squad back to HAL, which is a far better answer than both of them
+    waiting out the half hour.
+*/
+ITW_CLASH_PlayerTransportStallTimeout = missionNamespace getVariable [
+    "ITW_CLASH_PlayerTransportStallTimeout",180
+];
+ITW_CLASH_PlayerTransportStallDistance = missionNamespace getVariable [
+    "ITW_CLASH_PlayerTransportStallDistance",50
+];
+
 ITW_CLASH_PlayerTransport_fnc_EnsureRetaskLock = {
     params ["_group",["_source","reconcile"]];
     if (isNull _group) exitWith {false};
@@ -312,6 +341,8 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
     private _assignedKey = "AssignedCargo" + str _group;
     private _sawPending = false;
     private _lastCarrier = objNull;
+    private _carrierStallFrom = [];
+    private _carrierStallSince = 0;
     private _startedAt = time;
     private _hardDeadline = time + 1800;
     private _reason = "hal-scargo-ended";
@@ -341,6 +372,8 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
 
         if (!isNull _carrier && {_carrier != _lastCarrier}) then {
             _lastCarrier = _carrier;
+            _carrierStallFrom = getPosATL _carrier;
+            _carrierStallSince = time;
             private _carrierGroup = group assignedDriver _carrier;
             if (isNull _carrierGroup) then {_carrierGroup = group driver _carrier};
             _contract set ["carrier",_carrier];
@@ -388,6 +421,41 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
         };
         if (time >= _hardDeadline) exitWith {
             _reason = "hal-scargo-monitor-timeout";
+        };
+
+        /*
+            The carrier is gone, or it is going nowhere.
+
+            Neither was checked. A carrier that gets virtualized by the service
+            pool, destroyed, or simply never tasked leaves this contract running
+            and the cargo group locked out of every HAL order until the hard
+            deadline. Both cases end the contract instead, which releases the
+            lock and hands the squad back.
+        */
+        if (!isNull _lastCarrier && {
+            !alive _lastCarrier || {isNull (driver _lastCarrier)}
+        }) exitWith {
+            _reason = "carrier-lost";
+        };
+        if (!isNull _lastCarrier) then {
+            private _here = getPosATL _lastCarrier;
+            private _mark = _carrierStallFrom;
+            if (_mark isEqualTo [] || {
+                (_here distance2D _mark) > ITW_CLASH_PlayerTransportStallDistance
+            }) then {
+                _carrierStallFrom = _here;
+                _carrierStallSince = time;
+            };
+        };
+        if (
+            !isNull _lastCarrier
+            && {_carrierStallSince > 0}
+            && {(time - _carrierStallSince) >= ITW_CLASH_PlayerTransportStallTimeout}
+            && {((crew _lastCarrier) findIf {
+                alive _x && {group _x isEqualTo _group}
+            }) >= 0}
+        ) exitWith {
+            _reason = "carrier-stalled";
         };
     };
 
