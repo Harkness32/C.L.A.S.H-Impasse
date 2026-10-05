@@ -499,3 +499,20 @@ def test_flythrough_defaults_are_long_enough_to_clear_the_drop_zone():
 
 def test_hal_unload_version_moved_to_four_for_flythrough_drop_run():
     assert "ITW_CLASH_HALUnloadVersion = 4;" in central()
+
+
+def test_native_itw_paradrop_preserves_the_prearmed_through_waypoint():
+    """ITW_AllyParadropCargo deliberately calls the native airplane unload with
+    grpNull, so ITW_AtkUnloadAirplane ejects the chalk but does not delete or
+    replace the helicopter crew group's waypoint. The fly-through would be
+    defeated if that contract changed.
+    """
+    ally = read(MISSION / "ITW_Ally.sqf")
+    helper = code_only(function_body(ally, "ITW_AllyParadropCargo"))
+    assert '[_veh,grpNull,[_grp],[]] call ITW_AtkUnloadAirplane;' in helper
+
+    attack = read(MISSION / "ITW_Attack.sqf")
+    native = code_only(function_body(attack, "ITW_AtkUnloadAirplane"))
+    assert 'if !(_crewGroup isEqualTo grpNull) then {' in native
+    guarded = native[native.index('if !(_crewGroup isEqualTo grpNull) then {'):]
+    assert "ITW_DELETE_WAYPOINTS(_crewGroup)" in guarded[:1200]
