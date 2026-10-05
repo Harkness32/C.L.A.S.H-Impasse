@@ -518,101 +518,8 @@ _tp = "MOVE";
 //if (not (isNull _AV) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then {_tp = "UNLOAD"};
 _beh = "AWARE";
 
-_halParadrop = false;
-_halParadropChance = 0;
-_halParadropCapacity = 0;
-
-private _clashParaHasVehicle = not (isNull _AV);
-private _clashParaAirCarrier = _clashParaHasVehicle
-	&& {not (isNull _GDV)}
-	&& {_GDV != _unitG}
-	&& {_GDV in (_HQ getVariable ["RydHQ_AirG",[]])};
-private _clashParaInfantry = _unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]);
-private _clashParaAboard = _clashParaHasVehicle
-	&& {({alive _x && {vehicle _x == _AV}} count (units _unitG)) > 0};
-/*
-	Role, not current occupancy - the same correction as GoAttInf.
-
-	Boarding is ordered at ~240 and the unload statement is built at ~628 with
-	no wait in between, so _clashParaAboard is false here while the squad is
-	still walking to the aircraft. Gating on it left _sts at its default
-	"deletewaypoint": the helicopter reached the drop point, deleted the
-	waypoint, and nobody got out. _clashParaAboard stays for the trace, where
-	it is informative; the physical check belongs at execution time and already
-	lives in ITW_CLASH_HALParadrop_fnc_Execute.
-*/
-private _clashAirLift = _clashParaAirCarrier && {_clashParaInfantry};
-private _clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0;
-private _clashParaCrewPlayer = if (isNull _GDV) then {false} else {
-	((units _GDV) findIf {isPlayer _x}) >= 0
-};
-private _clashParaReady = missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false];
-private _clashParaFnExists = not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse");
-
-if (_clashParaHasVehicle) then
-	{
-	diag_log format [
-		"CLASHHALADD | recon-paradrop-gate | %1",
-		[
-			groupId _unitG,
-			typeOf _AV,
-			_clashParaAirCarrier,
-			_clashParaInfantry,
-			_clashParaAboard,
-			_clashAirLift,
-			_clashParaCargoPlayer,
-			_clashParaCrewPlayer,
-			_clashParaReady,
-			_clashParaFnExists,
-			_NeNMode,
-			missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
-		]
-	];
-	};
-
-if (
-	_clashAirLift
-	and not (_clashParaCargoPlayer)
-	and not (_clashParaCrewPlayer)
-	and _clashParaReady
-	and _clashParaFnExists
-) then
-	{
-	private _paraDecision = [_AV,_NeNMode] call ITW_CLASH_HALParadrop_fnc_ShouldUse;
-	_halParadrop = _paraDecision#0;
-	_halParadropChance = _paraDecision#1;
-	_halParadropCapacity = _paraDecision#2;
-	diag_log format [
-		"CLASHHALADD | recon-paradrop-decision | %1",
-		[
-			groupId _unitG,typeOf _AV,_NeNMode,_halParadrop,
-			_halParadropChance,_halParadropCapacity,
-			missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
-		]
-	];
-	if (_halParadrop) then
-		{
-		_GDV setVariable ["ITW_CLASH_HALParadropCargoGroup",_unitG];
-		// Where the lift began, so the drop can refuse to unload here.
-		_GDV setVariable ["ITW_CLASH_HALParadropOrigin",getPosATL _AV];
-		_AV flyInHeight (missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]);
-		if not (isNil "ITW_CLASH_HALParadrop_fnc_Log") then
-			{
-			["selected",[
-				typeOf _AV,groupId _unitG,_halParadropCapacity,_halParadropChance,
-				_NeNMode,_halfway,[_posX,_posY],"RECON"
-			]] call ITW_CLASH_HALParadrop_fnc_Log;
-			};
-		}
-	else
-		{
-		_GDV setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
-		_GDV setVariable ["ITW_CLASH_HALParadropOrigin",nil];
-		};
-	};
-
 _lz = objNull;
-if (not (isNull _AV) and (_GDV in (_HQ getVariable ["RydHQ_AirG",[]])) and not (_halParadrop)) then 
+if (not (isNull _AV) and (_GDV in (_HQ getVariable ["RydHQ_AirG",[]]))) then 
 	{
 	_beh = "STEALTH";
 	if (_HQ getVariable ["RydHQ_LZ",false]) then
@@ -640,19 +547,7 @@ _crr = false;
 if ((_nW == 1) and (isNull _AV)) then {_crr = true};
 if not (isNull _AV) then {_crr = true};
 _sts = ["true","deletewaypoint [(group this), 0];"];
-if (_clashAirLift) then
-	{
-	if (_halParadrop) then
-		{
-		// Execute lands for itself on only one of its false returns; the rest
-		// would strand the squad airborne. Land for real if it declines.
-		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | recon-air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn {params ['_g','_v']; private _c = _g getVariable ['ITW_CLASH_HALParadropCargoGroup',grpNull]; private _ok = [_g,_v] call ITW_CLASH_HALParadrop_fnc_Execute; if (!_ok && {!isNull _c} && {({alive _x && {vehicle _x == _v}} count (units _c)) > 0}) then {diag_log format ['CLASHHALADD | recon-air-unload-land-fallback | %1',[groupId _c,typeOf _v]]; _v land 'GET OUT'; if (!isNil 'ITW_CLASH_HALParadrop_fnc_ReleaseCarrier') then {[_g,_v] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier}}}; deletewaypoint [(group this), 0]"]
-		}
-	else
-		{
-		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | recon-air-unload-waypoint | %1',[groupId _g,typeOf _v,'LAND']]; _v land 'GET OUT'; if (!isNil 'ITW_CLASH_HALParadrop_fnc_ReleaseCarrier') then {[_g,_v] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier}; deletewaypoint [(group this), 0]"]
-		};
-	};
+if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then {_sts = ["true","(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]"]};
 
 _wp = [_gp,_pos,_tp,_beh,"GREEN",_spd,_sts,_crr,0.001,_TO] call RYD_WPadd;
 
@@ -749,7 +644,7 @@ else
 _DAV = assigneddriver _AV;
 _GDV = group _DAV;
 
-if (_clashAirLift and ((_HQ getVariable ["RydHQ_CargoFind",0]) > 0) and not (_IsAPlayer)) then
+if (not (isNull _AV) and ((_HQ getVariable ["RydHQ_CargoFind",0]) > 0) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]])) and not (_GDV == _unitG) and not (_IsAPlayer)) then
 	{
 	_pass = (units _unitG);
 	_cause = [_unitG,1,false,0,240,[],true,true,false,false,false,false,false,_pass,_AV] call RYD_Wait;
