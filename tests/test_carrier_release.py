@@ -97,7 +97,9 @@ def test_both_hal_overrides_release_on_both_of_their_landing_paths():
         source = read(ADD / "hal" / name)
         # Two landing paths per file: the ordinary LAND branch, and the
         # fallback when a chosen paradrop declines with troops still aboard.
-        assert source.count("ITW_CLASH_HALParadrop_fnc_ReleaseCarrier") == 2, name
+        # Count real calls, not mentions: each is now preceded by an isNil
+        # guard that names the same function.
+        assert source.count("call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier") == 2, name
         # Every land 'GET OUT' in the unload statements is followed by a
         # release; the land 'NONE' calls above them are HAL's pickup paths.
         for stmt in re.findall(r'_sts = \["true","[^"]*"\]', source):
@@ -123,3 +125,35 @@ def test_hotdrop_version_moved():
 
 def test_paradrop_version_moved():
     assert "ITW_CLASH_HALParadropVersion = 2;" in policy()
+
+
+def test_the_release_call_survives_a_mission_without_the_module():
+    """Version-skew and fail-open protection.
+
+    The LAND branch fires whenever _clashAirLift holds, independently of
+    _halParadrop - so it runs even when the paradrop module never loaded. An
+    unguarded call to an undefined function throws inside the waypoint
+    statement, which means the deletewaypoint after it never runs either. That
+    is worse than the stranding it was added to fix.
+
+    Guarded, an absent module leaves stock HAL's behaviour exactly as it was.
+    It also means a newer addon on an older mission degrades instead of
+    erroring, since ReleaseCarrier lives in the mission and the callers live in
+    the addon.
+    """
+    for name in ("GoAttInf.sqf", "GoRecon.sqf"):
+        source = read(ADD / "hal" / name)
+        calls = source.count("call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier")
+        guards = source.count("isNil 'ITW_CLASH_HALParadrop_fnc_ReleaseCarrier'")
+        assert calls == 2, (name, calls)
+        assert guards == calls, (name, guards, calls)
+
+
+def test_the_land_branch_does_not_depend_on_paradrop_readiness():
+    """It must still land when the paradrop module is missing - landing is the
+    fallback, so gating it on paradrop readiness would strand troops."""
+    source = read(ADD / "hal" / "GoAttInf.sqf")
+    branch = source[source.rindex("if (_clashAirLift) then"):]
+    branch = branch[:branch.index("_wp = [_gp,_pos") if "_wp = [_gp,_pos" in branch else len(branch)]
+    assert "ITW_CLASH_HALParadropReady" not in branch
+    assert "land 'GET OUT'" in branch

@@ -602,11 +602,11 @@ if (_clashAirLift) then
 		// group, too low). It lands for itself on only one of them, so the
 		// others would strand the squad airborne - the same failure HotDrop
 		// was fixed for. Land for real unless they are already out.
-		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn {params ['_g','_v']; private _c = _g getVariable ['ITW_CLASH_HALParadropCargoGroup',grpNull]; private _ok = [_g,_v] call ITW_CLASH_HALParadrop_fnc_Execute; if (!_ok && {!isNull _c} && {({alive _x && {vehicle _x == _v}} count (units _c)) > 0}) then {diag_log format ['CLASHHALADD | air-unload-land-fallback | %1',[groupId _c,typeOf _v]]; _v land 'GET OUT'; [_g,_v] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier}}; deletewaypoint [(group this), 0]"]
+		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn {params ['_g','_v']; private _c = _g getVariable ['ITW_CLASH_HALParadropCargoGroup',grpNull]; private _ok = [_g,_v] call ITW_CLASH_HALParadrop_fnc_Execute; if (!_ok && {!isNull _c} && {({alive _x && {vehicle _x == _v}} count (units _c)) > 0}) then {diag_log format ['CLASHHALADD | air-unload-land-fallback | %1',[groupId _c,typeOf _v]]; _v land 'GET OUT'; if (!isNil 'ITW_CLASH_HALParadrop_fnc_ReleaseCarrier') then {[_g,_v] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier}}}; deletewaypoint [(group this), 0]"]
 		}
 	else
 		{
-		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId _g,typeOf _v,'LAND']]; _v land 'GET OUT'; [_g,_v] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier; deletewaypoint [(group this), 0]"]
+		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId _g,typeOf _v,'LAND']]; _v land 'GET OUT'; if (!isNil 'ITW_CLASH_HALParadrop_fnc_ReleaseCarrier') then {[_g,_v] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier}; deletewaypoint [(group this), 0]"]
 		}
 	};
 
