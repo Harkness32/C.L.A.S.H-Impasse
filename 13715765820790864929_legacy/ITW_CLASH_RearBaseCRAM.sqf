@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") exitWith {
 };
 
 ITW_CLASH_RearBaseCRAMStarted = true;
-ITW_CLASH_RearBaseCRAMVersion = 2;
+ITW_CLASH_RearBaseCRAMVersion = 3;
 ITW_CLASH_RearBaseCRAMReady = false;
 
 /*
@@ -183,6 +183,55 @@ ITW_CLASH_RearBaseCRAM_fnc_RearPosition = {
     Returns [group] on success, [] on failure. The caller decides what to do
     with the hull; nothing here deletes the vehicle.
 */
+/*
+    Which of the faction's crew classes mans a static launcher.
+
+    This used to be _crewTypes#0 - whatever the faction list happened to put
+    first - and Hark photographed the result: a GUER Mini-Spike emplacement
+    manned by a helicopter pilot in a flight helmet.
+
+    Checkbook_fnc_GetCrewTypes asks FactionUnits for role "Crewman"
+    (DualHALCheckbook.sqf:1041), and in Arma's own configs a pilot carries
+    role = "Crewman" exactly as a vehicle crewman does - both are vehicle
+    crew as far as the role taxonomy is concerned. So the list legitimately
+    contains pilots, and taking index 0 blindly made the choice a coin flip
+    decided by config order. On this faction the pilot sorted first, so EVERY
+    emplacement got one, deterministically.
+
+    editorSubcategory is what actually separates them: Arma files pilots under
+    EdSubcat_Pilots and crewmen under EdSubcat_Men, and mods overwhelmingly
+    follow suit. The classname is checked too, because a mod that sets no
+    subcategory usually still says "pilot" in the class.
+
+    Fail-open, and deliberately so: if every candidate looks like a pilot, one
+    is used anyway. A pilot in the seat is a cosmetic fault. An uncrewed
+    launcher is a real one - it reads as its CONFIG side, which on this
+    mission is the bug this whole module exists to prevent.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_IsPilotClass = {
+    params ["_class"];
+    if (!(_class isEqualType "") || {_class isEqualTo ""}) exitWith {false};
+    private _subcat = toLowerANSI getText (
+        configFile >> "CfgVehicles" >> _class >> "editorSubcategory"
+    );
+    if (_subcat isNotEqualTo "" && {["pilot",_subcat,false] call BIS_fnc_inString}) exitWith {
+        true
+    };
+    ["pilot",toLowerANSI _class,false] call BIS_fnc_inString
+};
+
+ITW_CLASH_RearBaseCRAM_fnc_GunnerType = {
+    params ["_crewTypes"];
+    if (_crewTypes isEqualTo []) exitWith {""};
+    private _ground = _crewTypes select {
+        !([_x] call ITW_CLASH_RearBaseCRAM_fnc_IsPilotClass)
+    };
+    if (_ground isNotEqualTo []) exitWith {_ground#0};
+    ["pilot-gunner-fallback",[_crewTypes#0,count _crewTypes]] call
+        ITW_CLASH_RearBaseCRAM_fnc_Log;
+    _crewTypes#0
+};
+
 ITW_CLASH_RearBaseCRAM_fnc_Crew = {
     params ["_side","_veh"];
     if (isNull _veh || {!alive _veh}) exitWith {[]};
@@ -199,7 +248,8 @@ ITW_CLASH_RearBaseCRAM_fnc_Crew = {
 
     private _position = getPosATL _veh;
     private _group = createGroup [_side,true];
-    private _gunner = _group createUnit [_crewTypes#0,_position,[],0,"NONE"];
+    private _gunnerType = [_crewTypes] call ITW_CLASH_RearBaseCRAM_fnc_GunnerType;
+    private _gunner = _group createUnit [_gunnerType,_position,[],0,"NONE"];
     if (isNull _gunner) exitWith {
         deleteGroup _group;
         ["no-crew",[toUpperANSI str _side,typeOf _veh]] call ITW_CLASH_RearBaseCRAM_fnc_Log;

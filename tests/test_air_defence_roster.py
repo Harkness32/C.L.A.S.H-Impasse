@@ -238,3 +238,59 @@ def test_wired_into_init_behind_the_air_picture():
     assert init.index('"ITW_CLASH_AirDefenceRoster.sqf"') < init.index(
         '"ITW_CLASH_RearBaseCRAM.sqf"'
     )
+
+
+# ----------------------------------------- who mans the launcher, not just which
+
+def cram() -> str:
+    return read("ITW_CLASH_RearBaseCRAM.sqf")
+
+
+def test_the_gunner_is_chosen_not_taken_first():
+    """Hark photographed a GUER Mini-Spike emplacement manned by a helicopter
+    pilot in a flight helmet. The crew class was _crewTypes#0 - whatever the
+    faction list happened to put first."""
+    body = code_only(function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_Crew"))
+    assert "_crewTypes#0" not in body, "the blind first pick is the defect"
+    assert "ITW_CLASH_RearBaseCRAM_fnc_GunnerType" in body
+
+
+def test_pilots_are_legitimately_in_the_crew_list():
+    """The premise. Checkbook_fnc_GetCrewTypes asks FactionUnits for role
+    "Crewman", and Arma gives pilots that same role - both are vehicle crew to
+    the role taxonomy - so filtering has to happen at the point of use."""
+    checkbook = read("ITW_CLASH_DualHALCheckbook.sqf")
+    body = function_body(checkbook, "ITW_CLASH_Checkbook_fnc_GetCrewTypes")
+    assert '["Crewman"]' in body
+
+
+def test_pilots_are_detected_by_subcategory_and_classname():
+    body = code_only(function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_IsPilotClass"))
+    assert "editorSubcategory" in body
+    assert '["pilot",_subcat,false] call BIS_fnc_inString' in body
+    assert '["pilot",toLowerANSI _class,false] call BIS_fnc_inString' in body
+
+
+def test_a_non_pilot_wins_when_one_exists():
+    body = code_only(function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_GunnerType"))
+    assert "ITW_CLASH_RearBaseCRAM_fnc_IsPilotClass" in body
+    assert "if (_ground isNotEqualTo []) exitWith {_ground#0}" in body
+
+
+def test_an_all_pilot_faction_still_gets_a_gunner():
+    """Fail-open on purpose: a pilot in the seat is cosmetic, an uncrewed
+    launcher reads as its CONFIG side, which is the fault this whole module
+    exists to prevent."""
+    body = code_only(function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_GunnerType"))
+    tail = body[body.index("if (_ground isNotEqualTo []) exitWith"):]
+    assert "pilot-gunner-fallback" in tail
+    assert tail.rstrip().rstrip("}").rstrip().endswith("_crewTypes#0")
+
+
+def test_the_two_faults_in_that_screenshot_have_different_owners():
+    """One photograph, two bugs: a BLUFOR launcher (class selection, the
+    roster) and a pilot crewing it (crew selection, here). Neither fixes the
+    other."""
+    assert "ITW_CLASH_AirDefenceRoster_fnc_Correct" in roster()
+    assert "ITW_CLASH_RearBaseCRAM_fnc_GunnerType" in cram()
+    assert "GunnerType" not in roster()
