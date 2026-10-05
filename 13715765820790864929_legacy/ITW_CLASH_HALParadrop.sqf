@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]) exitWith {true};
 
-ITW_CLASH_HALParadropVersion = 3;
+ITW_CLASH_HALParadropVersion = 4;
 ITW_CLASH_HALParadropReady = false;
 
 ITW_CLASH_HALParadrop_HeavyCargoSeats = missionNamespace getVariable [
@@ -222,14 +222,25 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
         _altitude < ITW_CLASH_HALParadrop_FallbackAltitude
         || {isNil "ITW_AllyParadropCargo"}
     ) exitWith {
-        _carrier land "GET OUT";
-        [_carrierGroup,_carrier] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier;
-        ["fallback-land",[
-            typeOf _carrier,
-            groupId _cargoGroup,
-            round _altitude,
-            count _aboard
-        ]] call ITW_CLASH_HALParadrop_fnc_Log;
+        if (!_allowLandFallback) then {
+            _carrier land "NONE";
+            ["fallback-refused",[
+                typeOf _carrier,
+                groupId _cargoGroup,
+                round _altitude,
+                count _aboard,
+                "landing-forbidden"
+            ]] call ITW_CLASH_HALParadrop_fnc_Log;
+        } else {
+            _carrier land "GET OUT";
+            [_carrierGroup,_carrier] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier;
+            ["fallback-land",[
+                typeOf _carrier,
+                groupId _cargoGroup,
+                round _altitude,
+                count _aboard
+            ]] call ITW_CLASH_HALParadrop_fnc_Log;
+        };
         false
     };
 
