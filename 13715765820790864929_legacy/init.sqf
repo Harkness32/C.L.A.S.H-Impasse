@@ -456,6 +456,16 @@ if (isServer) then {
         diag_log "CLASH BOOT | hal-paradrop-missing | native HAL landing retained";
     };
 
+    // One execution-time owner for the seven duplicated HAL air-unload sites.
+    // Scheduled because it binds after HAL Additions publishes the exact source
+    // paths its globals were compiled from. Existing recon/service wrappers
+    // bind later and capture the corrected executor underneath them.
+    if (fileExists "ITW_CLASH_HALUnload.sqf") then {
+        [] execVM "ITW_CLASH_HALUnload.sqf";
+    } else {
+        diag_log "CLASH BOOT | WARNING | hal-unload-missing | seven HAL order files retain native landing behavior";
+    };
+
     // Temporary hosted-test comms are intentionally observer-only and load
     // synchronously so recovery/recon state transitions can be mirrored without
     // wrapping any C.L.A.S.H. or HAL authority function.
