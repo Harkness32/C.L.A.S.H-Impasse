@@ -84,3 +84,23 @@ def test_paradrop_override_chain_is_runtime_self_proving():
     assert "_clashParaInfantry" in attack
     assert "_clashParaCargoPlayer" in attack
     assert "_clashParaCrewPlayer" in attack
+
+
+
+def test_air_unload_uses_actual_carried_state_not_ncrew_bucket():
+    attack = read(ADD / "hal" / "GoAttInf.sqf")
+
+    assert "private _clashParaAboard" in attack
+    assert "private _clashAirLift" in attack
+    assert "_GDV != _unitG" in attack
+    assert "vehicle _x == _AV" in attack
+    assert "if (_clashAirLift) then" in attack
+
+    # NCrewInf remains diagnostic context only; it must not gate either
+    # paradrop selection or the ordinary GET OUT waypoint anymore.
+    para_gate = attack[attack.index("if (\n\t_clashAirLift"):attack.index("_lz = objNull;")]
+    assert 'RydHQ_NCrewInfG' not in para_gate
+
+    unload = attack[attack.index('_sts = ["true","deletewaypoint'):attack.index('_EDPos = _GDV getVariable')]
+    assert 'RydHQ_NCrewInfG' not in unload
+    assert 'land \'GET OUT\'' in unload
