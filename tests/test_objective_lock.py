@@ -129,13 +129,13 @@ def test_one_owner_decides_who_anchors_what():
 
 # ------------------------------------------------------------------ push on
 
-def test_colossus_stops_holding_a_locked_objective():
-    """The hold gate exists because a fresh capture is vulnerable. A locked one
-    is not, so the reason for the hold is absent."""
+def test_colossus_stops_holding_a_frozen_objective():
+    """The hold gate exists because a fresh capture is vulnerable. An objective
+    that cannot change hands is not, so the reason for the hold is absent."""
     body = code_only(function_body(
         read("ITW_CLASH_Colossus.sqf"), "ITW_CLASH_Colossus_fnc_HoldingUnanchored"
     ))
-    assert "ITW_CLASH_fnc_ObjectiveLocked" in body
+    assert "ITW_CLASH_fnc_ObjectiveFrozen" in body
     assert "continue" in body
 
 
@@ -143,13 +143,18 @@ def test_colossus_degrades_if_the_predicate_is_missing():
     body = code_only(function_body(
         read("ITW_CLASH_Colossus.sqf"), "ITW_CLASH_Colossus_fnc_HoldingUnanchored"
     ))
-    assert '!isNil "ITW_CLASH_fnc_ObjectiveLocked"' in body
+    assert '!isNil "ITW_CLASH_fnc_ObjectiveFrozen"' in body
 
 
 def test_both_consumers_read_the_same_predicate():
-    """Not two notions of locked."""
-    assert "ITW_CLASH_fnc_ObjectiveLocked" in read("ITW_CLASH_Colossus.sqf")
-    assert "ITW_CLASH_fnc_ObjectiveLockRemaining" in read("ITW_CLASH.sqf")
+    """One notion of frozen, covering both the capture lock and the defend
+    phase, because the consequence is identical."""
+    assert "ITW_CLASH_fnc_ObjectiveFrozen" in read("ITW_CLASH_Colossus.sqf")
+    source = read("ITW_CLASH.sqf")
+    assert "ITW_CLASH_fnc_ObjectiveFrozen" in source
+    body = code_only(function_body(source, "ITW_CLASH_fnc_ObjectiveFrozen"))
+    assert "ITW_CLASH_fnc_DefendPhaseObjective" in body
+    assert "ITW_CLASH_fnc_ObjectiveLockRemaining" in body
 
 
 # ------------------------------------------------------------------- inert at 0
@@ -236,3 +241,68 @@ def test_an_empty_garrison_costs_nothing():
 def test_the_release_is_logged_with_what_it_let_go():
     body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
     assert "garrison-released-locked" in body
+
+
+# ----------------------------------- the defend phase, which is what Hark meant
+
+def test_the_defend_phase_is_read_from_itws_own_variable():
+    """Hark: "objectives are locked during the big siege mode... it's called a
+    defend phase". ITW_Objectives.sqf:2415 skips every flag but the chosen one
+    for the whole of the wait AND the phase."""
+    objectives = read("ITW_Objectives.sqf")
+    assert "if (ITW_defendPhaseObjIdx > 0 && {ITW_defendPhaseObjIdx != _objIdx}) then {continue};" in objectives
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_DefendPhaseObjective"))
+    assert 'getVariable ["ITW_defendPhaseObjIdx",-1]' in body
+
+
+def test_no_defend_phase_reads_as_minus_one():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_DefendPhaseObjective"))
+    assert "if (_index <= 0) exitWith {-1}" in body
+    assert "if !(_index isEqualType 0) exitWith {-1}" in body
+
+
+def test_the_taken_list_is_narrowed_to_the_one_on_the_table():
+    """Hark: "wipe the captured objectives / taken list and list that, and only
+    that, threatened objective"."""
+    source = code_only(read("ITW_CLASH.sqf"))
+    assert '[_taken,"taken"] call ITW_CLASH_fnc_NarrowToDefendPhase' in source
+    assert '[_offered,"candidates"] call ITW_CLASH_fnc_NarrowToDefendPhase' in source
+
+
+def test_the_other_commander_is_narrowed_too():
+    """The freeze is a property of the map, not of a side."""
+    source = code_only(read("ITW_CLASH_DualHALCheckbookHardening.sqf"))
+    assert '[_taken,"blufor-taken"] call ITW_CLASH_fnc_NarrowToDefendPhase' in source
+    assert '!isNil "ITW_CLASH_fnc_NarrowToDefendPhase"' in source
+
+
+def test_a_defend_phase_overrides_colossus():
+    """Eleven of twelve objectives cannot change hands; that is the map, not a
+    preference, so it is applied after COLOSSUS has had its say."""
+    source = code_only(read("ITW_CLASH.sqf"))
+    colossus = source.index("ITW_CLASH_Colossus_fnc_Concentrate")
+    narrow = source.index("call ITW_CLASH_fnc_NarrowToDefendPhase")
+    write = source.index("RydHQ_SimpleObjs = +_offered")
+    assert colossus < narrow < write
+
+
+def test_narrowing_with_no_matching_mirror_changes_nothing():
+    """Returning [] would tell a commander it holds nothing and is attacking
+    nothing, which is worse than the status quo."""
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_NarrowToDefendPhase"))
+    assert "if (_narrowed isEqualTo []) exitWith {" in body
+    assert "defend-phase-no-mirror" in body
+    assert "_list" in body.split("if (_narrowed isEqualTo []) exitWith {")[1][:220]
+
+
+def test_the_focus_objective_itself_is_never_frozen():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ObjectiveFrozen"))
+    assert "_objectiveIndex != _focus" in body
+
+
+def test_mirrors_match_by_stamp_or_by_flag():
+    """Commander B keeps private mirrors; matching only on the stamped index
+    would silently never narrow B."""
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_NarrowToDefendPhase"))
+    assert 'getVariable ["ITW_CLASH_ObjectiveIndex",-1]' in body
+    assert "_x isEqualTo _flag" in body

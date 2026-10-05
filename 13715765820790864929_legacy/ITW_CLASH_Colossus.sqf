@@ -624,8 +624,8 @@ ITW_CLASH_Colossus_fnc_HoldingUnanchored = {
             concentration should proceed. Same fact the anchor audit acts on,
             read from the same predicate.
         */
-        if (!isNil "ITW_CLASH_fnc_ObjectiveLocked" && {
-            [_index] call ITW_CLASH_fnc_ObjectiveLocked
+        if (!isNil "ITW_CLASH_fnc_ObjectiveFrozen" && {
+            [_index] call ITW_CLASH_fnc_ObjectiveFrozen
         }) then {continue};
         private _entry = _registry getOrDefault [str _index,[]];
         private _anchor = if (_entry isEqualTo []) then {grpNull} else {_entry#0};

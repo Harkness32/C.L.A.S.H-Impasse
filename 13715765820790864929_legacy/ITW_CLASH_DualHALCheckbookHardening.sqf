@@ -166,6 +166,13 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
         _x getVariable ["ITW_CLASH_BLUFOROwned",false]
     };
 
+    // Same freeze, same answer, other commander: during a defend phase only the
+    // objective on the table can change hands, so it is the only one worth
+    // holding men on. Fail-open if B's private mirrors cannot be matched.
+    if (!isNil "ITW_CLASH_fnc_NarrowToDefendPhase") then {
+        _taken = [_taken,"blufor-taken"] call ITW_CLASH_fnc_NarrowToDefendPhase;
+    };
+
     RydHQB_Taken = +_taken;
     if (!isNull ITW_CLASH_BLUFORHQ) then {
         ITW_CLASH_BLUFORHQ setVariable ["RydHQ_Taken",+_taken];

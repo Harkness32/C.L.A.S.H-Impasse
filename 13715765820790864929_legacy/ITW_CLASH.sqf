@@ -191,6 +191,89 @@ ITW_CLASH_fnc_GetObjectiveFlag = {
     nil both on expiry (:2434) and on a zone change (:2427), and the parameter
     is 0 by default, so every "no lock" path reads 0 without special casing.
 */
+/*
+    The defend phase: ITW's siege, and the real meaning of "locked".
+
+    Hark: "objectives are locked during the big siege mode where hostiles try
+    and have one climatic battle. it's called a defend phase... no reason
+    defending the other locked objectives when only one is on the table."
+
+    ITW_Objectives.sqf:2414-2415 is the whole mechanism:
+
+        if (ITW_defendPhaseObjIdx == _objIdx && {!ITW_defendRunning}) then {continue};
+        if (ITW_defendPhaseObjIdx > 0 && {ITW_defendPhaseObjIdx != _objIdx}) then {continue};
+
+    Once ITW_defendPhaseObjIdx is set - during the wait AND during the phase -
+    every other flag is skipped entirely. Not slowed, not harder: its capture
+    phase is not processed at all. One objective is on the table and nothing
+    else on the map can change hands.
+
+    Impasse already plays it this way for its own spawns: ITW_Ally.sqf:199 and
+    ITW_Enemy.sqf:165 both redirect to ITW_defendPhaseObjIdx when it is set. A
+    commander that keeps garrisoning and defending eleven frozen objectives
+    while one is being stormed is the odd one out, not the native behaviour.
+
+    Returns the chosen objective index, or -1 when no defend phase is pending
+    or running.
+*/
+ITW_CLASH_fnc_DefendPhaseObjective = {
+    private _index = missionNamespace getVariable ["ITW_defendPhaseObjIdx",-1];
+    if !(_index isEqualType 0) exitWith {-1};
+    if (_index <= 0) exitWith {-1};
+    _index
+};
+
+/*
+    Can this objective change hands at all right now?
+
+    Two ways it cannot, and the consumers treat them identically because the
+    consequence is identical - there is nothing to defend and nothing to take:
+
+      - ITW's capture lock (ITW_ParamObjLockTime), a timed freeze after a flip;
+      - a defend phase, which freezes everything except the one on the table.
+*/
+ITW_CLASH_fnc_ObjectiveFrozen = {
+    params [["_objectiveIndex",-1]];
+    if (_objectiveIndex < 0) exitWith {false};
+    private _focus = call ITW_CLASH_fnc_DefendPhaseObjective;
+    if (_focus > 0 && {_objectiveIndex != _focus}) exitWith {true};
+    ([_objectiveIndex] call ITW_CLASH_fnc_ObjectiveLockRemaining) > 0
+};
+
+/*
+    Keep only the objective on the table.
+
+    Used on both the taken list and the candidate list, for both commanders,
+    because the freeze is a property of the map rather than of a side.
+
+    Fail-open and loudly: a list with no mirror for the chosen objective comes
+    back UNCHANGED. Returning [] there would tell a commander it holds nothing
+    and is attacking nothing, which is a far worse answer than the status quo.
+*/
+ITW_CLASH_fnc_NarrowToDefendPhase = {
+    params ["_list",["_label","list"]];
+    private _focus = call ITW_CLASH_fnc_DefendPhaseObjective;
+    if (_focus <= 0) exitWith {_list};
+    if !(_list isEqualType []) exitWith {_list};
+
+    private _flag = [_focus] call ITW_CLASH_fnc_GetObjectiveFlag;
+    private _narrowed = _list select {
+        (_x getVariable ["ITW_CLASH_ObjectiveIndex",-1]) isEqualTo _focus
+        || {!isNull _flag && {_x isEqualTo _flag}}
+    };
+    if (_narrowed isEqualTo []) exitWith {
+        if (_list isNotEqualTo []) then {
+            ["defend-phase-no-mirror",[_label,_focus,count _list]] call ITW_CLASH_fnc_Log;
+        };
+        _list
+    };
+    if (count _narrowed != count _list) then {
+        ["defend-phase-narrowed",[_label,_focus,count _list,count _narrowed]] call
+            ITW_CLASH_fnc_Log;
+    };
+    _narrowed
+};
+
 ITW_CLASH_fnc_ObjectiveLockRemaining = {
     params [["_objectiveIndex",-1]];
     private _flag = [_objectiveIndex] call ITW_CLASH_fnc_GetObjectiveFlag;
@@ -764,6 +847,18 @@ ITW_CLASH_fnc_MirrorObjectives = {
         ];
         _offered = _colossusMirrors;
         _maxObjs = _colossusMax;
+    };
+
+    /*
+        A defend phase overrides every other opinion about where to go, COLOSSUS
+        included: eleven of twelve objectives cannot change hands, so narrowing
+        is not a preference here, it is the map.
+    */
+    private _defendFocus = call ITW_CLASH_fnc_DefendPhaseObjective;
+    if (_defendFocus > 0) then {
+        _offered = [_offered,"candidates"] call ITW_CLASH_fnc_NarrowToDefendPhase;
+        _taken = [_taken,"taken"] call ITW_CLASH_fnc_NarrowToDefendPhase;
+        _maxObjs = 1;
     };
 
     RydHQ_SimpleMode = true;
@@ -1707,7 +1802,7 @@ ITW_CLASH_fnc_AuditAnchors = {
             no objective ever locks and none of this ever runs.
         */
         private _lockRemaining = [_objectiveIndex] call ITW_CLASH_fnc_ObjectiveLockRemaining;
-        if (_lockRemaining > 0) then {
+        if ([_objectiveIndex] call ITW_CLASH_fnc_ObjectiveFrozen) then {
             if (_entry isNotEqualTo []) then {
                 ["anchor-released-locked",[
                     _objectiveIndex,
