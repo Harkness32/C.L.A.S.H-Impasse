@@ -125,7 +125,8 @@ def test_it_refuses_an_ambiguous_or_unrecognised_dispatcher():
 
 def test_it_is_idempotent():
     source = fix()
-    assert '(_source find "ITW_CLASH_SoftVehicleGroups") >= 0) exitWith' in source
+    assert '(_source find "ITW_CLASH_SoftVehicleGroups") >= 0' in source
+    assert '(_source find "ITW_CLASH_AntiArmorVehicleGroups") >= 0' in source
     assert "already-fixed" in source
 
 
