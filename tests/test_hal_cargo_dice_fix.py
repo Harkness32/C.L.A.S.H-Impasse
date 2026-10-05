@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,7 +124,11 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
     body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
     resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
 
-    assert "ITW_CLASH_HALCargoDiceFixVersion = 4;" in source
+    # Version floor, not an exact pin: v5 moved base embark behind native
+    # SCargo's pickup phase, and nothing here may regress below that.
+    version = re.search(r"ITW_CLASH_HALCargoDiceFixVersion = (\d+);", source)
+    assert version is not None
+    assert int(version.group(1)) >= 5
     # The resolver was rewritten to walk every friendly base index and test
     # each one's anchors, instead of asking for a single nearest base. Same
     # rule - a live Impasse base, not a cached coordinate - via a wider test.
@@ -141,8 +146,14 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
 def test_scargo_fastpath_is_only_for_normal_crewed_transport_and_falls_back_cleanly():
     source = fix()
     assert 'not (_withdraw) and not (_request) and not (_emptyV)' in source
-    assert 'SCargo-base-embark-entry' in source
-    assert 'SCargo-base-embark-physical-fallback' in source
+    # v5 hooks the seat-assignment seam, after native SCargo has finished its
+    # own pickup waypoint phase. The pre-pickup entry anchor raced SCargo's
+    # RYD_WPdel and cost a carrier its delivery waypoint.
+    assert 'SCargo-base-embark-post-pickup' in source
+    assert 'SCargo-base-embark-entry' not in source
+    # Falling back cleanly means re-emitting native HAL's own seat-assignment
+    # condition verbatim, so a declined fast embark walks the troops in.
+    assert 'if (((_ChosenOne emptyPositions "Cargo") > 0) and not (_request)) then' in source
     assert 'not (_clashBaseEmbarked) and (((_ChosenOne emptyPositions "Cargo") > 0)' in source
     assert 'remoteExecCall ["RYD_MP_unassignVehicle",0]' in source
     assert 'base-embark-fastpath' in source
@@ -163,7 +174,10 @@ def test_base_embark_uses_live_base_arrays_not_cached_coordinates():
 def test_scargo_runtime_source_normalizes_crlf_before_multiline_patch():
     source = fix()
     assert '_source = (_source splitString (toString [13])) joinString "";' in source
-    assert "SCargo-base-embark-entry" in source
+    # The patch that needs the normalization is the base-embark one: its
+    # replacement spans lines, so a stray CR would stop the anchor matching.
+    assert "SCargo-base-embark-post-pickup" in source
+    assert "(toString [10]) + (toString [10])" in source
 
 
 def test_base_embark_recognizes_impasse_staging_anchors():

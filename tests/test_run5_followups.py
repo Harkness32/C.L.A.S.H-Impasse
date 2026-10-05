@@ -59,8 +59,10 @@ def test_no_anchor_relies_on_a_backslash_escape():
 
 def test_the_newline_comes_from_tostring():
     source = read(MISSION / "ITW_CLASH_HALCargoDiceFix.sqf")
-    assert "private _nl = toString [10];" in source
-    assert "_exitLine + _nl + _nl" in source
+    # v5 builds the newline inline rather than through an _nl binding, but it
+    # is still a character code and never a backslash escape.
+    assert "(toString [10]) + (toString [10])" in source
+    assert "toString [13]" in source
 
 
 def test_every_scargo_anchor_matches_hals_real_source_exactly_once():
