@@ -165,3 +165,74 @@ def test_nothing_runs_when_the_mission_has_locking_switched_off():
         "read the stamped flag, not the parameter: the parameter does not say "
         "whether THIS objective is locked right now"
     )
+
+
+# ------------------------------------------- the garrison goes back to the pool
+
+def test_the_garrison_is_released_only_when_the_objective_is_locked():
+    """Hark: "ONLY when the objective is locked, do we de prioritize it."
+
+    The call sits inside the lock branch, after the lock test, so an unlocked
+    objective keeps its garrison exactly as before."""
+    source = code_only(read("ITW_CLASH.sqf"))
+    call = source.index("ITW_CLASH_fnc_ReleaseLockedGarrison;")
+    gate = source.index("private _lockRemaining = ")
+    nxt = source.index("private _anchorValid", gate)
+    assert gate < call < nxt, "the release must be inside the locked branch"
+
+
+def test_garrison_membership_is_the_leash_being_cut():
+    """HAC_fnc.sqf:1593 refuses to dispatch any RydHQ_Garrison group beyond
+    _garrR, so membership in that one list IS the leash."""
+    hal = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAC_fnc.sqf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert "(_chosen in _garrison) and (((vehicle (leader _chosen)) distance _tPos) > _garrR)" in hal
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    assert '_hq setVariable ["RydHQ_Garrison",_garrison - _released]' in body
+
+
+def test_the_garrisoned_flags_are_cleared_so_hal_does_not_re_dig_them_in():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    assert 'setVariable ["Garrisoned" + str _x,false]' in body
+    assert 'setVariable ["NOGarrisoned" + str _x,false]' in body
+
+
+def test_only_groups_actually_on_the_objective_are_released():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    assert "distance2D _center > _radius" in body
+
+
+def test_somebody_elses_groups_are_left_alone():
+    """A deliberately placed FOB SPAA, a lifecycle-reserved group and anything
+    a player is in are all here on purpose, not left over."""
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    assert "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved" in body
+    assert 'ITW_CLASH_FOBAirDefence' in body
+    assert "isPlayer _x" in body
+
+
+def test_the_sweep_uses_continue_not_exitwith():
+    """exitWith inside a forEach body is ambiguous about which scope it leaves,
+    and getting it wrong would abandon the sweep at the first group that
+    belongs to somebody else."""
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    loop = body[body.index("private _released = ["):body.index("} forEach _garrison")]
+    assert "exitWith" not in loop
+    assert loop.count("continue") >= 5
+
+
+def test_the_release_can_be_switched_off():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    assert "if (!ITW_CLASH_LockedGarrisonRelease) exitWith {0}" in body
+
+
+def test_an_empty_garrison_costs_nothing():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    assert "if (_garrison isEqualTo []) exitWith {0}" in body
+    assert "if (_released isEqualTo []) exitWith {0}" in body
+
+
+def test_the_release_is_logged_with_what_it_let_go():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_ReleaseLockedGarrison"))
+    assert "garrison-released-locked" in body

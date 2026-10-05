@@ -207,6 +207,76 @@ ITW_CLASH_fnc_ObjectiveLocked = {
     ([_objectiveIndex] call ITW_CLASH_fnc_ObjectiveLockRemaining) > 0
 };
 
+/*
+    Give the rear base its garrison back.
+
+    Hark: "we need to clean up our rear bases garrison after the front has
+    moved on. lets roll this into the objective lock system. ONLY when the
+    objective is locked, do we de prioritize it."
+
+    HAL leashes a garrison to its ground: HAC_fnc.sqf:1593 refuses to dispatch
+    any group that is in RydHQ_Garrison to a target further than _garrR away.
+    That is correct while the objective can still be taken, and it is dead
+    weight the moment it cannot - the front moves on and a rear base keeps a
+    garrison that HAL is structurally unable to send anywhere. Membership in
+    that one list IS the leash, so removing the group from it is the whole
+    release; the Garrisoned flags go too, because they are what HAL's garrison
+    routine reads on its next pass to dig the group back in.
+
+    Three kinds of group are left alone, because they are somebody else's and
+    their being here is deliberate rather than leftover: anything a lifecycle
+    owner has reserved (CASEVAC, reconstitution, recovery, deliveries), the
+    SPAA that ITW_CLASH_FOBAirDefence.sqf placed on this FOB on purpose, and
+    anything a player is in.
+*/
+ITW_CLASH_LockedGarrisonRelease = missionNamespace getVariable [
+    "ITW_CLASH_LockedGarrisonRelease",true
+];
+
+ITW_CLASH_fnc_ReleaseLockedGarrison = {
+    params ["_hq",["_objectiveIndex",-1],["_center",[]],["_radius",0]];
+    if (!ITW_CLASH_LockedGarrisonRelease) exitWith {0};
+    if (isNull _hq || {_center isEqualTo []} || {_radius <= 0}) exitWith {0};
+
+    private _garrison = +(_hq getVariable ["RydHQ_Garrison",[]]);
+    if (_garrison isEqualTo []) exitWith {0};
+
+    private _released = [];
+    {
+        private _group = _x;
+        // continue, not exitWith: inside a forEach body exitWith is ambiguous
+        // about which scope it leaves, and getting it wrong here would abandon
+        // the sweep after the first group that is somebody else's.
+        if (isNull _group || {({alive _x} count units _group) == 0}) then {continue};
+        if (((units _group) findIf {isPlayer _x}) >= 0) then {continue};
+        if (!isNil "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved" && {
+            [_group] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved
+        }) then {continue};
+        if ((_group getVariable ["ITW_CLASH_FOBAirDefence",""]) isNotEqualTo "") then {
+            continue
+        };
+        private _leader = leader _group;
+        if (isNull _leader) then {continue};
+        if ((getPosATL _leader) distance2D _center > _radius) then {continue};
+        _released pushBack _group;
+    } forEach _garrison;
+
+    if (_released isEqualTo []) exitWith {0};
+
+    _hq setVariable ["RydHQ_Garrison",_garrison - _released];
+    {
+        _x setVariable ["Garrisoned" + str _x,false];
+        _x setVariable ["NOGarrisoned" + str _x,false];
+    } forEach _released;
+
+    ["garrison-released-locked",[
+        _objectiveIndex,
+        _released apply {[_x] call ITW_CLASH_fnc_GroupId},
+        count (_garrison - _released)
+    ]] call ITW_CLASH_fnc_Log;
+    count _released
+};
+
 ITW_CLASH_fnc_GetActiveObjectives = {
     if (isNil "ITW_Zones" || {
         isNil "ITW_ZoneIndex" || {
@@ -1589,6 +1659,12 @@ ITW_CLASH_fnc_AuditAnchors = {
             // No demand either: an objective nobody can take generates no
             // refill, so the manpower goes to the objectives that are live.
             ITW_CLASH_AnchorRefills deleteAt _key;
+            // And give the garrison back, for the same reason: HAL cannot send
+            // a garrisoned group anywhere while it is leashed to ground that
+            // cannot be taken.
+            [
+                ITW_CLASH_HALHQ,_objectiveIndex,_center,_radius
+            ] call ITW_CLASH_fnc_ReleaseLockedGarrison;
             continue;
         };
 
