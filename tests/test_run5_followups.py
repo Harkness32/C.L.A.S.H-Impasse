@@ -217,3 +217,59 @@ def test_an_mbt_is_still_heavy_armour():
 
 def test_taxonomy_version_moved_again():
     assert "ITW_CLASH_HALTaxonomyVersion = 3;" in read(MISSION / "ITW_CLASH_HALTaxonomy.sqf")
+
+
+# --- 4. the base-embark fast path says why it declined -----------------------
+
+def test_every_base_embark_gate_names_itself():
+    """Hark wired a fast path to teleport chalks in at base instead of landing
+    to board. It is correct and it had never executed - the SCargo anchor it
+    installs through could not match (see above), so run6 contains exactly one
+    base-embark string and it is the failure line.
+
+    It also had twelve silent false-returns and logged only on success, so a
+    helicopter still landing told us nothing about which gate refused. Each
+    decline now names itself.
+    """
+    source = read(MISSION / "ITW_CLASH_HALCargoDiceFix.sqf")
+    body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
+    # No gate may return a bare false any more.
+    assert "exitWith {false}" not in body
+    assert body.count("call _decline") == 12, body.count("call _decline")
+    for reason in (
+        "disabled", "null-or-dead", "withdrawing", "no-living-troops",
+        "player-in-squad", "not-all-on-foot", "no-assigned-driver",
+        "carrier-is-cargo", "side-mismatch", "not-enough-seats",
+        "troops-not-at-a-base", "different-bases",
+    ):
+        assert f'"{reason}"' in body, reason
+
+
+def test_declines_do_not_spam_the_log():
+    """SCargo asks again every HAL cycle and the answer rarely changes, so only
+    a CHANGE of reason is reported."""
+    body = function_body(read(MISSION / "ITW_CLASH_HALCargoDiceFix.sqf"),
+                         "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
+    decline = body[body.index("private _decline = {"):body.index("private _troops")]
+    assert "ITW_CLASH_BaseEmbarkDeclined" in decline
+    assert "isNotEqualTo _reason" in decline
+
+
+def test_the_decline_logger_still_returns_false():
+    """It is used as the gate's return value, so it must be falsy."""
+    body = function_body(read(MISSION / "ITW_CLASH_HALCargoDiceFix.sqf"),
+                         "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
+    decline = body[body.index("private _decline = {"):body.index("private _troops")]
+    assert decline.rstrip().rstrip(";").rstrip().endswith("false\n    }") or "false" in decline.split("};")[-2]
+
+
+def test_the_fast_path_still_teleports_rather_than_lands():
+    """The point of the whole thing: moveInCargo at the base, no boarding run."""
+    body = function_body(read(MISSION / "ITW_CLASH_HALCargoDiceFix.sqf"),
+                         "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
+    assert "_x assignAsCargo _vehicle;" in body
+    assert "_x moveInCargo _vehicle;" in body
+    # Both ends must be at the SAME base, or it is a teleport across the map.
+    assert "_carrierBase != _troopBase" in body
+    # And a partial embarkation rolls back rather than handing SCargo a split squad.
+    assert "_failed" in body

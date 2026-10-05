@@ -138,37 +138,60 @@ ITW_CLASH_HALCargoDice_fnc_BaseAtPosition = {
 
 ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {
     params ["_unitG","_vehicle",["_hq",grpNull]];
-    if (!ITW_CLASH_BaseEmbarkFastPathEnabled) exitWith {false};
-    if (isNull _unitG || {isNull _vehicle} || {!alive _vehicle}) exitWith {false};
+    /*
+        Say why it declined.
+
+        This had twelve silent false-returns and logged only on success, so a
+        helicopter landing to board told us nothing about which gate refused -
+        and the base-embark path has now cost three test rounds. Each decline
+        names itself instead. Repeats of the same reason for the same group are
+        suppressed, because SCargo asks again every HAL cycle and the answer
+        rarely changes.
+    */
+    private _decline = {
+        params ["_reason"];
+        private _key = "ITW_CLASH_BaseEmbarkDeclined";
+        if (!isNull _unitG && {(_unitG getVariable [_key,""]) isNotEqualTo _reason}) then {
+            _unitG setVariable [_key,_reason];
+            ["base-embark-declined",[
+                str _unitG,
+                if (isNull _vehicle) then {""} else {typeOf _vehicle},
+                _reason
+            ]] call ITW_CLASH_HALCargoDice_fnc_Log;
+        };
+        false
+    };
+    if (!ITW_CLASH_BaseEmbarkFastPathEnabled) exitWith {["disabled"] call _decline};
+    if (isNull _unitG || {isNull _vehicle} || {!alive _vehicle}) exitWith {["null-or-dead"] call _decline};
 
     // This is deliberately not a recovery shortcut. Native SCargo passes
     // _withdraw/_request guards before calling us; these extra state guards
     // keep a future caller from bypassing GTFO/CASEVAC ownership accidentally.
-    if (_unitG getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {false};
+    if (_unitG getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {["withdrawing"] call _decline};
 
     private _troops = (units _unitG) select {alive _x};
-    if (_troops isEqualTo []) exitWith {false};
-    if ((_troops findIf {isPlayer _x}) >= 0) exitWith {false};
+    if (_troops isEqualTo []) exitWith {["no-living-troops"] call _decline};
+    if ((_troops findIf {isPlayer _x}) >= 0) exitWith {["player-in-squad"] call _decline};
     if ((_troops findIf {
         !(_x isKindOf "CAManBase") || {vehicle _x != _x}
-    }) >= 0) exitWith {false};
+    }) >= 0) exitWith {["not-all-on-foot"] call _decline};
 
     // Only accelerate a real HAL transport. Empty vehicles use SCargo's
     // separate driver/gunner assignment path and must remain untouched.
     private _driver = assignedDriver _vehicle;
-    if (isNull _driver) exitWith {false};
+    if (isNull _driver) exitWith {["no-assigned-driver"] call _decline};
     private _carrierG = group _driver;
-    if (isNull _carrierG || {_carrierG == _unitG}) exitWith {false};
-    if (side _carrierG != side _unitG) exitWith {false};
-    if ((_vehicle emptyPositions "Cargo") < count _troops) exitWith {false};
+    if (isNull _carrierG || {_carrierG == _unitG}) exitWith {["carrier-is-cargo"] call _decline};
+    if (side _carrierG != side _unitG) exitWith {["side-mismatch"] call _decline};
+    if ((_vehicle emptyPositions "Cargo") < count _troops) exitWith {["not-enough-seats"] call _decline};
 
     private _side = side _unitG;
     private _troopBase = [_side,getPosATL (leader _unitG)] call
         ITW_CLASH_HALCargoDice_fnc_BaseAtPosition;
-    if (_troopBase < 0) exitWith {false};
+    if (_troopBase < 0) exitWith {["troops-not-at-a-base"] call _decline};
     private _carrierBase = [_side,getPosATL _vehicle] call
         ITW_CLASH_HALCargoDice_fnc_BaseAtPosition;
-    if (_carrierBase != _troopBase) exitWith {false};
+    if (_carrierBase != _troopBase) exitWith {["different-bases"] call _decline};
 
     {
         _x assignAsCargo _vehicle;
