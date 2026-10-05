@@ -473,8 +473,8 @@ _halParadropCapacity = 0;
 
 private _clashParaHasVehicle = not (isNull _AV);
 private _clashParaAirCarrier = _clashParaHasVehicle
-	and {not (isNull _GDV)}
-	and {_GDV in (_HQ getVariable ["RydHQ_AirG",[]])};
+	&& {not (isNull _GDV)}
+	&& {_GDV in (_HQ getVariable ["RydHQ_AirG",[]])};
 private _clashParaInfantry = _unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]);
 private _clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0;
 private _clashParaCrewPlayer = if (isNull _GDV) then {false} else {
@@ -483,20 +483,23 @@ private _clashParaCrewPlayer = if (isNull _GDV) then {false} else {
 private _clashParaReady = missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false];
 private _clashParaFnExists = not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse");
 
-diag_log format [
-	"CLASHHALADD | paradrop-gate | group=%1 veh=%2 hasVehicle=%3 airCarrier=%4 infantry=%5 cargoHasPlayer=%6 crewHasPlayer=%7 ready=%8 fnExists=%9 threatened=%10 unloadParam=%11",
-	groupId _unitG,
-	if (_clashParaHasVehicle) then {typeOf _AV} else {"NULL"},
-	_clashParaHasVehicle,
-	_clashParaAirCarrier,
-	_clashParaInfantry,
-	_clashParaCargoPlayer,
-	_clashParaCrewPlayer,
-	_clashParaReady,
-	_clashParaFnExists,
-	_NeNMode,
-	missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
-];
+if (_clashParaHasVehicle) then
+	{
+	diag_log format [
+		"CLASHHALADD | paradrop-gate | group=%1 veh=%2 hasVehicle=%3 airCarrier=%4 infantry=%5 cargoHasPlayer=%6 crewHasPlayer=%7 ready=%8 fnExists=%9 threatened=%10 unloadParam=%11",
+		groupId _unitG,
+		typeOf _AV,
+		_clashParaHasVehicle,
+		_clashParaAirCarrier,
+		_clashParaInfantry,
+		_clashParaCargoPlayer,
+		_clashParaCrewPlayer,
+		_clashParaReady,
+		_clashParaFnExists,
+		_NeNMode,
+		missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
+	];
+	};
 
 if (
 	_clashParaHasVehicle
