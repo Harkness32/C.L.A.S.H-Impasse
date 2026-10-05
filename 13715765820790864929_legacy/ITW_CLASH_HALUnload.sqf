@@ -49,22 +49,75 @@ ITW_CLASH_HALUnload_fnc_Log = {
 ITW_CLASH_HALUnload_fnc_CargoGroup = {
     params ["_carrierGroup","_carrier"];
     if (isNull _carrierGroup || {isNull _carrier}) exitWith {grpNull};
-    private _found = grpNull;
-    {
-        if (!alive _x || {vehicle _x != _carrier}) then {continue};
-        private _group = group _x;
-        if (isNull _group || {_group isEqualTo _carrierGroup}) then {continue};
-        if !(_x isKindOf "CAManBase") then {continue};
-        _found = _group;
-    } forEach ((crew _carrier) select {
-        private _group = group _x;
+
+    private _stamped = _carrierGroup getVariable [
+        "ITW_CLASH_HALUnloadCargoGroup",grpNull
+    ];
+    if (
+        !isNull _stamped
+        && {((units _stamped) findIf {
+            alive _x && {vehicle _x == _carrier}
+        }) >= 0}
+    ) exitWith {_stamped};
+
+    private _passengers = (crew _carrier) select {
         alive _x
-        && {vehicle _x == _carrier}
-        && {!isNull _group}
-        && {_group isNotEqualTo _carrierGroup}
         && {_x isKindOf "CAManBase"}
-    });
-    _found
+        && {group _x isNotEqualTo _carrierGroup}
+    };
+    if (_passengers isEqualTo []) exitWith {grpNull};
+    group (_passengers#0)
+};
+
+/*
+    Register the role relationship immediately, but stamp the pickup origin only
+    when physical boarding actually happens. This observer owns no movement.
+    It exists solely because HAL can build the destination order while the
+    chalk is still walking to the aircraft.
+*/
+ITW_CLASH_HALUnload_fnc_TrackLift = {
+    params ["_carrierGroup","_carrier","_cargoGroup"];
+    if (
+        isNull _carrierGroup
+        || {isNull _carrier}
+        || {isNull _cargoGroup}
+    ) exitWith {false};
+
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadCargoGroup",_cargoGroup];
+
+    [_carrierGroup,_carrier,_cargoGroup] spawn {
+        params ["_carrierGroup","_carrier","_cargoGroup"];
+        private _deadline = time + 300;
+        waitUntil {
+            sleep 0.2;
+            isNull _carrierGroup
+            || {isNull _carrier}
+            || {!alive _carrier}
+            || {isNull _cargoGroup}
+            || {time >= _deadline}
+            || {
+                ((units _cargoGroup) findIf {
+                    alive _x && {vehicle _x == _carrier}
+                }) >= 0
+            }
+        };
+        if (
+            !isNull _carrierGroup
+            && {!isNull _carrier}
+            && {alive _carrier}
+            && {!isNull _cargoGroup}
+            && {
+                ((units _cargoGroup) findIf {
+                    alive _x && {vehicle _x == _carrier}
+                }) >= 0
+            }
+        ) then {
+            _carrierGroup setVariable [
+                "ITW_CLASH_HALUnloadOrigin",getPosATL _carrier
+            ];
+        };
+    };
+    true
 };
 
 ITW_CLASH_HALUnload_fnc_Commander = {
@@ -105,7 +158,10 @@ ITW_CLASH_HALUnload_fnc_Corridor = {
     // SCargo records the transport's departure point on the carrier group.
     // That gives the execution-time classifier the real flown corridor without
     // adding a second route owner or caching startup base coordinates.
-    private _origin = _carrierGroup getVariable ["START" + str _carrierGroup,[]];
+    private _origin = _carrierGroup getVariable ["ITW_CLASH_HALUnloadOrigin",[]];
+    if (_origin isEqualTo []) then {
+        _origin = _carrierGroup getVariable ["START" + str _carrierGroup,[]];
+    };
     private _destination = getPosATL _carrier;
     if (_origin isEqualTo [] || {_destination isEqualTo []}) exitWith {_fallback};
 
@@ -259,7 +315,7 @@ ITW_CLASH_HALUnload_fnc_Unload = {
         switch (_mode) do {
             case "PARADROP": {
                 _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_cargoGroup];
-                private _origin = _carrierGroup getVariable ["START" + str _carrierGroup,[]];
+                private _origin = _carrierGroup getVariable ["ITW_CLASH_HALUnloadOrigin",[]];
                 _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",_origin];
                 _carrier land "NONE";
                 _carrier flyInHeight (
@@ -289,7 +345,7 @@ ITW_CLASH_HALUnload_fnc_Unload = {
             };
             case "HOT_PARADROP": {
                 _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_cargoGroup];
-                private _origin = _carrierGroup getVariable ["START" + str _carrierGroup,[]];
+                private _origin = _carrierGroup getVariable ["ITW_CLASH_HALUnloadOrigin",[]];
                 _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",_origin];
                 _carrier land "NONE";
                 _carrier flyInHeight (
@@ -324,6 +380,9 @@ ITW_CLASH_HALUnload_fnc_Unload = {
             };
         };
     };
+
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadCargoGroup",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadOrigin",nil];
 
     // One line answers the whole insertion question.
     diag_log format [
@@ -362,6 +421,10 @@ ITW_CLASH_HALUnload_fnc_PatchSource = {
         [false,_source,"signature-duplicate"]
     };
 
+    private _track =
+        "private _cg = group (assigneddriver _AV); "
+        + "[_cg,_AV,_unitG] call ITW_CLASH_HALUnload_fnc_TrackLift; ";
+
     private _script =
         "private _g = group this; private _v = vehicle this; "
         + "if (isNil ""ITW_CLASH_HALUnload_fnc_Unload"") then {"
@@ -372,8 +435,9 @@ ITW_CLASH_HALUnload_fnc_PatchSource = {
         + "deletewaypoint [(group this), 0]";
 
     private _replacement =
-        'if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then {_sts = ["true",'
-        + str _script + ']};';
+        'if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then {'
+        + _track
+        + '_sts = ["true",' + str _script + ']};';
 
     [
         true,
