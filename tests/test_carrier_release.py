@@ -120,7 +120,10 @@ def test_hotdrop_releases_before_it_tries_to_egress():
 
 
 def test_hotdrop_version_moved():
-    assert "ITW_CLASH_HotDropVersion = 6;" in read(MISSION / "ITW_CLASH_HotDrop.sqf")
+    # Exact number pinned in tests/test_hotdrop_scargo_interlock.py.
+    version = int(re.search(r"ITW_CLASH_HotDropVersion = (\d+);",
+                            read(MISSION / "ITW_CLASH_HotDrop.sqf")).group(1))
+    assert version >= 6, version
 
 
 def test_paradrop_version_moved():

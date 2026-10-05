@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 6;
+ITW_CLASH_HotDropVersion = 7;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -215,6 +215,40 @@ ITW_CLASH_HotDrop_fnc_IsEligible = {
     // Another owner already has this lift. The marker is set by the native SF
     // insertion path and by this module, so it answers for both.
     if !(isNil {_crewGroup getVariable "ITW_CLASH_HALParadropCargoGroup"}) exitWith {false};
+
+    /*
+        HAL is already flying this one.
+
+        SCargo.sqf:265 sets Busy on the CARRIER's group when it begins a lift
+        and clears it at its four exits (442, 522, 731, 838). It is a complete
+        executor - it reserves the carrier, moves it to pickup, assigns seats,
+        waits for embarkation, owns the transport leg and owns RTB - so taking
+        the aircraft out from under it means two systems flying one helicopter.
+
+        Run8 is that, measured. HotDrop claimed a Littlebird at 3:34:35 for a
+        destination 1684m away and flew INGRESS -> POPUP -> DROP, while SCargo's
+        own tracer showed the same carrier cycling BOARDING(alt 50) ->
+        EMBARKED(alt 0) -> BOARDING(alt 0) underneath it. Every HotDrop phase
+        ended on its 120s timeout rather than on arrival, the aircraft covered
+        487m of 1684m in four minutes, and the profile finished with
+        LAND_FALLBACK on the ground - which is what Hark saw as "travels half
+        the distance and then fucking LANDS for no goddamn reason".
+
+        Busy is HAL's own signal that an order is running, and it is the same
+        lock C.L.A.S.H.'s resupply layer already respects. Declining on it is
+        the interlock that was missing.
+
+        Known hole, deliberately not closed here: HotDrop still does not TAKE
+        Busy for the lifts it does claim, so HAL can in principle dispatch a
+        carrier mid-profile from the other direction. Taking it properly means
+        going through HAL's Break to unwind the running order first, the way
+        fnc_Claim does in the resupply layer, and that is a larger change than
+        this interlock.
+    */
+    if (_crewGroup getVariable [("Busy" + str _crewGroup),false]) exitWith {
+        ["declined-busy",[typeOf _veh,groupId _crewGroup]] call ITW_CLASH_HotDrop_fnc_Log;
+        false
+    };
     // Declined once is declined for this lift: the corridor is read at
     // boarding and not revisited, so re-asking every poll would only produce
     // a different answer to a question already settled.
