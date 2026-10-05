@@ -172,17 +172,34 @@ def test_corridor_gate_adds_what_hal_does_not_know_about():
         assert f'"{state}"' in body
 
 
-def test_loss_counter_needs_two_losses_close_in_space_and_time():
+def test_loss_counter_needs_several_losses_close_in_space_and_time():
+    """Was a hard-coded pair. At a 2500m radius two losses is a bad afternoon,
+    not a nest: one run raised 15 lift refusals and accepted none, 12 of them
+    "recent-losses", while infantry walked 3484m, 3323m and 2200m. Seven
+    aircraft died across the map and their discs covered it."""
     source = air_picture()
-    # The pair is detected when a loss is recorded; LossClosed only reads the
+    # The trip is detected when a loss is recorded; LossClosed only reads the
     # areas that detection tripped.
     record = function_body(source, "ITW_CLASH_AirPicture_fnc_RecordLoss")
     assert "ITW_CLASH_AirPictureLossRadius" in record
     assert "ITW_CLASH_AirPictureLossWindow" in record
-    assert "count _pair < 2" in record
+    assert "count _nearby < ITW_CLASH_AirPictureLossThreshold" in record
+    assert "count _pair < 2" not in record, "the hard-coded pair is the defect"
     closed = function_body(source, "ITW_CLASH_AirPicture_fnc_LossClosed")
     assert "ITW_CLASH_AirPictureLossRadius" in closed
     assert 'ITW_CLASH_AirPictureLossWindow",600' in source
+
+
+def test_the_loss_threshold_is_four_and_settable():
+    source = air_picture()
+    assert '"ITW_CLASH_AirPictureLossThreshold",4' in source
+
+
+def test_a_below_threshold_loss_says_so():
+    """The old rule was silent about near-misses, so a corridor that was one
+    loss away from closing looked identical to one nowhere near it."""
+    record = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_RecordLoss")
+    assert "loss-below-threshold" in record
 
 
 def test_the_loss_radius_spans_two_approaches_not_one_launcher():

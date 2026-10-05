@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo") exitWith {
 };
 
 ITW_CLASH_AirPictureStarted = true;
-ITW_CLASH_AirPictureVersion = 2;
+ITW_CLASH_AirPictureVersion = 3;
 ITW_CLASH_AirPictureReady = false;
 
 /*
@@ -78,6 +78,22 @@ ITW_CLASH_AirPictureFighterEnvelope = missionNamespace getVariable ["ITW_CLASH_A
 */
 ITW_CLASH_AirPictureLossRadius = missionNamespace getVariable ["ITW_CLASH_AirPictureLossRadius",2500];
 ITW_CLASH_AirPictureLossWindow = missionNamespace getVariable ["ITW_CLASH_AirPictureLossWindow",600];
+/*
+    How many losses inside the radius and the window it takes to close an area.
+
+    Was 2, and at a 2500m radius two was almost nothing: the run that prompted
+    this raised 15 lift refusals and accepted none, 12 of them "recent-losses",
+    while infantry walked 3484m, 3323m and 2200m on foot. Seven aircraft died
+    across the map and their 2500m discs covered most of the operating area for
+    the rest of the mission.
+
+    The closure exists so a commander cannot feed the same AA nest on a
+    timetable, and that remains worth having. Four losses in one place inside
+    ten minutes is a nest. Two is a bad afternoon.
+*/
+ITW_CLASH_AirPictureLossThreshold = missionNamespace getVariable [
+    "ITW_CLASH_AirPictureLossThreshold",4
+];
 ITW_CLASH_AirPictureLossClosure = missionNamespace getVariable ["ITW_CLASH_AirPictureLossClosure",600];
 /*
     A flat closure lets a commander feed the same nest on a schedule: wait it
@@ -806,10 +822,11 @@ ITW_CLASH_AirPicture_fnc_KnownAirDefence = {
 /*
     An air loss, wherever it happened and whatever caused it.
 
-    Each loss is checked against the recent ones: a second loss within the
-    radius and the window trips that area. A trip inside the escalation window
-    of the last one for the same area DOUBLES its closure, up to the cap, so a
-    commander cannot learn the timetable and keep feeding the same nest.
+    Each loss is checked against the recent ones: once
+    ITW_CLASH_AirPictureLossThreshold of them fall inside the radius and the
+    window, that area trips. A trip inside the escalation window of the last one
+    for the same area DOUBLES its closure, up to the cap, so a commander cannot
+    learn the timetable and keep feeding the same nest.
 */
 ITW_CLASH_AirPicture_fnc_RecordLoss = {
     params ["_veh"];
@@ -822,12 +839,18 @@ ITW_CLASH_AirPicture_fnc_RecordLoss = {
     ["air-loss",[typeOf _veh,_position apply {round _x}]] call
         ITW_CLASH_AirPicture_fnc_Log;
 
-    // Does this loss complete a pair, close together in space and in time?
-    private _pair = ITW_CLASH_AirPictureLosses select {
+    // Enough losses, close together in space and in time, to call it a nest?
+    private _nearby = ITW_CLASH_AirPictureLosses select {
         ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
         && {(time - (_x#1)) <= ITW_CLASH_AirPictureLossWindow}
     };
-    if (count _pair < 2) exitWith {true};
+    if (count _nearby < ITW_CLASH_AirPictureLossThreshold) exitWith {
+        ["loss-below-threshold",[
+            count _nearby,ITW_CLASH_AirPictureLossThreshold,
+            ITW_CLASH_AirPictureLossRadius,ITW_CLASH_AirPictureLossWindow
+        ]] call ITW_CLASH_AirPicture_fnc_Log;
+        true
+    };
 
     private _index = ITW_CLASH_AirPictureLossAreas findIf {
         ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
@@ -846,7 +869,7 @@ ITW_CLASH_AirPicture_fnc_RecordLoss = {
     };
 
     ["loss-area-closed",[
-        _position apply {round _x},round _closure,count _pair,
+        _position apply {round _x},round _closure,count _nearby,
         if (_index >= 0) then {"escalated"} else {"first"}
     ]] call ITW_CLASH_AirPicture_fnc_Log;
     true
