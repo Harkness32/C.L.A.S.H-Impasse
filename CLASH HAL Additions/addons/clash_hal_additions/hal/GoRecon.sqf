@@ -593,6 +593,8 @@ if (
 	if (_halParadrop) then
 		{
 		_GDV setVariable ["ITW_CLASH_HALParadropCargoGroup",_unitG];
+		// Where the lift began, so the drop can refuse to unload here.
+		_GDV setVariable ["ITW_CLASH_HALParadropOrigin",getPosATL _AV];
 		_AV flyInHeight (missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]);
 		if not (isNil "ITW_CLASH_HALParadrop_fnc_Log") then
 			{
@@ -605,6 +607,7 @@ if (
 	else
 		{
 		_GDV setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+		_GDV setVariable ["ITW_CLASH_HALParadropOrigin",nil];
 		};
 	};
 

@@ -124,7 +124,10 @@ def test_hotdrop_version_moved():
 
 
 def test_paradrop_version_moved():
-    assert "ITW_CLASH_HALParadropVersion = 2;" in policy()
+    # Exact number pinned in tests/test_paradrop_origin_guard.py, so a bump
+    # touches one test. Here it only has to be at or past the release work.
+    version = int(re.search(r"ITW_CLASH_HALParadropVersion = (\d+);", policy()).group(1))
+    assert version >= 2, version
 
 
 def test_the_release_call_survives_a_mission_without_the_module():

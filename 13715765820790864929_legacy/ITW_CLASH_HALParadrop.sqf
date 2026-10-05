@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]) exitWith {true};
 
-ITW_CLASH_HALParadropVersion = 2;
+ITW_CLASH_HALParadropVersion = 3;
 ITW_CLASH_HALParadropReady = false;
 
 ITW_CLASH_HALParadrop_HeavyCargoSeats = missionNamespace getVariable [
@@ -24,6 +24,27 @@ ITW_CLASH_HALParadrop_FallbackAltitude = missionNamespace getVariable [
 // stuck in a seat, or dies on the way out.
 ITW_CLASH_HALParadrop_ReleaseTimeout = missionNamespace getVariable [
     "ITW_CLASH_HALParadrop_ReleaseTimeout",60
+];
+/*
+    Never put a squad out where it got in.
+
+    The 8 second altitude wait below assumed the statement fires in the air
+    over the drop point. It can fire while the carrier is still on the ground
+    at base - and a helicopter cannot reach 55m from a standstill in 8s, so the
+    deadline expired at altitude ~0, the low-altitude fallback landed, and eight
+    men were dumped back onto the pad they had just been teleported into. Hark
+    saw exactly that: "landed at base and kicked them out."
+
+    This is the same fault HotDrop had (troops out over the pickup point) and
+    the same cure: require the lift to have actually gone somewhere. The origin
+    is stamped when the paradrop is selected, so distance from it is knowable.
+*/
+ITW_CLASH_HALParadrop_MinRun = missionNamespace getVariable [
+    "ITW_CLASH_HALParadrop_MinRun",400
+];
+// Long enough for a climb from the ground, not only for a cruising aircraft.
+ITW_CLASH_HALParadrop_ClimbTimeout = missionNamespace getVariable [
+    "ITW_CLASH_HALParadrop_ClimbTimeout",45
 ];
 
 ITW_CLASH_HALParadrop_fnc_Log = {
@@ -131,22 +152,31 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
         || {isNull _carrier}
         || {!alive _carrier}
         || {!canMove _carrier}
-    ) exitWith {false};
+    ) exitWith {
+        ["declined",["carrier-gone"]] call ITW_CLASH_HALParadrop_fnc_Log;
+        false
+    };
 
     private _cargoGroup = _carrierGroup getVariable [
         "ITW_CLASH_HALParadropCargoGroup",grpNull
     ];
-    if (isNull _cargoGroup) exitWith {false};
+    if (isNull _cargoGroup) exitWith {
+        ["declined",["no-cargo-group",typeOf _carrier]] call ITW_CLASH_HALParadrop_fnc_Log;
+        false
+    };
 
     private _aboard = units _cargoGroup select {
         alive _x && {vehicle _x == _carrier}
     };
     if (_aboard isEqualTo []) exitWith {
         _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+        _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
+        ["declined",["nobody-aboard",typeOf _carrier,groupId _cargoGroup]] call
+            ITW_CLASH_HALParadrop_fnc_Log;
         false
     };
 
-    private _deadline = time + 8;
+    private _deadline = time + ITW_CLASH_HALParadrop_ClimbTimeout;
     waitUntil {
         sleep 0.2;
         !alive _carrier
@@ -154,9 +184,40 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
         || {(getPosATL _carrier)#2 >= ITW_CLASH_HALParadrop_MinAltitude}
         || {time >= _deadline}
     };
-    if (!alive _carrier || {!canMove _carrier}) exitWith {false};
+    if (!alive _carrier || {!canMove _carrier}) exitWith {
+        ["declined",["carrier-lost-in-climb",typeOf _carrier]] call
+            ITW_CLASH_HALParadrop_fnc_Log;
+        false
+    };
 
     private _altitude = (getPosATL _carrier)#2;
+
+    /*
+        Too low to drop AND still where we started: do nothing at all.
+
+        Landing here would unload at the pickup point. Returning false without
+        landing leaves the stamp in place, so the carrier keeps its cargo and
+        the waypoint's own unload - or a later attempt - handles it at the
+        destination, which is the whole point of the lift.
+    */
+    private _origin = _carrierGroup getVariable [
+        "ITW_CLASH_HALParadropOrigin",[]
+    ];
+    if (
+        _altitude < ITW_CLASH_HALParadrop_FallbackAltitude
+        && {_origin isNotEqualTo []}
+        && {(getPosATL _carrier) distance2D _origin < ITW_CLASH_HALParadrop_MinRun}
+    ) exitWith {
+        ["declined",[
+            "still-at-origin",
+            typeOf _carrier,
+            groupId _cargoGroup,
+            round _altitude,
+            round ((getPosATL _carrier) distance2D _origin)
+        ]] call ITW_CLASH_HALParadrop_fnc_Log;
+        false
+    };
+
     if (
         _altitude < ITW_CLASH_HALParadrop_FallbackAltitude
         || {isNil "ITW_AllyParadropCargo"}
@@ -175,6 +236,7 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
     [_carrier,_cargoGroup] call ITW_AllyParadropCargo;
     _carrier land "NONE";
     _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+        _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
 
     ["executed",[
         typeOf _carrier,
