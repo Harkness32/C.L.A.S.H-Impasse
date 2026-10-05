@@ -6,6 +6,16 @@ _unitG = _this select 0;
 
 _HQ = _this select 2;
 
+if not (_unitG getVariable ["CLASH_HALAdd_GoAttInfTraceSeen",false]) then
+	{
+	_unitG setVariable ["CLASH_HALAdd_GoAttInfTraceSeen",true];
+	diag_log format [
+		"CLASHHALADD | goattinf-entered | group=%1 hq=%2 source=clash_hal_additions",
+		groupId _unitG,
+		_HQ getVariable ["RydHQ_CodeSign","?"]
+	];
+	};
+
 _Spos = _unitG getvariable ("START" + (str _unitG));
 if (isNil ("_Spos")) then {_unitG setVariable [("START" + (str _unitG)),(getPosATL (vehicle (leader _unitG)))];_Spos = _unitG getVariable ("START" + (str _unitG))};
  
@@ -460,20 +470,58 @@ _beh = "AWARE";
 _halParadrop = false;
 _halParadropChance = 0;
 _halParadropCapacity = 0;
+
+private _clashParaHasVehicle = not (isNull _AV);
+private _clashParaAirCarrier = _clashParaHasVehicle
+	and {not (isNull _GDV)}
+	and {_GDV in (_HQ getVariable ["RydHQ_AirG",[]])};
+private _clashParaInfantry = _unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]);
+private _clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0;
+private _clashParaCrewPlayer = if (isNull _GDV) then {false} else {
+	((units _GDV) findIf {isPlayer _x}) >= 0
+};
+private _clashParaReady = missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false];
+private _clashParaFnExists = not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse");
+
+diag_log format [
+	"CLASHHALADD | paradrop-gate | group=%1 veh=%2 hasVehicle=%3 airCarrier=%4 infantry=%5 cargoHasPlayer=%6 crewHasPlayer=%7 ready=%8 fnExists=%9 threatened=%10 unloadParam=%11",
+	groupId _unitG,
+	if (_clashParaHasVehicle) then {typeOf _AV} else {"NULL"},
+	_clashParaHasVehicle,
+	_clashParaAirCarrier,
+	_clashParaInfantry,
+	_clashParaCargoPlayer,
+	_clashParaCrewPlayer,
+	_clashParaReady,
+	_clashParaFnExists,
+	_NeNMode,
+	missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
+];
+
 if (
-	not (isNull _AV)
-	and (_GDV in (_HQ getVariable ["RydHQ_AirG",[]]))
-	and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))
-	and (((units _unitG) findIf {isPlayer _x}) < 0)
-	and (((units _GDV) findIf {isPlayer _x}) < 0)
-	and (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false])
-	and not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse")
+	_clashParaHasVehicle
+	and _clashParaAirCarrier
+	and _clashParaInfantry
+	and not (_clashParaCargoPlayer)
+	and not (_clashParaCrewPlayer)
+	and _clashParaReady
+	and _clashParaFnExists
 ) then
 	{
 	private _paraDecision = [_AV,_NeNMode] call ITW_CLASH_HALParadrop_fnc_ShouldUse;
 	_halParadrop = _paraDecision#0;
 	_halParadropChance = _paraDecision#1;
 	_halParadropCapacity = _paraDecision#2;
+	diag_log format [
+		"CLASHHALADD | paradrop-decision | group=%1 veh=%2 threatened=%3 selected=%4 chance=%5 capacity=%6 unloadParam=%7",
+		groupId _unitG,
+		typeOf _AV,
+		_NeNMode,
+		_halParadrop,
+		_halParadropChance,
+		_halParadropCapacity,
+		missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
+	];
 	if (_halParadrop) then
 		{
 		_GDV setVariable ["ITW_CLASH_HALParadropCargoGroup",_unitG];
