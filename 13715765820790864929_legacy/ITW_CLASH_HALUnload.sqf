@@ -56,8 +56,14 @@ ITW_CLASH_HALUnload_fnc_CargoGroup = {
         if (isNull _group || {_group isEqualTo _carrierGroup}) then {continue};
         if !(_x isKindOf "CAManBase") then {continue};
         _found = _group;
-        break;
-    } forEach (crew _carrier);
+    } forEach ((crew _carrier) select {
+        private _group = group _x;
+        alive _x
+        && {vehicle _x == _carrier}
+        && {!isNull _group}
+        && {_group isNotEqualTo _carrierGroup}
+        && {_x isKindOf "CAManBase"}
+    });
     _found
 };
 
@@ -307,11 +313,13 @@ ITW_CLASH_HALUnload_fnc_Unload = {
         if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
         _orderFile,_param,_state,_mode,_result,_reason,_chance,_capacity
     ];
-    ["lift",[
-        if (isNull _cargoGroup) then {"<none>"} else {groupId _cargoGroup},
-        if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
-        _orderFile,_param,_state,_mode,_result,_reason,_chance,_capacity
-    ]] call ITW_CLASH_HALUnload_fnc_Log;
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["hal-unload","lift",[
+            if (isNull _cargoGroup) then {"<none>"} else {groupId _cargoGroup},
+            if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+            _orderFile,_param,_state,_mode,_result,_reason,_chance,_capacity
+        ]] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
     _result
 };
 
