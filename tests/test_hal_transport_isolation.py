@@ -143,28 +143,24 @@ def test_transport_pool_enrollment_does_not_reintroduce_handoff_waypoint_surgery
         assert forbidden not in stage
 
 
-def test_hal_ai_transport_can_use_native_itw_paradrop_without_classname_doctrine():
+def test_hal_ai_transport_uses_native_itw_paradrop_through_one_unload_seam():
     init = mission("init.sqf")
     policy = mission("ITW_CLASH_HALParadrop.sqf")
+    unload = mission("ITW_CLASH_HALUnload.sqf")
     attack = mission("ITW_Attack.sqf")
     ally = mission("ITW_Ally.sqf")
-    go = (ROOT / "CLASH HAL Additions" / "addons" / "clash_hal_additions" / "hal" / "GoAttInf.sqf").read_text(
-        encoding="utf-8"
-    )
 
-    # Pinned exactly once, in tests/test_carrier_release.py.
-    version = int(re.search(r"ITW_CLASH_HALParadropVersion = (\d+);", policy).group(1))
-    assert version >= 1, version
+    version = int(re.search(r"ITW_CLASH_HALParadropVersion = (\\d+);", policy).group(1))
+    assert version >= 4, version
     assert 'missionNamespace getVariable ["ITW_ParamHelisUnload",50]' in policy
-    assert 'ITW_CLASH_HALParadrop_HeavyCargoSeats' in policy
-    assert 'ITW_CLASH_HALParadrop_HeavyChance' in policy
-    assert 'ITW_CLASH_HALParadrop_ThreatChance' in policy
-    assert 'ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats' in policy
-    assert '_chance > 0 && {_chance < 100}' in policy
+    assert "ITW_CLASH_HALParadrop_HeavyCargoSeats" in policy
+    assert "ITW_CLASH_HALParadrop_HeavyChance" in policy
+    assert "ITW_CLASH_HALParadrop_ThreatChance" in policy
+    assert "ITW_CLASH_ServiceCapacity_fnc_ConfigCargoSeats" in policy
     assert '[_carrier,_cargoGroup] call ITW_AllyParadropCargo;' in policy
     assert '_carrier land "GET OUT";' in policy
     assert '_carrier land "NONE";' in policy
-    assert 'classnamesHardcoded=false' in policy
+    assert '["_allowLandFallback",true]' in policy
 
     # Borrow the actual Impasse parachute machinery rather than cloning it.
     assert 'ITW_AllyParadropCargo = {' in ally
@@ -172,33 +168,23 @@ def test_hal_ai_transport_can_use_native_itw_paradrop_without_classname_doctrine
     assert 'ITW_AtkParachute = {' in attack
     assert '"Steerable_Parachute_F" createVehicle _pos;' in attack
 
-    # HAL decides at its own attack/dropoff seam. C.L.A.S.H. does not create
-    # a second transport route; the waypoint either invokes paradrop or keeps
-    # native GET OUT landing.
-    assert '[_AV,_NeNMode] call ITW_CLASH_HALParadrop_fnc_ShouldUse' in go
-    assert 'setVariable ["ITW_CLASH_HALParadropCargoGroup",_unitG]' in go
-    assert 'ITW_CLASH_HALParadrop_MinAltitude' in go
-    # Spawned inside a block rather than directly, so the statement can see
-    # Execute's return and land for real when it declines - Execute lands for
-    # itself on only one of its false returns, and the others would otherwise
-    # strand the squad airborne.
-    assert 'spawn {' in go
-    assert 'call ITW_CLASH_HALParadrop_fnc_Execute' in go
-    # The ordinary branch still lands; it binds _v first so the same statement
-    # can also release the landing once the passengers are out.
-    assert "_v land 'GET OUT'" in go
-    assert "ITW_CLASH_HALParadrop_fnc_ReleaseCarrier" in go
-    assert 'and not (_halParadrop)' in go
-    # Neither a player-crewed carrier nor a player-containing squad is ever
-    # paradropped. The checks moved into named variables when the gate was
-    # refactored; the rule is what matters, not where the findIf sits.
-    assert '_clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0' in go
-    assert '((units _GDV) findIf {isPlayer _x}) >= 0' in go
-    para_gate = go[go.index("if (\n\t_clashAirLift"):go.index("_lz = objNull;")]
-    assert 'not (_clashParaCargoPlayer)' in para_gate
-    assert 'not (_clashParaCrewPlayer)' in para_gate
+    # The seven HAL order files do not own routes twice. They are redirected at
+    # their native unload seam into one execution-time policy owner.
+    assert "ITW_CLASH_HALUnloadOrderSpecs" in unload
+    assert "ITW_CLASH_HALParadrop_fnc_ShouldUse" in unload
+    assert "ITW_CLASH_HALParadrop_fnc_Execute" in unload
+    for forbidden in ("doMove", "commandMove", "RYD_WPadd", "setWaypointPosition"):
+        body = unload[unload.index("ITW_CLASH_HALUnload_fnc_Unload = {"):]
+        body = body[:body.index("\n};", body.index("ITW_CLASH_HALUnload_fnc_Unload = {")) + 3]
+        assert forbidden not in body
+
+    # Players always degrade to stock-style landing at this seam.
+    assert '((crew _carrier) findIf {isPlayer _x}) >= 0' in unload
+    assert '((units _cargoGroup) findIf {isPlayer _x}) >= 0' in unload
+    assert '_mode = "LAND";' in unload
 
     for hardcoded in ["Huron", "Chinook", "GhostHawk", "LittleBird"]:
         assert hardcoded not in policy
 
     assert 'call compile preprocessFileLineNumbers\n            "ITW_CLASH_HALParadrop.sqf"' in init
+    assert '[] execVM "ITW_CLASH_HALUnload.sqf";' in init
