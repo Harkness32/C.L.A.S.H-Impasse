@@ -1329,3 +1329,14 @@ ITW_DebugListVehs = {
     } forEach ["Player","Enemy"];
 };
 ["ITW_DebugListVehs"] call SKL_fnc_CompileFinal;
+
+/*
+    The lists are final here.
+
+    This file is execVM'd from ITW_Start.sqf:562, so it is scheduled and runs
+    async to init.sqf's C.L.A.S.H. chain. ITW_CLASH_AirDefenceRoster.sqf has to
+    know the enemy AA lists are COMPLETE rather than merely defined - every one
+    of them is initialised to [] several hundred lines above - so it waits on
+    this flag before it reranks them.
+*/
+ITW_CLASH_VehicleArraysReady = true;

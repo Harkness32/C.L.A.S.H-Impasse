@@ -148,6 +148,18 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | air-picture-missing | enemy air is seen only at HAL's own cycle rate";
             };
+            // Who gets to be the enemy's air defence. VehicleArrays.sqf:723
+            // hand-whitelists B_APC_Tracked_01_AA_F into the ENEMY AA list, so
+            // on a mission whose enemy order of battle is NATO - GUER here -
+            // every SPAA spawn and respawn was a BLUFOR vehicle. Reranks the
+            // enemy's own lists on real anti-air capability, preferring a hull
+            // of their own side. Loaded before the two readers below, though it
+            // waits on VehicleArrays either way.
+            if (_airPictureLoaded isEqualTo true && {fileExists "ITW_CLASH_AirDefenceRoster.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_AirDefenceRoster.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | air-defence-roster-missing-or-prereq-failed | enemy AA classes stay as Impasse composed them, cross-side hulls included";
+            };
             // The Emerging Threats Budget: a separate wallet per commander on
             // top of Impasse, so a threat counter no longer competes with
             // Impasse's own spawner for the same row tickets.
