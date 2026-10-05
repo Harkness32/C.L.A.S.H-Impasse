@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALCargoDiceFixStarted",false]) exi
 
 ITW_CLASH_HALCargoDiceFixStarted = true;
 ITW_CLASH_HALCargoDiceFixReady = false;
-ITW_CLASH_HALCargoDiceFixVersion = 3;
+ITW_CLASH_HALCargoDiceFixVersion = 4;
 scriptName "ITW_CLASH_HALCargoDiceFix";
 
 /*
@@ -267,11 +267,39 @@ ITW_CLASH_HALCargoDice_fnc_Acceptable = {
         [_hq] call ITW_CLASH_HALCargoDice_fnc_NativeRoll
     };
 
-    private _acceptable = _state isNotEqualTo "AIR_DENIED";
+    private _unload = missionNamespace getVariable ["ITW_ParamHelisUnload",50];
+    if !(_unload isEqualType 0) then {_unload = 50};
+    private _dropReady =
+        _unload > 0
+        && {missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]}
+        && {!isNil "ITW_CLASH_HALParadrop_fnc_Execute"}
+        && {!isNil "ITW_AllyParadropCargo"};
+
+    /*
+        Preflight owns refusal. The unload waypoint must never invent an
+        "abort" after HAL has already committed an aircraft with troops aboard.
+        AIR_DENIED never launches. HOT/UNKNOWN also do not launch when the host
+        disabled parachutes or the chute executor is unavailable, because those
+        are the corridors where landing is not an acceptable fallback.
+        CONTESTED remains launchable with Param=0 and lands normally.
+    */
+    private _unsafeWithoutDrop =
+        _state in ["HOT","UNKNOWN"]
+        && {!_dropReady};
+    private _acceptable =
+        _state isNotEqualTo "AIR_DENIED"
+        && {!_unsafeWithoutDrop};
+
     private _sign = _hq getVariable ["RydHQ_CodeSign","?"];
     [
         if (_acceptable) then {"lift-allowed"} else {"lift-refused"},
-        [_sign,_state,_reason,_from apply {round _x},_to apply {round _x}],
+        [
+            _sign,_state,_reason,_from apply {round _x},_to apply {round _x},
+            _unload,_dropReady,
+            if (_state isEqualTo "AIR_DENIED") then {"air-denied"} else {
+                if (_unsafeWithoutDrop) then {"unsafe-without-paradrop"} else {"route-accepted"}
+            }
+        ],
         format ["%1|%2",_sign,_state]
     ] call ITW_CLASH_HALCargoDice_fnc_Log;
     _acceptable
