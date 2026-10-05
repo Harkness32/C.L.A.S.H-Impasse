@@ -70,11 +70,41 @@ def test_the_anchor_is_unique_in_both_raw_and_normalised_text():
         assert len(pairs) == 1, (len(pairs), variant is body)
 
 
-def test_the_patch_appends_rather_than_rewrites():
+def test_the_patch_appends_soft_groups_without_rewriting_the_risk_rule():
     source = fix()
     assert '+ " + ITW_CLASH_SoftVehicleGroups" +' in source
-    # A rewrite of the condition would be a far larger surface to get wrong.
+    # The AT-risk condition itself remains HAL's; CLASH only widens who is
+    # subjected to it.
     assert "_LArmorG + _HArmorG)) and" not in source
+
+
+def test_heavy_armour_keeps_its_taxonomy_but_armor_response_is_capability_gated():
+    source = fix()
+    # Do not demote a heavy APC merely because it lacks AT ammunition.
+    taxonomy = text("ITW_CLASH_HALTaxonomy.sqf")
+    assert '_grade >= 2 && {_class isKindOf "Tank"}): {"HArmor"}' in taxonomy
+
+    # Instead narrow HAL's Armor responder pool only.
+    assert '"(_HArmorG arrayIntersect ITW_CLASH_AntiArmorVehicleGroups)"' in source
+    assert '"(_LArmorATG arrayIntersect ITW_CLASH_AntiArmorVehicleGroups)"' in source
+    assert "armor-response-anchor-not-unique" in source
+    assert "armor-response-larmorat-missing" in source
+
+
+def test_live_anti_armor_truth_comes_from_the_actual_vehicle():
+    body = function_body(fix(), "ITW_CLASH_HALSoftArmor_fnc_IsAntiArmorMounted")
+    assert "vehicle _leader" in body
+    assert "!alive _veh" in body
+    assert "!canMove _veh" in body
+    assert "ITW_CLASH_AirPicture_fnc_WeaponProfile" in body
+    assert 'get "antiArmor"' in body
+
+
+def test_expended_or_immobile_armor_leaves_the_responder_list_on_refresh():
+    body = function_body(fix(), "ITW_CLASH_HALSoftArmor_fnc_Refresh")
+    assert "private _antiArmor = [];" in body
+    assert "ITW_CLASH_HALSoftArmor_fnc_IsAntiArmorMounted" in body
+    assert "ITW_CLASH_AntiArmorVehicleGroups = _antiArmor;" in body
 
 
 def test_it_refuses_an_ambiguous_or_unrecognised_dispatcher():
@@ -95,18 +125,20 @@ def test_it_refuses_an_ambiguous_or_unrecognised_dispatcher():
 
 def test_it_is_idempotent():
     source = fix()
-    assert '(_source find "ITW_CLASH_SoftVehicleGroups") >= 0) exitWith' in source
+    assert '(_source find "ITW_CLASH_SoftVehicleGroups") >= 0' in source
+    assert '(_source find "ITW_CLASH_AntiArmorVehicleGroups") >= 0' in source
     assert "already-fixed" in source
 
 
-def test_the_global_exists_before_the_patch_can_run():
-    # A nil global inside the dispatcher would throw on every dispatch.
+def test_the_globals_exist_before_the_patch_can_run():
+    # Nil globals inside the dispatcher would throw on every dispatch.
     source = fix()
-    assert source.index("ITW_CLASH_SoftVehicleGroups = missionNamespace getVariable") < source.index(
-        'RYD_Dispatcher = _compiled'
-    )
+    assignment = source.index('RYD_Dispatcher = _compiled')
+    assert source.index("ITW_CLASH_SoftVehicleGroups = missionNamespace getVariable") < assignment
+    assert source.index("ITW_CLASH_AntiArmorVehicleGroups = missionNamespace getVariable") < assignment
     refresh = function_body(source, "ITW_CLASH_HALSoftArmor_fnc_Refresh")
     assert "ITW_CLASH_SoftVehicleGroups = _soft;" in refresh
+    assert "ITW_CLASH_AntiArmorVehicleGroups = _antiArmor;" in refresh
 
 
 def test_dismounted_infantry_is_never_swept_in():
@@ -118,11 +150,12 @@ def test_dismounted_infantry_is_never_swept_in():
     assert 'isNil "ITW_CLASH_AirPicture_fnc_ProtectionGrade"' in body
 
 
-def test_the_list_is_rebuilt_not_mutated():
-    # A group that dismounts or dies leaves on the next pass with no
-    # bookkeeping to go stale.
+def test_the_lists_are_rebuilt_not_mutated():
+    # A group that dismounts, dies, becomes immobile or expends its AT ammo
+    # leaves on the next pass with no bookkeeping to go stale.
     body = function_body(fix(), "ITW_CLASH_HALSoftArmor_fnc_Refresh")
     assert "private _soft = [];" in body
+    assert "private _antiArmor = [];" in body
     assert "pushBackUnique" in body
 
 
@@ -154,3 +187,17 @@ def test_no_exit_with_inside_a_then_block():
                 depth -= 1
             i += 1
         assert "exitWith" not in segment[:i]
+
+
+def test_soft_armor_patch_waits_for_the_aa_dispatcher_patch():
+    # Both rewrite RYD_Dispatcher. The capability patch must compose on top of
+    # the AA-risk typo fix instead of racing it and restoring the old function.
+    source = fix()
+    assert 'ITW_CLASH_HALDispatcherAAFixFinished' in source
+    assert 'fileExists "ITW_CLASH_HALDispatcherAAFix.sqf"' in source
+
+
+def test_version_two_advertises_live_armor_responder_gate():
+    source = fix()
+    assert "ITW_CLASH_HALSoftArmorFixVersion = 2;" in source
+    assert "armorResponders=live-antiArmor-only" in source
