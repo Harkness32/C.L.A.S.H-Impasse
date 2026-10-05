@@ -474,8 +474,12 @@ _halParadropCapacity = 0;
 private _clashParaHasVehicle = not (isNull _AV);
 private _clashParaAirCarrier = _clashParaHasVehicle
 	&& {not (isNull _GDV)}
+	&& {_GDV != _unitG}
 	&& {_GDV in (_HQ getVariable ["RydHQ_AirG",[]])};
 private _clashParaInfantry = _unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]);
+private _clashParaAboard = _clashParaHasVehicle
+	&& {({alive _x && {vehicle _x == _AV}} count (units _unitG)) > 0};
+private _clashAirLift = _clashParaAirCarrier && {_clashParaAboard};
 private _clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0;
 private _clashParaCrewPlayer = if (isNull _GDV) then {false} else {
 	((units _GDV) findIf {isPlayer _x}) >= 0
@@ -486,12 +490,14 @@ private _clashParaFnExists = not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse");
 if (_clashParaHasVehicle) then
 	{
 	diag_log format [
-		"CLASHHALADD | paradrop-gate | group=%1 veh=%2 hasVehicle=%3 airCarrier=%4 infantry=%5 cargoHasPlayer=%6 crewHasPlayer=%7 ready=%8 fnExists=%9 threatened=%10 unloadParam=%11",
+		"CLASHHALADD | paradrop-gate | group=%1 veh=%2 hasVehicle=%3 airCarrier=%4 infantryBucket=%5 aboard=%6 airLift=%7 cargoHasPlayer=%8 crewHasPlayer=%9 ready=%10 fnExists=%11 threatened=%12 unloadParam=%13",
 		groupId _unitG,
 		typeOf _AV,
 		_clashParaHasVehicle,
 		_clashParaAirCarrier,
 		_clashParaInfantry,
+		_clashParaAboard,
+		_clashAirLift,
 		_clashParaCargoPlayer,
 		_clashParaCrewPlayer,
 		_clashParaReady,
@@ -502,9 +508,7 @@ if (_clashParaHasVehicle) then
 	};
 
 if (
-	_clashParaHasVehicle
-	and _clashParaAirCarrier
-	and _clashParaInfantry
+	_clashAirLift
 	and not (_clashParaCargoPlayer)
 	and not (_clashParaCrewPlayer)
 	and _clashParaReady
@@ -570,7 +574,7 @@ _crr = false;
 if ((_nW == 1) and (isNull _AV)) then {_crr = true};
 if not (isNull _AV) then {_crr = true};
 _sts = ["true","deletewaypoint [(group this), 0];"];
-if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and (_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then
+if (_clashAirLift) then
 	{
 	if (_halParadrop) then
 		{
