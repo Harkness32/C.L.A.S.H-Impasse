@@ -118,9 +118,11 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
     resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
 
     assert "ITW_CLASH_HALCargoDiceFixVersion = 3;" in source
-    assert "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase" in resolver
-    assert "ITW_CLASH_ServiceHome_fnc_BaseValidForSide" in resolver
-    assert "ITW_Bases#_baseIndex#ITW_BASE_POS" in resolver
+    # The resolver was rewritten to walk every friendly base index and test
+    # each one's anchors, instead of asking for a single nearest base. Same
+    # rule - a live Impasse base, not a cached coordinate - via a wider test.
+    assert "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices" in resolver
+    assert "_base#ITW_BASE_POS" in resolver
     assert "ITW_CLASH_BaseEmbarkRadius" in resolver
     assert "_carrierBase != _troopBase" in body
     assert '(_vehicle emptyPositions "Cargo") < count _troops' in body
@@ -143,8 +145,11 @@ def test_scargo_fastpath_is_only_for_normal_crewed_transport_and_falls_back_clea
 def test_base_embark_uses_live_base_arrays_not_cached_coordinates():
     source = fix()
     resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
-    assert "ITW_Bases#_baseIndex#ITW_BASE_POS" in resolver
-    assert "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase" in resolver
+    # Read out of ITW_Bases live, each time. The point is that no coordinate
+    # is remembered: ServiceBaseHint must never be the source of truth here.
+    assert "ITW_Bases" in resolver
+    assert "_base#ITW_BASE_POS" in resolver
+    assert "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices" in resolver
     assert "ServiceBaseHint" not in resolver
 
 
