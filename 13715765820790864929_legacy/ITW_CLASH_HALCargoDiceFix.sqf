@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALCargoDiceFixStarted",false]) exi
 
 ITW_CLASH_HALCargoDiceFixStarted = true;
 ITW_CLASH_HALCargoDiceFixReady = false;
-ITW_CLASH_HALCargoDiceFixVersion = 4;
+ITW_CLASH_HALCargoDiceFixVersion = 5;
 scriptName "ITW_CLASH_HALCargoDiceFix";
 
 /*
@@ -413,44 +413,31 @@ if !(_step#0) exitWith {[_step#2,[count _source]] call _finishFailure};
 _source = _step#1;
 
 /*
-    SQF has no backslash escapes in string literals.
+    Base embark must happen only after native SCargo has finished its pickup
+    waypoint phase.
 
-    This anchor was authored as '...};\n\n_lz = objNull;', which in SQF is the
-    two characters backslash and n - not a newline - so it could never match
-    HAL's actual source, and the run5 boot logged
-    SCargo-base-embark-entry:signature-missing with the whole SCargo patch
-    correctly failing closed back to native HAL. The REPLACEMENT carried the
-    same literals, so even a match would have injected backslash-n into the
-    compiled source and failed the recompile instead. The base-embark fast
-    path has therefore never executed.
+    The v4 fast path boarded the infantry before SCargo executed its own
+    pre-pickup RYD_WPdel. GoAttInf/GoRecon poll assignedVehicle on a five-second
+    cadence, so an unlucky poll could observe the instant-boarded squad, advance
+    to the delivery phase and create the destination waypoint before SCargo had
+    finished pickup setup. SCargo would then delete that delivery waypoint and
+    leave the carrier with only its pickup/RTB lifecycle.
 
-    Built from toString [10] now, which is a real newline. The CR strip above
-    is still needed: NR6 ships CRLF, so the source reads };<CR><LF><CR><LF>_lz
-    and only the LF survives to be matched.
+    Hook the native seat-assignment seam instead. At this point SCargo has
+    reserved the carrier, set Busy/CargoM, cleared stale waypoints, driven the
+    carrier to the pickup point and completed the pickup waypoint. Fast embark
+    now replaces only the physical walk/get-in delay; every later transport
+    state remains native HAL.
 */
-private _nl = toString [10];
-private _exitLine = 'if ((_enmyNrb) and not (_request)) exitwith {_unitG setVariable ["CargoChosen",false,true];_unitG setVariable [("CC" + (str _unitG)), true, true]};';
-
-private _embarkStep = [
-    _source,
-    (_exitLine + _nl + _nl + '_lz = objNull;'),
-    (
-        _exitLine + _nl + _nl
-        + 'private _clashBaseEmbarked = false; if (not (_withdraw) and not (_request) and not (_emptyV) and {!isNil "ITW_CLASH_HALCargoDice_fnc_BaseEmbark"}) then {_clashBaseEmbarked = [_unitG,_ChosenOne,_HQ] call ITW_CLASH_HALCargoDice_fnc_BaseEmbark;};'
-        + _nl + _nl + '_lz = objNull;'
-    ),
-    "SCargo-base-embark-entry"
-] call _replaceExact;
-if !(_embarkStep#0) exitWith {
-    [_embarkStep#2,[count _source]] call _finishFailure
-};
-_source = _embarkStep#1;
-
 private _assignStep = [
     _source,
     'if (((_ChosenOne emptyPositions "Cargo") > 0) and not (_request)) then',
-    'if (not (_clashBaseEmbarked) and (((_ChosenOne emptyPositions "Cargo") > 0) and not (_request))) then',
-    "SCargo-base-embark-physical-fallback"
+    (
+        'private _clashBaseEmbarked = false; if (not (_withdraw) and not (_request) and not (_emptyV) and {!isNil "ITW_CLASH_HALCargoDice_fnc_BaseEmbark"}) then {_clashBaseEmbarked = [_unitG,_ChosenOne,_HQ] call ITW_CLASH_HALCargoDice_fnc_BaseEmbark;};'
+        + (toString [10]) + (toString [10])
+        + 'if (not (_clashBaseEmbarked) and (((_ChosenOne emptyPositions "Cargo") > 0) and not (_request))) then'
+    ),
+    "SCargo-base-embark-post-pickup"
 ] call _replaceExact;
 if !(_assignStep#0) exitWith {
     [_assignStep#2,[count _source]] call _finishFailure
@@ -470,10 +457,9 @@ if (_hooked) then {
 
 ITW_CLASH_HALCargoDiceFixReady = true;
 diag_log format [
-    "CLASH BOOT | hal-cargo-dice-fix-ready | version=%1 result=%2 embark=%3/%4 target=%5 routeAware=true baseEmbark=true liveImpasseBases=true nr6Untouched=true",
+    "CLASH BOOT | hal-cargo-dice-fix-ready | version=%1 result=%2 embark=%3 target=%4 routeAware=true baseEmbark=true postPickup=true liveImpasseBases=true nr6Untouched=true",
     ITW_CLASH_HALCargoDiceFixVersion,
     _step#2,
-    _embarkStep#2,
     _assignStep#2,
     if (_hooked) then {"checkbook-native-scargo"} else {"hal-scargo"}
 ];
