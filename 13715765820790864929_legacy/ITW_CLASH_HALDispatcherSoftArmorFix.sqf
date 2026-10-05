@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALSoftArmorFixStarted",false]) exi
 
 ITW_CLASH_HALSoftArmorFixStarted = true;
 ITW_CLASH_HALSoftArmorFixReady = false;
-ITW_CLASH_HALSoftArmorFixVersion = 1;
+ITW_CLASH_HALSoftArmorFixVersion = 2;
 scriptName "ITW_CLASH_HALDispatcherSoftArmorFix";
 
 /*
@@ -41,6 +41,13 @@ scriptName "ITW_CLASH_HALDispatcherSoftArmorFix";
 ITW_CLASH_SoftVehicleGroups = missionNamespace getVariable [
     "ITW_CLASH_SoftVehicleGroups",[]
 ];
+// Orthogonal to protection: groups whose mounted vehicle is alive, mobile and
+// currently carries live ammunition BI marks for anti-armour use. HArmor is a
+// protection class, not a promise that the vehicle can kill a tank; keeping
+// this separate lets a Namer stay HArmor without becoming an Armor responder.
+ITW_CLASH_AntiArmorVehicleGroups = missionNamespace getVariable [
+    "ITW_CLASH_AntiArmorVehicleGroups",[]
+];
 ITW_CLASH_HALSoftArmorPoll = missionNamespace getVariable [
     "ITW_CLASH_HALSoftArmorPoll",15
 ];
@@ -73,8 +80,21 @@ ITW_CLASH_HALSoftArmor_fnc_IsSoftMounted = {
     ([typeOf _veh] call ITW_CLASH_AirPicture_fnc_ProtectionGrade) < 1
 };
 
+ITW_CLASH_HALSoftArmor_fnc_IsAntiArmorMounted = {
+    params ["_group"];
+    if (isNull _group) exitWith {false};
+    private _leader = leader _group;
+    if (isNull _leader || {!alive _leader}) exitWith {false};
+    private _veh = vehicle _leader;
+    if (_veh isEqualTo _leader) exitWith {false};
+    if (isNull _veh || {!alive _veh} || {!canMove _veh}) exitWith {false};
+    if (isNil "ITW_CLASH_AirPicture_fnc_WeaponProfile") exitWith {false};
+    ([_veh] call ITW_CLASH_AirPicture_fnc_WeaponProfile) get "antiArmor"
+};
+
 ITW_CLASH_HALSoftArmor_fnc_Refresh = {
     private _soft = [];
+    private _antiArmor = [];
     {
         private _hq = _x;
         if (isNull _hq) then {continue};
@@ -82,12 +102,16 @@ ITW_CLASH_HALSoftArmor_fnc_Refresh = {
             if ([_x] call ITW_CLASH_HALSoftArmor_fnc_IsSoftMounted) then {
                 _soft pushBackUnique _x;
             };
+            if ([_x] call ITW_CLASH_HALSoftArmor_fnc_IsAntiArmorMounted) then {
+                _antiArmor pushBackUnique _x;
+            };
         } forEach (_hq getVariable ["RydHQ_Friends",[]]);
     } forEach ([] call ITW_CLASH_HALSoftArmor_fnc_Commanders);
-    // Replaced wholesale rather than mutated, so a group that dismounts or is
-    // destroyed leaves the list on the next pass with no bookkeeping.
+    // Replaced wholesale rather than mutated, so dismounted, destroyed,
+    // immobilised or AT-ammo-depleted groups leave on the next pass.
     ITW_CLASH_SoftVehicleGroups = _soft;
-    count _soft
+    ITW_CLASH_AntiArmorVehicleGroups = _antiArmor;
+    [count _soft,count _antiArmor]
 };
 
 ITW_CLASH_HALSoftArmor_fnc_Commanders = {
@@ -136,6 +160,18 @@ waitUntil {
 if (isNil "RYD_Dispatcher") exitWith {
     ["hal-runtime-bind-timeout",[]] call _finishFailure
 };
+
+// The AA-risk patch is scheduled immediately before this one and rewrites the
+// same compiled function. Wait for it to finish so this patch composes on top
+// instead of racing it and accidentally restoring the old _ATthreat typo.
+if (fileExists "ITW_CLASH_HALDispatcherAAFix.sqf") then {
+    private _aaDeadline = diag_tickTime + 120;
+    waitUntil {
+        sleep 0.05;
+        (missionNamespace getVariable ["ITW_CLASH_HALDispatcherAAFixFinished",false])
+        || {diag_tickTime >= _aaDeadline}
+    };
+};
 if !(RYD_Dispatcher isEqualType {}) exitWith {
     ["dispatcher-not-code",[typeName RYD_Dispatcher]] call _finishFailure
 };
@@ -149,7 +185,10 @@ if (
     ["dispatcher-signature-missing",[count _source,_wrapped]] call _finishFailure
 };
 
-if ((_source find "ITW_CLASH_SoftVehicleGroups") >= 0) exitWith {
+if (
+    (_source find "ITW_CLASH_SoftVehicleGroups") >= 0
+    && {(_source find "ITW_CLASH_AntiArmorVehicleGroups") >= 0}
+) exitWith {
     ITW_CLASH_HALSoftArmorFixReady = true;
     ["already-fixed",[count _source]] call ITW_CLASH_HALSoftArmor_fnc_Log;
     diag_log "CLASH BOOT | hal-soft-armor-fix-ready | patched=false reason=already-fixed";
@@ -195,8 +234,67 @@ if (
     ["armor-pool-context-missing",[_source select [(_from - 40) max 0,160]]] call _finishFailure
 };
 
-private _patched = (_source select [0,_to]) + " + ITW_CLASH_SoftVehicleGroups" +
-    (_source select [_to]);
+private _patched = _source;
+if ((_patched find "ITW_CLASH_SoftVehicleGroups") < 0) then {
+    _patched = (_patched select [0,_to]) + " + ITW_CLASH_SoftVehicleGroups" +
+        (_patched select [_to]);
+};
+
+/*
+    HArmor is a protection bucket, but native HAL also treats every HArmor group
+    as an anti-armour responder. That sends heavily protected APCs such as the
+    Namer at tanks even when their live weapons cannot hurt armor.
+
+    Do not falsify taxonomy by demoting them. Narrow only the Armor responder
+    pool, and narrow both HArmor and LArmorAT through the same live capability
+    list so a vehicle that expends its AT ammunition stops being a tank answer
+    until it is rearmed.
+
+    Structural anchor: the Armor pool is the only HArmor occurrence with airCAS
+    immediately before it and LArmorATG/ATInfG immediately after it.
+*/
+private _armorHits = [];
+private _armorScan = 0;
+private _armorSearching = true;
+while {_armorSearching} do {
+    private _hit = (_patched select [_armorScan]) find "_HArmorG";
+    if (_hit < 0) then {
+        _armorSearching = false;
+    } else {
+        private _at = _armorScan + _hit;
+        private _before = _patched select [(_at - 80) max 0,80];
+        private _after = _patched select [_at,180];
+        if (
+            (_before find "_airCAS") >= 0
+            && {(_after find "_LArmorATG") >= 0}
+            && {(_after find "_ATInfG") >= 0}
+        ) then {
+            _armorHits pushBack _at;
+        };
+        _armorScan = _at + (count "_HArmorG");
+    };
+};
+if ((count _armorHits) != 1) exitWith {
+    ["armor-response-anchor-not-unique",[count _armorHits,count _patched]] call _finishFailure
+};
+
+private _armorH = _armorHits#0;
+private _armorAfter = _patched select [_armorH,180];
+private _localL = _armorAfter find "_LArmorATG";
+if (_localL < 0) exitWith {
+    ["armor-response-larmorat-missing",[_patched select [(_armorH - 80) max 0,260]]] call _finishFailure
+};
+private _armorL = _armorH + _localL;
+
+// Replace later token first so the earlier offset remains stable.
+_patched =
+    (_patched select [0,_armorL])
+    + "(_LArmorATG arrayIntersect ITW_CLASH_AntiArmorVehicleGroups)"
+    + (_patched select [_armorL + count "_LArmorATG"]);
+_patched =
+    (_patched select [0,_armorH])
+    + "(_HArmorG arrayIntersect ITW_CLASH_AntiArmorVehicleGroups)"
+    + (_patched select [_armorH + count "_HArmorG"]);
 
 private _compiled = compile _patched;
 if !(_compiled isEqualType {}) exitWith {
@@ -205,6 +303,8 @@ if !(_compiled isEqualType {}) exitWith {
 private _verify = ([toString _compiled] call ITW_CLASH_HALSoftArmor_fnc_Unwrap)#0;
 if (
     (_verify find "ITW_CLASH_SoftVehicleGroups") < 0
+    || {(_verify find "ITW_CLASH_AntiArmorVehicleGroups") < 0}
+    || {(_verify find "arrayIntersect ITW_CLASH_AntiArmorVehicleGroups") < 0}
     || {(_verify find "RYD_CloseEnemyB") < 0}
     || {(_verify find "_ATthreat") < 0}
 ) exitWith {
@@ -215,6 +315,7 @@ RYD_Dispatcher = _compiled;
 if (!isNil "SKL_fnc_CompileFinal") then {
     ["ITW_CLASH_HALSoftArmor_fnc_Unwrap"] call SKL_fnc_CompileFinal;
     ["ITW_CLASH_HALSoftArmor_fnc_IsSoftMounted"] call SKL_fnc_CompileFinal;
+    ["ITW_CLASH_HALSoftArmor_fnc_IsAntiArmorMounted"] call SKL_fnc_CompileFinal;
     ["ITW_CLASH_HALSoftArmor_fnc_Commanders"] call SKL_fnc_CompileFinal;
     ["ITW_CLASH_HALSoftArmor_fnc_Refresh"] call SKL_fnc_CompileFinal;
 };
@@ -222,10 +323,13 @@ if (!isNil "SKL_fnc_CompileFinal") then {
 [] spawn {
     scriptName "ITW_CLASH_HALSoftArmorRefresh";
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
-        private _count = call ITW_CLASH_HALSoftArmor_fnc_Refresh;
-        if (_count != (missionNamespace getVariable ["ITW_CLASH_HALSoftArmorLast",-1])) then {
-            missionNamespace setVariable ["ITW_CLASH_HALSoftArmorLast",_count];
-            ["tracking",[_count]] call ITW_CLASH_HALSoftArmor_fnc_Log;
+        (call ITW_CLASH_HALSoftArmor_fnc_Refresh) params ["_softCount","_antiArmorCount"];
+        private _last = missionNamespace getVariable ["ITW_CLASH_HALSoftArmorLast",[-1,-1]];
+        if !(_last isEqualTo [_softCount,_antiArmorCount]) then {
+            missionNamespace setVariable [
+                "ITW_CLASH_HALSoftArmorLast",[_softCount,_antiArmorCount]
+            ];
+            ["tracking",[_softCount,_antiArmorCount]] call ITW_CLASH_HALSoftArmor_fnc_Log;
         };
         sleep ITW_CLASH_HALSoftArmorPoll;
     };
@@ -234,7 +338,7 @@ if (!isNil "SKL_fnc_CompileFinal") then {
 ITW_CLASH_HALSoftArmorFixReady = true;
 ["patched",[_to,count _source,_wrapped]] call ITW_CLASH_HALSoftArmor_fnc_Log;
 diag_log format [
-    "CLASH BOOT | hal-soft-armor-fix-ready | version=%1 patched=true offset=%2 length=%3 braces=%4 poll=%5 infantryExcluded=true nr6Untouched=true",
+    "CLASH BOOT | hal-soft-armor-fix-ready | version=%1 patched=true offset=%2 length=%3 braces=%4 poll=%5 infantryExcluded=true armorResponders=live-antiArmor-only nr6Untouched=true",
     ITW_CLASH_HALSoftArmorFixVersion,
     _to,
     count _source,
