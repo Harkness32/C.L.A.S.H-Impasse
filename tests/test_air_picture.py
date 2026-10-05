@@ -183,7 +183,7 @@ def test_loss_counter_needs_several_losses_close_in_space_and_time():
     record = function_body(source, "ITW_CLASH_AirPicture_fnc_RecordLoss")
     assert "ITW_CLASH_AirPictureLossRadius" in record
     assert "ITW_CLASH_AirPictureLossWindow" in record
-    assert "count _nearby < ITW_CLASH_AirPictureLossThreshold" in record
+    assert "_score < ITW_CLASH_AirPictureLossThreshold" in record
     assert "count _pair < 2" not in record, "the hard-coded pair is the defect"
     closed = function_body(source, "ITW_CLASH_AirPicture_fnc_LossClosed")
     assert "ITW_CLASH_AirPictureLossRadius" in closed
@@ -208,19 +208,64 @@ def test_the_loss_radius_spans_two_approaches_not_one_launcher():
     assert 'ITW_CLASH_AirPictureLossRadius",2500' in air_picture()
 
 
-def test_a_repeatedly_fed_area_doubles_its_closure_up_to_a_cap():
+def test_a_closure_is_ten_minutes_flat_and_never_scales():
+    """It used to double on every re-trip inside a 1800s window up to 2400s,
+    with each trip resetting the clock - forty minutes from the most recent
+    loss, which in a thirty minute run is permanent. Hark: "this means that we
+    potentially ground all flights the entire game because some shitbird IFV
+    got lucky."
+    """
     source = air_picture()
     record = function_body(source, "ITW_CLASH_AirPicture_fnc_RecordLoss")
-    assert "ITW_CLASH_AirPictureLossEscalation" in record
-    assert "((_area#2) * 2) min ITW_CLASH_AirPictureLossClosureMax" in record
-    assert '"escalated"' in record
-    assert 'ITW_CLASH_AirPictureLossEscalation",1800' in source
-    assert 'ITW_CLASH_AirPictureLossClosureMax",2400' in source
+    assert "ITW_CLASH_AirPictureLossEscalation" not in source, "escalation is gone"
+    assert "* 2) min" not in record, "no doubling"
     assert 'ITW_CLASH_AirPictureLossClosure",600' in source
-    # The area memory must outlive its own closure or a later trip would start
-    # again from the base value instead of doubling.
+    assert 'ITW_CLASH_AirPictureLossClosureMax",600' in source
+    # And the memory goes with it: a nest that is still a nest re-trips on its
+    # own merits, so there is nothing to escalate from.
     closed = function_body(source, "ITW_CLASH_AirPicture_fnc_LossClosed")
-    assert "(_x#2) max ITW_CLASH_AirPictureLossEscalation" in closed
+    assert "(time - (_x#1)) <= (_x#2)" in closed
+    assert "max ITW_CLASH_AirPictureLossEscalation" not in closed
+
+
+def test_a_lucky_ifv_can_never_close_a_corridor():
+    """Hark: "losses due to AA, as in radar AA? yeah, different fucking story."
+
+    An autocannon that happened to be looking up says nothing about whether the
+    corridor is defended. It contributes zero, however many times it gets
+    lucky."""
+    body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_LossWeight")
+    assert 'if !(_profile get "antiAir") exitWith {0}' in body
+
+
+def test_radar_aa_counts_double():
+    body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_LossWeight")
+    assert 'if (_profile get "radar") exitWith {2}' in body
+    # So two radar AA kills reach the threshold of four on their own.
+    source = air_picture()
+    threshold = int(
+        re.search(r'"ITW_CLASH_AirPictureLossThreshold",(\d+)', source).group(1)
+    )
+    assert threshold == 4, threshold
+
+
+def test_the_trip_is_weighted_not_counted():
+    record = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_RecordLoss")
+    assert "_score = _score + (_x param [3,0])" in record
+    assert "count _nearby <" not in record, "counting is the defect"
+
+
+def test_the_killer_is_carried_from_the_kill_event_to_the_record():
+    source = air_picture()
+    on_kill = function_body(source, "ITW_CLASH_AirPicture_fnc_OnKill")
+    assert "[_victim,_killer] call ITW_CLASH_AirPicture_fnc_RecordLoss" in on_kill
+    record = function_body(source, "ITW_CLASH_AirPicture_fnc_RecordLoss")
+    assert 'params ["_veh",["_killer",objNull]]' in record
+
+
+def test_an_unknown_killer_is_not_treated_as_air_defence():
+    body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_LossWeight")
+    assert "if (isNull _killer) exitWith {0}" in body
 
 
 def test_denial_timers_are_measured_in_hal_cycles():

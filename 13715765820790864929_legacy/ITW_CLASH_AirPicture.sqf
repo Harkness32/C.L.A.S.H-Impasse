@@ -96,14 +96,25 @@ ITW_CLASH_AirPictureLossThreshold = missionNamespace getVariable [
 ];
 ITW_CLASH_AirPictureLossClosure = missionNamespace getVariable ["ITW_CLASH_AirPictureLossClosure",600];
 /*
-    A flat closure lets a commander feed the same nest on a schedule: wait it
-    out, send another, lose it, wait it out again. Each time the same area trips
-    again inside the escalation window its closure doubles, up to the cap, so
-    the commander eventually gives up on that approach rather than learning its
-    timetable.
+    Ten minutes, flat. It does not scale.
+
+    This used to double on every re-trip inside a 1800s window, to a 2400s cap,
+    with each trip resetting the clock - so a repeatedly unlucky area was denied
+    FORTY MINUTES from the most recent loss, which in a thirty minute run is
+    permanent. Combined with a 2500m radius, that grounded every flight on the
+    map for the rest of the mission. Hark: "this means that we potentially
+    ground all flights the entire game because some shitbird IFV got lucky."
+
+    The escalation was defending against a commander who learns the timetable
+    and feeds the same nest on a schedule. That is a real failure mode, but it
+    is now answered by WHAT does the killing rather than by how long the door
+    stays shut - see fnc_LossWeight. An area that genuinely holds radar AA
+    re-trips on its own merits every time an aircraft goes near it, so the
+    closure does not need to grow to keep working.
 */
-ITW_CLASH_AirPictureLossEscalation = missionNamespace getVariable ["ITW_CLASH_AirPictureLossEscalation",1800];
-ITW_CLASH_AirPictureLossClosureMax = missionNamespace getVariable ["ITW_CLASH_AirPictureLossClosureMax",2400];
+ITW_CLASH_AirPictureLossClosureMax = missionNamespace getVariable [
+    "ITW_CLASH_AirPictureLossClosureMax",600
+];
 
 /*
     How long a hard-kill system keeps a corridor closed after it was last seen.
@@ -828,25 +839,65 @@ ITW_CLASH_AirPicture_fnc_KnownAirDefence = {
     for the same area DOUBLES its closure, up to the cap, so a commander cannot
     learn the timetable and keep feeding the same nest.
 */
+/*
+    What a loss is worth, decided by what killed the aircraft.
+
+    Hark: "losses due to AA, as in radar AA? yeah, different fucking story."
+
+    An autocannon on an IFV that happened to be looking up, or a rifleman with
+    a lucky burst, says nothing about whether the corridor is defended - it says
+    a helicopter flew low over a vehicle. Closing a 2500m disc for ten minutes
+    over that is how the whole map ended up grounded.
+
+    Radar AA is the opposite: it is sited, it is deliberate, it covers an
+    envelope rather than a point, and it will kill the next aircraft through
+    just as reliably. So it counts double, and two of them close an area on
+    their own.
+
+    0  not an anti-air weapon at all - recorded for telemetry, never trips
+    1  anti-air, unguided or no radar - MANPADs, AA guns
+    2  radar-directed anti-air
+*/
+ITW_CLASH_AirPicture_fnc_LossWeight = {
+    params [["_killer",objNull]];
+    if (isNull _killer) exitWith {0};
+    private _class = typeOf (vehicle _killer);
+    if (_class isEqualTo "") exitWith {0};
+    if (isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") exitWith {1};
+
+    private _profile = [_class] call ITW_CLASH_AirPicture_fnc_ClassProfile;
+    if !(_profile get "antiAir") exitWith {0};
+    if (_profile get "radar") exitWith {2};
+    1
+};
+
 ITW_CLASH_AirPicture_fnc_RecordLoss = {
-    params ["_veh"];
+    params ["_veh",["_killer",objNull]];
     if (isNull _veh) exitWith {false};
     private _position = getPosATL _veh;
-    ITW_CLASH_AirPictureLosses pushBack [_position,time,typeOf _veh];
+    private _weight = [_killer] call ITW_CLASH_AirPicture_fnc_LossWeight;
+    ITW_CLASH_AirPictureLosses pushBack [_position,time,typeOf _veh,_weight];
     ITW_CLASH_AirPictureLosses = ITW_CLASH_AirPictureLosses select {
         (time - (_x#1)) <= (ITW_CLASH_AirPictureLossWindow + ITW_CLASH_AirPictureLossClosureMax)
     };
-    ["air-loss",[typeOf _veh,_position apply {round _x}]] call
-        ITW_CLASH_AirPicture_fnc_Log;
+    ["air-loss",[
+        typeOf _veh,_position apply {round _x},
+        if (isNull _killer) then {"<unknown>"} else {typeOf (vehicle _killer)},
+        _weight
+    ]] call ITW_CLASH_AirPicture_fnc_Log;
 
-    // Enough losses, close together in space and in time, to call it a nest?
+    // Enough AIR DEFENCE, close together in space and in time, to call it a
+    // nest? Weighted, not counted: a lucky IFV contributes nothing and can
+    // never close a corridor on its own, however many times it gets lucky.
     private _nearby = ITW_CLASH_AirPictureLosses select {
         ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
         && {(time - (_x#1)) <= ITW_CLASH_AirPictureLossWindow}
     };
-    if (count _nearby < ITW_CLASH_AirPictureLossThreshold) exitWith {
+    private _score = 0;
+    {_score = _score + (_x param [3,0])} forEach _nearby;
+    if (_score < ITW_CLASH_AirPictureLossThreshold) exitWith {
         ["loss-below-threshold",[
-            count _nearby,ITW_CLASH_AirPictureLossThreshold,
+            _score,ITW_CLASH_AirPictureLossThreshold,count _nearby,
             ITW_CLASH_AirPictureLossRadius,ITW_CLASH_AirPictureLossWindow
         ]] call ITW_CLASH_AirPicture_fnc_Log;
         true
@@ -855,12 +906,11 @@ ITW_CLASH_AirPicture_fnc_RecordLoss = {
     private _index = ITW_CLASH_AirPictureLossAreas findIf {
         ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
     };
-    private _closure = ITW_CLASH_AirPictureLossClosure;
+    // Flat. A re-trip refreshes the ten minutes, it does not lengthen them.
+    private _closure = ITW_CLASH_AirPictureLossClosure min
+        ITW_CLASH_AirPictureLossClosureMax;
     if (_index >= 0) then {
         private _area = ITW_CLASH_AirPictureLossAreas#_index;
-        if ((time - (_area#1)) <= ITW_CLASH_AirPictureLossEscalation) then {
-            _closure = ((_area#2) * 2) min ITW_CLASH_AirPictureLossClosureMax;
-        };
         _area set [0,_position];
         _area set [1,time];
         _area set [2,_closure];
@@ -883,12 +933,11 @@ ITW_CLASH_AirPicture_fnc_RecordLoss = {
 ITW_CLASH_AirPicture_fnc_LossClosed = {
     params ["_position"];
     if (_position isEqualTo []) exitWith {false};
-    // An area is forgotten only once it can no longer escalate either. Pruning
-    // at the closure alone would lose the memory a later trip doubles from, so
-    // a commander feeding the same nest every twelve minutes would reset to the
-    // base closure every time.
+    // Forgotten the moment it reopens. There is no escalation memory to keep
+    // any more: a nest that is still a nest re-trips on its own merits the next
+    // time an aircraft goes near it.
     ITW_CLASH_AirPictureLossAreas = ITW_CLASH_AirPictureLossAreas select {
-        (time - (_x#1)) <= ((_x#2) max ITW_CLASH_AirPictureLossEscalation)
+        (time - (_x#1)) <= (_x#2)
     };
     (ITW_CLASH_AirPictureLossAreas findIf {
         ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
@@ -1039,7 +1088,7 @@ ITW_CLASH_AirPicture_fnc_OnKill = {
     if (isNull _killed) exitWith {false};
     private _victim = vehicle _killed;
     if (_victim isKindOf "Air" && {_killed isEqualTo effectiveCommander _victim}) then {
-        [_victim] call ITW_CLASH_AirPicture_fnc_RecordLoss;
+        [_victim,_killer] call ITW_CLASH_AirPicture_fnc_RecordLoss;
     };
     if (isNull _killer) exitWith {false};
     private _shooter = vehicle _killer;
