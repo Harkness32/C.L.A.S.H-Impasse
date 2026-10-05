@@ -247,9 +247,13 @@ def test_the_scan_only_looks_at_loading_aircraft():
 def test_it_yields_to_an_owner_that_already_has_the_lift():
     body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_IsEligible")
     assert 'isNil {_crewGroup getVariable "ITW_CLASH_HALParadropCargoGroup"}' in body
-    # That marker is what the native SF insertion path sets on selection.
-    native = text("ITW_CLASH_HALNativeSFFix.sqf")
-    assert '_carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_team]' in native
+
+    # The marker is now owned by the centralized unload seam, not by a private
+    # GoSFAttack paradrop path. SCargo's Busy interlock remains the earlier
+    # flight-ownership guard while HAL is actually transporting the chalk.
+    unload = text("ITW_CLASH_HALUnload.sqf")
+    assert 'setVariable ["ITW_CLASH_HALParadropCargoGroup",_cargoGroup]' in unload
+    assert '_crewGroup getVariable [("Busy" + str _crewGroup),false]' in body
 
 
 def test_passengers_must_actually_be_aboard_to_be_claimed():
