@@ -72,7 +72,7 @@ def test_sf_air_insertion_uses_the_same_central_unload_owner():
     native = (
         'if (((group (assigneddriver _AV)) in (_HQ getVariable ["RydHQ_AirG",[]])) and '
         '(_unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]))) then '
-        '{_sts = ["true","(vehicle this) land \\'GET OUT\\';deletewaypoint [(group this), 0]"]};'
+        "{_sts = [\"true\",\"(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]\"]};"
     )
     assert attack.count(native) == 1
 
