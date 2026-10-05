@@ -21,6 +21,7 @@ private _swapped = [];
 	["HAL_GoAttInf","GoAttInf.sqf"],
 	["HAL_GoCapture","GoCapture.sqf"],
 	["HAL_GoCaptureNaval","GoCaptureNaval.sqf"],
+	["HAL_GoRecon","GoRecon.sqf"],
 	["HAL_GoRest","GoRest.sqf"],
 	["HAL_SuppAmmo","SuppAmmo.sqf"],
 	["HAL_SuppFuel","SuppFuel.sqf"],
