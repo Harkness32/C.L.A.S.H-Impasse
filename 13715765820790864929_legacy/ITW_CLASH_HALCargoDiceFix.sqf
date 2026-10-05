@@ -290,6 +290,11 @@ private _hooked = missionNamespace getVariable ["ITW_CLASH_CheckbookCargoHookRea
 
 private _path = RYD_Path + "HAL\SCargo.sqf";
 private _source = preprocessFileLineNumbers _path;
+// NR6's distributed SQF is CRLF. The source patch signatures below are
+// authored with LF newlines, so normalize carriage returns before matching.
+// Without this, the multi-line base-embark anchor never matches and the whole
+// SCargo patch correctly fails closed back to native HAL.
+_source = (_source splitString (toString [13])) joinString "";
 if (_source isEqualTo "") exitWith {
     ["native-source-missing",[_path]] call _finishFailure
 };
