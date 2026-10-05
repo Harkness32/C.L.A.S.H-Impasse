@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALUnloadStarted",false]) exitWith 
 
 ITW_CLASH_HALUnloadStarted = true;
 ITW_CLASH_HALUnloadReady = false;
-ITW_CLASH_HALUnloadVersion = 1;
+ITW_CLASH_HALUnloadVersion = 2;
 scriptName "ITW_CLASH_HALUnload";
 
 /*
@@ -23,6 +23,47 @@ scriptName "ITW_CLASH_HALUnload";
     that produced aee1341. If this module is absent entirely, the hook falls
     back to stock land "GET OUT" plus the existing carrier release helper.
 */
+
+/*
+    Drop run tuning.
+
+    Hark, on the first successful paradrop through this owner: "it flew there,
+    leveled out, raised then, then paradroped, then flew forward a bit and sat
+    still... we need a paradrop to be smooth, fast, almost as though its one
+    complete motion and then BOOM, j hook rtb."
+
+    Each of those is a line of code, not a feel problem:
+
+    - "leveled out, raised then" is the climb. flyInHeight was set AT the
+      insertion waypoint, so the aircraft arrived at HAL's transit height and
+      then climbed on top of the objective while Execute's own waitUntil held
+      it there. Climbing en route removes the pause entirely: drop altitude is
+      reached somewhere over the approach, and the climb wait passes on its
+      first evaluation.
+    - "flew forward a bit and sat still" is the absence of any egress. The
+      waypoint statement deletes HAL's waypoint before Unload is even spawned,
+      so the moment the chute is out the carrier has no destination at all. It
+      coasts to a stop and hovers over the objective it just dropped into.
+*/
+// Climb to drop altitude during the transit, so the run-in is already level.
+ITW_CLASH_HALUnloadClimbEnRoute = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadClimbEnRoute",true
+];
+// The J-hook: carry through past the drop, then bank away. Measured from the
+// drop point along the inbound bearing, and perpendicular to it.
+ITW_CLASH_HALUnloadEgress = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadEgress",true
+];
+ITW_CLASH_HALUnloadEgressThrough = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadEgressThrough",700
+];
+ITW_CLASH_HALUnloadEgressOffset = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadEgressOffset",450
+];
+ITW_CLASH_HALUnloadTransitHeight = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadTransitHeight",
+    missionNamespace getVariable ["ITW_CLASH_HotDropTransitHeight",120]
+];
 
 ITW_CLASH_HALUnloadOrderSpecs = [
     ["HAL_GoAttInf","GoAttInf.sqf","GoAttInf"],
@@ -115,6 +156,22 @@ ITW_CLASH_HALUnload_fnc_TrackLift = {
             _carrierGroup setVariable [
                 "ITW_CLASH_HALUnloadOrigin",getPosATL _carrier
             ];
+            /*
+                Climb now, not over the objective.
+
+                This spawn already waits for the chalk to be physically
+                aboard, which is where the transit actually begins, so it is
+                the earliest honest place to ask for drop altitude. The mode
+                is not known yet - that is decided at the seam, by design -
+                but every mode is served by it: PARADROP drops from here,
+                HOT_PARADROP climbs the rest of the way at the seam instead of
+                from HAL's transit height, and LAND simply descends as before.
+            */
+            if (ITW_CLASH_HALUnloadClimbEnRoute) then {
+                _carrier flyInHeight (
+                    missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]
+                );
+            };
         };
     };
     true
@@ -277,6 +334,83 @@ ITW_CLASH_HALUnload_fnc_StartHotFlares = {
     true
 };
 
+/*
+    The J-hook.
+
+    HAL's waypoint is deleted by the waypoint statement before this module is
+    even spawned, so after the drop the carrier is a helicopter with no
+    destination: it coasts, stops, and hovers over the objective. That is what
+    Hark saw, and it is also the worst place in the mission to be stationary.
+
+    So: carry through past the drop on the inbound bearing, bank off to one
+    side, then run home. Two waypoints rather than one, because a single
+    waypoint back to base makes the aircraft pivot on the spot - the thing that
+    reads as a stall - while a through-point turns the exit into one continuous
+    motion.
+
+    This is not C.L.A.S.H. becoming a second pilot. The rule that broke run8
+    was taking an aircraft HAL was actively flying; here HAL has already
+    finished with it and left it with nothing. Waypoints, not doMove, precisely
+    so HAL's next dispatch replaces this cleanly through its own machinery - the
+    same shape CASEVAC_fnc_SendHeliHome uses to send its airframes home.
+
+    The side it banks to alternates on the carrier's own id, so a pair of
+    aircraft working the same objective do not cross.
+*/
+ITW_CLASH_HALUnload_fnc_Egress = {
+    params ["_carrierGroup","_carrier",["_origin",[]]];
+    if (!ITW_CLASH_HALUnloadEgress) exitWith {false};
+    if (isNull _carrierGroup || {isNull _carrier} || {!alive _carrier}) exitWith {false};
+    if (!canMove _carrier) exitWith {false};
+    if ((crew _carrier) findIf {isPlayer _x} >= 0) exitWith {false};
+
+    private _here = getPosATL _carrier;
+    // Inbound bearing. With no usable origin, carry on the way it is pointing.
+    private _bearing = if (
+        _origin isEqualType [] && {count _origin >= 2} && {(_origin distance2D _here) > 50}
+    ) then {_origin getDir _here} else {getDir _carrier};
+
+    private _side = if ((_carrier call BIS_fnc_netId) select [0,1] in ["1","3","5","7","9"]) then {90} else {-90};
+    private _through = _here getPos [ITW_CLASH_HALUnloadEgressThrough,_bearing];
+    _through = _through getPos [ITW_CLASH_HALUnloadEgressOffset,_bearing + _side];
+
+    private _home = if (
+        _origin isEqualType [] && {count _origin >= 2}
+    ) then {_origin} else {_through};
+
+    _carrier land "NONE";
+    _carrier flyInHeight ITW_CLASH_HALUnloadTransitHeight;
+    _carrier limitSpeed 1e10;
+    _carrier forceSpeed -1;
+
+    if (!isNil "ITW_CLASH_fnc_ClearGroupWaypoints") then {
+        [_carrierGroup] call ITW_CLASH_fnc_ClearGroupWaypoints;
+    } else {
+        {deleteWaypoint _x} forEachReversed waypoints _carrierGroup;
+    };
+    _carrierGroup setBehaviourStrong "CARELESS";
+    _carrierGroup setCombatMode "BLUE";
+    _carrierGroup setSpeedMode "FULL";
+
+    {
+        _x params ["_pos","_radius"];
+        private _wp = _carrierGroup addWaypoint [_pos,0];
+        _wp setWaypointType "MOVE";
+        _wp setWaypointSpeed "FULL";
+        _wp setWaypointBehaviour "CARELESS";
+        _wp setWaypointCombatMode "BLUE";
+        _wp setWaypointCompletionRadius _radius;
+    } forEach [[_through,150],[_home,200]];
+
+    ["egress",[
+        typeOf _carrier,groupId _carrierGroup,
+        round _bearing,_side,
+        round (_here distance2D _through),
+        round (_here distance2D _home)
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+    true
+};
+
 ITW_CLASH_HALUnload_fnc_Unload = {
     params ["_carrierGroup","_carrier",["_orderFile","UNKNOWN"]];
 
@@ -325,7 +459,8 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 private _dropped = [_carrierGroup,_carrier,!_noLand] call
                     ITW_CLASH_HALParadrop_fnc_Execute;
                 if (_dropped) then {
-                    _result = "PARADROP"
+                    _result = "PARADROP";
+                    [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
                         if (_noLand) then {
@@ -355,7 +490,8 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 private _dropped = [_carrierGroup,_carrier,false] call
                     ITW_CLASH_HALParadrop_fnc_Execute;
                 if (_dropped) then {
-                    _result = "HOT_PARADROP"
+                    _result = "HOT_PARADROP";
+                    [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
                         _carrier land "NONE";

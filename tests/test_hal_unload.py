@@ -50,6 +50,13 @@ def function_body(source: str, name: str) -> str:
     raise AssertionError(f"unterminated {name}")
 
 
+def code_only(body: str) -> str:
+    """Comments in this module quote Hark and name the very identifiers under
+    test, so every assertion has to see executable text only."""
+    body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+    return re.sub(r"//[^\n]*", "", body)
+
+
 def central() -> str:
     return read(MISSION / "ITW_CLASH_HALUnload.sqf")
 
@@ -224,3 +231,99 @@ def test_the_refusal_branch_leaves_the_airframe_flying():
     assert '_carrier land "NONE";' in refusal
     assert "fallback-refused" in refusal
     assert '_carrier land "GET OUT"' not in refusal
+
+
+# ----------------------------------------------- the drop run: smooth, then gone
+
+def test_the_climb_happens_en_route_not_over_the_objective():
+    """Hark: "it flew there, leveled out, raised then, then paradroped".
+
+    The level-and-raise was flyInHeight being set AT the insertion waypoint,
+    so the aircraft arrived at HAL's transit height and climbed on top of the
+    objective while Execute's waitUntil held it there."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_TrackLift"))
+    assert "ITW_CLASH_HALUnloadClimbEnRoute" in body
+    assert "flyInHeight" in body
+    assert "ITW_CLASH_HALParadrop_MinAltitude" in body
+
+
+def test_the_climb_waits_for_the_chalk_to_be_aboard_first():
+    """Asking for altitude before anyone has boarded would climb away from the
+    squad still walking to the aircraft."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_TrackLift"))
+    assert body.index("ITW_CLASH_HALUnloadOrigin") < body.index("ITW_CLASH_HALUnloadClimbEnRoute")
+
+
+def test_execute_still_guards_the_altitude_itself():
+    """The en-route climb is an optimisation, not a replacement. If it is
+    switched off, or the aircraft cannot climb, Execute's own wait still
+    decides whether a drop is safe."""
+    body = code_only(function_body(
+        read(MISSION / "ITW_CLASH_HALParadrop.sqf"), "ITW_CLASH_HALParadrop_fnc_Execute"
+    ))
+    assert "ITW_CLASH_HALParadrop_ClimbTimeout" in body
+    assert "ITW_CLASH_HALParadrop_MinAltitude" in body
+
+
+def test_a_successful_drop_is_followed_by_an_egress():
+    """Hark: "flew forward a bit and sat still". HAL's waypoint is deleted by
+    the waypoint statement before Unload is spawned, so after the drop the
+    carrier has no destination at all."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload"))
+    assert body.count("call ITW_CLASH_HALUnload_fnc_Egress") == 2, (
+        "both PARADROP and HOT_PARADROP"
+    )
+    for mode in ('_result = "PARADROP";', '_result = "HOT_PARADROP";'):
+        tail = body[body.index(mode):body.index(mode) + 200]
+        assert "ITW_CLASH_HALUnload_fnc_Egress" in tail, mode
+
+
+def test_the_egress_is_two_waypoints_so_it_banks_instead_of_pivoting():
+    """A single waypoint home makes the aircraft turn on the spot, which reads
+    as the stall it is meant to cure."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert "forEach [[_through,150],[_home,200]]" in body
+    assert "ITW_CLASH_HALUnloadEgressThrough" in body
+    assert "ITW_CLASH_HALUnloadEgressOffset" in body
+
+
+def test_the_egress_uses_waypoints_not_domove():
+    """The rule that run8 broke was taking an aircraft HAL was actively flying.
+    Here HAL has finished and left it with nothing - but it still has to be
+    handed back cleanly, so HAL's next dispatch replaces these through its own
+    machinery."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert "doMove" not in body
+    assert "addWaypoint" in body
+
+
+def test_the_egress_releases_every_hold_on_the_airframe():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert '_carrier land "NONE"' in body
+    assert "ITW_CLASH_HALUnloadTransitHeight" in body
+    assert "forceSpeed -1" in body
+
+
+def test_the_egress_never_touches_a_player_or_a_dead_airframe():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert "isPlayer _x" in body
+    assert "alive _carrier" in body
+    assert "canMove _carrier" in body
+
+
+def test_the_egress_survives_a_missing_origin():
+    """A lift whose origin was never stamped still has to leave."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert "getDir _carrier" in body, "fall back to the way it is pointing"
+    assert "_home = if (" in body
+
+
+def test_paired_aircraft_bank_opposite_ways():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert "BIS_fnc_netId" in body
+    assert "90" in body and "-90" in body
+
+
+def test_the_egress_can_be_switched_off_without_touching_the_drop():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert "if (!ITW_CLASH_HALUnloadEgress) exitWith {false}" in body
