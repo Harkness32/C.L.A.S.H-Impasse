@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALTaxonomyStarted",false]) exitWith {true};
 ITW_CLASH_HALTaxonomyStarted = true;
-ITW_CLASH_HALTaxonomyVersion = 1;
+ITW_CLASH_HALTaxonomyVersion = 2;
 ITW_CLASH_HALTaxonomyReady = false;
 
 /*
@@ -136,11 +136,33 @@ ITW_CLASH_HALTaxonomy_fnc_Classify = {
                         _primary = "Art";
                     } else {
                         if (!(_class isKindOf "LandVehicle")) exitWith {};
-                        // Grade is the armour question, and it is the one HAL
-                        // has no concept of: a Rooikat is not a car.
+                        /*
+                            Grade alone is not the armour question.
+
+                            ProtectionGrade reads the config `armor` value,
+                            which in Arma is STRUCTURAL HITPOINTS, not armour
+                            protection - a big heavy truck scores higher than a
+                            small hard one. Run5 proved it: grade 1 held both
+                            the Rooikat and Marshall (right) and
+                            truck_01_transport, truck_01_covered, three MRAP
+                            variants and the armed Prowler (wrong). HAL's own
+                            autofill puts those Car-based classes in RHQ_Cars
+                            correctly, so this module was overriding a right
+                            answer with a worse one.
+
+                            Light armour therefore needs grade AND corroboration:
+                            either a chassis the engine itself calls armour, or
+                            the ability to actually fight armour. A truck is
+                            neither. The Rooikat is the second - which is the
+                            whole reason this module exists, since HAL cannot
+                            see it (its AT test is guided-only and a tank gun
+                            carries no lock).
+                        */
+                        private _armouredChassis = _class isKindOf "Tank"
+                            || {_class isKindOf "Wheeled_APC_F"};
                         _primary = switch (true) do {
                             case (_grade >= 2 && {_class isKindOf "Tank"}): {"HArmor"};
-                            case (_grade >= 1): {"LArmor"};
+                            case (_grade >= 1 && {_armouredChassis || {_antiArmor}}): {"LArmor"};
                             default {"Cars"};
                         };
                         /*

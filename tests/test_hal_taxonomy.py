@@ -129,12 +129,27 @@ def test_a_classified_class_always_gets_a_primary():
 
 # --- the classification itself ------------------------------------------
 
-def test_armour_is_decided_by_grade_not_by_chassis_name():
+def test_armour_is_decided_by_grade_plus_corroboration():
+    """Grade alone was not enough, and this test used to say it was.
+
+    run5 disproved it: config `armor` in Arma is structural hitpoints rather
+    than protection, so grade 1 held the Rooikat and Marshall together with
+    truck_01_transport, truck_01_covered, three MRAPs and the armed Prowler.
+    HAL's own autofill puts those Car-based classes in RHQ_Cars correctly, so
+    the module was overriding a right answer with a worse one.
+
+    Light armour now needs grade AND either a chassis the engine itself calls
+    armour or the ability to fight armour. Note isKindOf is inheritance, not a
+    name list, so the no-hardcoded-classnames rule still holds - that part of
+    the old name was right.
+    """
     body = code_only(function_body(taxonomy(), "ITW_CLASH_HALTaxonomy_fnc_Classify"))
     assert "ITW_CLASH_AirPicture_fnc_ProtectionGrade" in body
     assert '_grade >= 2 && {_class isKindOf "Tank"}): {"HArmor"}' in body
-    assert '_grade >= 1): {"LArmor"}' in body
+    assert '_grade >= 1 && {_armouredChassis || {_antiArmor}}): {"LArmor"}' in body
     assert 'default {"Cars"}' in body
+    # The form that admitted trucks is gone for good.
+    assert '_grade >= 1): {"LArmor"}' not in body
 
 
 def test_larmorat_is_a_promotion_for_light_armour_only():

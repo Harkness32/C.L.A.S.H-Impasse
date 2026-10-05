@@ -333,10 +333,33 @@ private _step = [
 if !(_step#0) exitWith {[_step#2,[count _source]] call _finishFailure};
 _source = _step#1;
 
+/*
+    SQF has no backslash escapes in string literals.
+
+    This anchor was authored as '...};\n\n_lz = objNull;', which in SQF is the
+    two characters backslash and n - not a newline - so it could never match
+    HAL's actual source, and the run5 boot logged
+    SCargo-base-embark-entry:signature-missing with the whole SCargo patch
+    correctly failing closed back to native HAL. The REPLACEMENT carried the
+    same literals, so even a match would have injected backslash-n into the
+    compiled source and failed the recompile instead. The base-embark fast
+    path has therefore never executed.
+
+    Built from toString [10] now, which is a real newline. The CR strip above
+    is still needed: NR6 ships CRLF, so the source reads };<CR><LF><CR><LF>_lz
+    and only the LF survives to be matched.
+*/
+private _nl = toString [10];
+private _exitLine = 'if ((_enmyNrb) and not (_request)) exitwith {_unitG setVariable ["CargoChosen",false,true];_unitG setVariable [("CC" + (str _unitG)), true, true]};';
+
 private _embarkStep = [
     _source,
-    'if ((_enmyNrb) and not (_request)) exitwith {_unitG setVariable ["CargoChosen",false,true];_unitG setVariable [("CC" + (str _unitG)), true, true]};\n\n_lz = objNull;',
-    'if ((_enmyNrb) and not (_request)) exitwith {_unitG setVariable ["CargoChosen",false,true];_unitG setVariable [("CC" + (str _unitG)), true, true]};\n\nprivate _clashBaseEmbarked = false; if (not (_withdraw) and not (_request) and not (_emptyV) and {!isNil "ITW_CLASH_HALCargoDice_fnc_BaseEmbark"}) then {_clashBaseEmbarked = [_unitG,_ChosenOne,_HQ] call ITW_CLASH_HALCargoDice_fnc_BaseEmbark;};\n\n_lz = objNull;',
+    (_exitLine + _nl + _nl + '_lz = objNull;'),
+    (
+        _exitLine + _nl + _nl
+        + 'private _clashBaseEmbarked = false; if (not (_withdraw) and not (_request) and not (_emptyV) and {!isNil "ITW_CLASH_HALCargoDice_fnc_BaseEmbark"}) then {_clashBaseEmbarked = [_unitG,_ChosenOne,_HQ] call ITW_CLASH_HALCargoDice_fnc_BaseEmbark;};'
+        + _nl + _nl + '_lz = objNull;'
+    ),
     "SCargo-base-embark-entry"
 ] call _replaceExact;
 if !(_embarkStep#0) exitWith {
