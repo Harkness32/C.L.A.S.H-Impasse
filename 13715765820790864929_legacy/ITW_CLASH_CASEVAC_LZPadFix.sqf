@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_LZPadFixStarted",false]) exitWith {};
 ITW_CLASH_CASEVAC_LZPadFixStarted = true;
-ITW_CLASH_CASEVAC_LZPadFixVersion = 2;
+ITW_CLASH_CASEVAC_LZPadFixVersion = 3;
 ITW_CLASH_CASEVAC_InfantryRallyOffset = 30;
 
 waitUntil {
@@ -65,6 +65,18 @@ ITW_CLASH_CASEVAC_fnc_OrderLZ = {
     true
 };
 
+// An approach counts as abandoned only when the aircraft has both climbed away
+// and drifted off the pad, so a normal descent is never re-commanded.
+ITW_CLASH_CASEVAC_LZPadLostAltitude = missionNamespace getVariable [
+    "ITW_CLASH_CASEVAC_LZPadLostAltitude",40
+];
+ITW_CLASH_CASEVAC_LZPadLostDistance = missionNamespace getVariable [
+    "ITW_CLASH_CASEVAC_LZPadLostDistance",250
+];
+ITW_CLASH_CASEVAC_LZPadMaxRecommands = missionNamespace getVariable [
+    "ITW_CLASH_CASEVAC_LZPadMaxRecommands",3
+];
+
 ITW_CLASH_CASEVAC_fnc_OrderHeliLZ = {
     params ["_heli","_crewGroup","_lz"];
     private _routed = [_heli,_crewGroup,_lz] call ITW_CLASH_CASEVAC_fnc_OrderHeliLZ_V1Base;
@@ -82,6 +94,29 @@ ITW_CLASH_CASEVAC_fnc_OrderHeliLZ = {
         [_heli,_pad] spawn {
             params ["_heli","_pad"];
             private _successLogged = false;
+            /*
+                Command the landing ONCE.
+
+                This loop used to call landAt every two seconds for the whole
+                approach. Each call restarts the approach, so the aircraft
+                descends, is re-commanded, re-approaches and descends again,
+                never settling - and when BoardingTimeout expires with nobody
+                aboard the evac is failed and the airframe sent home. The
+                _successLogged flag guarded only the LOGGING, so the repetition
+                was invisible in the RPT: one lz-pad-locked line, a landAt every
+                two seconds underneath it.
+
+                The pad still has to be kept alive for the whole of boarding -
+                that is what this spawn is for, and why v1 deleting it on the
+                inbound->boarding transition was wrong. Keeping the pad and
+                re-commanding the landing are different things.
+
+                A genuinely abandoned approach is re-commanded, bounded: the
+                aircraft has to have climbed away AND drifted off the pad
+                before it counts as lost, so a normal descent never triggers it.
+            */
+            private _commanded = false;
+            private _recommands = 0;
             while {!isNull _heli && {alive _heli} && {!isNull _pad}} do {
                 private _group = _heli getVariable ["ITW_CLASH_CASEVAC_Group",grpNull];
                 if (isNull _group) exitWith {};
@@ -92,15 +127,30 @@ ITW_CLASH_CASEVAC_fnc_OrderHeliLZ = {
                 // boarding, even though survivors were still walking/getting in.
                 if !(_state in ["inbound","boarding"]) exitWith {};
 
-                if (_heli distance2D _pad <= 650) then {
+                private _padDistance = _heli distance2D _pad;
+                private _lostApproach = _commanded
+                    && {((getPosATL _heli)#2) > ITW_CLASH_CASEVAC_LZPadLostAltitude}
+                    && {_padDistance > ITW_CLASH_CASEVAC_LZPadLostDistance}
+                    && {_recommands < ITW_CLASH_CASEVAC_LZPadMaxRecommands};
+
+                if ((!_commanded || {_lostApproach}) && {_padDistance <= 650}) then {
                     private _wait = ITW_CLASH_CASEVAC_BoardingTimeout + 30;
                     private _ok = _heli landAt [_pad,"GetIn",_wait,true];
+                    if (_ok) then {_commanded = true};
+                    if (_lostApproach) then {
+                        _recommands = _recommands + 1;
+                        ["lz-pad-recommanded",[
+                            [_group] call ITW_CLASH_fnc_GroupId,
+                            typeOf _heli,_recommands,
+                            round _padDistance,round ((getPosATL _heli)#2)
+                        ]] call ITW_CLASH_CASEVAC_fnc_Log;
+                    };
                     if (_ok && {!_successLogged}) then {
                         _successLogged = true;
                         ["lz-pad-locked",[
                             [_group] call ITW_CLASH_fnc_GroupId,
                             typeOf _heli,getPosATL _pad,
-                            round (_heli distance2D _pad)
+                            round _padDistance
                         ]] call ITW_CLASH_CASEVAC_fnc_Log;
                     };
                 };

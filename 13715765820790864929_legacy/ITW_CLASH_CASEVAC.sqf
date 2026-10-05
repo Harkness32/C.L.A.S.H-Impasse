@@ -10,6 +10,32 @@ ITW_CLASH_CASEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_CASEVAC_MinDisengageDistance = 500;
 ITW_CLASH_CASEVAC_EnemyClearance = 650;
 ITW_CLASH_CASEVAC_InboundAbortClearance = 450;
+/*
+    Commit distance.
+
+    run (6:16-6:17): a Littlebird was dispatched 3400m to G41, reached 594m
+    from the LZ, and aborted one second after the pad locked because an enemy
+    was 244m from the casualty group. Whole flight wasted, casualties left.
+
+    The abort itself is sound BEFORE commitment - nothing is lost but a sortie.
+    Applied flat for the entire inbound leg it is close to guaranteed to fire,
+    because CASEVAC only serves groups that are WITHDRAWING (fnc_Eligible
+    requires ITW_CLASH_Withdrawing), and a group under GTFO is by definition
+    breaking contact. Enemies near it is their normal condition, not an
+    exception. So the guard threw away essentially every evac at the last
+    moment, which is what Hark saw: "got to patients... and it rtb'd".
+
+    Inside the commit distance the aircraft is seconds from the ground and the
+    casualties are the whole point of being there, so proximity alone is no
+    longer a reason to leave. Only an enemy close enough to contest the pad
+    itself is - landing into that is losing the airframe as well as the squad.
+*/
+ITW_CLASH_CASEVAC_CommitDistance = missionNamespace getVariable [
+    "ITW_CLASH_CASEVAC_CommitDistance",800
+];
+ITW_CLASH_CASEVAC_CommittedAbortClearance = missionNamespace getVariable [
+    "ITW_CLASH_CASEVAC_CommittedAbortClearance",150
+];
 ITW_CLASH_CASEVAC_ObjectiveClearance = 500;
 ITW_CLASH_CASEVAC_MinEgressDistance = 400;
 ITW_CLASH_CASEVAC_LZLeadDistance = 175;
@@ -465,10 +491,21 @@ ITW_CLASH_CASEVAC_fnc_RunExtraction = {
             private _contactDistance = [
                 _group
             ] call ITW_CLASH_CASEVAC_fnc_GetNearestEnemyDistance;
-            if (_contactDistance < ITW_CLASH_CASEVAC_InboundAbortClearance) then {
+            // Committed once the aircraft is close enough that turning back
+            // costs more than finishing. Measured to the LZ, not to the
+            // casualties, because the LZ is what it has to put wheels on.
+            private _committed = (_heli distance2D _lz) <= ITW_CLASH_CASEVAC_CommitDistance;
+            private _clearance = if (_committed) then {
+                ITW_CLASH_CASEVAC_CommittedAbortClearance
+            } else {
+                ITW_CLASH_CASEVAC_InboundAbortClearance
+            };
+            if (_contactDistance < _clearance) then {
                 ["abort-contact",[
                     _id,_lineage,round _contactDistance,
-                    ITW_CLASH_CASEVAC_InboundAbortClearance
+                    _clearance,
+                    if (_committed) then {"committed"} else {"inbound"},
+                    round (_heli distance2D _lz)
                 ]] call ITW_CLASH_CASEVAC_fnc_Log;
                 [
                     _id,_group,"contact-reestablished",_heli,_crewGroup,_returnPos
