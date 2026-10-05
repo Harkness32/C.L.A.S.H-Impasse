@@ -117,7 +117,7 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
     body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
     resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
 
-    assert "ITW_CLASH_HALCargoDiceFixVersion = 2;" in source
+    assert "ITW_CLASH_HALCargoDiceFixVersion = 3;" in source
     assert "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase" in resolver
     assert "ITW_CLASH_ServiceHome_fnc_BaseValidForSide" in resolver
     assert "ITW_Bases#_baseIndex#ITW_BASE_POS" in resolver
@@ -146,3 +146,20 @@ def test_base_embark_uses_live_base_arrays_not_cached_coordinates():
     assert "ITW_Bases#_baseIndex#ITW_BASE_POS" in resolver
     assert "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase" in resolver
     assert "ServiceBaseHint" not in resolver
+
+
+
+def test_scargo_runtime_source_normalizes_crlf_before_multiline_patch():
+    source = fix()
+    assert '_source = (_source splitString (toString [13])) joinString "";' in source
+    assert "SCargo-base-embark-entry" in source
+
+
+def test_base_embark_recognizes_impasse_staging_anchors():
+    source = fix()
+    resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
+    assert "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices" in resolver
+    assert "ITW_BASE_POS" in resolver
+    assert "ITW_BASE_A_SPAWN" in resolver
+    assert "ITW_BASE_GARAGE_POS" in resolver
+    assert "ITW_CLASH_BaseEmbarkRadius" in resolver
