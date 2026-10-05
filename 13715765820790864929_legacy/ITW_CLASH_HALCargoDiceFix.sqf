@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALCargoDiceFixStarted",false]) exi
 
 ITW_CLASH_HALCargoDiceFixStarted = true;
 ITW_CLASH_HALCargoDiceFixReady = false;
-ITW_CLASH_HALCargoDiceFixVersion = 2;
+ITW_CLASH_HALCargoDiceFixVersion = 3;
 scriptName "ITW_CLASH_HALCargoDiceFix";
 
 /*
@@ -96,22 +96,44 @@ ITW_CLASH_HALCargoDice_fnc_Log = {
 ITW_CLASH_HALCargoDice_fnc_BaseAtPosition = {
     params ["_side","_position"];
     if (
-        isNil "ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase"
-        || {isNil "ITW_CLASH_ServiceHome_fnc_BaseValidForSide"}
+        isNil "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices"
         || {isNil "ITW_Bases"}
         || {_position isEqualTo []}
     ) exitWith {-1};
 
-    private _baseIndex = [_side,_position] call
-        ITW_CLASH_ServiceHome_fnc_NearestFriendlyBase;
-    if (_baseIndex < 0 || {_baseIndex >= count ITW_Bases}) exitWith {-1};
-    if !([_side,_baseIndex] call ITW_CLASH_ServiceHome_fnc_BaseValidForSide) exitWith {-1};
+    private _bestIndex = -1;
+    private _bestDistance = 1e12;
+    {
+        private _baseIndex = _x;
+        if (_baseIndex < 0 || {_baseIndex >= count ITW_Bases}) then {continue};
+        private _base = ITW_Bases#_baseIndex;
 
-    private _basePos = +(ITW_Bases#_baseIndex#ITW_BASE_POS);
-    if (_basePos isEqualTo [] || {
-        (_position distance2D _basePos) > ITW_CLASH_BaseEmbarkRadius
-    }) exitWith {-1};
-    _baseIndex
+        // A live Impasse base is larger than its abstract center. Air assets
+        // can legitimately stage at A_SPAWN and ground transports at GARAGE_POS,
+        // so any of those anchors establishes "at this base".
+        private _anchors = [
+            +(_base#ITW_BASE_POS),
+            +(_base#ITW_BASE_A_SPAWN),
+            +(_base#ITW_BASE_GARAGE_POS)
+        ];
+        {
+            private _anchor = _x;
+            if (
+                _anchor isEqualTo []
+                || {_anchor isEqualTo [0,0,0]}
+                || {_anchor isEqualTo [-1000,-1000,0]}
+                || {_anchor isEqualTo [999,999,0]}
+            ) then {continue};
+            if (count _anchor < 3) then {_anchor pushBack 0};
+            private _distance = _position distance2D _anchor;
+            if (_distance <= ITW_CLASH_BaseEmbarkRadius && {_distance < _bestDistance}) then {
+                _bestDistance = _distance;
+                _bestIndex = _baseIndex;
+            };
+        } forEach _anchors;
+    } forEach ([_side] call ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices);
+
+    _bestIndex
 };
 
 ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {
