@@ -614,6 +614,19 @@ ITW_CLASH_Colossus_fnc_HoldingUnanchored = {
     private _unanchored = [];
     {
         private _index = _x#0;
+        /*
+            A locked objective needs no anchor.
+
+            This gate exists because a freshly taken objective is vulnerable
+            and concentrating off it loses it (b9d90d1). While Impasse's
+            capture lock holds, it is not vulnerable - nobody can move its
+            phase at all - so the reason for the hold is absent and
+            concentration should proceed. Same fact the anchor audit acts on,
+            read from the same predicate.
+        */
+        if (!isNil "ITW_CLASH_fnc_ObjectiveLocked" && {
+            [_index] call ITW_CLASH_fnc_ObjectiveLocked
+        }) then {continue};
         private _entry = _registry getOrDefault [str _index,[]];
         private _anchor = if (_entry isEqualTo []) then {grpNull} else {_entry#0};
         if (isNull _anchor || {({alive _x} count units _anchor) == 0}) then {

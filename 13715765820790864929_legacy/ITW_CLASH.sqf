@@ -173,6 +173,40 @@ ITW_CLASH_fnc_GetObjectiveFlag = {
     _objective#ITW_OBJ_FLAG
 };
 
+/*
+    Is this objective locked, and for how much longer?
+
+    Impasse's own capture lock, wired through to HAL for the first time.
+    ITW_Objectives.sqf:2529 stamps ITW_FlagUnlockTime = serverTime +
+    ITW_ParamObjLockTime on a flag the moment a flip to a NEW owner completes,
+    and the capture loop then skips that flag entirely (:2433, `continue`)
+    until the stamp expires.
+
+    So a locked objective is not merely harder to take. It is not processed:
+    nobody can move its phase in either direction, by any means, for the whole
+    window. Hark: "when an OBJ becomes locked, we should stop defending it and
+    push on."
+
+    Returns seconds remaining, 0 when not locked. ITW clears the variable to
+    nil both on expiry (:2434) and on a zone change (:2427), and the parameter
+    is 0 by default, so every "no lock" path reads 0 without special casing.
+*/
+ITW_CLASH_fnc_ObjectiveLockRemaining = {
+    params [["_objectiveIndex",-1]];
+    private _flag = [_objectiveIndex] call ITW_CLASH_fnc_GetObjectiveFlag;
+    if (isNull _flag) exitWith {0};
+    private _unlockAt = _flag getVariable ["ITW_FlagUnlockTime",0];
+    if !(_unlockAt isEqualType 0) exitWith {0};
+    private _remaining = _unlockAt - serverTime;
+    if (_remaining <= 0) exitWith {0};
+    _remaining
+};
+
+ITW_CLASH_fnc_ObjectiveLocked = {
+    params [["_objectiveIndex",-1]];
+    ([_objectiveIndex] call ITW_CLASH_fnc_ObjectiveLockRemaining) > 0
+};
+
 ITW_CLASH_fnc_GetActiveObjectives = {
     if (isNil "ITW_Zones" || {
         isNil "ITW_ZoneIndex" || {
@@ -687,6 +721,19 @@ ITW_CLASH_fnc_ClearAnchorSlot = {
         };
         if (_reason isEqualTo "objective-lost") then {
             _group setVariable ["Defending",false];
+            [_group] call ITW_CLASH_fnc_ClearGroupWaypoints;
+        };
+        /*
+            A locked objective cannot be taken, so a group sitting on it is
+            doing nothing that matters. Release it the hard way - stop
+            defending, drop the waypoints that hold it in place, and Break so
+            HAL re-tasks it this cycle rather than next. The four RydHQ_Def*
+            removals above are what stop HAL counting it as defence; this is
+            what actually makes it leave.
+        */
+        if (_reason isEqualTo "objective-locked") then {
+            _group setVariable ["Defending",false];
+            _group setVariable ["Break",true];
             [_group] call ITW_CLASH_fnc_ClearGroupWaypoints;
         };
     };
@@ -1513,6 +1560,37 @@ ITW_CLASH_fnc_AuditAnchors = {
         private _center = [_objectiveIndex,_flag] call ITW_CLASH_fnc_GetObjectiveCenter;
         private _entry = ITW_CLASH_AnchorGroups getOrDefault [_key,[]];
         private _anchor = if (_entry isEqualTo []) then {grpNull} else {_entry#0};
+
+        /*
+            Locked: hand the ground back and push on.
+
+            Done here rather than in a second poll because this loop is already
+            the single owner of who anchors what. A separate watcher would race
+            it - releasing a group one tick and having the audit re-anchor it
+            the next.
+
+            Hark chose full release over re-anchoring before the lock lifts:
+            "Locked objectives are LOCKED." The objective therefore stands
+            empty when the window expires, and HAL's own defence response
+            handles it once an enemy actually turns up. The window is
+            ITW_ParamObjLockTime, 1 to 30 minutes, and 0 - the default - means
+            no objective ever locks and none of this ever runs.
+        */
+        private _lockRemaining = [_objectiveIndex] call ITW_CLASH_fnc_ObjectiveLockRemaining;
+        if (_lockRemaining > 0) then {
+            if (_entry isNotEqualTo []) then {
+                ["anchor-released-locked",[
+                    _objectiveIndex,
+                    round _lockRemaining,
+                    if (isNull _anchor) then {"<null>"} else {groupId _anchor}
+                ]] call ITW_CLASH_fnc_Log;
+                [_objectiveIndex,"objective-locked"] call ITW_CLASH_fnc_ClearAnchorSlot;
+            };
+            // No demand either: an objective nobody can take generates no
+            // refill, so the manpower goes to the objectives that are live.
+            ITW_CLASH_AnchorRefills deleteAt _key;
+            continue;
+        };
 
         private _anchorValid = !isNull _anchor && {
             _anchor getVariable ["ITW_CLASH_Managed",false] && {
