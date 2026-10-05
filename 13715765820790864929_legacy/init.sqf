@@ -219,6 +219,16 @@ if (isServer) then {
             // Rear-base C-RAM: a fixed, learnable no-go zone for air about 3 km
             // around each side's rear base, so a jet loitering over the rear is
             // covered instead of buying a fighter.
+            // A FOB the front has left behind keeps its sentries, and those
+            // slots are what stop fresh troops spawning at the FOBs that are
+            // now live. Wipes them on a front change. Destructive, so it asks
+            // ITW_CLASH_Generation_fnc_Resolve which bases are still in use
+            // rather than deciding for itself.
+            if (fileExists "ITW_CLASH_FOBGarrisonSweep.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_FOBGarrisonSweep.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | fob-garrison-sweep-missing | stale FOBs keep their garrisons and their slots";
+            };
             if (_airPictureLoaded isEqualTo true && {fileExists "ITW_CLASH_RearBaseCRAM.sqf"}) then {
                 call compile preprocessFileLineNumbers "ITW_CLASH_RearBaseCRAM.sqf";
             } else {
