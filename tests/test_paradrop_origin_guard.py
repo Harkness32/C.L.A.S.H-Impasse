@@ -95,26 +95,27 @@ def test_the_min_run_exceeds_a_base_footprint():
     assert min_run > base_radius, (min_run, base_radius)
 
 
-def test_the_origin_is_stamped_wherever_the_paradrop_is_selected():
-    for name in ("GoAttInf.sqf", "GoRecon.sqf"):
-        source = read(ADD / "hal" / name)
-        assert 'setVariable ["ITW_CLASH_HALParadropOrigin",getPosATL _AV]' in source, name
-        # Stamped together with the cargo group, so one cannot exist without
-        # the other.
-        idx_cargo = source.index('"ITW_CLASH_HALParadropCargoGroup",_unitG')
-        idx_origin = source.index('"ITW_CLASH_HALParadropOrigin",getPosATL _AV')
-        assert 0 < idx_origin - idx_cargo < 300, name
+def test_the_origin_is_stamped_at_the_execution_time_unload_owner():
+    unload = read(MISSION / "ITW_CLASH_HALUnload.sqf")
+    # Both PARADROP and HOT_PARADROP stamp the real carrier departure before
+    # Execute is called. No order file predicts the future at build time.
+    assert unload.count('setVariable ["ITW_CLASH_HALParadropOrigin",_origin]') == 2
+    assert 'getVariable ["START" + str _carrierGroup,[]]' in unload
+    assert unload.count("ITW_CLASH_HALParadrop_fnc_Execute") >= 2
 
 
-def test_the_origin_is_cleared_wherever_the_cargo_stamp_is():
-    """A stale origin would gate a later unrelated lift by the same carrier."""
-    for path in (MISSION / "ITW_CLASH_HALParadrop.sqf",
-                 ADD / "hal" / "GoAttInf.sqf",
-                 ADD / "hal" / "GoRecon.sqf"):
-        source = read(path)
-        cleared_cargo = source.count('"ITW_CLASH_HALParadropCargoGroup",nil')
-        cleared_origin = source.count('"ITW_CLASH_HALParadropOrigin",nil')
-        assert cleared_cargo == cleared_origin, (path.name, cleared_cargo, cleared_origin)
+def test_the_origin_is_cleared_with_the_cargo_stamp():
+    policy_source = read(MISSION / "ITW_CLASH_HALParadrop.sqf")
+    unload = read(MISSION / "ITW_CLASH_HALUnload.sqf")
+
+    # Execute owns successful/empty cleanup; the centralized owner owns the
+    # NO_LAND cleanup after a refused unsafe drop.
+    assert policy_source.count('"ITW_CLASH_HALParadropCargoGroup",nil') == policy_source.count(
+        '"ITW_CLASH_HALParadropOrigin",nil'
+    )
+    assert unload.count('"ITW_CLASH_HALParadropCargoGroup",nil') == unload.count(
+        '"ITW_CLASH_HALParadropOrigin",nil'
+    )
 
 
 def test_every_execute_exit_now_says_why():
@@ -125,5 +126,5 @@ def test_every_execute_exit_now_says_why():
         assert f'"{reason}"' in body, reason
 
 
-def test_paradrop_version_moved_to_three():
-    assert "ITW_CLASH_HALParadropVersion = 3;" in policy()
+def test_paradrop_version_moved_to_four():
+    assert "ITW_CLASH_HALParadropVersion = 4;" in policy()
