@@ -530,7 +530,18 @@ private _clashParaAirCarrier = _clashParaHasVehicle
 private _clashParaInfantry = _unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]);
 private _clashParaAboard = _clashParaHasVehicle
 	&& {({alive _x && {vehicle _x == _AV}} count (units _unitG)) > 0};
-private _clashAirLift = _clashParaAirCarrier && {_clashParaAboard};
+/*
+	Role, not current occupancy - the same correction as GoAttInf.
+
+	Boarding is ordered at ~240 and the unload statement is built at ~628 with
+	no wait in between, so _clashParaAboard is false here while the squad is
+	still walking to the aircraft. Gating on it left _sts at its default
+	"deletewaypoint": the helicopter reached the drop point, deleted the
+	waypoint, and nobody got out. _clashParaAboard stays for the trace, where
+	it is informative; the physical check belongs at execution time and already
+	lives in ITW_CLASH_HALParadrop_fnc_Execute.
+*/
+private _clashAirLift = _clashParaAirCarrier && {_clashParaInfantry};
 private _clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0;
 private _clashParaCrewPlayer = if (isNull _GDV) then {false} else {
 	((units _GDV) findIf {isPlayer _x}) >= 0
@@ -630,7 +641,9 @@ if (_clashAirLift) then
 	{
 	if (_halParadrop) then
 		{
-		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | recon-air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn ITW_CLASH_HALParadrop_fnc_Execute; deletewaypoint [(group this), 0]"]
+		// Execute lands for itself on only one of its false returns; the rest
+		// would strand the squad airborne. Land for real if it declines.
+		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | recon-air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn {params ['_g','_v']; private _c = _g getVariable ['ITW_CLASH_HALParadropCargoGroup',grpNull]; private _ok = [_g,_v] call ITW_CLASH_HALParadrop_fnc_Execute; if (!_ok && {!isNull _c} && {({alive _x && {vehicle _x == _v}} count (units _c)) > 0}) then {diag_log format ['CLASHHALADD | recon-air-unload-land-fallback | %1',[groupId _c,typeOf _v]]; _v land 'GET OUT'}}; deletewaypoint [(group this), 0]"]
 		}
 	else
 		{

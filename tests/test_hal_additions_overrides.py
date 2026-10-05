@@ -88,24 +88,59 @@ def test_paradrop_override_chain_is_runtime_self_proving():
 
 
 
-def test_air_unload_uses_actual_carried_state_not_ncrew_bucket():
+def test_air_unload_is_decided_by_role_not_by_who_is_aboard_yet():
+    """The air-lift decision cannot depend on the squad already being inside.
+
+    GoAttInf orders boarding with orderGetIn (line ~191) and builds the unload
+    waypoint statement (line ~578) with no wait in between, so a physical
+    "is anyone aboard" test is false at that moment in the normal case - the
+    squad is still walking to the aircraft.
+
+    Gating on it left _sts at its default "deletewaypoint" for every lift: the
+    helicopter reached the drop point, deleted the waypoint, and nobody got
+    out, not even the land "GET OUT" stock HAL would have issued. Troops rode
+    around indefinitely.
+
+    So the decision is role-based, and the physical check lives at execution
+    time where it already existed - ITW_CLASH_HALParadrop_fnc_Execute reads the
+    cargo group off the carrier and declines when nobody is aboard.
+    """
     attack = read(ADD / "hal" / "GoAttInf.sqf")
 
-    assert "private _clashParaAboard" in attack
-    assert "private _clashAirLift" in attack
+    # The lift is a role question: an air carrier, distinct from the cargo
+    # group, carrying non-crew infantry.
+    assert "private _clashAirLift = _clashParaAirCarrier && {_clashParaInfantry};" in attack
     assert "_GDV != _unitG" in attack
-    assert "vehicle _x == _AV" in attack
-    assert "if (_clashAirLift) then" in attack
+    assert 'RydHQ_AirG' in attack
 
-    # NCrewInf remains diagnostic context only; it must not gate either
-    # paradrop selection or the ordinary GET OUT waypoint anymore.
-    para_gate = attack[attack.index("if (\n\t_clashAirLift"):attack.index("_lz = objNull;")]
-    assert 'RydHQ_NCrewInfG' not in para_gate
+    # And specifically NOT a physical question.
+    assert "_clashAirLift = _clashParaAirCarrier && {_clashParaAboard}" not in attack
+    assert "_clashParaAboard" in attack, "kept, but only as trace context"
+    trace = attack[attack.index("CLASHHALADD | paradrop-gate"):]
+    assert "_clashParaAboard" in trace[:600]
 
+
+def test_the_aboard_check_happens_at_execution_time():
+    attack = read(ADD / "hal" / "GoAttInf.sqf")
     unload = attack[attack.index('_sts = ["true","deletewaypoint'):attack.index('_EDPos = _GDV getVariable')]
-    assert 'RydHQ_NCrewInfG' not in unload
-    assert 'land \'GET OUT\'' in unload
+    # The paradrop statement verifies the squad is in the aircraft and lands
+    # for real when the paradrop declines, rather than stranding them airborne.
+    assert "vehicle _x == _v" in unload
+    assert "air-unload-land-fallback" in unload
+    assert "_v land 'GET OUT'" in unload
+    # The ordinary branch still lands.
+    assert "land 'GET OUT'" in unload
 
+
+def test_a_declined_paradrop_cannot_strand_the_squad():
+    """Execute has several false returns and lands for itself on only one of
+    them - the same hole HotDrop was fixed for."""
+    attack = read(ADD / "hal" / "GoAttInf.sqf")
+    assert "ITW_CLASH_HALParadrop_fnc_Execute" in attack
+    # The cargo group is read BEFORE Execute, which clears it on success.
+    stmt = attack[attack.index("air-unload-waypoint"):]
+    stmt = stmt[:stmt.index("deletewaypoint")]
+    assert stmt.index("ITW_CLASH_HALParadropCargoGroup") < stmt.index("fnc_Execute")
 
 
 def test_recon_airlift_uses_same_paradrop_policy():
@@ -124,3 +159,21 @@ def test_recon_airlift_uses_same_paradrop_policy():
 
     unload = recon[recon.index('_sts = ["true","deletewaypoint'):recon.index("_wp = [_gp,_pos")]
     assert 'RydHQ_NCrewInfG' not in unload
+    # Same correction as GoAttInf: the lift is a role question, because this
+    # runs before boarding completes. And the same land fallback, because
+    # Execute lands for itself on only one of its false returns.
+    assert "private _clashAirLift = _clashParaAirCarrier && {_clashParaInfantry};" in recon
+    assert "_clashAirLift = _clashParaAirCarrier && {_clashParaAboard}" not in recon
+    assert "recon-air-unload-land-fallback" in unload
+    assert "_v land 'GET OUT'" in unload
+
+
+def test_gorecon_is_actually_installed():
+    """f501841 added GoRecon.sqf but never swapped HAL_GoRecon, so the file
+    was dead code and HAL_GoRecon still resolved to stock HAL - the paradrop
+    being chased could not execute. 223085b added the swap. This pins it,
+    because a HAL override that is not in this list does nothing at all."""
+    overrides = read(ADD / "functions" / "fnc_overrides.sqf")
+    assert '["HAL_GoRecon","GoRecon.sqf"]' in overrides
+    assert (ADD / "hal" / "GoRecon.sqf").exists()
+

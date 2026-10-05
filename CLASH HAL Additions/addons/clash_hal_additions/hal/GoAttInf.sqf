@@ -479,7 +479,25 @@ private _clashParaAirCarrier = _clashParaHasVehicle
 private _clashParaInfantry = _unitG in (_HQ getVariable ["RydHQ_NCrewInfG",[]]);
 private _clashParaAboard = _clashParaHasVehicle
 	&& {({alive _x && {vehicle _x == _AV}} count (units _unitG)) > 0};
-private _clashAirLift = _clashParaAirCarrier && {_clashParaAboard};
+/*
+	An air lift is decided by ROLE, not by who is currently sitting in the
+	helicopter.
+
+	This runs immediately after orderGetIn (line 191) and before the waypoint
+	is created (line 628), with no wait for boarding in between - so
+	_clashParaAboard is false here in the normal case, because the squad is
+	still walking to the aircraft. Requiring it left _sts at its default
+	"deletewaypoint" for every lift: the helicopter reached the drop point,
+	deleted the waypoint, and nobody got out - not even the land "GET OUT"
+	stock HAL would have issued.
+
+	_clashParaAboard is kept for the trace below, because whether the squad is
+	aboard at this instant is genuinely useful to see. It just cannot gate
+	anything. The physical check belongs at execution time, and already exists
+	there: ITW_CLASH_HALParadrop_fnc_Execute reads the cargo group off the
+	carrier and declines when nobody is aboard.
+*/
+private _clashAirLift = _clashParaAirCarrier && {_clashParaInfantry};
 private _clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0;
 private _clashParaCrewPlayer = if (isNull _GDV) then {false} else {
 	((units _GDV) findIf {isPlayer _x}) >= 0
@@ -580,7 +598,11 @@ if (_clashAirLift) then
 	{
 	if (_halParadrop) then
 		{
-		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn ITW_CLASH_HALParadrop_fnc_Execute; deletewaypoint [(group this), 0]"]
+		// Execute declines on several conditions (nobody aboard, no cargo
+		// group, too low). It lands for itself on only one of them, so the
+		// others would strand the squad airborne - the same failure HotDrop
+		// was fixed for. Land for real unless they are already out.
+		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn {params ['_g','_v']; private _c = _g getVariable ['ITW_CLASH_HALParadropCargoGroup',grpNull]; private _ok = [_g,_v] call ITW_CLASH_HALParadrop_fnc_Execute; if (!_ok && {!isNull _c} && {({alive _x && {vehicle _x == _v}} count (units _c)) > 0}) then {diag_log format ['CLASHHALADD | air-unload-land-fallback | %1',[groupId _c,typeOf _v]]; _v land 'GET OUT'}}; deletewaypoint [(group this), 0]"]
 		}
 	else
 		{

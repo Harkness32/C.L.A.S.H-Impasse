@@ -175,11 +175,22 @@ def test_hal_ai_transport_can_use_native_itw_paradrop_without_classname_doctrine
     assert '[_AV,_NeNMode] call ITW_CLASH_HALParadrop_fnc_ShouldUse' in go
     assert 'setVariable ["ITW_CLASH_HALParadropCargoGroup",_unitG]' in go
     assert 'ITW_CLASH_HALParadrop_MinAltitude' in go
-    assert 'spawn ITW_CLASH_HALParadrop_fnc_Execute' in go
+    # Spawned inside a block rather than directly, so the statement can see
+    # Execute's return and land for real when it declines - Execute lands for
+    # itself on only one of its false returns, and the others would otherwise
+    # strand the squad airborne.
+    assert 'spawn {' in go
+    assert 'call ITW_CLASH_HALParadrop_fnc_Execute' in go
     assert "(vehicle this) land 'GET OUT'" in go
     assert 'and not (_halParadrop)' in go
-    assert '((units _unitG) findIf {isPlayer _x}) < 0' in go
-    assert '((units _GDV) findIf {isPlayer _x}) < 0' in go
+    # Neither a player-crewed carrier nor a player-containing squad is ever
+    # paradropped. The checks moved into named variables when the gate was
+    # refactored; the rule is what matters, not where the findIf sits.
+    assert '_clashParaCargoPlayer = ((units _unitG) findIf {isPlayer _x}) >= 0' in go
+    assert '((units _GDV) findIf {isPlayer _x}) >= 0' in go
+    para_gate = go[go.index("if (\n\t_clashAirLift"):go.index("_lz = objNull;")]
+    assert 'not (_clashParaCargoPlayer)' in para_gate
+    assert 'not (_clashParaCrewPlayer)' in para_gate
 
     for hardcoded in ["Huron", "Chinook", "GhostHawk", "LittleBird"]:
         assert hardcoded not in policy
