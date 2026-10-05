@@ -100,7 +100,9 @@ def test_the_origin_is_stamped_at_the_execution_time_unload_owner():
     # Both PARADROP and HOT_PARADROP stamp the real carrier departure before
     # Execute is called. No order file predicts the future at build time.
     assert unload.count('setVariable ["ITW_CLASH_HALParadropOrigin",_origin]') == 2
-    assert 'getVariable ["START" + str _carrierGroup,[]]' in unload
+    assert 'getVariable ["ITW_CLASH_HALUnloadOrigin",[]]' in unload
+    assert "ITW_CLASH_HALUnload_fnc_TrackLift" in unload
+    assert 'vehicle _x == _carrier' in unload
     assert unload.count("ITW_CLASH_HALParadrop_fnc_Execute") >= 2
 
 
