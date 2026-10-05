@@ -124,7 +124,7 @@ ITW_CLASH_FormationAdmission_fnc_TransitionReason = {
     if ((_alive findIf {vehicle _x != _x}) >= 0) exitWith {"already-mounted"};
     if ((_alive findIf {!isNull assignedVehicle _x}) >= 0) exitWith {"assigned-vehicle"};
     if ((_alive findIf {
-        (toUpperANSI currentCommand _x) in ["GET IN","GETIN"]
+        (toUpperANSI (currentCommand _x)) in ["GET IN","GETIN"]
     }) >= 0) exitWith {"get-in-command"};
 
     ""
@@ -134,7 +134,7 @@ ITW_CLASH_FormationAdmission_fnc_MembershipSignature = {
     params ["_group"];
     if (isNull _group) exitWith {"<null>"};
     private _ids = ((units _group) select {alive _x}) apply {
-        private _id = _x call BIS_fnc_netId;
+        private _id = netId _x;
         if (_id isEqualTo "") then {str _x} else {_id}
     };
     _ids sort true;
@@ -146,8 +146,12 @@ ITW_CLASH_FormationAdmission_fnc_IssueBank = {
     private _key = [_side] call ITW_CLASH_FormationAdmission_fnc_SideKey;
     private _bank = +(ITW_CLASH_FormationAdmissionBanks getOrDefault [_key,[]]);
     private _issued = 0;
+    private _continueIssuing = true;
 
-    while {count _bank >= ITW_CLASH_FormationAdmissionMinCombatSize} do {
+    while {
+        _continueIssuing
+        && {count _bank >= ITW_CLASH_FormationAdmissionMinCombatSize}
+    } do {
         private _release = _bank select [0,ITW_CLASH_FormationAdmissionMinCombatSize];
         _bank deleteRange [0,ITW_CLASH_FormationAdmissionMinCombatSize];
 
@@ -179,8 +183,10 @@ ITW_CLASH_FormationAdmission_fnc_IssueBank = {
             ["remnant-issue-failed",[
                 _key,count _created,ITW_CLASH_FormationAdmissionMinCombatSize
             ]] call ITW_CLASH_FormationAdmission_fnc_Log;
-            break
+            _continueIssuing = false;
         };
+
+        if (!_continueIssuing) then {continue};
 
         ITW_CLASH_FormationAdmissionBankSerial =
             ITW_CLASH_FormationAdmissionBankSerial + 1;
