@@ -50,7 +50,7 @@ def test_start_copy_differs_from_hal_only_where_clash_swaps_scripts():
 def test_every_swapped_global_is_one_hal_compiles_from_the_same_file():
     var_init = read(NR6 / "VarInit.sqf")
     swaps = overrides()
-    assert len(swaps) == 8
+    assert len(swaps) == 9
     for global_name, file_name in swaps.items():
         native = f'{global_name} = compile preprocessfile (RYD_Path + "HAL\\{file_name}");'
         assert native in var_init, global_name
@@ -105,3 +105,22 @@ def test_air_unload_uses_actual_carried_state_not_ncrew_bucket():
     unload = attack[attack.index('_sts = ["true","deletewaypoint'):attack.index('_EDPos = _GDV getVariable')]
     assert 'RydHQ_NCrewInfG' not in unload
     assert 'land \'GET OUT\'' in unload
+
+
+
+def test_recon_airlift_uses_same_paradrop_policy():
+    recon = read(ADD / "hal" / "GoRecon.sqf")
+
+    assert "CLASHHALADD | gorecon-entered" in recon
+    assert "CLASHHALADD | recon-paradrop-gate" in recon
+    assert "CLASHHALADD | recon-paradrop-decision" in recon
+    assert "CLASHHALADD | recon-air-unload-waypoint" in recon
+    assert "ITW_CLASH_HALParadrop_fnc_ShouldUse" in recon
+    assert "ITW_CLASH_HALParadrop_fnc_Execute" in recon
+    assert "private _clashParaAboard" in recon
+    assert "private _clashAirLift" in recon
+    assert "if (_clashAirLift) then" in recon
+    assert 'if (_clashAirLift and ((_HQ getVariable ["RydHQ_CargoFind",0]) > 0)' in recon
+
+    unload = recon[recon.index('_sts = ["true","deletewaypoint'):recon.index("_wp = [_gp,_pos")]
+    assert 'RydHQ_NCrewInfG' not in unload
