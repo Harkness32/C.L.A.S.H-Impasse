@@ -265,26 +265,104 @@ def test_execute_still_guards_the_altitude_itself():
     assert "ITW_CLASH_HALParadrop_MinAltitude" in body
 
 
-def test_a_successful_drop_is_followed_by_an_egress():
-    """Hark: "flew forward a bit and sat still". HAL's waypoint is deleted by
-    the waypoint statement before Unload is spawned, so after the drop the
-    carrier has no destination at all."""
+def test_both_drop_modes_arm_a_through_waypoint_before_execute():
+    """A paradrop is a fly-through, not an arrival procedure.
+
+    The aircraft must have a forward destination before the first parachute
+    opens. Otherwise Execute runs while HAL's insertion waypoint is already
+    gone and the helicopter can decelerate or hover over the objective.
+    """
     body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload"))
-    assert body.count("call ITW_CLASH_HALUnload_fnc_Egress") == 2, (
-        "both PARADROP and HOT_PARADROP"
+    assert body.count("call\n                    ITW_CLASH_HALUnload_fnc_PrepareDropRun") == 2
+
+    para = body[body.index('case "PARADROP"'):body.index('case "HOT_PARADROP"')]
+    hot = body[body.index('case "HOT_PARADROP"'):body.index('case "NO_LAND"')]
+    assert para.index("ITW_CLASH_HALUnload_fnc_PrepareDropRun") < para.index(
+        "ITW_CLASH_HALParadrop_fnc_Execute"
     )
-    for mode in ('_result = "PARADROP";', '_result = "HOT_PARADROP";'):
-        tail = body[body.index(mode):body.index(mode) + 200]
-        assert "ITW_CLASH_HALUnload_fnc_Egress" in tail, mode
+    assert hot.index("ITW_CLASH_HALUnload_fnc_PrepareDropRun") < hot.index(
+        "ITW_CLASH_HALParadrop_fnc_Execute"
+    )
 
 
-def test_the_egress_is_two_waypoints_so_it_banks_instead_of_pivoting():
-    """A single waypoint home makes the aircraft turn on the spot, which reads
-    as the stall it is meant to cure."""
-    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
-    assert "forEach [[_through,150],[_home,200]]" in body
+def test_prepare_drop_run_is_straight_through_at_full_speed():
+    body = code_only(function_body(
+        central(), "ITW_CLASH_HALUnload_fnc_PrepareDropRun"
+    ))
+    assert "ITW_CLASH_HALUnloadFlyThrough" in body
     assert "ITW_CLASH_HALUnloadEgressThrough" in body
+    assert "ITW_CLASH_HALUnloadEgressOffset" not in body, (
+        "the lateral break belongs after the chalk is clear"
+    )
+    assert "_through = _here getPos" in body
+    assert "addWaypoint [_through,0]" in body
+    assert 'setWaypointSpeed "FULL"' in body
+    assert 'setSpeedMode "FULL"' in body
+    assert '_carrier land "NONE"' in body
+    assert "_carrier limitSpeed 1e10" in body
+    assert "_carrier forceSpeed -1" in body
+
+
+def test_drop_run_records_geometry_and_hotzone_dwell_telemetry():
+    source = central()
+    prepare = code_only(function_body(
+        source, "ITW_CLASH_HALUnload_fnc_PrepareDropRun"
+    ))
+    egress = code_only(function_body(source, "ITW_CLASH_HALUnload_fnc_Egress"))
+    for token in (
+        "ITW_CLASH_HALUnloadDropRunArmed",
+        "ITW_CLASH_HALUnloadDropBearing",
+        "ITW_CLASH_HALUnloadDropThrough",
+        "ITW_CLASH_HALUnloadDropPoint",
+        "ITW_CLASH_HALUnloadDropStarted",
+    ):
+        assert token in prepare
+        assert token in egress
+    assert '"drop-run-armed"' in prepare
+    assert "round speed _carrier" in prepare
+    assert "time - _started" in egress
+    assert "round speed _carrier" in egress
+
+
+def test_egress_appends_the_break_after_the_prearmed_through_leg():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
+    assert "ITW_CLASH_HALUnloadDropRunArmed" in body
+    assert "ITW_CLASH_HALUnloadDropThrough" in body
+    assert "_break = _through getPos" in body
     assert "ITW_CLASH_HALUnloadEgressOffset" in body
+    assert "forEach [[_break,150],[_home,200]]" in body
+
+    # The normal path preserves the already-active through waypoint. Only a
+    # legacy/failed preparation path clears and manufactures one here.
+    assert "if (!_prepared) then {" in body
+    assert "addWaypoint [_through,0]" in body
+
+
+def test_safe_land_fallback_cancels_the_flythrough_first():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload"))
+    assert body.count("ITW_CLASH_HALUnload_fnc_CancelDropRun") == 1
+    at = body.index('"land-fallback"')
+    window = body[at - 250:at + 350]
+    assert "ITW_CLASH_HALUnload_fnc_CancelDropRun" in window
+    assert window.index("ITW_CLASH_HALUnload_fnc_CancelDropRun") < window.index(
+        '_carrier land "GET OUT"'
+    )
+
+
+def test_cancelling_a_drop_run_removes_only_its_continuation_state():
+    body = code_only(function_body(
+        central(), "ITW_CLASH_HALUnload_fnc_CancelDropRun"
+    ))
+    assert "ITW_CLASH_fnc_ClearGroupWaypoints" in body
+    assert '"drop-run-cancelled"' in body
+    for token in (
+        "ITW_CLASH_HALUnloadDropRunArmed",
+        "ITW_CLASH_HALUnloadDropBearing",
+        "ITW_CLASH_HALUnloadDropThrough",
+        "ITW_CLASH_HALUnloadDropPoint",
+        "ITW_CLASH_HALUnloadDropStarted",
+    ):
+        assert token in body
 
 
 def test_the_egress_uses_waypoints_not_domove():
@@ -411,3 +489,13 @@ def test_a_multi_group_lift_is_announced():
     body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload"))
     assert "multi-group-lift" in body
     assert "count _cargoGroups > 1" in body
+
+
+def test_flythrough_defaults_are_long_enough_to_clear_the_drop_zone():
+    source = central()
+    assert '"ITW_CLASH_HALUnloadEgressThrough",1000' in source
+    assert '"ITW_CLASH_HALUnloadEgressOffset",600' in source
+
+
+def test_hal_unload_version_moved_to_four_for_flythrough_drop_run():
+    assert "ITW_CLASH_HALUnloadVersion = 4;" in central()
