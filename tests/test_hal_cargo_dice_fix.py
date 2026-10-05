@@ -58,10 +58,16 @@ def test_the_route_is_already_in_scope_where_we_patch():
     assert '([_HQ,_posS,_posT] call ITW_CLASH_HALCargoDice_fnc_Acceptable)' in fix()
 
 
-def test_only_a_closed_corridor_refuses_the_lift():
+def test_air_denied_and_unsafe_no_chute_corridors_refuse_before_launch():
     body = function_body(fix(), "ITW_CLASH_HALCargoDice_fnc_Acceptable")
     assert "ITW_CLASH_AirPicture_fnc_ClassifyCorridor" in body
     assert '_state isNotEqualTo "AIR_DENIED"' in body
+    assert '_state in ["HOT","UNKNOWN"]' in body
+    assert "ITW_ParamHelisUnload" in body
+    assert "ITW_CLASH_HALParadropReady" in body
+    assert "ITW_AllyParadropCargo" in body
+    assert "_unsafeWithoutDrop" in body
+    assert '"unsafe-without-paradrop"' in body
 
 
 def test_without_a_corridor_hals_own_rule_stands():
@@ -117,7 +123,7 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
     body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
     resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
 
-    assert "ITW_CLASH_HALCargoDiceFixVersion = 3;" in source
+    assert "ITW_CLASH_HALCargoDiceFixVersion = 4;" in source
     # The resolver was rewritten to walk every friendly base index and test
     # each one's anchors, instead of asking for a single nearest base. Same
     # rule - a live Impasse base, not a cached coordinate - via a wider test.
