@@ -391,14 +391,13 @@ ITW_CLASH_HALUnload_fnc_Aboard = {
 };
 
 /*
-    HOT_PARADROP in the rebuild is deliberately not a second pilot.
+    HOT_PARADROP still does not become a second en-route pilot.
 
-    It may change altitude and dispense countermeasures, but it never deletes
-    HAL waypoints, calls doMove, claims the aircraft, or hands it back. HAL has
-    already flown the carrier to its insertion waypoint. The richer low-ingress
-    phase remains in the old HotDrop executor until this centralized lifecycle
-    earns a green live run; Step 4 can then retire that executor without
-    smuggling a second route owner back in.
+    HAL owns the lift all the way to its insertion seam. At that seam the
+    centralized unload owner is allowed to replace HAL's now-finished waypoint
+    with the same terminal fly-through continuation used by PARADROP. This flare
+    helper itself owns no movement; it only dispenses countermeasures while the
+    carrier follows that continuation.
 */
 ITW_CLASH_HALUnload_fnc_StartHotFlares = {
     params ["_carrier","_cargoGroup"];
@@ -961,7 +960,12 @@ if (
 
 ITW_CLASH_HALUnloadReady = true;
 diag_log format [
-    "CLASH BOOT | hal-unload-ready | version=%1 sites=%2 executionTime=true oneOwner=true halOwnsFlight=true hotDropOwnsMovement=false sources=%3",
-    ITW_CLASH_HALUnloadVersion,count ITW_CLASH_HALUnloadOrderSpecs,_sources
+    "CLASH BOOT | hal-unload-ready | version=%1 sites=%2 executionTime=true oneOwner=true halOwnsFlight=true terminalFlyThrough=%3 through=%4 break=%5 hotDropOwnsMovement=false sources=%6",
+    ITW_CLASH_HALUnloadVersion,
+    count ITW_CLASH_HALUnloadOrderSpecs,
+    ITW_CLASH_HALUnloadFlyThrough,
+    ITW_CLASH_HALUnloadEgressThrough,
+    ITW_CLASH_HALUnloadEgressOffset,
+    _sources
 ];
 true
