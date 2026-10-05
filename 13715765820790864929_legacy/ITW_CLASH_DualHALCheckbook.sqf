@@ -362,7 +362,33 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
     _mirrors
 };
 
+/*
+    Support vehicles go home when the job is done.
+
+    Hark: "we need to have support vehicles rtb after supply missions,
+    sometimes they do repairs at the front and that keeps them vulnerable."
+
+    HAL already has this and it is off by default. RydHQ_SupportRTB is read by
+    all four supply workers - GoRepSupp:168, GoAmmoSupp:526, GoFuelSupp:178,
+    GoMedSupp:168 - and it decides two things at once:
+
+        _pos = [_posX,_posY];                           // the supported unit
+        if (RydHQ_SupportRTB) then {_pos = _startpos};  // or back where it began
+        ...
+        if not (RydHQ_SupportRTB) then {
+            _cause = [_unitG,6,true,0,24,...] call RYD_Wait;   // and loiter there
+        };
+
+    So with it false, which is the stock default, a repair truck's next
+    waypoint IS the damaged vehicle's position and it then WAITS there. That is
+    the behaviour Hark is describing, and it is a setting rather than a defect.
+
+    Set per commander, from the globals each HQSitRep copies at :531-533.
+*/
+ITW_CLASH_SupportRTB = missionNamespace getVariable ["ITW_CLASH_SupportRTB",true];
+
 ITW_CLASH_DualHAL_fnc_ConfigureBLUFORGlobals = {
+    RydHQB_SupportRTB = ITW_CLASH_SupportRTB;
     RydHQB_Wait = 1;
     RydHQB_SubAll = false;
     RydHQB_SubSynchro = false;

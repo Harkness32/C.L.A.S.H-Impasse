@@ -2696,6 +2696,22 @@ ITW_CLASH_fnc_ConfigureHAL = {
     RydHQ_ResetOnDemand = false;
     RydHQ_ResetTime = 30;
     RydHQ_Order = "DEFEND";
+    /*
+        Support vehicles go home when the job is done.
+
+        HAL's own flag, off by default. All four supply workers read it
+        (GoRepSupp:168, GoAmmoSupp:526, GoFuelSupp:178, GoMedSupp:168) and it
+        decides two things: whether the next waypoint is the supported unit's
+        position or the start position, AND whether the vehicle then sits
+        there on a RYD_Wait. False means a repair truck drives to the damaged
+        vehicle at the front and STAYS. Hark: "sometimes they do repairs at
+        the front and that keeps them vulnerable."
+
+        Set here with the other static commander settings rather than in the
+        per-cycle refresh above, because HQSitRep copies the global to the HQ
+        every cycle and nothing clears it.
+    */
+    RydHQ_SupportRTB = missionNamespace getVariable ["ITW_CLASH_SupportRTB",true];
     RydHQ_Berserk = false;
     RydHQ_AttackAlways = false;
     RydHQ_IdleDef = true;
