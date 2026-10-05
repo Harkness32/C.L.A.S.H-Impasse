@@ -95,6 +95,40 @@ ITW_VehCreateVehicle = {
             } else {
                 createVehicle [_type,_pos,[],0,_option];
             };
+    /*
+        Make "FLY" mean flying.
+
+        createVehicle's array form places the object on the SURFACE; the FLY
+        special sets the vehicle's state rather than reliably honouring the z
+        of the position it was given. A helicopter snapped to the ground just
+        lifts off and nobody notices. A jet snapped to the ground at zero
+        airspeed cannot - Hark: "jets spawn on the ground".
+
+        ITW_AtkSpawnOffsetter already asks for the right height (100m for a
+        plane, 40m for a helicopter, ITW_Attack.sqf:2759). This only makes the
+        request stick, and it is a no-op wherever the engine already honoured
+        it, so it costs nothing on the paths that were working.
+
+        The velocity matters as much as the height: a plane placed at altitude
+        with no airspeed stalls immediately and arrives at the ground anyway,
+        which would look like the same bug.
+    */
+    if (!isNull _veh && {_option isEqualTo "FLY"} && {count _pos > 2} && {(_pos#2) > 10}) then {
+        private _wanted = _pos#2;
+        if (((getPosATL _veh)#2) < (_wanted * 0.5)) then {
+            _veh setPosATL [_pos#0,_pos#1,_wanted];
+            private _speed = vectorMagnitude (velocity _veh);
+            if (_speed < 20) then {
+                private _cruise = if (_veh isKindOf "Plane") then {90} else {25};
+                _veh setVelocityModelSpace [0,_cruise,0];
+            };
+            diag_log format [
+                "CLASH SPAWN | fly-altitude-enforced | vehicle=%1 wanted=%2 placedAt=%3 speed=%4",
+                typeOf _veh,round _wanted,round ((getPosATL _veh)#2),
+                round (vectorMagnitude (velocity _veh))
+            ];
+        };
+    };
     sleep 0.05;
     [_veh,_texture,_anim] call BIS_fnc_initVehicle;
     if !(isNull _driver) then {_driver moveInDriver _veh};
