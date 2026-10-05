@@ -490,20 +490,22 @@ private _clashParaFnExists = not (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse");
 if (_clashParaHasVehicle) then
 	{
 	diag_log format [
-		"CLASHHALADD | paradrop-gate | group=%1 veh=%2 hasVehicle=%3 airCarrier=%4 infantryBucket=%5 aboard=%6 airLift=%7 cargoHasPlayer=%8 crewHasPlayer=%9 ready=%10 fnExists=%11 threatened=%12 unloadParam=%13",
-		groupId _unitG,
-		typeOf _AV,
-		_clashParaHasVehicle,
-		_clashParaAirCarrier,
-		_clashParaInfantry,
-		_clashParaAboard,
-		_clashAirLift,
-		_clashParaCargoPlayer,
-		_clashParaCrewPlayer,
-		_clashParaReady,
-		_clashParaFnExists,
-		_NeNMode,
-		missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
+		"CLASHHALADD | paradrop-gate | %1",
+		[
+			groupId _unitG,
+			typeOf _AV,
+			_clashParaHasVehicle,
+			_clashParaAirCarrier,
+			_clashParaInfantry,
+			_clashParaAboard,
+			_clashAirLift,
+			_clashParaCargoPlayer,
+			_clashParaCrewPlayer,
+			_clashParaReady,
+			_clashParaFnExists,
+			_NeNMode,
+			missionNamespace getVariable ["ITW_ParamHelisUnload",-999]
+		]
 	];
 	};
 
