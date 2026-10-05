@@ -128,16 +128,21 @@ _attackSource = _step#1;
 // above instead of recompiling raw NR6 over them.
 ITW_CLASH_HALNativeSF_Source = _attackSource;
 
+private _unloadPatchFailure = "";
 if (!isNil "ITW_CLASH_HALUnload_fnc_PatchSource") then {
     ([_attackSource,"GoSFAttack"] call ITW_CLASH_HALUnload_fnc_PatchSource) params [
         "_unloadOK","_unloadSource","_unloadStatus"
     ];
     _results pushBack ("GoSFAttack-central-unload:" + _unloadStatus);
-    if (!_unloadOK) exitWith {
-        [_unloadStatus,_results] call _finishFailure
+    if (!_unloadOK) then {
+        _unloadPatchFailure = _unloadStatus;
+    } else {
+        _attackSource = _unloadSource;
+        ITW_CLASH_HALNativeSF_Source = _attackSource;
     };
-    _attackSource = _unloadSource;
-    ITW_CLASH_HALNativeSF_Source = _attackSource;
+};
+if (_unloadPatchFailure isNotEqualTo "") exitWith {
+    [_unloadPatchFailure,_results] call _finishFailure
 };
 
 // Compile the minimally repaired native executor once, then wrap it with
