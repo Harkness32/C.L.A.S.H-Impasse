@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]) exitWith {true};
 
-ITW_CLASH_HALParadropVersion = 1;
+ITW_CLASH_HALParadropVersion = 2;
 ITW_CLASH_HALParadropReady = false;
 
 ITW_CLASH_HALParadrop_HeavyCargoSeats = missionNamespace getVariable [
@@ -18,6 +18,12 @@ ITW_CLASH_HALParadrop_MinAltitude = missionNamespace getVariable [
 ];
 ITW_CLASH_HALParadrop_FallbackAltitude = missionNamespace getVariable [
     "ITW_CLASH_HALParadrop_FallbackAltitude",18
+];
+// How long to wait for passengers to clear the aircraft before releasing it
+// anyway. A bound, not a schedule: it only matters when someone is wounded,
+// stuck in a seat, or dies on the way out.
+ITW_CLASH_HALParadrop_ReleaseTimeout = missionNamespace getVariable [
+    "ITW_CLASH_HALParadrop_ReleaseTimeout",60
 ];
 
 ITW_CLASH_HALParadrop_fnc_Log = {
@@ -71,6 +77,53 @@ ITW_CLASH_HALParadrop_fnc_ShouldUse = {
     [random 100 < _chance,_chance,_capacity]
 };
 
+/*
+    Let the helicopter leave once its passengers are out.
+
+    `land "GET OUT"` is sticky: it holds the aircraft on the ground until
+    `land "NONE"` cancels it, and a NEW WAYPOINT DOES NOT CANCEL IT. HAL issues
+    land 'NONE' in every pickup path (GoAttInf:185, GoCapture:192, GoRecon:234,
+    and throughout SCargo) but nowhere after a drop-off, so a carrier that
+    lands to unload sits there until some later dispatch happens to re-task it
+    through SCargo. That is stock behaviour, and it was invisible for as long
+    as the air unload itself was broken - no landing, no stranded helicopter.
+
+    The paradrop path already releases correctly (land "NONE" after
+    ITW_AllyParadropCargo). This is the same courtesy for every path that lands
+    instead, including this file's own low-altitude fallback.
+
+    Passengers are anyone aboard who is not of the carrier's own crew group, so
+    no cargo-group bookkeeping is needed and a squad that was never stamped is
+    still handled. Spawned, because a waypoint statement cannot wait.
+*/
+ITW_CLASH_HALParadrop_fnc_ReleaseCarrier = {
+    params ["_carrierGroup","_carrier"];
+    if (isNull _carrier) exitWith {false};
+    [_carrierGroup,_carrier] spawn {
+        params ["_carrierGroup","_carrier"];
+        private _deadline = time + ITW_CLASH_HALParadrop_ReleaseTimeout;
+        waitUntil {
+            sleep 1;
+            !alive _carrier
+            || {time >= _deadline}
+            || {
+                ((crew _carrier) select {
+                    alive _x && {group _x != _carrierGroup}
+                }) isEqualTo []
+            }
+        };
+        if (!alive _carrier) exitWith {};
+        _carrier land "NONE";
+        ["carrier-released",[
+            typeOf _carrier,
+            groupId _carrierGroup,
+            count ((crew _carrier) select {alive _x && {group _x != _carrierGroup}}),
+            time >= _deadline
+        ]] call ITW_CLASH_HALParadrop_fnc_Log;
+    };
+    true
+};
+
 ITW_CLASH_HALParadrop_fnc_Execute = {
     params ["_carrierGroup","_carrier"];
     if (
@@ -109,6 +162,7 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
         || {isNil "ITW_AllyParadropCargo"}
     ) exitWith {
         _carrier land "GET OUT";
+        [_carrierGroup,_carrier] call ITW_CLASH_HALParadrop_fnc_ReleaseCarrier;
         ["fallback-land",[
             typeOf _carrier,
             groupId _cargoGroup,

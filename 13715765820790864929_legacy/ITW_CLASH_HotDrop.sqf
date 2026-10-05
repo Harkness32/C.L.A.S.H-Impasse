@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 5;
+ITW_CLASH_HotDropVersion = 6;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -543,6 +543,21 @@ ITW_CLASH_HotDrop_fnc_Run = {
 
     // --- EGRESS: turn away, stay low ------------------------------------
     [_state,"EGRESS"] call ITW_CLASH_HotDrop_fnc_SetPhase;
+    /*
+        Release the landing first, or the egress cannot happen.
+
+        `land "GET OUT"` is sticky - it holds the aircraft down until
+        `land "NONE"` cancels it, and neither flyInHeight nor doMove below
+        clears it. Both put-out paths can land (LAND when the host disabled
+        parachutes, LAND_FALLBACK when the paradrop declined), so without this
+        the profile ends with the helicopter sitting on the ground being told
+        to fly away. The paradrop path issues its own land "NONE"; repeating it
+        here is harmless and covers the rest.
+
+        The DROP phase above already waited for the cargo to be out of the
+        vehicle, so there is nobody left to strand by releasing now.
+    */
+    _veh land "NONE";
     _veh flyInHeight ITW_CLASH_HotDropIngressHeight;
     private _away = _destination getPos [
         ITW_CLASH_HotDropEgressDistance,

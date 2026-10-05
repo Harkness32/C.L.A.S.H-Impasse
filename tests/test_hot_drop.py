@@ -192,16 +192,29 @@ def test_the_mission_is_never_changed_only_the_behaviour():
     # Every doMove in the run is to a point derived from the lift's own
     # destination - an initial point, the destination, or an egress away from
     # it - never to a place of safety.
-    assert run.count("doMove") == 3
+    # Comments stripped: the land-release comment names doMove and would
+    # otherwise be counted as a call.
+    assert code_only(run).count("doMove") == 3
     assert "_driver doMove _ip;" in run
     assert "_driver doMove _destination;" in run
     assert "_driver doMove _away;" in run
     assert "_ip = _destination getPos" in run
     assert "_away = _destination getPos" in run
     # And nothing anywhere cancels the lift or sends it home.
+    #
+    # land "NONE" used to be on this list and should not have been. It does not
+    # send an aircraft home - it cancels a LANDING, and it is what makes the
+    # egress asserted three lines above physically possible. `land "GET OUT"`
+    # is sticky: neither flyInHeight nor doMove clears it, so without the
+    # cancel the profile ended with a grounded helicopter being told to fly
+    # away. Forbidding it contradicted the egress this same test requires.
     code = code_only(source)
-    for forbidden in ["RTB", "ReturnHome", "_home", "land \"NONE\""]:
+    for forbidden in ["RTB", "ReturnHome", "_home"]:
         assert forbidden not in code, forbidden
+    # The release is specifically of its own landing, before its own egress.
+    egress = code[code.index("--- EGRESS") if "--- EGRESS" in code else 0:]
+    assert '_veh land "NONE"' in code
+    assert code.count('land "NONE"') == 1, "only the egress release, nothing else"
 
 
 # --------------------------------------------- v2: claimed at boarding
@@ -289,7 +302,11 @@ def test_the_decline_speaks():
 
 
 def test_the_version_moved():
-    assert "ITW_CLASH_HotDropVersion = 5;" in hotdrop()
+    # Pinned exactly once, in tests/test_carrier_release.py, so a bump touches
+    # one test. Here it only has to be at or past the version that fixed the
+    # in-place drops.
+    version = int(re.search(r"ITW_CLASH_HotDropVersion = (\d+);", hotdrop()).group(1))
+    assert version >= 5, version
     assert "claimedAt=boarding" in hotdrop()
     assert "seizesAirborne=false" in hotdrop()
 

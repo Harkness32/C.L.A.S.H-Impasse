@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -151,7 +152,9 @@ def test_hal_ai_transport_can_use_native_itw_paradrop_without_classname_doctrine
         encoding="utf-8"
     )
 
-    assert 'ITW_CLASH_HALParadropVersion = 1;' in policy
+    # Pinned exactly once, in tests/test_carrier_release.py.
+    version = int(re.search(r"ITW_CLASH_HALParadropVersion = (\d+);", policy).group(1))
+    assert version >= 1, version
     assert 'missionNamespace getVariable ["ITW_ParamHelisUnload",50]' in policy
     assert 'ITW_CLASH_HALParadrop_HeavyCargoSeats' in policy
     assert 'ITW_CLASH_HALParadrop_HeavyChance' in policy
@@ -181,7 +184,10 @@ def test_hal_ai_transport_can_use_native_itw_paradrop_without_classname_doctrine
     # strand the squad airborne.
     assert 'spawn {' in go
     assert 'call ITW_CLASH_HALParadrop_fnc_Execute' in go
-    assert "(vehicle this) land 'GET OUT'" in go
+    # The ordinary branch still lands; it binds _v first so the same statement
+    # can also release the landing once the passengers are out.
+    assert "_v land 'GET OUT'" in go
+    assert "ITW_CLASH_HALParadrop_fnc_ReleaseCarrier" in go
     assert 'and not (_halParadrop)' in go
     # Neither a player-crewed carrier nor a player-containing squad is ever
     # paradropped. The checks moved into named variables when the gate was
