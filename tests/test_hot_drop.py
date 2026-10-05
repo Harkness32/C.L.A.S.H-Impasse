@@ -165,7 +165,14 @@ def test_the_pop_up_puts_it_above_the_paradrop_minimum():
     source = hotdrop()
     assert 'ITW_CLASH_HotDropDropHeight",130' in source
     paradrop = text("ITW_CLASH_HALParadrop.sqf")
-    assert 'ITW_CLASH_HALParadrop_MinAltitude",55' in paradrop
+    # The relationship is what this test is about, not the literal: the pop-up
+    # has to clear the paradrop floor so the drop needs no second climb. The
+    # floor moved 55 -> 45 ("45 and above is mint") and the pop-up did not.
+    floor = int(
+        re.search(r'ITW_CLASH_HALParadrop_MinAltitude",(\d+)', paradrop).group(1)
+    )
+    assert floor <= 130, floor
+    assert floor >= 40, floor
     # 130 clears 55, so the drop needs no second climb.
     assert 'ITW_CLASH_HotDropIngressHeight",25' in source
 

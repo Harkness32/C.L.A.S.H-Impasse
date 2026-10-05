@@ -256,6 +256,10 @@ ITW_CLASH_RearBaseCRAM_fnc_Crew = {
         []
     };
     _gunner moveInGunner _veh;
+    // Ours now, whatever the config says. Stamped before the seat check so a
+    // hull that fails to crew still carries our answer for any reader that
+    // looks at it before it is cleaned up.
+    _veh setVariable ["ITW_CLASH_ForcedSide",_side,true];
     if (isNull (gunner _veh)) exitWith {
         deleteVehicle _gunner;
         deleteGroup _group;

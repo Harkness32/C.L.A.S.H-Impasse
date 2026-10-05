@@ -49,6 +49,25 @@ scriptName "ITW_CLASH_HALUnload";
 ITW_CLASH_HALUnloadClimbEnRoute = missionNamespace getVariable [
     "ITW_CLASH_HALUnloadClimbEnRoute",true
 ];
+/*
+    How late to climb.
+
+    v1 climbed the moment the chalk was aboard, which cured the hover over the
+    objective but flew the WHOLE route at drop altitude. That is more exposure
+    for longer on every lift, and the loss closure punishes air losses
+    collectively, so it risked trading a cosmetic fault for fewer lifts
+    overall - Hark's point, and he was right.
+
+    So the climb waits until the last third of the run. The hover is still
+    cured, because the aircraft is level well before it arrives, and the
+    approach up to that point stays at whatever height HAL was flying.
+
+    Fail-open: if the destination cannot be read off the engine there is no
+    fraction to measure, and the climb happens immediately, which is v1.
+*/
+ITW_CLASH_HALUnloadClimbFraction = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadClimbFraction",0.34
+];
 // The J-hook: carry through past the drop, then bank away. Measured from the
 // drop point along the inbound bearing, and perpendicular to it.
 ITW_CLASH_HALUnloadEgress = missionNamespace getVariable [
@@ -168,9 +187,44 @@ ITW_CLASH_HALUnload_fnc_TrackLift = {
                 from HAL's transit height, and LAND simply descends as before.
             */
             if (ITW_CLASH_HALUnloadClimbEnRoute) then {
-                _carrier flyInHeight (
-                    missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]
-                );
+                [_carrier,_cargoGroup] spawn {
+                    params ["_carrier","_cargoGroup"];
+                    private _height = missionNamespace getVariable [
+                        "ITW_CLASH_HALParadrop_MinAltitude",45
+                    ];
+                    private _destination = if (
+                        isNil "ITW_CLASH_HotDrop_fnc_Destination"
+                    ) then {[]} else {
+                        [_carrier] call ITW_CLASH_HotDrop_fnc_Destination
+                    };
+                    // No destination to measure against: climb now, which is
+                    // the behaviour this replaced.
+                    if (_destination isEqualTo []) exitWith {
+                        _carrier flyInHeight _height;
+                    };
+
+                    private _total = (getPosATL _carrier) distance2D _destination;
+                    private _trigger = (_total * ITW_CLASH_HALUnloadClimbFraction) max 400;
+                    if (_total <= _trigger) exitWith {_carrier flyInHeight _height};
+
+                    private _deadline = time + 600;
+                    waitUntil {
+                        sleep 1;
+                        !alive _carrier
+                        || {!canMove _carrier}
+                        || {time >= _deadline}
+                        || {((units _cargoGroup) findIf {
+                            alive _x && {vehicle _x == _carrier}
+                        }) < 0}
+                        || {(getPosATL _carrier) distance2D _destination <= _trigger}
+                    };
+                    if (alive _carrier && {canMove _carrier}) then {
+                        _carrier flyInHeight _height;
+                        ["climb",[
+                            typeOf _carrier,round _total,round _trigger,_height
+                        ]] call ITW_CLASH_HALUnload_fnc_Log;
+                    };
+                };
             };
         };
     };
@@ -453,7 +507,7 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",_origin];
                 _carrier land "NONE";
                 _carrier flyInHeight (
-                    missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]
+                    missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",45]
                 );
                 private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];
                 private _dropped = [_carrierGroup,_carrier,!_noLand] call

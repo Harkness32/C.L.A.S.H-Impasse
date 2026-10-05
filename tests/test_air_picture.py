@@ -377,3 +377,58 @@ def test_a_counter_may_be_one_grade_below_its_threat():
     # Demanding a match would price most factions out of answering armour.
     body = function_body(air_picture(), "ITW_CLASH_AirPicture_fnc_RequiredGrade")
     assert "ITW_CLASH_AirPicture_fnc_ProtectionGrade) - 1) max 0" in body
+
+
+# ------------------------------------------- the scoot counts its own rounds
+
+def test_scoot_no_longer_reads_hals_per_mission_counter():
+    """HAC_fnc.sqf:2811 sets RydHQ_ShotFired2 back to zero at the end of every
+    fire mission, so it is alive for about fifteen seconds. Against it the two
+    gates could never both be true - six rounds since baseline AND unchanged
+    for forty-five seconds - because the only value that survives forty-five
+    seconds is the zero HAL just wrote. Nothing ever scooted."""
+    scoot = (MISSION / "ITW_CLASH_ArtilleryScoot.sqf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    body = function_body(scoot, "ITW_CLASH_ArtilleryScoot_fnc_ShouldMove")
+    code = re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", body, flags=re.S))
+    assert "RydHQ_ShotFired2" not in code
+    assert 'ITW_CLASH_ArtilleryScootFired' in code
+
+
+def test_the_scoot_installs_its_own_fired_handler():
+    scoot = (MISSION / "ITW_CLASH_ArtilleryScoot.sqf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    body = function_body(scoot, "ITW_CLASH_ArtilleryScoot_fnc_Watch")
+    assert '_veh addEventHandler ["Fired"' in body
+    assert "ITW_CLASH_ArtilleryScootWatched" in body, "installed once"
+    assert "ITW_CLASH_ArtilleryScootFired" in body
+
+
+def test_hal_still_resets_its_own_counter():
+    """The premise. If NR6 ever stops zeroing it, the simpler source is usable
+    again and this test should fail to say so."""
+    hal = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAC_fnc.sqf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert '_vh setVariable ["RydHQ_ShotFired2",0];' in hal
+
+
+def test_every_gun_is_watched_before_it_is_judged():
+    scoot = (MISSION / "ITW_CLASH_ArtilleryScoot.sqf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    watch = scoot.index("call ITW_CLASH_ArtilleryScoot_fnc_Watch;")
+    judge = scoot.index("call ITW_CLASH_ArtilleryScoot_fnc_ShouldMove)")
+    assert watch < judge
+
+
+def test_an_unwatched_gun_declines_distinguishably():
+    """Not the same answer as a gun that has simply not fired enough."""
+    scoot = (MISSION / "ITW_CLASH_ArtilleryScoot.sqf").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    body = function_body(scoot, "ITW_CLASH_ArtilleryScoot_fnc_ShouldMove")
+    assert '"not-watched-yet"' in body
+    assert '"under-threshold"' in body

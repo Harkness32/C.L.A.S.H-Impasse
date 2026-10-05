@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_AirDefenceRosterStarted",false]) ex
 
 ITW_CLASH_AirDefenceRosterStarted = true;
 ITW_CLASH_AirDefenceRosterReady = false;
-ITW_CLASH_AirDefenceRosterVersion = 1;
+ITW_CLASH_AirDefenceRosterVersion = 2;
 scriptName "ITW_CLASH_AirDefenceRoster";
 
 /*
@@ -48,8 +48,9 @@ scriptName "ITW_CLASH_AirDefenceRoster";
     shoot down, read from magazine and ammo config via
     ITW_CLASH_AirPicture_fnc_ClassProfile - the same machinery that fixed the
     Namer's armour classification - and prefer a class whose config side is
-    the owning side's. A cross-side hull stays available as an explicit last
-    resort rather than a first pick, and says so loudly when it is used.
+    the owning side's. Where no such class exists - both sides of this mission
+    are BLU_F, so GUER has none and never will - the best hull is taken anyway
+    and its side is IMPOSED on the vehicles spawned from it.
 
     Faction-agnostic on purpose. The next faction's SPAA is found on its
     weapons, so it does not have to be subcategorised "aa", does not have to
@@ -64,10 +65,11 @@ scriptName "ITW_CLASH_AirDefenceRoster";
 ITW_CLASH_AirDefenceRosterEnabled = missionNamespace getVariable [
     "ITW_CLASH_AirDefenceRosterEnabled",true
 ];
-// Allow a borrowed hull from another side when the owning side has no air
-// defence of its own. Turning this off is "side-correct or nothing".
-ITW_CLASH_AirDefenceRosterAllowCrossSide = missionNamespace getVariable [
-    "ITW_CLASH_AirDefenceRosterAllowCrossSide",true
+// Stamp and enforce the owning side on a hull whose config says otherwise,
+// rather than refusing the hull. Off means the vehicle is still used, just not
+// corrected, which is v1's behaviour and almost never what is wanted.
+ITW_CLASH_AirDefenceRosterForceSide = missionNamespace getVariable [
+    "ITW_CLASH_AirDefenceRosterForceSide",true
 ];
 ITW_CLASH_AirDefenceRosterTimeout = missionNamespace getVariable [
     "ITW_CLASH_AirDefenceRosterTimeout",180
@@ -123,21 +125,27 @@ ITW_CLASH_AirDefenceRoster_fnc_ConfigSideNum = {
 };
 
 /*
-    How good an air defence answer is this, for this side?
+    How good an air defence answer is this?
 
-    0  own side, guided          - a real SPAA
-    1  own side, gun only        - flak, or a gun that happens to take AA ammo
-    2  another side, guided
-    3  another side, gun only
+    0  guided   - a real SPAA
+    1  gun only - flak, or a gun that happens to take AA ammo
     -1 cannot engage aircraft at all
 
-    Guided outranks gun because the gun tier includes things that are only
-    incidentally anti-air, and side outranks capability because a borrowed
-    hull is visibly the wrong army and reads as the wrong side the moment its
-    crew is killed.
+    Capability ONLY. v1 ranked an own-side gun above another side's guided
+    launcher, so a faction without its own SPAA either got a worse weapon or,
+    with cross-side refused, nothing at all. Both sides of this mission are
+    BLU_F, so GUER has no side-correct air defence to find and never will.
+
+    Hark: "we should revert the guer fix, give it a spaa, flag it, run fnc
+    change side on it and set its side accordingly, we have the power."
+
+    So the hull is chosen on merit and the SIDE is imposed afterwards rather
+    than designed around - see ITW_CLASH_fnc_ForceVehicleSide. The config side
+    is still recorded, because it is what decides whether the imposition is
+    needed at all.
 */
 ITW_CLASH_AirDefenceRoster_fnc_Tier = {
-    params ["_entry","_expectedSideNum"];
+    params ["_entry"];
     private _class = [_entry] call ITW_CLASH_AirDefenceRoster_fnc_ClassOf;
     if (_class isEqualTo "") exitWith {-1};
     if (isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") exitWith {-1};
@@ -145,14 +153,7 @@ ITW_CLASH_AirDefenceRoster_fnc_Tier = {
     private _profile = [_class] call ITW_CLASH_AirPicture_fnc_ClassProfile;
     if !(_profile get "antiAir") exitWith {-1};
 
-    private _guided = _profile get "antiAirMissile";
-    private _sideNum = [_class] call ITW_CLASH_AirDefenceRoster_fnc_ConfigSideNum;
-    // An unknown config side is treated as the owning side's own. A mod that
-    // does not declare one is not evidence of the wrong army.
-    private _ownSide = _sideNum < 0 || {_sideNum == _expectedSideNum};
-
-    if (_ownSide) exitWith {if (_guided) then {0} else {1}};
-    if (_guided) then {2} else {3}
+    if (_profile get "antiAirMissile") then {0} else {1}
 };
 
 /*
@@ -161,17 +162,17 @@ ITW_CLASH_AirDefenceRoster_fnc_Tier = {
 */
 ITW_CLASH_AirDefenceRoster_fnc_Rank = {
     params ["_pool","_expectedSideNum"];
-    private _tiers = [[],[],[],[]];
+    private _tiers = [[],[]];
     private _rejected = 0;
     {
-        private _tier = [_x,_expectedSideNum] call ITW_CLASH_AirDefenceRoster_fnc_Tier;
+        private _tier = [_x] call ITW_CLASH_AirDefenceRoster_fnc_Tier;
         if (_tier < 0) then {_rejected = _rejected + 1} else {
             private _bucket = _tiers#_tier;
             if !(_x in _bucket) then {_bucket pushBack _x};
         };
     } forEach _pool;
 
-    private _maxTier = if (ITW_CLASH_AirDefenceRosterAllowCrossSide) then {3} else {1};
+    private _maxTier = 1;
     private _chosen = [];
     private _chosenTier = -1;
     for "_t" from 0 to _maxTier do {
@@ -180,7 +181,7 @@ ITW_CLASH_AirDefenceRoster_fnc_Rank = {
             _chosenTier = _t;
         };
     };
-    [_chosen,_chosenTier,[count (_tiers#0),count (_tiers#1),count (_tiers#2),count (_tiers#3)],_rejected]
+    [_chosen,_chosenTier,[count (_tiers#0),count (_tiers#1)],_rejected]
 };
 
 /*
@@ -215,7 +216,7 @@ ITW_CLASH_AirDefenceRoster_fnc_Correct = {
     if (_chosen isEqualTo []) exitWith {
         ["kept",[
             _label,"no-ranked-candidate",count _before,_counts,_rejected,
-            ITW_CLASH_AirDefenceRosterAllowCrossSide
+            ITW_CLASH_AirDefenceRosterForceSide
         ]] call ITW_CLASH_AirDefenceRoster_fnc_Log;
         false
     };
@@ -228,13 +229,25 @@ ITW_CLASH_AirDefenceRoster_fnc_Correct = {
         (_dropped apply {[_x] call ITW_CLASH_AirDefenceRoster_fnc_ClassOf})
     ]] call ITW_CLASH_AirDefenceRoster_fnc_Log;
 
-    if (_tier >= 2) then {
-        diag_log format [
-            "CLASH AIR DEFENCE ROSTER | WARNING | cross-side-air-defence | list=%1 side=%2 classes=%3 | this side has no air defence of its own; the hull is another army's and will read as that side if its crew is killed",
-            _label,
-            _expectedSideNum,
-            (_chosen apply {[_x] call ITW_CLASH_AirDefenceRoster_fnc_ClassOf})
-        ];
+    // Flag the ones whose config side is not ours, so whoever spawns them
+    // knows to impose the side rather than discovering it from a map icon.
+    private _foreign = _chosen select {
+        private _sideNum = [
+            [_x] call ITW_CLASH_AirDefenceRoster_fnc_ClassOf
+        ] call ITW_CLASH_AirDefenceRoster_fnc_ConfigSideNum;
+        _sideNum >= 0 && {_sideNum != _expectedSideNum}
+    };
+    if (_foreign isNotEqualTo []) then {
+        private _classes = _foreign apply {
+            toLowerANSI ([_x] call ITW_CLASH_AirDefenceRoster_fnc_ClassOf)
+        };
+        private _flagged = +(missionNamespace getVariable [
+            "ITW_CLASH_ForcedSideClasses",createHashMap
+        ]);
+        {_flagged set [_x,_expectedSideNum]} forEach _classes;
+        missionNamespace setVariable ["ITW_CLASH_ForcedSideClasses",_flagged];
+        ["foreign-hull-flagged",[_label,_expectedSideNum,_classes]] call
+            ITW_CLASH_AirDefenceRoster_fnc_Log;
     };
     true
 };
@@ -304,7 +317,7 @@ if (!ITW_CLASH_AirDefenceRosterEnabled) exitWith {
 
     ITW_CLASH_AirDefenceRosterReady = true;
     diag_log format [
-        "CLASH BOOT | air-defence-roster-ready | version=%1 enemySide=%2 sideId=%3 mobileCorrected=%4 staticCorrected=%5 mobile=%6 static=%7 allowCrossSide=%8 capabilityTest=ClassProfile neverEmpties=true",
+        "CLASH BOOT | air-defence-roster-ready | version=%1 enemySide=%2 sideId=%3 mobileCorrected=%4 staticCorrected=%5 mobile=%6 static=%7 forceSide=%8 capabilityTest=ClassProfile neverEmpties=true",
         ITW_CLASH_AirDefenceRosterVersion,
         ITW_EnemySide,
         _expectedSideNum,
@@ -316,7 +329,7 @@ if (!ITW_CLASH_AirDefenceRosterEnabled) exitWith {
         (missionNamespace getVariable ["va_eStaticAAClasses",[]]) apply {
             [_x] call ITW_CLASH_AirDefenceRoster_fnc_ClassOf
         },
-        ITW_CLASH_AirDefenceRosterAllowCrossSide
+        ITW_CLASH_AirDefenceRosterForceSide
     ];
 };
 

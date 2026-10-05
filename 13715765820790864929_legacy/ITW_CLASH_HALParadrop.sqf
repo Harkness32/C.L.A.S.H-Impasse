@@ -14,7 +14,7 @@ ITW_CLASH_HALParadrop_ThreatChance = missionNamespace getVariable [
     "ITW_CLASH_HALParadrop_ThreatChance",90
 ];
 ITW_CLASH_HALParadrop_MinAltitude = missionNamespace getVariable [
-    "ITW_CLASH_HALParadrop_MinAltitude",55
+    "ITW_CLASH_HALParadrop_MinAltitude",45
 ];
 ITW_CLASH_HALParadrop_FallbackAltitude = missionNamespace getVariable [
     "ITW_CLASH_HALParadrop_FallbackAltitude",18

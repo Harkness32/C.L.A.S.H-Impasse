@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ArtilleryScootStarted",false]) exitWith {true};
 
 ITW_CLASH_ArtilleryScootStarted = true;
-ITW_CLASH_ArtilleryScootVersion = 1;
+ITW_CLASH_ArtilleryScootVersion = 2;
 ITW_CLASH_ArtilleryScootReady = false;
 
 /*
@@ -17,9 +17,9 @@ ITW_CLASH_ArtilleryScootReady = false;
 
     This displaces a gun after it has fired, between missions and never during
     one. HAL already counts rounds for us - it puts a Fired handler on every
-    artillery piece and keeps RydHQ_ShotFired2 as a running total
-    (HAC_fnc.sqf:2505) - so no new handler is needed to know a gun has been
-    working.
+    artillery piece, but RydHQ_ShotFired2 is per-mission and HAL zeroes it at
+    HAC_fnc.sqf:2811, so this module counts rounds itself with its own Fired
+    handler (fnc_Watch).
 
     It is the counterplay to ITW_CLASH_CounterBattery.sqf, and that file is the
     counterplay to this one: a fix is taken on where a gun WAS, and a gun that
@@ -83,14 +83,54 @@ ITW_CLASH_ArtilleryScoot_fnc_Guns = {
     stands, and the mission has to be over - a gun still shooting keeps
     shooting.
 */
+/*
+    Count the rounds ourselves.
+
+    This module used to read HAL's RydHQ_ShotFired2 as a running total. It is
+    not one. HAC_fnc.sqf:2800-2811 fires RydHQ_ShotsToFire rounds, waits for the
+    count to reach them or 15s to pass, and then sets it back to ZERO:
+
+        _vh setVariable ["RydHQ_ShotFired2",0];
+
+    It is a per-mission counter, alive for about fifteen seconds. Against it the
+    two gates here could never both be true: a move needs six rounds since the
+    baseline AND the count unchanged for forty-five seconds, and the only value
+    that survives forty-five seconds is the zero HAL just wrote. Every gun
+    returned "under-threshold" for the whole mission. Nothing has ever scooted.
+
+    A Fired handler is the honest source: it is monotonic, nobody else resets
+    it, and it survives the end of a fire mission, which is exactly the moment
+    this module wants to act on. ITW_CLASH_CounterBattery.sqf:183 puts its own
+    Fired handler on the same guns for a different purpose; one handler each is
+    cheaper than one module reaching into the other's bookkeeping.
+*/
+ITW_CLASH_ArtilleryScoot_fnc_Watch = {
+    params ["_veh"];
+    if (isNull _veh || {!alive _veh}) exitWith {false};
+    if (_veh getVariable ["ITW_CLASH_ArtilleryScootWatched",false]) exitWith {true};
+    _veh setVariable ["ITW_CLASH_ArtilleryScootWatched",true];
+    _veh setVariable ["ITW_CLASH_ArtilleryScootFired",0];
+    _veh addEventHandler ["Fired",{
+        params ["_unit"];
+        _unit setVariable [
+            "ITW_CLASH_ArtilleryScootFired",
+            (_unit getVariable ["ITW_CLASH_ArtilleryScootFired",0]) + 1
+        ];
+    }];
+    ["watching",[typeOf _veh]] call ITW_CLASH_ArtilleryScoot_fnc_Log;
+    true
+};
+
 ITW_CLASH_ArtilleryScoot_fnc_ShouldMove = {
     params ["_group","_veh"];
     if (_group getVariable ["ITW_CLASH_ArtilleryScootMoving",false]) exitWith {[false,"already-moving"]};
     if (time < (_group getVariable ["ITW_CLASH_ArtilleryScootNextAt",0])) exitWith {[false,"cooldown"]};
 
-    // HAL's own running total, minus what it had read at the last move.
-    private _total = _veh getVariable ["RydHQ_ShotFired2",0];
+    // Our own monotonic count, minus what it had read at the last move. NOT
+    // RydHQ_ShotFired2, which HAL zeroes at the end of every fire mission.
+    private _total = _veh getVariable ["ITW_CLASH_ArtilleryScootFired",-1];
     if !(_total isEqualType 0) exitWith {[false,"no-counter"]};
+    if (_total < 0) exitWith {[false,"not-watched-yet"]};
     private _baseline = _group getVariable ["ITW_CLASH_ArtilleryScootBaseline",0];
     private _since = _total - _baseline;
     if (_since < ITW_CLASH_ArtilleryScootRounds) exitWith {[false,"under-threshold"]};
@@ -189,7 +229,10 @@ ITW_CLASH_ArtilleryScoot_fnc_Settle = {
     if (!_done && {(time - _startedAt) < ITW_CLASH_ArtilleryScootTimeout}) exitWith {false};
 
     _group setVariable ["ITW_CLASH_ArtilleryScootMoving",false];
-    _group setVariable ["ITW_CLASH_ArtilleryScootBaseline",_veh getVariable ["RydHQ_ShotFired2",0]];
+    _group setVariable [
+        "ITW_CLASH_ArtilleryScootBaseline",
+        _veh getVariable ["ITW_CLASH_ArtilleryScootFired",0]
+    ];
     _group setVariable ["ITW_CLASH_ArtilleryScootNextAt",time + ITW_CLASH_ArtilleryScootCooldown];
     _group setVariable ["ITW_CLASH_ArtilleryScootSeenTotal",-1];
     // A new position is a new fire base: tell anyone who was holding a fix.
@@ -222,6 +265,7 @@ ITW_CLASH_ArtilleryScoot_fnc_Settle = {
                 if (!isNull _hq) then {
                     {
                         _x params ["_group","_veh"];
+                        [_veh] call ITW_CLASH_ArtilleryScoot_fnc_Watch;
                         if !([_group,_veh] call ITW_CLASH_ArtilleryScoot_fnc_Settle) then {
                             ([_group,_veh] call ITW_CLASH_ArtilleryScoot_fnc_ShouldMove) params [
                                 "_should","_reason"

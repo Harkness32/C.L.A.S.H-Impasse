@@ -119,18 +119,24 @@ def test_the_threat_array_is_not_consulted_anywhere():
 
 # ------------------------------------------------------------------ the ranking
 
-def test_own_side_outranks_capability():
+def test_capability_alone_decides_the_hull():
+    """Reverted on Hark's call: "we should revert the guer fix, give it a spaa,
+    flag it, run fnc change side on it and set its side accordingly, we have
+    the power."
+
+    v1 ranked an own-side gun above another side's guided launcher, so a
+    faction with no SPAA of its own got a worse weapon or none at all. Both
+    sides of this mission are BLU_F, so GUER has none and never will."""
     body = code_only(function_body(roster(), "ITW_CLASH_AirDefenceRoster_fnc_Tier"))
-    # Own side returns 0 or 1; another side returns 2 or 3. A guided
-    # cross-side hull must never beat an own-side gun.
-    assert "if (_ownSide) exitWith {if (_guided) then {0} else {1}}" in body
-    assert "if (_guided) then {2} else {3}" in body
+    assert 'if (_profile get "antiAirMissile") then {0} else {1}' in body
+    assert "_expectedSideNum" not in body, "side must not rank the hull any more"
 
 
-def test_an_undeclared_config_side_counts_as_own_side():
-    """A mod that does not declare `side` is not evidence of the wrong army."""
-    body = code_only(function_body(roster(), "ITW_CLASH_AirDefenceRoster_fnc_Tier"))
-    assert "_sideNum < 0 || {_sideNum == _expectedSideNum}" in body
+def test_a_foreign_hull_is_flagged_for_side_correction():
+    body = code_only(function_body(roster(), "ITW_CLASH_AirDefenceRoster_fnc_Correct"))
+    assert "ITW_CLASH_ForcedSideClasses" in body
+    assert "foreign-hull-flagged" in body
+    assert "_sideNum >= 0 && {_sideNum != _expectedSideNum}" in body
 
 
 def test_a_class_that_cannot_engage_aircraft_is_rejected():
@@ -144,9 +150,10 @@ def test_the_best_non_empty_tier_wins_and_keeps_all_its_entries():
     assert "_chosenTier < 0" in body, "first non-empty tier only"
 
 
-def test_cross_side_can_be_switched_off_entirely():
+def test_there_are_only_two_capability_tiers_now():
     body = code_only(function_body(roster(), "ITW_CLASH_AirDefenceRoster_fnc_Rank"))
-    assert "if (ITW_CLASH_AirDefenceRosterAllowCrossSide) then {3} else {1}" in body
+    assert "private _tiers = [[],[]];" in body
+    assert "private _maxTier = 1;" in body
 
 
 def test_string_config_sides_are_read_not_assumed():
@@ -192,11 +199,28 @@ def test_entries_are_carried_through_intact():
     assert "_bucket pushBack _x" in rank, "the entry, not its classname"
 
 
-def test_a_cross_side_fallback_is_announced_loudly():
-    body = code_only(function_body(roster(), "ITW_CLASH_AirDefenceRoster_fnc_Correct"))
-    assert "if (_tier >= 2) then {" in body
-    assert "cross-side-air-defence" in body
-    assert "WARNING" in body
+def test_the_side_is_imposed_not_designed_around():
+    """What the engine does and does not allow, asserted so the limit is not
+    quietly forgotten: a crewed vehicle takes its crew's side, an empty one
+    falls back to config and cannot be changed at all."""
+    clash = read("ITW_CLASH.sqf")
+    body = code_only(function_body(clash, "ITW_CLASH_fnc_ForceVehicleSide"))
+    assert '_veh setVariable ["ITW_CLASH_ForcedSide",_side,true]' in body
+    assert "if ((crew _veh) isNotEqualTo []) exitWith {true}" in body
+    assert "ITW_CLASH_RearBaseCRAM_fnc_Crew" in body
+
+
+def test_readers_can_ask_clash_rather_than_the_engine():
+    body = code_only(function_body(read("ITW_CLASH.sqf"), "ITW_CLASH_fnc_VehicleSide"))
+    assert 'getVariable ["ITW_CLASH_ForcedSide",sideUnknown]' in body
+    assert "side _veh" in body
+
+
+def test_the_cram_stamps_the_side_on_every_piece_it_crews():
+    body = code_only(function_body(
+        read("ITW_CLASH_RearBaseCRAM.sqf"), "ITW_CLASH_RearBaseCRAM_fnc_Crew"
+    ))
+    assert '_veh setVariable ["ITW_CLASH_ForcedSide",_side,true]' in body
 
 
 # ------------------------------------------------------------------- the ordering

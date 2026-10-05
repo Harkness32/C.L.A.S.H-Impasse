@@ -327,3 +327,40 @@ def test_paired_aircraft_bank_opposite_ways():
 def test_the_egress_can_be_switched_off_without_touching_the_drop():
     body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Egress"))
     assert "if (!ITW_CLASH_HALUnloadEgress) exitWith {false}" in body
+
+
+def test_the_climb_waits_for_the_last_third_of_the_run():
+    """v1 climbed as soon as the chalk was aboard, which flew the WHOLE route
+    at drop altitude - more exposure for longer on every lift, into a loss
+    closure that punishes air losses collectively. Hark liked the fix and
+    asked for it."""
+    source = central()
+    assert "ITW_CLASH_HALUnloadClimbFraction" in source
+    body = code_only(function_body(source, "ITW_CLASH_HALUnload_fnc_TrackLift"))
+    assert "ITW_CLASH_HotDrop_fnc_Destination" in body
+    assert "_total * ITW_CLASH_HALUnloadClimbFraction" in body
+
+
+def test_an_unreadable_destination_climbs_immediately():
+    """Fail-open to v1 rather than never climbing, which would bring the hover
+    back."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_TrackLift"))
+    assert "if (_destination isEqualTo []) exitWith {" in body
+
+
+def test_the_climb_stops_caring_once_the_chalk_is_gone():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_TrackLift"))
+    assert "vehicle _x == _carrier" in body
+    assert "!alive _carrier" in body
+
+
+def test_the_drop_floor_is_forty_five():
+    """Hark: "we can also loosen the 55m thing, 45 and above is mint." Less
+    climbing is less exposure."""
+    paradrop = read(MISSION / "ITW_CLASH_HALParadrop.sqf")
+    assert '"ITW_CLASH_HALParadrop_MinAltitude",45' in paradrop
+    # And still clear of the fallback altitude, or every drop would be refused.
+    fallback = int(
+        re.search(r'"ITW_CLASH_HALParadrop_FallbackAltitude",(\d+)', paradrop).group(1)
+    )
+    assert fallback < 45, fallback

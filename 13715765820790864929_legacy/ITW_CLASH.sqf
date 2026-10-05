@@ -277,6 +277,66 @@ ITW_CLASH_fnc_ReleaseLockedGarrison = {
     count _released
 };
 
+/*
+    Make a vehicle belong to the side that bought it.
+
+    Hark: "give it a spaa, flag it, run fnc change side on it and set its side
+    accordingly, we have the power."
+
+    The power is real but specific, and it is worth being exact about what the
+    engine does and does not allow:
+
+      - A CREWED vehicle's side is the side of its crew's group. That we fully
+        control, and it is what every side test in the mission reads.
+      - An EMPTY vehicle falls back to its CONFIG side. That cannot be changed
+        at runtime by any command; a B_APC_Tracked_01_AA_F standing empty is a
+        BLUFOR object no matter who paid for it.
+      - The model and markings are the config's too. A borrowed hull still
+        LOOKS like the army it came from.
+
+    So this does the two things that can be done: it stamps our answer on the
+    vehicle, publicly, so every C.L.A.S.H. reader uses ours rather than asking
+    the engine; and it makes sure the thing is crewed by our side, because that
+    is what makes the engine agree. It returns false if it could not crew an
+    empty hull, which is the one case where the stamp and the engine disagree
+    and the caller needs to know.
+*/
+ITW_CLASH_fnc_ForceVehicleSide = {
+    params ["_veh","_side"];
+    if (isNull _veh || {!alive _veh}) exitWith {false};
+
+    _veh setVariable ["ITW_CLASH_ForcedSide",_side,true];
+
+    if ((crew _veh) isNotEqualTo []) exitWith {true};
+    if (isNil "ITW_CLASH_RearBaseCRAM_fnc_Crew") exitWith {false};
+    ([_side,_veh] call ITW_CLASH_RearBaseCRAM_fnc_Crew) isNotEqualTo []
+};
+
+/*
+    The side of a vehicle as C.L.A.S.H. understands it: ours if we imposed one,
+    the engine's otherwise. Readers that care about ownership rather than about
+    what the engine will shoot at should use this.
+*/
+ITW_CLASH_fnc_VehicleSide = {
+    params ["_veh"];
+    if (isNull _veh) exitWith {sideUnknown};
+    private _forced = _veh getVariable ["ITW_CLASH_ForcedSide",sideUnknown];
+    if (_forced isEqualType sideUnknown && {_forced != sideUnknown}) exitWith {_forced};
+    side _veh
+};
+
+/*
+    Does this class need its side imposed? The roster flags the ones whose
+    config side is not the side that will field them.
+*/
+ITW_CLASH_fnc_NeedsForcedSide = {
+    params ["_class"];
+    if !(_class isEqualType "") exitWith {false};
+    (missionNamespace getVariable [
+        "ITW_CLASH_ForcedSideClasses",createHashMap
+    ]) getOrDefault [toLowerANSI _class,-1] >= 0
+};
+
 ITW_CLASH_fnc_GetActiveObjectives = {
     if (isNil "ITW_Zones" || {
         isNil "ITW_ZoneIndex" || {
