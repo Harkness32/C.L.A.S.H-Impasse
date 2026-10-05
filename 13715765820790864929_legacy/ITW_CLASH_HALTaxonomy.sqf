@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALTaxonomyStarted",false]) exitWith {true};
 ITW_CLASH_HALTaxonomyStarted = true;
-ITW_CLASH_HALTaxonomyVersion = 2;
+ITW_CLASH_HALTaxonomyVersion = 3;
 ITW_CLASH_HALTaxonomyReady = false;
 
 /*
@@ -160,8 +160,35 @@ ITW_CLASH_HALTaxonomy_fnc_Classify = {
                         */
                         private _armouredChassis = _class isKindOf "Tank"
                             || {_class isKindOf "Wheeled_APC_F"};
+                        /*
+                            HArmor requires the ability to kill armour.
+
+                            HArmor is not a description of protection, it is a
+                            DISPATCH POOL, and it is the one HAL sends at
+                            tanks (HAC_fnc.sqf:1382). A vehicle that is heavily
+                            armoured but cannot hurt armour does not belong
+                            there - Hark's words: "namers should not be sent
+                            against armor, they are heavily armored but their
+                            gun cannot do at stuff."
+
+                            run6 showed the same fault on two more: the tracked
+                            CRV (an engineering vehicle) and the tracked AA
+                            variant both landed in HArmor with no LArmorAT, so
+                            a repair vehicle and an air defence vehicle were
+                            both being dispatched against tanks.
+
+                            Demotion to LArmor costs nothing, which is why it
+                            is the right home: LArmorG appears in every pool
+                            HArmorG does - Inf, Cars, Art, Static - except
+                            Armor. So such a vehicle keeps every role it can
+                            actually perform and loses only the one it cannot.
+                        */
                         _primary = switch (true) do {
-                            case (_grade >= 2 && {_class isKindOf "Tank"}): {"HArmor"};
+                            case (
+                                _grade >= 2
+                                && {_class isKindOf "Tank"}
+                                && {_antiArmor}
+                            ): {"HArmor"};
                             case (_grade >= 1 && {_armouredChassis || {_antiArmor}}): {"LArmor"};
                             default {"Cars"};
                         };

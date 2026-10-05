@@ -145,10 +145,75 @@ def test_the_rooikat_still_reaches_the_at_armour_pool():
 
 
 def test_heavy_armour_still_requires_a_tank():
+    # Components rather than one exact line: the branch gained an anti-armour
+    # clause and spans several lines now. Both conditions still hold.
     body = code_only(function_body(read(MISSION / "ITW_CLASH_HALTaxonomy.sqf"),
                                    "ITW_CLASH_HALTaxonomy_fnc_Classify"))
-    assert '_grade >= 2 && {_class isKindOf "Tank"}' in body
+    harmor = body[:body.index('{"HArmor"}')]
+    assert "_grade >= 2" in harmor
+    assert 'isKindOf "Tank"' in harmor
 
 
 def test_taxonomy_version_moved():
-    assert "ITW_CLASH_HALTaxonomyVersion = 2;" in read(MISSION / "ITW_CLASH_HALTaxonomy.sqf")
+    # Exact number pinned in test_taxonomy_version_moved_again below.
+    version = int(__import__("re").search(r"ITW_CLASH_HALTaxonomyVersion = (\d+);", read(MISSION / "ITW_CLASH_HALTaxonomy.sqf")).group(1))
+    assert version >= 2, version
+
+
+# --- 3. a tank-killer pool needs tank-killers -------------------------------
+
+def test_harmor_requires_the_ability_to_kill_armour():
+    """Hark: "namers should not be sent against armor, they are heavily armored
+    but their gun cannot do at stuff."
+
+    HArmor is not a description of protection, it is the dispatch pool HAL
+    sends at tanks (HAC_fnc.sqf:1382). run6 showed the fault on two more
+    classes: b_apc_tracked_01_crv_f (an engineering vehicle) and
+    b_apc_tracked_01_aa_f both landed in HArmor with no LArmorAT, so a repair
+    vehicle and an air defence vehicle were being dispatched against armour.
+    """
+    body = code_only(function_body(read(MISSION / "ITW_CLASH_HALTaxonomy.sqf"),
+                                   "ITW_CLASH_HALTaxonomy_fnc_Classify"))
+    harmor = body[body.index('{"HArmor"}') - 320:body.index('{"HArmor"}')]
+    assert "_antiArmor" in harmor
+    assert 'isKindOf "Tank"' in harmor
+    assert "_grade >= 2" in harmor
+
+
+def test_demotion_to_larmor_costs_nothing_but_the_armour_pool():
+    """Why LArmor is the right home rather than Cars.
+
+    In HAL's dispatch pools, LArmorG appears everywhere HArmorG does - Inf,
+    Cars, Art, Static - except Armor. So a heavily armoured vehicle that cannot
+    fight armour keeps every role it can perform and loses only the one it
+    cannot. This reads HAL's own source so it fails if those pools change.
+    """
+    hal = read(ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAC_fnc.sqf")
+    pools = {}
+    for case, pool in re.findall(r'case \("(\w+)"\) :\s*\{\s*_pool = (\[\[.*?\]\])', hal, re.S):
+        pools[case] = re.sub(r"\s+", "", pool)
+    assert pools, "could not parse HAL's dispatch pools"
+    # The pool that matters: HArmor is in it, LArmor is not.
+    assert "_HArmorG" in pools["Armor"]
+    assert "_LArmorG" not in pools["Armor"]
+    # And everywhere else HArmor appears, LArmor does too.
+    for case, pool in pools.items():
+        if case == "Armor":
+            continue
+        if "_HArmorG" in pool:
+            assert "_LArmorG" in pool, case
+
+
+def test_an_mbt_is_still_heavy_armour():
+    """The rule must not demote actual tanks: an MBT has AT ammo, so it still
+    satisfies the capability requirement."""
+    body = code_only(function_body(read(MISSION / "ITW_CLASH_HALTaxonomy.sqf"),
+                                   "ITW_CLASH_HALTaxonomy_fnc_Classify"))
+    # Capability is read from the weapon profile, not a class list.
+    assert "ITW_CLASH_AirPicture_fnc_ClassProfile" in body
+    assert '_antiArmor = _profile get "antiArmor"' in body
+    assert not re.search(r'"[boi]_[a-z0-9_]+_f"', body, re.I), "hard-coded classname"
+
+
+def test_taxonomy_version_moved_again():
+    assert "ITW_CLASH_HALTaxonomyVersion = 3;" in read(MISSION / "ITW_CLASH_HALTaxonomy.sqf")

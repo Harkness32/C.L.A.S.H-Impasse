@@ -145,7 +145,14 @@ def test_armour_is_decided_by_grade_plus_corroboration():
     """
     body = code_only(function_body(taxonomy(), "ITW_CLASH_HALTaxonomy_fnc_Classify"))
     assert "ITW_CLASH_AirPicture_fnc_ProtectionGrade" in body
-    assert '_grade >= 2 && {_class isKindOf "Tank"}): {"HArmor"}' in body
+    # HArmor also gained an anti-armour requirement in v3, so this checks the
+    # branch's components rather than one exact line. See
+    # tests/test_run5_followups.py for why: HArmor is the pool HAL sends at
+    # tanks, so a heavily armoured vehicle that cannot hurt armour is demoted.
+    harmor = body[:body.index('{"HArmor"}')]
+    assert "_grade >= 2" in harmor
+    assert 'isKindOf "Tank"' in harmor
+    assert "_antiArmor" in harmor
     assert '_grade >= 1 && {_armouredChassis || {_antiArmor}}): {"LArmor"}' in body
     assert 'default {"Cars"}' in body
     # The form that admitted trucks is gone for good.
