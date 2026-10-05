@@ -364,3 +364,50 @@ def test_the_drop_floor_is_forty_five():
         re.search(r'"ITW_CLASH_HALParadrop_FallbackAltitude",(\d+)', paradrop).group(1)
     )
     assert fallback < 45, fallback
+
+
+# ------------------------------------------------- more than one squad aboard
+
+def test_every_group_aboard_is_found_not_just_the_first():
+    """Hark: "alpha 2-5 has two different groups in his helo, hes just sitting
+    there forever." fnc_CargoGroup returns ONE group - the stamped one or the
+    first passenger's - and the unload acted on that alone, so the second squad
+    rode home in a carrier that had already finished its job."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_CargoGroups"))
+    assert "pushBackUnique _group" in body
+    assert "forEach (crew _carrier)" in body
+
+
+def test_the_crew_and_turret_gunners_are_not_cargo():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_CargoGroups"))
+    assert "_group isEqualTo _carrierGroup" in body
+    assert '_role in ["Driver","Turret"]' in body
+
+
+def test_a_still_boarding_stamped_group_is_not_lost():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_CargoGroups"))
+    assert "ITW_CLASH_HALUnloadCargoGroup" in body
+    assert "!(_stamped in _groups)" in body
+
+
+def test_both_drop_modes_unload_every_group():
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload"))
+    assert body.count("forEach _cargoGroups") == 2, "PARADROP and HOT_PARADROP"
+    assert body.count('setVariable ["ITW_CLASH_HALParadropCargoGroup",_x]') == 2
+
+
+def test_the_paradrop_owners_contract_is_unchanged():
+    """The stamp is moved between passes rather than teaching Execute about
+    lists, so a multi-group lift is simply several single-group drops."""
+    paradrop = code_only(function_body(
+        read(MISSION / "ITW_CLASH_HALParadrop.sqf"), "ITW_CLASH_HALParadrop_fnc_Execute"
+    ))
+    assert 'getVariable [\n        "ITW_CLASH_HALParadropCargoGroup",grpNull\n    ]' in paradrop
+
+
+def test_a_multi_group_lift_is_announced():
+    """Nothing in the RPT said there were two, which is why the first evidence
+    was Hark watching an aircraft do nothing."""
+    body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload"))
+    assert "multi-group-lift" in body
+    assert "count _cargoGroups > 1" in body

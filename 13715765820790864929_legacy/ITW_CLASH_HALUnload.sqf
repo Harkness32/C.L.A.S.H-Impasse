@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALUnloadStarted",false]) exitWith 
 
 ITW_CLASH_HALUnloadStarted = true;
 ITW_CLASH_HALUnloadReady = false;
-ITW_CLASH_HALUnloadVersion = 2;
+ITW_CLASH_HALUnloadVersion = 3;
 scriptName "ITW_CLASH_HALUnload";
 
 /*
@@ -104,6 +104,51 @@ ITW_CLASH_HALUnload_fnc_Log = {
     if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
         ["hal-unload",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
     };
+};
+
+/*
+    EVERY group riding in this aircraft, not just the first one found.
+
+    Hark: "alpha 2-5 has two different groups in his helo, hes just sitting
+    there forever."
+
+    fnc_CargoGroup returns one group - the stamped one, or the first
+    passenger's - and fnc_Unload acted on that one alone. HALParadrop_fnc_Execute
+    is the same shape: it drops whatever is in ITW_CLASH_HALParadropCargoGroup
+    and nothing else. So with two squads aboard, one gets out and the other
+    rides home, or sits in a carrier that has already finished its job.
+
+    HAL is entitled to put more than one group in a carrier. The single-group
+    assumption was this layer's, not HAL's, and it is the kind that fails
+    silently: nothing in the RPT said there were two, which is why the first
+    evidence of it was Hark watching an aircraft do nothing.
+*/
+ITW_CLASH_HALUnload_fnc_CargoGroups = {
+    params ["_carrierGroup","_carrier"];
+    if (isNull _carrierGroup || {isNull _carrier}) exitWith {[]};
+    private _groups = [];
+    {
+        private _unit = _x;
+        if (!alive _unit) then {continue};
+        if !(_unit isKindOf "CAManBase") then {continue};
+        private _group = group _unit;
+        if (isNull _group || {_group isEqualTo _carrierGroup}) then {continue};
+        // Riding, not manning a turret.
+        private _role = (assignedVehicleRole _unit) param [0,""];
+        if (_role in ["Driver","Turret"]) then {continue};
+        _groups pushBackUnique _group;
+    } forEach (crew _carrier);
+
+    // The stamped group counts even if it is still boarding, so a lift that
+    // was planned for it does not lose it to a straggler ordering.
+    private _stamped = _carrierGroup getVariable [
+        "ITW_CLASH_HALUnloadCargoGroup",grpNull
+    ];
+    if (!isNull _stamped && {!(_stamped in _groups)} && {
+        ((units _stamped) findIf {alive _x && {vehicle _x == _carrier}}) >= 0
+    }) then {_groups pushBack _stamped};
+
+    _groups
 };
 
 ITW_CLASH_HALUnload_fnc_CargoGroup = {
@@ -470,7 +515,14 @@ ITW_CLASH_HALUnload_fnc_Unload = {
 
     private _param = missionNamespace getVariable ["ITW_ParamHelisUnload",50];
     if !(_param isEqualType 0) then {_param = 50};
+    private _cargoGroups = [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_CargoGroups;
     private _cargoGroup = [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_CargoGroup;
+    if (count _cargoGroups > 1) then {
+        ["multi-group-lift",[
+            typeOf _carrier,groupId _carrierGroup,
+            _cargoGroups apply {groupId _x}
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+    };
     private _result = "NO_CARGO";
     private _state = "COLD";
     private _reason = "no-cargo-group";
@@ -510,8 +562,20 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                     missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",45]
                 );
                 private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];
-                private _dropped = [_carrierGroup,_carrier,!_noLand] call
-                    ITW_CLASH_HALParadrop_fnc_Execute;
+                /*
+                    One pass per group aboard. Execute reads the stamp, so the
+                    stamp is moved between passes rather than the function being
+                    taught about lists - which keeps the paradrop owner's
+                    contract unchanged and makes a multi-group lift simply
+                    several single-group drops from the same aircraft.
+                */
+                private _dropped = false;
+                {
+                    _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_x];
+                    if ([_carrierGroup,_carrier,!_noLand] call
+                        ITW_CLASH_HALParadrop_fnc_Execute
+                    ) then {_dropped = true};
+                } forEach _cargoGroups;
                 if (_dropped) then {
                     _result = "PARADROP";
                     [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress
@@ -541,8 +605,13 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                     missionNamespace getVariable ["ITW_CLASH_HotDropDropHeight",130]
                 );
                 [_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_StartHotFlares;
-                private _dropped = [_carrierGroup,_carrier,false] call
-                    ITW_CLASH_HALParadrop_fnc_Execute;
+                private _dropped = false;
+                {
+                    _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_x];
+                    if ([_carrierGroup,_carrier,false] call
+                        ITW_CLASH_HALParadrop_fnc_Execute
+                    ) then {_dropped = true};
+                } forEach _cargoGroups;
                 if (_dropped) then {
                     _result = "HOT_PARADROP";
                     [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress
