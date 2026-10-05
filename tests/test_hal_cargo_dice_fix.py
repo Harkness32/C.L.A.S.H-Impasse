@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,11 +123,7 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
     body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
     resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
 
-    # Version floor, not an exact pin: v5 moved base embark behind native
-    # SCargo's pickup phase, and nothing here may regress below that.
-    version = re.search(r"ITW_CLASH_HALCargoDiceFixVersion = (\d+);", source)
-    assert version is not None
-    assert int(version.group(1)) >= 5
+    assert "ITW_CLASH_HALCargoDiceFixVersion = 5;" in source
     # The resolver was rewritten to walk every friendly base index and test
     # each one's anchors, instead of asking for a single nearest base. Same
     # rule - a live Impasse base, not a cached coordinate - via a wider test.
@@ -146,9 +141,6 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
 def test_scargo_fastpath_is_only_for_normal_crewed_transport_and_falls_back_cleanly():
     source = fix()
     assert 'not (_withdraw) and not (_request) and not (_emptyV)' in source
-    # v5 hooks the seat-assignment seam, after native SCargo has finished its
-    # own pickup waypoint phase. The pre-pickup entry anchor raced SCargo's
-    # RYD_WPdel and cost a carrier its delivery waypoint.
     assert 'SCargo-base-embark-post-pickup' in source
     assert 'SCargo-base-embark-entry' not in source
     # Falling back cleanly means re-emitting native HAL's own seat-assignment
@@ -157,6 +149,23 @@ def test_scargo_fastpath_is_only_for_normal_crewed_transport_and_falls_back_clea
     assert 'not (_clashBaseEmbarked) and (((_ChosenOne emptyPositions "Cargo") > 0)' in source
     assert 'remoteExecCall ["RYD_MP_unassignVehicle",0]' in source
     assert 'base-embark-fastpath' in source
+
+
+def test_scargo_fastpath_cannot_publish_embark_before_native_pickup_reset():
+    source = fix()
+    native = scargo().replace("\r", "")
+    reset = '[_GD] call RYD_WPdel;'
+    pickup = '_wp = [_GD,_Lpos,"MOVE","STEALTH","YELLOW","FULL"'
+    assign = 'if (((_ChosenOne emptyPositions "Cargo") > 0) and not (_request)) then'
+
+    # The hook now targets native seat assignment, which is downstream of
+    # SCargo's carrier waypoint reset and pickup waypoint. GoAttInf/GoRecon
+    # therefore cannot observe assignedVehicle and publish a delivery waypoint
+    # until SCargo is finished with the destructive pickup setup.
+    assert native.index(reset) < native.index(pickup) < native.index(assign)
+    assert 'SCargo-base-embark-post-pickup' in source
+    assert 'SCargo-base-embark-entry' not in source
+    assert "private _exitLine" not in source
 
 
 def test_base_embark_uses_live_base_arrays_not_cached_coordinates():
