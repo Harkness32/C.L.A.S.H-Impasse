@@ -580,11 +580,11 @@ if (_clashAirLift) then
 	{
 	if (_halParadrop) then
 		{
-		_sts = ["true","private _g = group this; private _v = vehicle this; [_g,_v] spawn ITW_CLASH_HALParadrop_fnc_Execute; deletewaypoint [(group this), 0]"]
+		_sts = ["true","private _g = group this; private _v = vehicle this; diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId _g,typeOf _v,'PARADROP']]; [_g,_v] spawn ITW_CLASH_HALParadrop_fnc_Execute; deletewaypoint [(group this), 0]"]
 		}
 	else
 		{
-		_sts = ["true","(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]"]
+		_sts = ["true","diag_log format ['CLASHHALADD | air-unload-waypoint | %1',[groupId (group this),typeOf (vehicle this),'LAND']]; (vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]"]
 		}
 	};
 
