@@ -4,7 +4,7 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_CASEVAC_Started",false]) exitWith {};
 
 ITW_CLASH_CASEVAC_Started = true;
-ITW_CLASH_CASEVAC_Version = 5;
+ITW_CLASH_CASEVAC_Version = 6;
 ITW_CLASH_CASEVAC_MaxConcurrent = 2;
 ITW_CLASH_CASEVAC_MinWithdrawalTime = 60;
 ITW_CLASH_CASEVAC_MinDisengageDistance = 500;
@@ -47,13 +47,16 @@ ITW_CLASH_CASEVAC_SmokeClass = "SmokeShell";
 ITW_CLASH_CASEVAC_Active = createHashMap;
 
 diag_log format [
-    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6 symmetricSides=true remnantFastTrack=true",
+    "CLASH BOOT | casevac-ready | version=%1 max=%2 disengage=%3 enemyClear=%4 objectiveClear=%5 minEgress=%6 inboundAbort=%7 commitAt=%8 committedAbort=%9 symmetricSides=true remnantFastTrack=true",
     ITW_CLASH_CASEVAC_Version,
     ITW_CLASH_CASEVAC_MaxConcurrent,
     ITW_CLASH_CASEVAC_MinDisengageDistance,
     ITW_CLASH_CASEVAC_EnemyClearance,
     ITW_CLASH_CASEVAC_ObjectiveClearance,
-    ITW_CLASH_CASEVAC_MinEgressDistance
+    ITW_CLASH_CASEVAC_MinEgressDistance,
+    ITW_CLASH_CASEVAC_InboundAbortClearance,
+    ITW_CLASH_CASEVAC_CommitDistance,
+    ITW_CLASH_CASEVAC_CommittedAbortClearance
 ];
 
 ITW_CLASH_CASEVAC_fnc_Log = {

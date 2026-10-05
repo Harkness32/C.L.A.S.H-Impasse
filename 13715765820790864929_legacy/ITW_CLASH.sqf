@@ -420,6 +420,22 @@ ITW_CLASH_fnc_NeedsForcedSide = {
     ]) getOrDefault [toLowerANSI _class,-1] >= 0
 };
 
+/*
+    Say so at boot.
+
+    The defend-phase layer had no boot line, so an RPT could not be read for
+    whether it was present: ITW_CLASH_fnc_ObjectiveFrozen only logs when it
+    actually narrows something, and a run without a defend phase or a capture
+    lock produces nothing at all. That made one build indistinguishable from
+    the one before it, which cost a round of guessing.
+*/
+ITW_CLASH_ObjectiveFreezeVersion = 1;
+diag_log format [
+    "CLASH BOOT | objective-freeze-ready | version=%1 defendPhase=true captureLock=true narrowsTaken=true narrowsCandidates=true bothCommanders=true lockParam=%2",
+    ITW_CLASH_ObjectiveFreezeVersion,
+    missionNamespace getVariable ["ITW_ParamObjLockTime",0]
+];
+
 ITW_CLASH_fnc_GetActiveObjectives = {
     if (isNil "ITW_Zones" || {
         isNil "ITW_ZoneIndex" || {

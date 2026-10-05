@@ -79,7 +79,10 @@ def test_service_storage_is_any_friendly_base_area_not_exact_home_point():
     assert '"ITW_CLASH_ServiceRTBLandRadius",150' in service
     assert '"ITW_CLASH_ServiceRTBAirRadius",300' in service
     assert '"ITW_CLASH_ServiceIdleGrace",10' in service
-    assert '"ITW_CLASH_ServiceInitialStorageGrace",45' in service
+    # 45 -> 240: 55s total was shorter than HAL's planning pass, so an asset
+    # was deleted before it could be claimed. The VALUE is asserted in
+    # tests/test_service_claim_grace.py; this test is about storage being an area.
+    assert '"ITW_CLASH_ServiceInitialStorageGrace"' in service
     assert '"ITW_CLASH_ServiceIdleSpeedMax",3' in service
     assert "private _settled = (abs speed _veh) <= ITW_CLASH_ServiceIdleSpeedMax;" in service
     assert 'time - _spawnedAt < ITW_CLASH_ServiceInitialStorageGrace' in service

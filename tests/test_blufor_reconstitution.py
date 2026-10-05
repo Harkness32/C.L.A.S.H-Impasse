@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -104,7 +105,10 @@ def test_casevac_and_ground_medevac_use_casualty_side_context_and_enemy_relation
     ground = mission("ITW_CLASH_GroundMEDEVAC.sqf")
     manager = mission("ITW_CLASH_GroundMEDEVAC_Manager.sqf")
 
-    assert "ITW_CLASH_CASEVAC_Version = 5;" in casevac
+    version = int(
+        re.search(r"ITW_CLASH_CASEVAC_Version = (\d+);", casevac).group(1)
+    )
+    assert version >= 5, version
     assert "ITW_AtkReconstitutionTransportContexts" in casevac
     assert 'toUpperANSI str _recoverySide' in casevac
     assert '(_groupSide getFriend (side _x)) < 0.6' in casevac

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,7 +114,11 @@ def test_casevac_claims_group_before_spawn_can_yield():
         "[] spawn {", 1
     )[0]
 
-    assert "ITW_CLASH_CASEVAC_Version = 5;" in source
+    # Was an exact pin on 5, which broke the moment the commit model went in.
+    version = int(
+        re.search(r"ITW_CLASH_CASEVAC_Version = (\d+);", source).group(1)
+    )
+    assert version >= 5, version
     claim = '_group setVariable ["ITW_CLASH_CASEVAC_State","air-spawning"];'
     spawn = "] call ITW_CLASH_CASEVAC_fnc_SpawnHeli;"
     assert dispatch.index(claim) < dispatch.index(spawn)
@@ -122,7 +127,11 @@ def test_casevac_claims_group_before_spawn_can_yield():
 
 def test_casevac_prefers_smallest_sufficient_faction_helicopter_by_capacity():
     source = text("ITW_CLASH_CASEVAC.sqf")
-    assert "ITW_CLASH_CASEVAC_Version = 5;" in source
+    # Was an exact pin on 5, which broke the moment the commit model went in.
+    version = int(
+        re.search(r"ITW_CLASH_CASEVAC_Version = (\d+);", source).group(1)
+    )
+    assert version >= 5, version
     assert "ITW_CLASH_ServiceCapacity_fnc_RankVariants" in source
     assert '[_seatCount,_candidates,"AIR","CASEVAC"]' in source
     assert "private _spawnDef = +_vehDef;" in source

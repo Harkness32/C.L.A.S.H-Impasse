@@ -16,8 +16,32 @@ ITW_CLASH_ServiceRTBAirRadius = missionNamespace getVariable [
 ITW_CLASH_ServiceIdleGrace = missionNamespace getVariable [
     "ITW_CLASH_ServiceIdleGrace",10
 ];
+/*
+    How long a freshly handed-over asset has to be claimed before it counts as
+    idle stock.
+
+    Was 45s, and with ITW_CLASH_ServiceIdleGrace on top that gave an unclaimed
+    asset 55 seconds of life. HAL's planning pass is about SIXTY. So an aircraft
+    handed over at base was usually deleted before HAL's first opportunity to
+    use it - not a race it sometimes lost, a race it usually lost.
+
+    Measured, 7:15-7:17 of the run that prompted this:
+
+      7:15:32 registered   SVC-3 B_Heli_Light_01_F "impasse-handoff"
+      7:16:20 return zone  distance 7m of a 300m radius
+      7:16:30 virtualized  "hal-returned-home"
+
+    Seven metres. It never left. Two more went the same way at 60s and 59s, and
+    that is also why the player side looked like it was buying no aircraft: it
+    was buying them and losing them inside a minute.
+
+    Four minutes gives HAL at least three passes to claim the thing. The intent
+    behind the drain is still right - an unused truck parked at a base forever
+    is strategic stock, not a permanent physical decoration - and an asset that
+    is actually tasked sets taskSeen and is never subject to this at all.
+*/
 ITW_CLASH_ServiceInitialStorageGrace = missionNamespace getVariable [
-    "ITW_CLASH_ServiceInitialStorageGrace",45
+    "ITW_CLASH_ServiceInitialStorageGrace",240
 ];
 ITW_CLASH_ServiceIdleSpeedMax = missionNamespace getVariable [
     "ITW_CLASH_ServiceIdleSpeedMax",3
@@ -387,7 +411,11 @@ call ITW_CLASH_Service_fnc_InstallProviderWrappers;
                     _storageRadius,
                     _storageBase,
                     _storageMethod,
-                    round abs speed _veh
+                    round abs speed _veh,
+                    // Age and whether it was ever tasked: a never-tasked asset
+                    // a minute old that has not moved was never "returning".
+                    round (time - _spawnedAt),
+                    _taskSeen
                 ]] call ITW_CLASH_Service_fnc_Log;
                 continue;
             };
