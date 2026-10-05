@@ -123,11 +123,15 @@ ITW_CLASH_HALUnload_fnc_Mode = {
         _capacity = [_carrier] call ITW_CLASH_HALParadrop_fnc_CargoCapacity;
     };
 
-    // The host's explicit land-only setting wins at execution. Unsafe
-    // Param=0 launches are prevented in SCargo preflight; a corridor that
-    // worsens after launch still completes rather than inventing a stranded
-    // "abort with passengers aboard" state here.
-    if (_param == 0) exitWith {["LAND",0,_capacity]};
+    private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];
+
+    // Preflight refuses these combinations before a helicopter is selected.
+    // Re-check here because the air picture can worsen while a committed lift
+    // is airborne. In that case HAL keeps the aircraft and its passengers;
+    // C.L.A.S.H. only refuses to put the airframe on the ground forward.
+    if (_param == 0) exitWith {
+        [if (_noLand) then {"NO_LAND"} else {"LAND"},0,_capacity]
+    };
 
     private _dropReady =
         missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]
@@ -261,15 +265,23 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 _carrier flyInHeight (
                     missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]
                 );
-                private _dropped = [_carrierGroup,_carrier] call
+                private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];
+                private _dropped = [_carrierGroup,_carrier,!_noLand] call
                     ITW_CLASH_HALParadrop_fnc_Execute;
                 if (_dropped) then {
                     _result = "PARADROP"
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
-                        _carrier land "GET OUT";
-                        [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_Release;
-                        _result = "LAND_FALLBACK"
+                        if (_noLand) then {
+                            _carrier land "NONE";
+                            _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+                            _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
+                            _result = "NO_LAND"
+                        } else {
+                            _carrier land "GET OUT";
+                            [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_Release;
+                            _result = "LAND_FALLBACK"
+                        };
                     } else {
                         _result = "PARADROP_DECLINED_EMPTY"
                     };
@@ -284,19 +296,26 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                     missionNamespace getVariable ["ITW_CLASH_HotDropDropHeight",130]
                 );
                 [_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_StartHotFlares;
-                private _dropped = [_carrierGroup,_carrier] call
+                private _dropped = [_carrierGroup,_carrier,false] call
                     ITW_CLASH_HALParadrop_fnc_Execute;
                 if (_dropped) then {
                     _result = "HOT_PARADROP"
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
-                        _carrier land "GET OUT";
-                        [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_Release;
-                        _result = "LAND_FALLBACK"
+                        _carrier land "NONE";
+                        _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+                        _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
+                        _result = "NO_LAND"
                     } else {
                         _result = "HOT_PARADROP_DECLINED_EMPTY"
                     };
                 };
+            };
+            case "NO_LAND": {
+                _carrier land "NONE";
+                _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+                _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
+                _result = "NO_LAND";
             };
             default {
                 _carrier land "GET OUT";
