@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALUnloadStarted",false]) exitWith 
 
 ITW_CLASH_HALUnloadStarted = true;
 ITW_CLASH_HALUnloadReady = false;
-ITW_CLASH_HALUnloadVersion = 3;
+ITW_CLASH_HALUnloadVersion = 4;
 scriptName "ITW_CLASH_HALUnload";
 
 /*
@@ -73,11 +73,17 @@ ITW_CLASH_HALUnloadClimbFraction = missionNamespace getVariable [
 ITW_CLASH_HALUnloadEgress = missionNamespace getVariable [
     "ITW_CLASH_HALUnloadEgress",true
 ];
+// Native ITW's good habit: a paradrop is a fly-through, not an arrival.
+// Arm a straight continuation BEFORE the first chute opens so the aircraft
+// never loses forward intent over the objective.
+ITW_CLASH_HALUnloadFlyThrough = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlyThrough",true
+];
 ITW_CLASH_HALUnloadEgressThrough = missionNamespace getVariable [
-    "ITW_CLASH_HALUnloadEgressThrough",700
+    "ITW_CLASH_HALUnloadEgressThrough",1000
 ];
 ITW_CLASH_HALUnloadEgressOffset = missionNamespace getVariable [
-    "ITW_CLASH_HALUnloadEgressOffset",450
+    "ITW_CLASH_HALUnloadEgressOffset",600
 ];
 ITW_CLASH_HALUnloadTransitHeight = missionNamespace getVariable [
     "ITW_CLASH_HALUnloadTransitHeight",
@@ -434,51 +440,46 @@ ITW_CLASH_HALUnload_fnc_StartHotFlares = {
 };
 
 /*
-    The J-hook.
+    Arm the drop run BEFORE anyone leaves the aircraft.
 
-    HAL's waypoint is deleted by the waypoint statement before this module is
-    even spawned, so after the drop the carrier is a helicopter with no
-    destination: it coasts, stops, and hovers over the objective. That is what
-    Hark saw, and it is also the worst place in the mission to be stationary.
+    Native ITW gets the important physical behaviour right: the carrier is
+    already flying THROUGH the drop when the first parachute opens. Our old
+    sequence deleted HAL's insertion waypoint, ran the whole unload, and only
+    then invented an escape route. That briefly left the helicopter with no
+    forward destination in the hottest part of the flight.
 
-    So: carry through past the drop on the inbound bearing, bank off to one
-    side, then run home. Two waypoints rather than one, because a single
-    waypoint back to base makes the aircraft pivot on the spot - the thing that
-    reads as a stall - while a through-point turns the exit into one continuous
-    motion.
+    This function owns only the post-HAL continuation. HAL has reached its
+    insertion seam and its waypoint statement is being retired. We replace that
+    finished waypoint with one straight-through MOVE waypoint, preserve full
+    speed, and let the existing paradrop helper eject passengers while the
+    aircraft is still travelling toward it.
 
-    This is not C.L.A.S.H. becoming a second pilot. The rule that broke run8
-    was taking an aircraft HAL was actively flying; here HAL has already
-    finished with it and left it with nothing. Waypoints, not doMove, precisely
-    so HAL's next dispatch replaces this cleanly through its own machinery - the
-    same shape CASEVAC_fnc_SendHeliHome uses to send its airframes home.
-
-    The side it banks to alternates on the carrier's own id, so a pair of
-    aircraft working the same objective do not cross.
+    The lateral break and RTB are appended by fnc_Egress after the chalk is
+    clear. That ordering prevents the AI from beginning its turn while troops
+    are still leaving the aircraft.
 */
-ITW_CLASH_HALUnload_fnc_Egress = {
+ITW_CLASH_HALUnload_fnc_PrepareDropRun = {
     params ["_carrierGroup","_carrier",["_origin",[]]];
-    if (!ITW_CLASH_HALUnloadEgress) exitWith {false};
+    if (!ITW_CLASH_HALUnloadFlyThrough) exitWith {false};
     if (isNull _carrierGroup || {isNull _carrier} || {!alive _carrier}) exitWith {false};
     if (!canMove _carrier) exitWith {false};
     if ((crew _carrier) findIf {isPlayer _x} >= 0) exitWith {false};
 
     private _here = getPosATL _carrier;
-    // Inbound bearing. With no usable origin, carry on the way it is pointing.
     private _bearing = if (
-        _origin isEqualType [] && {count _origin >= 2} && {(_origin distance2D _here) > 50}
-    ) then {_origin getDir _here} else {getDir _carrier};
-
-    private _side = if ((_carrier call BIS_fnc_netId) select [0,1] in ["1","3","5","7","9"]) then {90} else {-90};
-    private _through = _here getPos [ITW_CLASH_HALUnloadEgressThrough,_bearing];
-    _through = _through getPos [ITW_CLASH_HALUnloadEgressOffset,_bearing + _side];
-
-    private _home = if (
-        _origin isEqualType [] && {count _origin >= 2}
-    ) then {_origin} else {_through};
+        _origin isEqualType []
+        && {count _origin >= 2}
+        && {(_origin distance2D _here) > 50}
+    ) then {
+        _origin getDir _here
+    } else {
+        getDir _carrier
+    };
+    private _through = _here getPos [
+        ITW_CLASH_HALUnloadEgressThrough,_bearing
+    ];
 
     _carrier land "NONE";
-    _carrier flyInHeight ITW_CLASH_HALUnloadTransitHeight;
     _carrier limitSpeed 1e10;
     _carrier forceSpeed -1;
 
@@ -491,6 +492,146 @@ ITW_CLASH_HALUnload_fnc_Egress = {
     _carrierGroup setCombatMode "BLUE";
     _carrierGroup setSpeedMode "FULL";
 
+    private _wp = _carrierGroup addWaypoint [_through,0];
+    _wp setWaypointType "MOVE";
+    _wp setWaypointSpeed "FULL";
+    _wp setWaypointBehaviour "CARELESS";
+    _wp setWaypointCombatMode "BLUE";
+    _wp setWaypointCompletionRadius 120;
+
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropRunArmed",true];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropBearing",_bearing];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropThrough",_through];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropPoint",_here];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropStarted",time];
+
+    ["drop-run-armed",[
+        typeOf _carrier,groupId _carrierGroup,
+        round _bearing,
+        round (_here distance2D _through),
+        round speed _carrier,
+        round ((getPosATL _carrier)#2)
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+    true
+};
+
+/*
+    A prepared fly-through must not survive a decision to land instead.
+
+    The normal paradrop failure path can still fall back to GET OUT on a safe
+    corridor. Clear the continuation waypoint first so the landing command is
+    not fighting a 1 km MOVE order.
+*/
+ITW_CLASH_HALUnload_fnc_CancelDropRun = {
+    params ["_carrierGroup","_carrier",["_reason","cancelled"]];
+    if (isNull _carrierGroup) exitWith {false};
+    if !(_carrierGroup getVariable ["ITW_CLASH_HALUnloadDropRunArmed",false]) exitWith {false};
+
+    if (!isNil "ITW_CLASH_fnc_ClearGroupWaypoints") then {
+        [_carrierGroup] call ITW_CLASH_fnc_ClearGroupWaypoints;
+    } else {
+        {deleteWaypoint _x} forEachReversed waypoints _carrierGroup;
+    };
+
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropRunArmed",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropBearing",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropThrough",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropPoint",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropStarted",nil];
+
+    ["drop-run-cancelled",[
+        if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+        groupId _carrierGroup,_reason
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+    true
+};
+
+/*
+    Finish the J-hook AFTER the drop.
+
+    The straight-through waypoint already exists while passengers are leaving.
+    Once the chalk is clear, append a lateral break and then home. A legacy or
+    failed-preparation path still gets a complete through/break/home route here.
+
+    This is not C.L.A.S.H. becoming a second pilot. HAL has already finished
+    this insertion and its waypoint was retired by the order statement. These
+    are ordinary waypoints, so HAL's next dispatch can replace them cleanly.
+*/
+ITW_CLASH_HALUnload_fnc_Egress = {
+    params ["_carrierGroup","_carrier",["_origin",[]]];
+    if (!ITW_CLASH_HALUnloadEgress) exitWith {false};
+    if (isNull _carrierGroup || {isNull _carrier} || {!alive _carrier}) exitWith {false};
+    if (!canMove _carrier) exitWith {false};
+    if ((crew _carrier) findIf {isPlayer _x} >= 0) exitWith {false};
+
+    private _here = getPosATL _carrier;
+    private _prepared = _carrierGroup getVariable [
+        "ITW_CLASH_HALUnloadDropRunArmed",false
+    ];
+    private _bearing = _carrierGroup getVariable [
+        "ITW_CLASH_HALUnloadDropBearing",-1
+    ];
+    private _through = _carrierGroup getVariable [
+        "ITW_CLASH_HALUnloadDropThrough",[]
+    ];
+    private _dropPoint = _carrierGroup getVariable [
+        "ITW_CLASH_HALUnloadDropPoint",_here
+    ];
+    private _started = _carrierGroup getVariable [
+        "ITW_CLASH_HALUnloadDropStarted",-1
+    ];
+
+    if (_bearing < 0) then {
+        _bearing = if (
+            _origin isEqualType []
+            && {count _origin >= 2}
+            && {(_origin distance2D _here) > 50}
+        ) then {_origin getDir _here} else {getDir _carrier};
+    };
+    if !(_through isEqualType [] && {count _through >= 2}) then {
+        _through = _here getPos [
+            ITW_CLASH_HALUnloadEgressThrough,_bearing
+        ];
+        _prepared = false;
+    };
+
+    private _side = if (
+        (_carrier call BIS_fnc_netId) select [0,1] in ["1","3","5","7","9"]
+    ) then {90} else {-90};
+    private _break = _through getPos [
+        ITW_CLASH_HALUnloadEgressOffset,_bearing + _side
+    ];
+    private _home = if (
+        _origin isEqualType [] && {count _origin >= 2}
+    ) then {_origin} else {_break};
+
+    _carrier land "NONE";
+    _carrier flyInHeight ITW_CLASH_HALUnloadTransitHeight;
+    _carrier limitSpeed 1e10;
+    _carrier forceSpeed -1;
+
+    // A prepared run already owns the straight-through waypoint. Only the
+    // fallback path has to manufacture it here.
+    if (!_prepared) then {
+        if (!isNil "ITW_CLASH_fnc_ClearGroupWaypoints") then {
+            [_carrierGroup] call ITW_CLASH_fnc_ClearGroupWaypoints;
+        } else {
+            {deleteWaypoint _x} forEachReversed waypoints _carrierGroup;
+        };
+    };
+    _carrierGroup setBehaviourStrong "CARELESS";
+    _carrierGroup setCombatMode "BLUE";
+    _carrierGroup setSpeedMode "FULL";
+
+    if (!_prepared) then {
+        private _wpThrough = _carrierGroup addWaypoint [_through,0];
+        _wpThrough setWaypointType "MOVE";
+        _wpThrough setWaypointSpeed "FULL";
+        _wpThrough setWaypointBehaviour "CARELESS";
+        _wpThrough setWaypointCombatMode "BLUE";
+        _wpThrough setWaypointCompletionRadius 120;
+    };
+
     {
         _x params ["_pos","_radius"];
         private _wp = _carrierGroup addWaypoint [_pos,0];
@@ -499,14 +640,25 @@ ITW_CLASH_HALUnload_fnc_Egress = {
         _wp setWaypointBehaviour "CARELESS";
         _wp setWaypointCombatMode "BLUE";
         _wp setWaypointCompletionRadius _radius;
-    } forEach [[_through,150],[_home,200]];
+    } forEach [[_break,150],[_home,200]];
 
+    private _dwell = if (_started >= 0) then {time - _started} else {-1};
     ["egress",[
-        typeOf _carrier,groupId _carrierGroup,
+        typeOf _carrier,groupId _carrierGroup,_prepared,
         round _bearing,_side,
-        round (_here distance2D _through),
-        round (_here distance2D _home)
+        round (_dropPoint distance2D _through),
+        round (_through distance2D _break),
+        round (_here distance2D _home),
+        round speed _carrier,
+        round ((getPosATL _carrier)#2),
+        round _dwell
     ]] call ITW_CLASH_HALUnload_fnc_Log;
+
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropRunArmed",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropBearing",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropThrough",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropPoint",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropStarted",nil];
     true
 };
 
@@ -561,6 +713,8 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 _carrier flyInHeight (
                     missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",45]
                 );
+                [_carrierGroup,_carrier,_origin] call
+                    ITW_CLASH_HALUnload_fnc_PrepareDropRun;
                 private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];
                 /*
                     One pass per group aboard. Execute reads the stamp, so the
@@ -587,6 +741,8 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                             _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
                             _result = "NO_LAND"
                         } else {
+                            [_carrierGroup,_carrier,"land-fallback"] call
+                                ITW_CLASH_HALUnload_fnc_CancelDropRun;
                             _carrier land "GET OUT";
                             [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_Release;
                             _result = "LAND_FALLBACK"
@@ -604,6 +760,8 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 _carrier flyInHeight (
                     missionNamespace getVariable ["ITW_CLASH_HotDropDropHeight",130]
                 );
+                [_carrierGroup,_carrier,_origin] call
+                    ITW_CLASH_HALUnload_fnc_PrepareDropRun;
                 [_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_StartHotFlares;
                 private _dropped = false;
                 {
