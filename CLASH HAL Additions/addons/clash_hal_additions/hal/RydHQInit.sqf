@@ -1,5 +1,7 @@
 if not (isServer) exitWith {};
 
+diag_log "CLASHHALADD | halcore-entered | source=clash_hal_additions";
+
 if (isNil ("RydHQ_Wait")) then 
 {
     RydHQ_Wait = ((_this select 0) getvariable "RydHQ_Wait"); 
