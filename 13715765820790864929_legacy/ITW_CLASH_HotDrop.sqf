@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 7;
+ITW_CLASH_HotDropVersion = 8;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -197,11 +197,49 @@ ITW_CLASH_HotDrop_fnc_IsEligible = {
     private _driver = driver _veh;
     if (isNull _driver || {!alive _driver}) exitWith {false};
     private _crewGroup = group _driver;
-    // Recovery and medical lifts belong to their own owners.
-    if (
-        (_crewGroup getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo ""
-        || {(_crewGroup getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo ""}
-    ) exitWith {false};
+    /*
+        Recovery and medical lifts belong to their own owners.
+
+        This used to read ITW_CLASH_CASEVAC_State and
+        ITW_CLASH_GroundMEDEVAC_State off the CARRIER's crew group, and no
+        writer of either variable ever puts it there. Every one of them stamps
+        the CASUALTY's squad: CASEVAC.sqf:552,726,751, EvacBoardingFix.sqf:204,
+        215,345,357, GroundMEDEVAC_Manager.sqf:82,104,
+        GroundMEDEVAC_Extraction.sqf:159. On a real medical lift the guard read
+        "" and let the aircraft through.
+
+        That was harmless for as long as this module only claimed aircraft
+        already airborne, because a CASEVAC helicopter airborne with casualties
+        aboard is above the window. d7f99da moved the claim to the ground, which
+        is exactly where a CASEVAC helicopter sits while it loads casualties:
+        land "GET IN" at CASEVAC.sqf:499, touching ground, squad boarding, and
+        HotDrop's poll scans every helicopter below 3m with crew. The guard was
+        dead, and then the claim window moved onto it.
+
+        The right marker already existed and is not this one.
+        ITW_CLASH_CASEVAC is stamped on BOTH the helicopter and its crew group
+        at CASEVAC.sqf:268-269 and CASEVAC_AirOpsFix.sqf:105-106, and
+        ITW_CLASH_DualHAL_fnc_IsLifecycleReserved is the module that reads it -
+        along with GroundMEDEVAC, reconstitution transit and transport, recovery
+        and Impasse deliveries, every one of which could ride in an airframe
+        this poll would otherwise take.
+
+        Fail CLOSED if the oracle is missing, which is the opposite of this
+        layer's usual posture and deliberate: a hot drop not flown costs one
+        insertion, and a CASEVAC flown to an objective costs the squad it was
+        sent to save. The ordering makes it moot anyway - HotDrop's own boot
+        waits on ITW_CLASH_fnc_GetCommanderForGroup, defined twenty-two lines
+        above the oracle in the same file.
+    */
+    if (isNil "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved") exitWith {
+        ["declined-no-lifecycle-oracle",[typeOf _veh]] call ITW_CLASH_HotDrop_fnc_Log;
+        false
+    };
+    if ([_crewGroup,_veh] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved) exitWith {
+        ["declined-reserved-carrier",[typeOf _veh,groupId _crewGroup]] call
+            ITW_CLASH_HotDrop_fnc_Log;
+        false
+    };
     // Decided once, on the ground, before anyone commits to a profile.
     //
     // This used to claim airborne lifts, which is how an aircraft another
@@ -618,6 +656,15 @@ ITW_CLASH_HotDrop_fnc_Consider = {
     private _cargoGroup = [_veh] call ITW_CLASH_HotDrop_fnc_CargoGroup;
     if (isNull _cargoGroup) exitWith {false};
     if (((units _cargoGroup) findIf {isPlayer _x}) >= 0) exitWith {false};
+    // The passengers can be reserved even when the airframe is not: a squad in
+    // reconstitution transit, or a casualty squad riding in a borrowed
+    // helicopter, is somebody else's lift however the aircraft is marked.
+    if (isNil "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved") exitWith {false};
+    if ([_cargoGroup,_veh] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved) exitWith {
+        ["declined-reserved-cargo",[typeOf _veh,groupId _cargoGroup]] call
+            ITW_CLASH_HotDrop_fnc_Log;
+        false
+    };
     // Loaded, not merely assigned. Still boarding is not a decision point, so
     // this is the one rejection that does not mark the lift declined.
     if (([_veh,_cargoGroup] call ITW_CLASH_HotDrop_fnc_Aboard) isEqualTo []) exitWith {false};

@@ -129,11 +129,19 @@ def test_nothing_a_player_touches_is_taken():
 
 
 def test_runs_owned_by_another_system_are_left_alone():
-    body = function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_IsEligible")
+    body = code_only(function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_IsEligible"))
     assert 'ITW_CLASH_ThunderRunActive' in body
-    assert "ITW_CLASH_CASEVAC_State" in body
-    assert "ITW_CLASH_GroundMEDEVAC_State" in body
     assert "ITW_CLASH_HotDropCooldownUntil" in body
+    # Medical, recovery, reconstitution and delivery lifts are all one
+    # question, and ITW_CLASH_DualHAL_fnc_IsLifecycleReserved is the module
+    # that answers it. This used to assert ITW_CLASH_CASEVAC_State was read
+    # here, which was the defect: that variable lives on the casualty's squad,
+    # never on the carrier's crew group, so the check could not fire.
+    assert "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved" in body
+    assert "ITW_CLASH_CASEVAC_State" not in body, (
+        "the carrier's crew group never carries this variable"
+    )
+    assert "ITW_CLASH_GroundMEDEVAC_State" not in body
 
 
 def test_cargo_means_passengers_not_the_door_gunner():

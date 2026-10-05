@@ -79,7 +79,7 @@ def test_the_interlock_sits_with_the_other_ownership_checks():
 def test_existing_ownership_interlocks_are_intact():
     body = code_only(function_body(hotdrop(), "ITW_CLASH_HotDrop_fnc_IsEligible"))
     for other in ("ITW_CLASH_HotDropActive", "ITW_CLASH_ThunderRunActive",
-                  "ITW_CLASH_CASEVAC_State", "ITW_CLASH_GroundMEDEVAC_State",
+                  "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved",
                   "ITW_CLASH_HALParadropCargoGroup"):
         assert other in body, other
 
@@ -94,5 +94,5 @@ def test_the_remaining_hole_is_written_down():
     assert "Break" in source
 
 
-def test_hotdrop_version_moved_to_seven():
-    assert "ITW_CLASH_HotDropVersion = 7;" in hotdrop()
+def test_hotdrop_version_moved():
+    assert "ITW_CLASH_HotDropVersion = 8;" in hotdrop()
