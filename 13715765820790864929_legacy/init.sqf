@@ -66,6 +66,16 @@ if (isServer) then {
             // All unavoidable Commander A/B adaptation lives in one parity
             // layer. Shared systems remain symmetric in their own source; we
             // never bolt on behavior-specific BLUFOR fix files.
+            private _formationAdmissionLoaded = false;
+            if (_dualHALHardened isEqualTo true && {
+                fileExists "ITW_CLASH_FormationAdmission.sqf"
+            }) then {
+                _formationAdmissionLoaded = call compile preprocessFileLineNumbers
+                    "ITW_CLASH_FormationAdmission.sqf";
+            } else {
+                diag_log "CLASH BOOT | formation-admission-missing-or-prereq-failed | undersized infantry remains legacy";
+            };
+
             private _commanderParityLoaded = false;
             if (_dualHALHardened isEqualTo true && {
                 fileExists "ITW_CLASH_CommanderParity.sqf"
