@@ -8,7 +8,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALNativeSFFixStarted",false]) exit
 ITW_CLASH_HALNativeSFFixStarted = true;
 ITW_CLASH_HALNativeSFFixReady = false;
 ITW_CLASH_HALNativeSFFixFinished = false;
-ITW_CLASH_HALNativeSFFixVersion = 4;
+ITW_CLASH_HALNativeSFFixVersion = 5;
 ITW_CLASH_HALStatusQuoSFPatched = false;
 ITW_CLASH_SFStandbyMinRadius = 90;
 ITW_CLASH_SFStandbyMaxRadius = 220;
@@ -122,46 +122,23 @@ _results pushBack (_step#2);
 if !(_step#0) exitWith {[_step#2,_results] call _finishFailure};
 _attackSource = _step#1;
 
-// SF insertion by air: GoSFAttack sets its air carrier to land and let the
-// team out. When C.L.A.S.H. paradrop is ready, decide per insertion with the
-// same rules as GoAttInf (ITW land-only/parachute-only settings win) and count
-// it as threatened, since SF go behind the lines: mixed mode then drops.
-ITW_CLASH_HALNativeSF_fnc_ParadropStatement = {
-    params ["_carrier","_carrierGroup","_team","_statement"];
-    if (
-        isNull _carrier
-        || {isNull _carrierGroup}
-        || {isNull _team}
-        || {((_statement#1) find "land 'GET OUT'") < 0}
-        || {!(missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false])}
-        || {isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse"}
-        || {((units _team) findIf {isPlayer _x}) >= 0}
-        || {((units _carrierGroup) findIf {isPlayer _x}) >= 0}
-    ) exitWith {_statement};
+// Air insertion is no longer owned here. The centralized HAL unload layer
+// patches the stock unload statement in all seven order executors. Publish the
+// repaired GoSFAttack source so that layer can preserve the objective/WP fixes
+// above instead of recompiling raw NR6 over them.
+ITW_CLASH_HALNativeSF_Source = _attackSource;
 
-    ([_carrier,true] call ITW_CLASH_HALParadrop_fnc_ShouldUse) params ["_drop","_chance","_capacity"];
-    if (!_drop) exitWith {
-        _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
-        _statement
+if (!isNil "ITW_CLASH_HALUnload_fnc_PatchSource") then {
+    ([_attackSource,"GoSFAttack"] call ITW_CLASH_HALUnload_fnc_PatchSource) params [
+        "_unloadOK","_unloadSource","_unloadStatus"
+    ];
+    _results pushBack ("GoSFAttack-central-unload:" + _unloadStatus);
+    if (!_unloadOK) exitWith {
+        [_unloadStatus,_results] call _finishFailure
     };
-    _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_team];
-    _carrier flyInHeight (missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",55]);
-    if (!isNil "ITW_CLASH_HALParadrop_fnc_Log") then {
-        ["selected",[typeOf _carrier,groupId _team,_capacity,_chance,true,"sf-insertion"]] call
-            ITW_CLASH_HALParadrop_fnc_Log;
-    };
-    ["true","private _g = group this; private _v = vehicle this; [_g,_v] spawn ITW_CLASH_HALParadrop_fnc_Execute; deletewaypoint [(group this), 0]"]
+    _attackSource = _unloadSource;
+    ITW_CLASH_HALNativeSF_Source = _attackSource;
 };
-
-_step = [
-    _attackSource,
-    "if (((group (assigneddriver _AV)) in (_HQ getVariable [""RydHQ_AirG"",[]])) and (_unitG in (_HQ getVariable [""RydHQ_NCrewInfG"",[]]))) then {_sts = [""true"",""(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]""]};",
-    "if (((group (assigneddriver _AV)) in (_HQ getVariable [""RydHQ_AirG"",[]])) and (_unitG in (_HQ getVariable [""RydHQ_NCrewInfG"",[]]))) then {_sts = [""true"",""(vehicle this) land 'GET OUT';deletewaypoint [(group this), 0]""]}; _sts = [_AV,_GDV,_unitG,_sts] call ITW_CLASH_HALNativeSF_fnc_ParadropStatement;",
-    "GoSFAttack-air-insertion-paradrop"
-] call _replaceExact;
-_results pushBack (_step#2);
-if !(_step#0) exitWith {[_step#2,_results] call _finishFailure};
-_attackSource = _step#1;
 
 // Compile the minimally repaired native executor once, then wrap it with
 // observer-only telemetry. The wrapper never issues movement, mutates HAL
