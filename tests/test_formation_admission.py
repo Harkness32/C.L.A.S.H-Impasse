@@ -201,3 +201,27 @@ def test_loud_logging_and_periodic_invariant_audit():
     assert '"RydHQ_CombatAv"' in audit
     assert "ITW_CLASH_FormationAdmissionAssertRepeat" in audit
     assert "formation-admission-ready" in module
+
+def test_enemy_native_cap_tail_is_banked_before_impasse_orders():
+    attack = src("ITW_Attack.sqf")
+    native = fn(attack, "ITW_AtkAddInfantryGroup")
+    module = fn(
+        src("ITW_CLASH_FormationAdmission.sqf"),
+        "ITW_CLASH_FormationAdmission_fnc_Gate",
+    )
+    assert '"impasse-native-enemy-onfoot"' in native
+    assert '"impasse-native-enemy-onfoot"' in module
+    assert '"ITW_CLASH_ProducedBatch"' in native
+    assert "side _group == ITW_EnemySide" in native
+    assert "if (_enemyBanked) exitWith {true};" in native
+    assert native.index("if (_enemyBanked) exitWith {true};") < native.index(
+        "[_group,_teleportToAttackPos,_objToPopulate] call ITW_AtkEngageInfantry;"
+    )
+    enemy = fn(
+        src("ITW_CLASH_SpawnArchetypePreInit.sqf"),
+        "ITW_EnemyGroupCallback",
+    )
+    assert "if (isNull _group) exitWith {};" in enemy
+    assert enemy.index("if (isNull _group) exitWith {};") < enemy.index(
+        "ITW_EnemyGroups pushBack _group;"
+    )
