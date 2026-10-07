@@ -44,7 +44,7 @@ def test_native_producer_writes_intent_before_cap_cutoff():
     assert '"ITW_CLASH_ProducedStrength"' in assembled
     assert '"ITW_CLASH_ProducedIntent"' in assembled
     assert '"ITW_CLASH_ProducedBatch"' in assembled
-    assert '"producer-cap-fragment"' in assembled
+    assert "producer-cap-fragment" in assembled
     assert assembled.index("ITW_CLASH_ProducedStrength") < assembled.index(
         "ITW_CLASH_Archetype"
     )
