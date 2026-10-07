@@ -225,3 +225,19 @@ def test_enemy_native_cap_tail_is_banked_before_impasse_orders():
     assert enemy.index("if (isNull _group) exitWith {};") < enemy.index(
         "ITW_EnemyGroups pushBack _group;"
     )
+
+
+def test_enemy_transport_fragments_bank_without_reentering_hal_callback():
+    stage = fn(
+        src("ITW_CLASH_DualHALCheckbook.sqf"),
+        "ITW_CLASH_DualHAL_fnc_StageFieldVehicle",
+    )
+    assert '"ITW_EnemySide"' in stage
+    assert '"legacy-impasse-cargo-staged",_spawnInfo' in stage
+    assert 'ITW_CLASH_FormationAdmission_fnc_Bank' in stage
+    assert 'if (_enemyCargoBanked) then {' in stage
+    assert 'ITW_EnemyGroups = ITW_EnemyGroups - [_cargoGroup];' in stage
+    assert stage.index('if (_enemyCargoBanked) then {') < stage.index(
+        '[_cargoGroup] call ITW_EnemyGroupCallback;'
+    )
+    assert 'ITW_CLASH_FormationAdmission_fnc_CargoPreflight' in stage
