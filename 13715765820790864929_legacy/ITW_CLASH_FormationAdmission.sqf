@@ -587,6 +587,52 @@ ITW_CLASH_FormationAdmission_fnc_Gate = {
     ["PENDING","bank-rejected-or-unavailable"]
 };
 
+// A damaged real formation can arrive already below Shattered thresholds.
+// Initiate withdrawal synchronously before HAL gets a tasking cycle.
+ITW_CLASH_FormationAdmission_fnc_ImmediateShattered = {
+    params ["_group",["_source","admission"]];
+    if (isNull _group) exitWith {false};
+    if (_group getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {true};
+    if (_group getVariable ["ITW_CLASH_VehicleCrewGroup",false]) exitWith {false};
+    if (!isNil "ITW_CLASH_DualHAL_fnc_IsPlayerGroup" && {
+        [_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup
+    }) exitWith {false};
+
+    private _archetype = +(_group getVariable ["ITW_CLASH_Archetype",[]]);
+    private _original = count _archetype;
+    private _aliveCount = {alive _x} count units _group;
+    if (_original < 3 || {_aliveCount < 1} || {
+        _aliveCount > missionNamespace getVariable [
+            "ITW_CLASH_FormationRecoveryMaxShatteredSurvivors",2
+        ]
+    } || {(_aliveCount / (_original max 1)) > missionNamespace getVariable [
+        "ITW_CLASH_FormationRecoveryMaxShatteredFraction",0.5
+    ]}) exitWith {false};
+
+    if (isNil "ITW_CLASH_fnc_StartWithdrawal") exitWith {
+        ["SHATTERED-NO-WITHDRAWAL-FUNCTION",[
+            [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+            _source,_aliveCount,_original
+        ]] call ITW_CLASH_FormationAdmission_fnc_Assert;
+        false
+    };
+
+    private _withdrawn = [
+        _group,"admission-pre-shattered"
+    ] call ITW_CLASH_fnc_StartWithdrawal;
+    ["shattered-admission",[
+        [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+        _source,_aliveCount,_original,_withdrawn
+    ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+    if (!_withdrawn) then {
+        ["SHATTERED-ADMISSION-WITHDRAWAL-FAILED",[
+            [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+            _source,_aliveCount,_original
+        ]] call ITW_CLASH_FormationAdmission_fnc_Assert;
+    };
+    _withdrawn
+};
+
 ITW_CLASH_FormationAdmission_fnc_RegisterGroupBase =
     ITW_CLASH_DualHAL_fnc_RegisterGroup;
 
@@ -606,6 +652,12 @@ ITW_CLASH_DualHAL_fnc_RegisterGroup = {
         ITW_CLASH_FormationAdmission_fnc_RegisterGroupBase;
 
     if (_result) then {
+        if !(_group getVariable [
+            "ITW_CLASH_FormationAdmissionPreflightPassed",false
+        ]) then {
+            [_group,_reason] call
+                ITW_CLASH_FormationAdmission_fnc_ImmediateShattered;
+        };
         private _archetype = +(_group getVariable [
             "ITW_CLASH_Archetype",[]
         ]);
