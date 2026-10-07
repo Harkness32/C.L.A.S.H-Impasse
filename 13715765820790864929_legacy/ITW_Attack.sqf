@@ -2417,6 +2417,38 @@ ITW_AtkAddCrewToStatic = {
 
 ITW_AtkAddInfantryGroup = {
     params ["_group",["_objToPopulate",[]],["_teleportToAttackPos",true]];
+    // Capture the size at native group assembly, not after HAL registration.
+    // ProducerPlannedTemplate on each unit records the full selected squad
+    // before the spawn cap could truncate it.
+    if (!isNull _group && {
+        isNil {_group getVariable "ITW_CLASH_ProducedStrength"}
+    }) then {
+        _group setVariable ["ITW_CLASH_ProducedStrength",count units _group];
+        private _members = units _group;
+        if (_members isNotEqualTo []) then {
+            private _batch = (_members#0) getVariable [
+                "ITW_CLASH_ProducerBatch",""
+            ];
+            private _planned = +((_members#0) getVariable [
+                "ITW_CLASH_ProducerPlannedTemplate",[]
+            ]);
+            if (_batch isNotEqualTo "" && {_planned isNotEqualTo []} && {
+                (_members findIf {
+                    (_x getVariable ["ITW_CLASH_ProducerBatch",""]) != _batch
+                }) < 0
+            }) then {
+                _group setVariable ["ITW_CLASH_ProducedIntent",+_planned];
+                _group setVariable ["ITW_CLASH_ProducedBatch",_batch];
+                if (count _members < count _planned) then {
+                    diag_log format [
+                        "CLASH FORMATION | producer-cap-fragment | %1",
+                        [str _group,_batch,count _members,count _planned,
+                            side _group]
+                    ];
+                };
+            };
+        };
+    };
     if (!isNull _group && {
         (_group getVariable ["ITW_CLASH_Archetype",[]]) isEqualTo []
     }) then {
