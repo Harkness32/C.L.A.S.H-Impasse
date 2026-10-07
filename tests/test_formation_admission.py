@@ -262,3 +262,14 @@ def test_invariant_audit_does_not_fault_on_zero_waypoints_or_normal_recovery_tic
     assert "_waypointIndex < count waypoints _group" in audit
     assert "_wpKind," in audit
     assert "waypointType [_group,currentWaypoint _group]" not in audit
+
+
+def test_enemy_provisional_uses_canonical_a_registry_for_later_gtfo():
+    module = src("ITW_CLASH_FormationAdmission.sqf")
+    issue = fn(module, "ITW_CLASH_FormationAdmission_fnc_IssueBank")
+    assert '#include "defines.hpp"' in module
+    assert "VAR_SET_OBJ_IDX(_newGroup,_objectiveIndex);" in issue
+    assert "ITW_CLASH_fnc_RegisterGroup;" in issue
+    assert "ITW_CLASH_DualHAL_fnc_RegisterGroup;" in issue
+    assert "_side == ITW_EnemySide" in issue
+    assert '"deployment-remnant-provisional"' in issue
