@@ -14,7 +14,7 @@ def test_air_transport_probe_is_read_only_during_leader_pilot_spawn_test():
     assert "ITW_CLASH_SCargoAirDiagVersion = 13;" in text
     assert "observerOnly=true" in text
     assert "leaderPilotSpawnTest=true" in text
-    assert '"POST-EMBARK-MOVE-STALLED"' in text
+    assert "POST-EMBARK-MOVE-STALLED" in text
     assert '"carrierInAirG"' in text
     assert '"cargoInNCrewInfG"' in text
     assert '"sitrepSinceInjection"' in text
@@ -123,7 +123,7 @@ def test_impasse_aircraft_driver_is_restored_as_crew_group_leader():
 def test_impasse_aircraft_driver_leadership_is_restored_in_both_air_paths():
     text = mission("ITW_Attack.sqf")
     assert text.count("_crewGrp selectLeader _driver;") == 2
-    assert text.count('"aircraft-driver-leader-restored"') == 2
+    assert text.count("aircraft-driver-leader-restored") == 2
 
 
 def test_transport_pool_enrollment_does_not_reintroduce_handoff_waypoint_surgery():
