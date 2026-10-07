@@ -1,3 +1,5 @@
+#include "defines.hpp"
+
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_FormationAdmissionStarted",false]) exitWith {true};
 
@@ -207,9 +209,27 @@ ITW_CLASH_FormationAdmission_fnc_IssueBank = {
                 _newGroup setVariable [
                     "ITW_CLASH_FormationAdmissionExempt",true
                 ];
-                _accepted = [
-                    _newGroup,"deployment-remnant-provisional"
-                ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+                if (!isNil "ITW_EnemySide" && {
+                    _side == ITW_EnemySide
+                } && {!isNil "ITW_CLASH_fnc_RegisterGroup"}) then {
+                    // Commander A's canonical lifecycle owns enemy units.
+                    // Registering them only as DualHAL extras would strand
+                    // their later Shattered withdrawal without ITW_CLASH_Managed.
+                    VAR_SET_OBJ_IDX(_newGroup,_objectiveIndex);
+                    _accepted = [
+                        _newGroup,"deployment-remnant-provisional"
+                    ] call ITW_CLASH_fnc_RegisterGroup;
+                } else {
+                    if (!isNil "ITW_EnemySide" && {
+                        _side == ITW_EnemySide
+                    }) then {
+                        _accepted = false;
+                    } else {
+                        _accepted = [
+                            _newGroup,"deployment-remnant-provisional"
+                        ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+                    };
+                };
                 _newGroup setVariable [
                     "ITW_CLASH_FormationAdmissionExempt",nil
                 ];
