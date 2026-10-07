@@ -892,7 +892,10 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
         {
             if (!isNull _x && {
                 !([_x] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup)
-                && {side _x == ITW_PlayerSide}
+                && {
+                    (!isNil "ITW_PlayerSide" && {side _x == ITW_PlayerSide})
+                    || {!isNil "ITW_EnemySide" && {side _x == ITW_EnemySide}}
+                }
             }) then {
                 if !([_x,_spawnInfo] call
                     ITW_CLASH_FormationAdmission_fnc_CargoPreflight
