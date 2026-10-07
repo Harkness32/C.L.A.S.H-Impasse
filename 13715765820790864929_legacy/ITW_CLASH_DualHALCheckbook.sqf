@@ -971,8 +971,30 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
                 ];
             };
         } else {
-            if (!isNil "ITW_EnemySide" && {side _cargoGroup == ITW_EnemySide} && {!isNil "ITW_EnemyGroupCallback"}) then {
-                [_cargoGroup] call ITW_EnemyGroupCallback;
+            if (!isNil "ITW_EnemySide" && {
+                side _cargoGroup == ITW_EnemySide
+            }) then {
+                // The native enemy callback already saw the mounted group.
+                // Its 1-3 man cargo packing fragments must not become
+                // autonomous HAL attack formations after unloading.
+                private _enemyCargoBanked = false;
+                if (!isNil "ITW_CLASH_FormationAdmission_fnc_Bank" && {
+                    ({alive _x} count units _cargoGroup) <
+                        ITW_CLASH_FormationAdmissionMinCombatSize
+                }) then {
+                    _enemyCargoBanked = [
+                        _cargoGroup,"legacy-impasse-cargo-staged",_spawnInfo
+                    ] call ITW_CLASH_FormationAdmission_fnc_Bank;
+                };
+                if (_enemyCargoBanked) then {
+                    if (!isNil "ITW_EnemyGroups") then {
+                        ITW_EnemyGroups = ITW_EnemyGroups - [_cargoGroup];
+                    };
+                } else {
+                    if (!isNil "ITW_EnemyGroupCallback") then {
+                        [_cargoGroup] call ITW_EnemyGroupCallback;
+                    };
+                };
             };
         };
     } forEach _cargoGroups;
