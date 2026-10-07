@@ -397,55 +397,9 @@ ITW_CLASH_FormationAdmission_fnc_CargoPreflight = {
     true
 };
 
-ITW_CLASH_FormationAdmission_fnc_Gate = {
-    params ["_group",["_reason","fielded"],["_context",[]]];
-    if (isNull _group) exitWith {["REJECT","null-group"]};
-
-    private _gatedReasons = [
-        "runtime-existing-field",
-        "legacy-impasse-cargo-staged",
-        "impasse-spawn-support-corridor"
-    ];
-    if !(_reason in _gatedReasons) exitWith {["ALLOW","not-gated"]};
-
-    if (_reason isEqualTo "impasse-spawn-support-corridor" && {
-        _group getVariable [
-            "ITW_CLASH_FormationAdmissionPreflightPassed",false
-        ]
-    }) exitWith {["ALLOW","preflight-committed"]};
-
-    if (!local _group) exitWith {["PENDING","remote-group"]};
-    private _alive = [_group] call ITW_CLASH_FormationAdmission_fnc_AliveMen;
+ITW_CLASH_FormationAdmission_fnc_RuntimeStability = {
+    params ["_group","_reason","_alive"];
     private _count = count _alive;
-    if (_count == 0) exitWith {["REJECT","no-alive-infantry"]};
-
-    // An exemption from the 4-man *size* floor never exempts a group from
-    // boarding, spawn, CASEVAC, or crew lifecycle ownership.
-    private _transition = [_group] call
-        ITW_CLASH_FormationAdmission_fnc_TransitionReason;
-    if (_transition isNotEqualTo "") exitWith {
-        private _previous = _group getVariable [
-            "ITW_CLASH_FormationAdmissionBlockReason",""
-        ];
-        if (_previous != _transition) then {
-            _group setVariable [
-                "ITW_CLASH_FormationAdmissionBlockReason",_transition
-            ];
-            ["admission-pending",[
-                [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
-                _reason,_count,_alive apply {typeOf _x},
-                _transition
-            ]] call ITW_CLASH_FormationAdmission_fnc_Log;
-        };
-        _group setVariable ["ITW_CLASH_FormationAdmissionSignature",nil];
-        _group setVariable ["ITW_CLASH_FormationAdmissionStableSince",nil];
-        _group setVariable ["ITW_CLASH_FormationAdmissionStableLogged",nil];
-        ["PENDING",_transition]
-    };
-
-    _group setVariable ["ITW_CLASH_FormationAdmissionBlockReason",nil];
-
-    if (_reason isEqualTo "runtime-existing-field") then {
         private _signature = [_group] call
             ITW_CLASH_FormationAdmission_fnc_MembershipSignature;
         private _previous = _group getVariable [
@@ -504,7 +458,65 @@ ITW_CLASH_FormationAdmission_fnc_Gate = {
                 ITW_CLASH_FormationAdmissionStableSeconds
             ]] call ITW_CLASH_FormationAdmission_fnc_Log;
         };
+
+    ["ALLOW","stable-member-signature"]
+};
+
+ITW_CLASH_FormationAdmission_fnc_Gate = {
+    params ["_group",["_reason","fielded"],["_context",[]]];
+    if (isNull _group) exitWith {["REJECT","null-group"]};
+
+    private _gatedReasons = [
+        "runtime-existing-field",
+        "legacy-impasse-cargo-staged",
+        "impasse-spawn-support-corridor"
+    ];
+    if !(_reason in _gatedReasons) exitWith {["ALLOW","not-gated"]};
+
+    if (_reason isEqualTo "impasse-spawn-support-corridor" && {
+        _group getVariable [
+            "ITW_CLASH_FormationAdmissionPreflightPassed",false
+        ]
+    }) exitWith {["ALLOW","preflight-committed"]};
+
+    if (!local _group) exitWith {["PENDING","remote-group"]};
+    private _alive = [_group] call ITW_CLASH_FormationAdmission_fnc_AliveMen;
+    private _count = count _alive;
+    if (_count == 0) exitWith {["REJECT","no-alive-infantry"]};
+
+    // An exemption from the 4-man *size* floor never exempts a group from
+    // boarding, spawn, CASEVAC, or crew lifecycle ownership.
+    private _transition = [_group] call
+        ITW_CLASH_FormationAdmission_fnc_TransitionReason;
+    if (_transition isNotEqualTo "") exitWith {
+        private _previous = _group getVariable [
+            "ITW_CLASH_FormationAdmissionBlockReason",""
+        ];
+        if (_previous != _transition) then {
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionBlockReason",_transition
+            ];
+            ["admission-pending",[
+                [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+                _reason,_count,_alive apply {typeOf _x},
+                _transition
+            ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+        };
+        _group setVariable ["ITW_CLASH_FormationAdmissionSignature",nil];
+        _group setVariable ["ITW_CLASH_FormationAdmissionStableSince",nil];
+        _group setVariable ["ITW_CLASH_FormationAdmissionStableLogged",nil];
+        ["PENDING",_transition]
     };
+
+    _group setVariable ["ITW_CLASH_FormationAdmissionBlockReason",nil];
+
+    private _stability = ["ALLOW","not-runtime"];
+    if (_reason isEqualTo "runtime-existing-field") then {
+        _stability = [_group,_reason,_alive] call
+            ITW_CLASH_FormationAdmission_fnc_RuntimeStability;
+    };
+    // This exit is at FUNCTION scope, not nested inside the 'then' block.
+    if ((_stability#0) != "ALLOW") exitWith {_stability};
 
     if ([_group] call ITW_CLASH_FormationAdmission_fnc_IsSpecialist) exitWith {
         ["ALLOW","specialist"]
