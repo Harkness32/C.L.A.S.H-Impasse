@@ -597,6 +597,10 @@ ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry = {
     params ["_group",["_teleportToAttackPos",true],["_objToPopulate",[]]];
     if (isNull _group) exitWith {false};
     if (_group getVariable ["ITW_CLASH_DualHALManaged",false]) exitWith {true};
+    if (isNil "ITW_CLASH_FormationAdmission_fnc_Gate") exitWith {
+        diag_log "CLASH ASSERT | FORMATION-MODULE-UNAVAILABLE | infantry handoff returned to native Impasse";
+        false
+    };
 
     private _reference = getPosATL leader _group;
     private _spawnInfo = [
@@ -851,6 +855,10 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     if (isNull _veh || {isNull _crewGroup}) exitWith {false};
 
     if (_crewGroup getVariable ["ITW_CLASH_DualHALManaged",false]) exitWith {true};
+    if (isNil "ITW_CLASH_FormationAdmission_fnc_CargoPreflight") exitWith {
+        diag_log "CLASH ASSERT | FORMATION-MODULE-UNAVAILABLE | vehicle handoff returned to native Impasse";
+        false
+    };
 
     private _mode = if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"};
     private _spawnInfo = [
@@ -929,12 +937,16 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
             _cargoGroup setVariable [
                 "ITW_CLASH_FormationAdmissionContext",+_spawnInfo
             ];
+            private _wasBankCandidate = (
+                {alive _x} count units _cargoGroup <
+                    ITW_CLASH_FormationAdmissionMinCombatSize
+                && {[_cargoGroup] call
+                    ITW_CLASH_FormationAdmission_fnc_IsOrdinaryInfantry}
+            );
             private _accepted = [
                 _cargoGroup,"legacy-impasse-cargo-staged"
             ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
-            if (!_accepted && {!(_cargoGroup getVariable [
-                "ITW_CLASH_FormationAdmissionBanked",false
-            ])}) then {
+            if (!_accepted && {!_wasBankCandidate}) then {
                 ["CARGO-HANDOFF-FAILED",[
                     [_cargoGroup] call ITW_CLASH_DualHAL_fnc_GroupId,
                     count units _cargoGroup,typeOf _veh
@@ -1496,6 +1508,9 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
                 continue;
             };
             if !(_group getVariable ["ITW_CLASH_DualHALManaged",false]) then {
+                if (isNil "ITW_CLASH_FormationAdmission_fnc_Gate") then {
+                    continue
+                };
                 private _admitted = [
                     _group,"runtime-existing-field"
                 ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
