@@ -469,7 +469,8 @@ ITW_CLASH_FormationAdmission_fnc_Gate = {
     private _gatedReasons = [
         "runtime-existing-field",
         "legacy-impasse-cargo-staged",
-        "impasse-spawn-support-corridor"
+        "impasse-spawn-support-corridor",
+        "impasse-native-enemy-onfoot"
     ];
     if !(_reason in _gatedReasons) exitWith {["ALLOW","not-gated"]};
 
