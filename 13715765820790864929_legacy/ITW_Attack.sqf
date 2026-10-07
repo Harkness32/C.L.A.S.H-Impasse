@@ -986,6 +986,10 @@ ITW_AtkManager = {
                 
                 //// Infantry AI Spawner ////
                 private _squad = [];
+                // Immutable producer provenance survives transport packing and
+                // distinguishes a cap-truncated birth from later casualties.
+                private _plannedSquadTemplate = [];
+                private _producerBatchId = "";
                 while {
                     _activeAiCnt < _maxAiRightNow && {
                         (ITW_AtkReconstitutionQueue findIf {
@@ -1034,6 +1038,18 @@ ITW_AtkManager = {
                         };
                     };
    
+                    if (_newSquad) then {
+                        _plannedSquadTemplate = +_squad;
+                        private _serial = missionNamespace getVariable [
+                            "ITW_CLASH_ProducerSquadSerial",0
+                        ];
+                        _serial = _serial + 1;
+                        missionNamespace setVariable [
+                            "ITW_CLASH_ProducerSquadSerial",_serial
+                        ];
+                        _producerBatchId = format ["NATIVE-%1-%2",_side,_serial];
+                    };
+
                     if (isNull _spawnGroup) then {
                         _spawnGroup = createGroup [_side,false];
                         _spawnGroup setVariable ["noHeadless",true];
@@ -1042,6 +1058,13 @@ ITW_AtkManager = {
                     
                     private _unit = [_spawnGroup,[_squad deleteAt 0],_spawnPos,false] call ITW_AtkUnitToGroup;                
                     if !(isNull _unit) then {
+                        _unit setVariable [
+                            "ITW_CLASH_ProducerPlannedTemplate",
+                            +_plannedSquadTemplate
+                        ];
+                        _unit setVariable [
+                            "ITW_CLASH_ProducerBatch",_producerBatchId
+                        ];
                         if (_newSquad) then {
                             _newSquads pushBack [_unit];
                         } else {
