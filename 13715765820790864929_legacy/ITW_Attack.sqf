@@ -2457,6 +2457,35 @@ ITW_AtkAddInfantryGroup = {
             (units _group) apply {toLowerANSI typeOf _x}
         ];
     };
+    // Symmetry: native OPFOR encounters the same AI-cap partial-spawn tails.
+    // Intercept only groups tagged by the actual infantry producer. Crewmen,
+    // statics and reconstitution have no such tag and keep native behavior.
+    private _enemyBanked = false;
+    if (!isNull _group && {!isNil "ITW_EnemySide"} && {
+        side _group == ITW_EnemySide
+    } && {!isNil "ITW_CLASH_FormationAdmission_fnc_Gate"} && {
+        (units _group) isNotEqualTo []
+    } && {
+        ((_group getVariable ["ITW_CLASH_ProducedBatch",""]) isNotEqualTo "")
+    } && {
+        ({alive _x} count units _group) <
+            (missionNamespace getVariable [
+                "ITW_CLASH_FormationAdmissionMinCombatSize",4
+            ])
+    }) then {
+        private _decision = [
+            _group,"impasse-native-enemy-onfoot"
+        ] call ITW_CLASH_FormationAdmission_fnc_Gate;
+        _enemyBanked = (_decision#0) == "BANKED";
+        if (!_enemyBanked) then {
+            diag_log format [
+                "CLASH FORMATION | enemy-native-bank-deferred | %1",
+                [str _group,_decision]
+            ];
+        };
+    };
+    if (_enemyBanked) exitWith {true};
+
     [_group,_teleportToAttackPos,_objToPopulate] call ITW_AtkEngageInfantry;
 };
 
