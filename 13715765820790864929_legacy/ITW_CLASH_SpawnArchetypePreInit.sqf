@@ -16,6 +16,9 @@ if (isNil "ITW_EnemyGroupCallback") exitWith {
 
 ITW_EnemyGroupCallback = {
     params ["_group"];
+    // The native cap-tail bank may already have virtualized an understrength
+    // group before this source callback runs. Never publish grpNull to Impasse.
+    if (isNull _group) exitWith {};
 
     if (!isNull _group) then {
         private _spawnArchetype = +(
