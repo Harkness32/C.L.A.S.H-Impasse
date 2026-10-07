@@ -607,11 +607,8 @@ ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry = {
         side _group,"GROUND",_reference
     ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn;
     if (_spawnInfo isEqualTo []) exitWith {false};
-
     _spawnInfo params ["_spawn","_baseIndex","_objectiveIndex","_source"];
 
-    // A completed admission decision precedes SafeMove, waypoint retirement
-    // and the HAL handoff. BANKED is a completed personnel handoff too.
     private _decision = [
         _group,"impasse-spawn-support-corridor",_spawnInfo
     ] call ITW_CLASH_FormationAdmission_fnc_Gate;
@@ -623,6 +620,7 @@ ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry = {
         ]] call ITW_CLASH_DualHAL_fnc_Log;
         false
     };
+
     if (isNull ([_group] call ITW_CLASH_fnc_GetCommanderForGroup)) exitWith {
         ["infantry-admission-deferred",[
             [_group] call ITW_CLASH_DualHAL_fnc_GroupId,"PENDING","hq-missing"
@@ -630,37 +628,47 @@ ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry = {
         false
     };
 
-    // Preserve preflight authority during staging: casualties after approval
-    // are real attrition, not a new fragment to bank mid-transaction.
+    // Transaction: while this still-unstaged group is added to HAL's Included,
+    // it is task-ineligible. No SafeMove or waypoint deletion precedes the
+    // successful registration. Failed registration yields untouched Impasse.
     _group setVariable ["ITW_CLASH_FormationAdmissionPreflightPassed",true];
-    private _staging = _spawn getPos [15 + random 35,random 360];
-
-    if (!isNil "ITW_AtkSafeMove") then {
-        if (local _group) then {
-            [_group,_staging] call ITW_AtkSafeMove;
-        } else {
-            [[_group,_staging],"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup;
-        };
-    } else {
-        {if (alive _x) then {_x setPosATL _staging}} forEach units _group;
-    };
-
-    {deleteWaypoint _x} forEachReversed waypoints _group;
-    VAR_SET_OBJ_IDX(_group,_objectiveIndex);
-    _group setVariable ["ITW_CLASH_DualHALObjectiveAffinity",_objectiveIndex];
-
+    _group setVariable ["Unable",true];
+    _group setVariable ["BUnable",true];
     private _registered = [
         _group,"impasse-spawn-support-corridor"
     ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
     _group setVariable ["ITW_CLASH_FormationAdmissionPreflightPassed",nil];
+
     if (!_registered) exitWith {
-        // The preInit writer will now run native Impasse rather than
-        // claiming we completed the handoff while no commander owns it.
+        _group setVariable ["Unable",nil];
+        _group setVariable ["BUnable",nil];
         ["infantry-admission-commit-failed",[
             [_group] call ITW_CLASH_DualHAL_fnc_GroupId,
             _baseIndex,_objectiveIndex
         ]] call ITW_CLASH_DualHAL_fnc_Log;
         false
+    };
+
+    private _staging = _spawn getPos [15 + random 35,random 360];
+    if (!isNil "ITW_AtkSafeMove") then {
+        if (local _group) then {
+            [_group,_staging] call ITW_AtkSafeMove;
+        } else {
+            [[_group,_staging],"ITW_AtkSafeMove",_group] call
+                ITW_FncRemoteLocalGroup;
+        };
+    } else {
+        {if (alive _x) then {_x setPosATL _staging}} forEach units _group;
+    };
+
+    if (!isNull _group) then {
+        {deleteWaypoint _x} forEachReversed waypoints _group;
+        VAR_SET_OBJ_IDX(_group,_objectiveIndex);
+        _group setVariable [
+            "ITW_CLASH_DualHALObjectiveAffinity",_objectiveIndex
+        ];
+        _group setVariable ["Unable",nil];
+        _group setVariable ["BUnable",nil];
     };
 
     ["infantry-staged",[
