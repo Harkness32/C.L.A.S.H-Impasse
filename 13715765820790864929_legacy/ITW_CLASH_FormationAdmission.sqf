@@ -349,21 +349,78 @@ ITW_CLASH_FormationAdmission_fnc_Bank = {
     true
 };
 
+ITW_CLASH_FormationAdmission_fnc_ProducerInfo = {
+    params ["_group"];
+    if (isNull _group) exitWith {["",0,0,false]};
+    private _members = units _group;
+    if (_members isEqualTo []) exitWith {["",0,0,false]};
+
+    private _batch = _group getVariable [
+        "ITW_CLASH_ProducedBatch",
+        (_members#0) getVariable ["ITW_CLASH_ProducerBatch",""]
+    ];
+    private _intent = +(_group getVariable [
+        "ITW_CLASH_ProducedIntent",
+        (_members#0) getVariable [
+            "ITW_CLASH_ProducerPlannedTemplate",[]
+        ]
+    ]);
+    private _sameBatch = _batch isNotEqualTo "" && {
+        (_members findIf {
+            (_x getVariable ["ITW_CLASH_ProducerBatch",""]) != _batch
+        }) < 0
+    };
+    [
+        _batch,
+        count _intent,
+        _group getVariable ["ITW_CLASH_ProducedStrength",count _members],
+        _sameBatch
+    ]
+};
+
+ITW_CLASH_FormationAdmission_fnc_CargoPreflight = {
+    params ["_group",["_context",[]]];
+    if (isNull _group || {!local _group}) exitWith {false};
+    if ([_group] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup) exitWith {false};
+    if ([_group] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved) exitWith {
+        false
+    };
+    if (_context isEqualTo [] || {count _context < 4}) exitWith {false};
+    private _hq = [_group] call ITW_CLASH_fnc_GetCommanderForGroup;
+    if (isNull _hq) exitWith {false};
+    private _alive = [_group] call ITW_CLASH_FormationAdmission_fnc_AliveMen;
+    if (_alive isEqualTo []) exitWith {false};
+    ["cargo-preflight-approved",[
+        [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+        count _alive,_context#1
+    ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+    true
+};
+
 ITW_CLASH_FormationAdmission_fnc_Gate = {
-    params ["_group",["_reason","fielded"]];
+    params ["_group",["_reason","fielded"],["_context",[]]];
     if (isNull _group) exitWith {["REJECT","null-group"]};
 
-    if !(_reason in ["runtime-existing-field","legacy-impasse-cargo-staged"]) exitWith {
-        ["ALLOW","not-gated"]
-    };
-    if ([_group] call ITW_CLASH_FormationAdmission_fnc_IsSpecialist) exitWith {
-        ["ALLOW","specialist"]
-    };
+    private _gatedReasons = [
+        "runtime-existing-field",
+        "legacy-impasse-cargo-staged",
+        "impasse-spawn-support-corridor"
+    ];
+    if !(_reason in _gatedReasons) exitWith {["ALLOW","not-gated"]};
 
+    if (_reason isEqualTo "impasse-spawn-support-corridor" && {
+        _group getVariable [
+            "ITW_CLASH_FormationAdmissionPreflightPassed",false
+        ]
+    }) exitWith {["ALLOW","preflight-committed"]};
+
+    if (!local _group) exitWith {["PENDING","remote-group"]};
     private _alive = [_group] call ITW_CLASH_FormationAdmission_fnc_AliveMen;
     private _count = count _alive;
     if (_count == 0) exitWith {["REJECT","no-alive-infantry"]};
 
+    // An exemption from the 4-man *size* floor never exempts a group from
+    // boarding, spawn, CASEVAC, or crew lifecycle ownership.
     private _transition = [_group] call
         ITW_CLASH_FormationAdmission_fnc_TransitionReason;
     if (_transition isNotEqualTo "") exitWith {
@@ -382,114 +439,140 @@ ITW_CLASH_FormationAdmission_fnc_Gate = {
         };
         _group setVariable ["ITW_CLASH_FormationAdmissionSignature",nil];
         _group setVariable ["ITW_CLASH_FormationAdmissionStableSince",nil];
+        _group setVariable ["ITW_CLASH_FormationAdmissionStableLogged",nil];
         ["PENDING",_transition]
     };
 
     _group setVariable ["ITW_CLASH_FormationAdmissionBlockReason",nil];
 
-    if (_reason isEqualTo "legacy-impasse-cargo-staged") exitWith {
-        if (_count < ITW_CLASH_FormationAdmissionMinCombatSize) then {
-            if ([_group,_reason] call ITW_CLASH_FormationAdmission_fnc_Bank) then {
-                ["BANKED","below-minimum-combat-size"]
+    if (_reason isEqualTo "runtime-existing-field") then {
+        private _signature = [_group] call
+            ITW_CLASH_FormationAdmission_fnc_MembershipSignature;
+        private _previous = _group getVariable [
+            "ITW_CLASH_FormationAdmissionSignature",""
+        ];
+        private _since = _group getVariable [
+            "ITW_CLASH_FormationAdmissionStableSince",-1
+        ];
+
+        if (_previous isEqualTo "" || {_signature != _previous}) exitWith {
+            if (_previous isNotEqualTo "") then {
+                ["membership-unstable",[
+                    [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+                    _reason,
+                    _group getVariable [
+                        "ITW_CLASH_FormationAdmissionLastCount",-1
+                    ],
+                    _count,_previous,_signature
+                ]] call ITW_CLASH_FormationAdmission_fnc_Log;
             } else {
-                ["PENDING","bank-rejected"]
-            }
-        } else {
-            ["ALLOW","legacy-cargo-valid-size"]
-        }
+                ["admission-pending",[
+                    [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+                    _reason,_count,_alive apply {typeOf _x},
+                    "stability-window"
+                ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+            };
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionSignature",_signature
+            ];
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionStableSince",time
+            ];
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionLastCount",_count
+            ];
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionStableLogged",nil
+            ];
+            ["PENDING","membership-changed"]
+        };
+
+        if (_since < 0 || {
+            time - _since < ITW_CLASH_FormationAdmissionStableSeconds
+        }) exitWith {["PENDING","stability-window"]};
+
+        if !(_group getVariable [
+            "ITW_CLASH_FormationAdmissionStableLogged",false
+        ]) then {
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionStableLogged",true
+            ];
+            ["membership-stable",[
+                [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+                _reason,_count,
+                round (time - _since),
+                ITW_CLASH_FormationAdmissionStableSeconds
+            ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+        };
     };
 
-    private _signature = [_group] call
-        ITW_CLASH_FormationAdmission_fnc_MembershipSignature;
-    private _previous = _group getVariable [
-        "ITW_CLASH_FormationAdmissionSignature",""
+    if ([_group] call ITW_CLASH_FormationAdmission_fnc_IsSpecialist) exitWith {
+        ["ALLOW","specialist"]
+    };
+
+    private _original = +(_group getVariable ["ITW_CLASH_Archetype",[]]);
+    private _producer = [_group] call
+        ITW_CLASH_FormationAdmission_fnc_ProducerInfo;
+    _producer params [
+        "_producerBatch","_plannedStrength","_producedStrength","_sameBatch"
     ];
-    private _since = _group getVariable [
-        "ITW_CLASH_FormationAdmissionStableSince",-1
-    ];
 
-    if (_previous isEqualTo "") exitWith {
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionSignature",_signature
-        ];
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionStableSince",time
-        ];
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionLastCount",_count
-        ];
-        ["admission-pending",[
-            [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
-            _reason,_count,_alive apply {typeOf _x},
-            "stability-window"
-        ]] call ITW_CLASH_FormationAdmission_fnc_Log;
-        ["PENDING","stability-window"]
+    // A truthful original 8-man archetype with two survivors is attrition:
+    // preserve it for Shattered Squad, never bank those two survivors.
+    if (count _original >= ITW_CLASH_FormationAdmissionMinCombatSize
+        && {_count < ITW_CLASH_FormationAdmissionMinCombatSize}) exitWith {
+        ["ALLOW","attrited-preexisting-archetype"]
     };
 
-    if (_signature != _previous) exitWith {
-        ["membership-unstable",[
-            [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
-            _reason,
-            _group getVariable ["ITW_CLASH_FormationAdmissionLastCount",-1],
-            _count,_previous,_signature
-        ]] call ITW_CLASH_FormationAdmission_fnc_Log;
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionSignature",_signature
-        ];
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionStableSince",time
-        ];
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionLastCount",_count
-        ];
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionStableLogged",nil
-        ];
-        ["PENDING","membership-changed"]
+    if (_count >= ITW_CLASH_FormationAdmissionMinCombatSize) exitWith {
+        // A scan that first observed one member of a group that later grew to
+        // seven must not preserve the stale birth-certificate of one.
+        if (count _original < _count && {
+            _reason isEqualTo "runtime-existing-field"
+        }) then {
+            private _corrected = (units _group) apply {
+                toLowerANSI typeOf _x
+            };
+            _group setVariable [
+                "ITW_CLASH_Archetype",+_corrected
+            ];
+            ["archetype-corrected",[
+                [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+                count _original,count _corrected,_reason
+            ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+        };
+        ["ALLOW","valid-combat-size"]
     };
 
-    if (_since < 0 || {
-        time - _since < ITW_CLASH_FormationAdmissionStableSeconds
+    // All newly deployed native infantry below four go to the bank, even if
+    // the old native helper already stamped a false archetype of size one.
+    // Runtime unknowns are held rather than deleting crewmen/specialists of
+    // uncertain provenance. A known native producer may be banked after a
+    // stable membership window.
+    if (_reason isEqualTo "runtime-existing-field" && {
+        !_sameBatch
     }) exitWith {
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionLastCount",_count
+        private _last = _group getVariable [
+            "ITW_CLASH_FormationAdmissionUnknownLogged",false
         ];
-        ["PENDING","stability-window"]
+        if (!_last) then {
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionUnknownLogged",true
+            ];
+            ["admission-pending",[
+                [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+                _reason,_count,
+                "unknown-small-group-provenance"
+            ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+        };
+        ["PENDING","unknown-small-group-provenance"]
     };
 
-    if !(_group getVariable [
-        "ITW_CLASH_FormationAdmissionStableLogged",false
-    ]) then {
-        _group setVariable [
-            "ITW_CLASH_FormationAdmissionStableLogged",true
-        ];
-        ["membership-stable",[
-            [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
-            _reason,_count,
-            round (time - _since),
-            ITW_CLASH_FormationAdmissionStableSeconds
-        ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+    if ([_group,_reason,_context] call
+        ITW_CLASH_FormationAdmission_fnc_Bank) exitWith {
+        ["BANKED","below-minimum-combat-size"]
     };
-
-    // A native archetype that predates our admission gate is stronger evidence
-    // than the current headcount. Preserve it so legitimate small teams stay
-    // legitimate and damaged real squads can flow into FormationRecovery.
-    private _existingArchetype = +(_group getVariable [
-        "ITW_CLASH_Archetype",[]
-    ]);
-    if (_existingArchetype isNotEqualTo []) exitWith {
-        ["ALLOW","stable-preexisting-archetype"]
-    };
-
-    if (_count < ITW_CLASH_FormationAdmissionMinCombatSize) exitWith {
-        if ([_group,_reason] call ITW_CLASH_FormationAdmission_fnc_Bank) then {
-            ["BANKED","stable-below-minimum-combat-size"]
-        } else {
-            ["PENDING","bank-rejected"]
-        }
-    };
-
-    ["ALLOW","stable-valid-size"]
+    ["PENDING","bank-rejected-or-unavailable"]
 };
 
 ITW_CLASH_FormationAdmission_fnc_RegisterGroupBase =
