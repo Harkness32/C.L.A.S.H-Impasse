@@ -37,6 +37,9 @@ jobs:
           tests/test_big_test_followup.py
           tests/test_one_zero_burnin.py
           tests/test_dual_hal_checkbook.py
+          tests/test_formation_admission.py
+          tests/test_handoff_is_total.py
+          tests/test_native_spawn_archetype.py
           tests/test_dual_hal_runtime_bind.py
           tests/test_support_lifecycle.py
           tests/test_support_authority_hardening.py
