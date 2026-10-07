@@ -669,6 +669,11 @@ ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry = {
         ];
         _group setVariable ["Unable",nil];
         _group setVariable ["BUnable",nil];
+        if (!isNil "ITW_CLASH_FormationAdmission_fnc_ImmediateShattered") then {
+            [
+                _group,"impasse-spawn-support-corridor"
+            ] call ITW_CLASH_FormationAdmission_fnc_ImmediateShattered;
+        };
     };
 
     ["infantry-staged",[
@@ -1522,8 +1527,11 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
                 private _admitted = [
                     _group,"runtime-existing-field"
                 ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
-                if (_admitted && {!isNull _group}) then {
-                    // Never erase native GET IN / staging movement on PENDING.
+                if (_admitted && {!isNull _group} && {
+                    !(_group getVariable ["ITW_CLASH_Withdrawing",false])
+                }) then {
+                    // Never erase native GET IN / staging movement on PENDING,
+                    // or a newly-issued GTFO order on immediate Shattered.
                     {deleteWaypoint _x} forEachReversed waypoints _group;
                 };
             };
