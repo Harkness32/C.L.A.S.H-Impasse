@@ -249,3 +249,16 @@ def test_pending_provisional_bank_is_retried_without_new_spawn_events():
     assert "ITW_CLASH_FormationAdmissionLastBankRetry = time;" in module
     assert "keys ITW_CLASH_FormationAdmissionBanks" in module
     assert '[_x] call ITW_CLASH_FormationAdmission_fnc_IssueBank;' in module
+
+
+def test_invariant_audit_does_not_fault_on_zero_waypoints_or_normal_recovery_tick():
+    audit = fn(
+        src("ITW_CLASH_FormationAdmission.sqf"),
+        "ITW_CLASH_FormationAdmission_fnc_Audit",
+    )
+    assert "ITW_CLASH_FormationAdmissionShatteredSince" in audit
+    assert "time - _since < 8" in audit
+    assert '_wpKind = "NONE"' in audit
+    assert "_waypointIndex < count waypoints _group" in audit
+    assert "_wpKind," in audit
+    assert "waypointType [_group,currentWaypoint _group]" not in audit
