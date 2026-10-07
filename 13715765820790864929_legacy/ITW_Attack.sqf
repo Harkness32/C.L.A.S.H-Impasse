@@ -986,6 +986,10 @@ ITW_AtkManager = {
                 
                 //// Infantry AI Spawner ////
                 private _squad = [];
+                // Immutable producer provenance survives transport packing and
+                // distinguishes a cap-truncated birth from later casualties.
+                private _plannedSquadTemplate = [];
+                private _producerBatchId = "";
                 while {
                     _activeAiCnt < _maxAiRightNow && {
                         (ITW_AtkReconstitutionQueue findIf {
@@ -1034,6 +1038,18 @@ ITW_AtkManager = {
                         };
                     };
    
+                    if (_newSquad) then {
+                        _plannedSquadTemplate = +_squad;
+                        private _serial = missionNamespace getVariable [
+                            "ITW_CLASH_ProducerSquadSerial",0
+                        ];
+                        _serial = _serial + 1;
+                        missionNamespace setVariable [
+                            "ITW_CLASH_ProducerSquadSerial",_serial
+                        ];
+                        _producerBatchId = format ["NATIVE-%1-%2",_side,_serial];
+                    };
+
                     if (isNull _spawnGroup) then {
                         _spawnGroup = createGroup [_side,false];
                         _spawnGroup setVariable ["noHeadless",true];
@@ -1042,6 +1058,13 @@ ITW_AtkManager = {
                     
                     private _unit = [_spawnGroup,[_squad deleteAt 0],_spawnPos,false] call ITW_AtkUnitToGroup;                
                     if !(isNull _unit) then {
+                        _unit setVariable [
+                            "ITW_CLASH_ProducerPlannedTemplate",
+                            +_plannedSquadTemplate
+                        ];
+                        _unit setVariable [
+                            "ITW_CLASH_ProducerBatch",_producerBatchId
+                        ];
                         if (_newSquad) then {
                             _newSquads pushBack [_unit];
                         } else {
@@ -2394,6 +2417,38 @@ ITW_AtkAddCrewToStatic = {
 
 ITW_AtkAddInfantryGroup = {
     params ["_group",["_objToPopulate",[]],["_teleportToAttackPos",true]];
+    // Capture the size at native group assembly, not after HAL registration.
+    // ProducerPlannedTemplate on each unit records the full selected squad
+    // before the spawn cap could truncate it.
+    if (!isNull _group && {
+        isNil {_group getVariable "ITW_CLASH_ProducedStrength"}
+    }) then {
+        _group setVariable ["ITW_CLASH_ProducedStrength",count units _group];
+        private _members = units _group;
+        if (_members isNotEqualTo []) then {
+            private _batch = (_members#0) getVariable [
+                "ITW_CLASH_ProducerBatch",""
+            ];
+            private _planned = +((_members#0) getVariable [
+                "ITW_CLASH_ProducerPlannedTemplate",[]
+            ]);
+            if (_batch isNotEqualTo "" && {_planned isNotEqualTo []} && {
+                (_members findIf {
+                    (_x getVariable ["ITW_CLASH_ProducerBatch",""]) != _batch
+                }) < 0
+            }) then {
+                _group setVariable ["ITW_CLASH_ProducedIntent",+_planned];
+                _group setVariable ["ITW_CLASH_ProducedBatch",_batch];
+                if (count _members < count _planned) then {
+                    diag_log format [
+                        "CLASH FORMATION | producer-cap-fragment | %1",
+                        [str _group,_batch,count _members,count _planned,
+                            side _group]
+                    ];
+                };
+            };
+        };
+    };
     if (!isNull _group && {
         (_group getVariable ["ITW_CLASH_Archetype",[]]) isEqualTo []
     }) then {
@@ -2402,6 +2457,35 @@ ITW_AtkAddInfantryGroup = {
             (units _group) apply {toLowerANSI typeOf _x}
         ];
     };
+    // Symmetry: native OPFOR encounters the same AI-cap partial-spawn tails.
+    // Intercept only groups tagged by the actual infantry producer. Crewmen,
+    // statics and reconstitution have no such tag and keep native behavior.
+    private _enemyBanked = false;
+    if (!isNull _group && {!isNil "ITW_EnemySide"} && {
+        side _group == ITW_EnemySide
+    } && {!isNil "ITW_CLASH_FormationAdmission_fnc_Gate"} && {
+        (units _group) isNotEqualTo []
+    } && {
+        ((_group getVariable ["ITW_CLASH_ProducedBatch",""]) isNotEqualTo "")
+    } && {
+        ({alive _x} count units _group) <
+            (missionNamespace getVariable [
+                "ITW_CLASH_FormationAdmissionMinCombatSize",4
+            ])
+    }) then {
+        private _decision = [
+            _group,"impasse-native-enemy-onfoot"
+        ] call ITW_CLASH_FormationAdmission_fnc_Gate;
+        _enemyBanked = (_decision#0) == "BANKED";
+        if (!_enemyBanked) then {
+            diag_log format [
+                "CLASH FORMATION | enemy-native-bank-deferred | %1",
+                [str _group,_decision]
+            ];
+        };
+    };
+    if (_enemyBanked) exitWith {true};
+
     [_group,_teleportToAttackPos,_objToPopulate] call ITW_AtkEngageInfantry;
 };
 

@@ -597,31 +597,85 @@ ITW_CLASH_DualHAL_fnc_StageFriendlyInfantry = {
     params ["_group",["_teleportToAttackPos",true],["_objToPopulate",[]]];
     if (isNull _group) exitWith {false};
     if (_group getVariable ["ITW_CLASH_DualHALManaged",false]) exitWith {true};
+    if (isNil "ITW_CLASH_FormationAdmission_fnc_Gate") exitWith {
+        diag_log "CLASH ASSERT | FORMATION-MODULE-UNAVAILABLE | infantry handoff returned to native Impasse";
+        false
+    };
 
     private _reference = getPosATL leader _group;
     private _spawnInfo = [
         side _group,"GROUND",_reference
     ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn;
     if (_spawnInfo isEqualTo []) exitWith {false};
-
     _spawnInfo params ["_spawn","_baseIndex","_objectiveIndex","_source"];
-    private _staging = _spawn getPos [15 + random 35,random 360];
 
+    private _decision = [
+        _group,"impasse-spawn-support-corridor",_spawnInfo
+    ] call ITW_CLASH_FormationAdmission_fnc_Gate;
+    _decision params ["_state","_why"];
+    if (_state == "BANKED") exitWith {true};
+    if (_state != "ALLOW") exitWith {
+        ["infantry-admission-deferred",[
+            [_group] call ITW_CLASH_DualHAL_fnc_GroupId,_state,_why
+        ]] call ITW_CLASH_DualHAL_fnc_Log;
+        false
+    };
+
+    if (isNull ([_group] call ITW_CLASH_fnc_GetCommanderForGroup)) exitWith {
+        ["infantry-admission-deferred",[
+            [_group] call ITW_CLASH_DualHAL_fnc_GroupId,"PENDING","hq-missing"
+        ]] call ITW_CLASH_DualHAL_fnc_Log;
+        false
+    };
+
+    // Transaction: while this still-unstaged group is added to HAL's Included,
+    // it is task-ineligible. No SafeMove or waypoint deletion precedes the
+    // successful registration. Failed registration yields untouched Impasse.
+    _group setVariable ["ITW_CLASH_FormationAdmissionPreflightPassed",true];
+    _group setVariable ["Unable",true];
+    _group setVariable ["BUnable",true];
+    private _registered = [
+        _group,"impasse-spawn-support-corridor"
+    ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+    _group setVariable ["ITW_CLASH_FormationAdmissionPreflightPassed",nil];
+
+    if (!_registered) exitWith {
+        _group setVariable ["Unable",nil];
+        _group setVariable ["BUnable",nil];
+        ["infantry-admission-commit-failed",[
+            [_group] call ITW_CLASH_DualHAL_fnc_GroupId,
+            _baseIndex,_objectiveIndex
+        ]] call ITW_CLASH_DualHAL_fnc_Log;
+        false
+    };
+
+    private _staging = _spawn getPos [15 + random 35,random 360];
     if (!isNil "ITW_AtkSafeMove") then {
         if (local _group) then {
             [_group,_staging] call ITW_AtkSafeMove;
         } else {
-            [[_group,_staging],"ITW_AtkSafeMove",_group] call ITW_FncRemoteLocalGroup;
+            [[_group,_staging],"ITW_AtkSafeMove",_group] call
+                ITW_FncRemoteLocalGroup;
         };
     } else {
         {if (alive _x) then {_x setPosATL _staging}} forEach units _group;
     };
 
-    {deleteWaypoint _x} forEachReversed waypoints _group;
-    VAR_SET_OBJ_IDX(_group,_objectiveIndex);
-    _group setVariable ["ITW_CLASH_DualHALObjectiveAffinity",_objectiveIndex];
+    if (!isNull _group) then {
+        {deleteWaypoint _x} forEachReversed waypoints _group;
+        VAR_SET_OBJ_IDX(_group,_objectiveIndex);
+        _group setVariable [
+            "ITW_CLASH_DualHALObjectiveAffinity",_objectiveIndex
+        ];
+        _group setVariable ["Unable",nil];
+        _group setVariable ["BUnable",nil];
+        if (!isNil "ITW_CLASH_FormationAdmission_fnc_ImmediateShattered") then {
+            [
+                _group,"impasse-spawn-support-corridor"
+            ] call ITW_CLASH_FormationAdmission_fnc_ImmediateShattered;
+        };
+    };
 
-    [_group,"impasse-spawn-support-corridor"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
     ["infantry-staged",[
         [_group] call ITW_CLASH_DualHAL_fnc_GroupId,
         _baseIndex,_objectiveIndex,_source,_staging,
@@ -814,6 +868,10 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     if (isNull _veh || {isNull _crewGroup}) exitWith {false};
 
     if (_crewGroup getVariable ["ITW_CLASH_DualHALManaged",false]) exitWith {true};
+    if (isNil "ITW_CLASH_FormationAdmission_fnc_CargoPreflight") exitWith {
+        diag_log "CLASH ASSERT | FORMATION-MODULE-UNAVAILABLE | vehicle handoff returned to native Impasse";
+        false
+    };
 
     private _mode = if (_veh isKindOf "Air") then {"AIR"} else {"GROUND"};
     private _spawnInfo = [
@@ -821,6 +879,35 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     ] call ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn;
     if (_spawnInfo isEqualTo []) exitWith {false};
     _spawnInfo params ["_spawn","_baseIndex","_objectiveIndex","_source"];
+
+    // This is still an Impasse vehicle until the entire cargo set and crew
+    // are known to have a valid HAL or bank handoff. Nothing moves before it.
+    if (isNull ([_crewGroup] call ITW_CLASH_fnc_GetCommanderForGroup)) exitWith {
+        ["vehicle-admission-deferred",["crew-hq-missing",typeOf _veh]]
+            call ITW_CLASH_DualHAL_fnc_Log;
+        false
+    };
+    private _cargoPreflightFailed = false;
+    if (!isNil "ITW_CLASH_FormationAdmission_fnc_CargoPreflight") then {
+        {
+            if (!isNull _x && {
+                !([_x] call ITW_CLASH_DualHAL_fnc_IsPlayerGroup)
+                && {
+                    (!isNil "ITW_PlayerSide" && {side _x == ITW_PlayerSide})
+                    || {!isNil "ITW_EnemySide" && {side _x == ITW_EnemySide}}
+                }
+            }) then {
+                if !([_x,_spawnInfo] call
+                    ITW_CLASH_FormationAdmission_fnc_CargoPreflight
+                ) exitWith {_cargoPreflightFailed = true};
+            };
+        } forEach _cargoGroups;
+    };
+    if (_cargoPreflightFailed) exitWith {
+        ["vehicle-admission-deferred",["cargo-preflight-failed",typeOf _veh]]
+            call ITW_CLASH_DualHAL_fnc_Log;
+        false
+    };
 
     private _staging = _spawn getPos [80 + random 100,random 360];
     if (_veh isKindOf "Air") then {
@@ -863,10 +950,54 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
         };
 
         if (!isNil "ITW_PlayerSide" && {side _cargoGroup == ITW_PlayerSide}) then {
-            [_cargoGroup,"legacy-impasse-cargo-staged"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+            _cargoGroup setVariable [
+                "ITW_CLASH_FormationAdmissionContext",+_spawnInfo
+            ];
+            private _wasBankCandidate = (
+                {alive _x} count units _cargoGroup <
+                    ITW_CLASH_FormationAdmissionMinCombatSize
+                && {[_cargoGroup] call
+                    ITW_CLASH_FormationAdmission_fnc_IsOrdinaryInfantry}
+            );
+            private _accepted = [
+                _cargoGroup,"legacy-impasse-cargo-staged"
+            ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+            if (!_accepted && {!_wasBankCandidate}) then {
+                ["CARGO-HANDOFF-FAILED",[
+                    [_cargoGroup] call ITW_CLASH_DualHAL_fnc_GroupId,
+                    count units _cargoGroup,typeOf _veh
+                ]] call ITW_CLASH_FormationAdmission_fnc_Assert;
+            };
+            if (!isNull _cargoGroup) then {
+                _cargoGroup setVariable [
+                    "ITW_CLASH_FormationAdmissionContext",nil
+                ];
+            };
         } else {
-            if (!isNil "ITW_EnemySide" && {side _cargoGroup == ITW_EnemySide} && {!isNil "ITW_EnemyGroupCallback"}) then {
-                [_cargoGroup] call ITW_EnemyGroupCallback;
+            if (!isNil "ITW_EnemySide" && {
+                side _cargoGroup == ITW_EnemySide
+            }) then {
+                // The native enemy callback already saw the mounted group.
+                // Its 1-3 man cargo packing fragments must not become
+                // autonomous HAL attack formations after unloading.
+                private _enemyCargoBanked = false;
+                if (!isNil "ITW_CLASH_FormationAdmission_fnc_Bank" && {
+                    ({alive _x} count units _cargoGroup) <
+                        ITW_CLASH_FormationAdmissionMinCombatSize
+                }) then {
+                    _enemyCargoBanked = [
+                        _cargoGroup,"legacy-impasse-cargo-staged",_spawnInfo
+                    ] call ITW_CLASH_FormationAdmission_fnc_Bank;
+                };
+                if (_enemyCargoBanked) then {
+                    if (!isNil "ITW_EnemyGroups") then {
+                        ITW_EnemyGroups = ITW_EnemyGroups - [_cargoGroup];
+                    };
+                } else {
+                    if (!isNil "ITW_EnemyGroupCallback") then {
+                        [_cargoGroup] call ITW_EnemyGroupCallback;
+                    };
+                };
             };
         };
     } forEach _cargoGroups;
@@ -1415,8 +1546,19 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
                 continue;
             };
             if !(_group getVariable ["ITW_CLASH_DualHALManaged",false]) then {
-                {deleteWaypoint _x} forEachReversed waypoints _group;
-                [_group,"runtime-existing-field"] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+                if (isNil "ITW_CLASH_FormationAdmission_fnc_Gate") then {
+                    continue
+                };
+                private _admitted = [
+                    _group,"runtime-existing-field"
+                ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+                if (_admitted && {!isNull _group} && {
+                    !(_group getVariable ["ITW_CLASH_Withdrawing",false])
+                }) then {
+                    // Never erase native GET IN / staging movement on PENDING,
+                    // or a newly-issued GTFO order on immediate Shattered.
+                    {deleteWaypoint _x} forEachReversed waypoints _group;
+                };
             };
         } forEach +allGroups;
 
