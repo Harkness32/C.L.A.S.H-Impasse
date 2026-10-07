@@ -741,6 +741,26 @@ ITW_CLASH_FormationAdmission_fnc_Audit = {
             && {!(_group getVariable ["ITW_CLASH_Withdrawing",false])}
         );
 
+        // FormationRecovery runs every three seconds; don't call a squad
+        // "stuck" before that manager has had a fair opportunity to run.
+        if (_shatteredMiss) then {
+            private _since = _group getVariable [
+                "ITW_CLASH_FormationAdmissionShatteredSince",-1
+            ];
+            if (_since < 0) then {
+                _group setVariable [
+                    "ITW_CLASH_FormationAdmissionShatteredSince",time
+                ];
+                _shatteredMiss = false;
+            } else {
+                if (time - _since < 8) then {_shatteredMiss = false};
+            };
+        } else {
+            _group setVariable [
+                "ITW_CLASH_FormationAdmissionShatteredSince",nil
+            ];
+        };
+
         private _event = if (_illegalFresh) then {
             "ILLEGAL-INFANTRY-FORMATION"
         } else {
@@ -750,6 +770,13 @@ ITW_CLASH_FormationAdmission_fnc_Audit = {
         };
         if (_event isEqualTo "") then {continue};
 
+        private _waypointIndex = currentWaypoint _group;
+        private _wpKind = "NONE";
+        if (_waypointIndex >= 0 && {
+            _waypointIndex < count waypoints _group
+        }) then {
+            _wpKind = waypointType [_group,_waypointIndex];
+        };
         private _signature = str [
             _event,_aliveCount,_original,_source,
             currentWaypoint _group,
@@ -784,7 +811,7 @@ ITW_CLASH_FormationAdmission_fnc_Audit = {
                 if (isNull _hq) then {false} else {
                     _group in (_hq getVariable ["RydHQ_CombatAv",[]])
                 },
-                waypointType [_group,currentWaypoint _group],
+                _wpKind,
                 _group getVariable ["ITW_CLASH_Withdrawing",false]
             ]] call ITW_CLASH_FormationAdmission_fnc_Assert;
         };
