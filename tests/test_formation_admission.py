@@ -241,3 +241,11 @@ def test_enemy_transport_fragments_bank_without_reentering_hal_callback():
         '[_cargoGroup] call ITW_EnemyGroupCallback;'
     )
     assert 'ITW_CLASH_FormationAdmission_fnc_CargoPreflight' in stage
+
+
+def test_pending_provisional_bank_is_retried_without_new_spawn_events():
+    module = src("ITW_CLASH_FormationAdmission.sqf")
+    assert 'ITW_CLASH_FormationAdmissionBankRetrySeconds",10' in module
+    assert "ITW_CLASH_FormationAdmissionLastBankRetry = time;" in module
+    assert "keys ITW_CLASH_FormationAdmissionBanks" in module
+    assert '[_x] call ITW_CLASH_FormationAdmission_fnc_IssueBank;' in module
