@@ -7,7 +7,7 @@ if (isNil "ITW_CLASH_DualHAL_fnc_RegisterGroup") exitWith {
 };
 
 ITW_CLASH_FormationAdmissionStarted = true;
-ITW_CLASH_FormationAdmissionVersion = 1;
+ITW_CLASH_FormationAdmissionVersion = 2;
 ITW_CLASH_FormationAdmissionMinCombatSize = missionNamespace getVariable [
     "ITW_CLASH_FormationAdmissionMinCombatSize",4
 ];
@@ -22,6 +22,7 @@ ITW_CLASH_FormationAdmissionAssertRepeat = missionNamespace getVariable [
 ];
 ITW_CLASH_FormationAdmissionBanks = createHashMap;
 ITW_CLASH_FormationAdmissionBankSerial = 0;
+ITW_CLASH_FormationAdmissionBankRetryAt = createHashMap;
 ITW_CLASH_FormationAdmissionLastAudit = -1000;
 
 ITW_CLASH_FormationAdmission_fnc_GroupId = {
@@ -141,134 +142,210 @@ ITW_CLASH_FormationAdmission_fnc_MembershipSignature = {
     str _ids
 };
 
+// Bank entries: key -> [side,baseIndex,spawnPos,unitSnapshots,objectiveIndex].
+// Snapshots free Impasse AI-cap slots immediately; no field combat groups are
+// moved or deleted. On failed provisional admission no snapshots are consumed.
 ITW_CLASH_FormationAdmission_fnc_IssueBank = {
-    params ["_side"];
-    private _key = [_side] call ITW_CLASH_FormationAdmission_fnc_SideKey;
-    private _bank = +(ITW_CLASH_FormationAdmissionBanks getOrDefault [_key,[]]);
+    params ["_key"];
+    private _entry = ITW_CLASH_FormationAdmissionBanks getOrDefault [_key,[]];
+    if (_entry isEqualTo []) exitWith {0};
+    _entry params ["_side","_baseIndex","_spawnPos","_records","_objectiveIndex"];
     private _issued = 0;
-    private _continueIssuing = true;
+    private _retry = true;
 
     while {
-        _continueIssuing
-        && {count _bank >= ITW_CLASH_FormationAdmissionMinCombatSize}
+        _retry && {count _records >= ITW_CLASH_FormationAdmissionMinCombatSize}
     } do {
-        private _release = _bank select [0,ITW_CLASH_FormationAdmissionMinCombatSize];
-        _bank deleteRange [0,ITW_CLASH_FormationAdmissionMinCombatSize];
-
-        private _spawnPos = +((_release#0)#4);
-        if (count _spawnPos < 3) then {_spawnPos pushBack 0};
-        if (surfaceIsWater _spawnPos) then {
-            _spawnPos = [_spawnPos,0,100,2,0,0.4,0,[],[_spawnPos,_spawnPos]] call
-                BIS_fnc_findSafePos;
-            if (count _spawnPos < 3) then {_spawnPos pushBack 0};
-        };
-
+        private _release = _records select [
+            0,ITW_CLASH_FormationAdmissionMinCombatSize
+        ];
         private _newGroup = createGroup [_side,false];
         private _created = [];
-        {
-            _x params ["_class","_loadout","_skill","_rank","","_sourceId"];
-            private _unit = _newGroup createUnit [_class,_spawnPos,[],0,"NONE"];
-            if (!isNull _unit) then {
-                _unit setUnitLoadout _loadout;
-                _unit setSkill _skill;
-                _unit setRank _rank;
-                _created pushBack _unit;
-            };
-        } forEach _release;
+        private _accepted = false;
 
-        if (count _created != ITW_CLASH_FormationAdmissionMinCombatSize) then {
-            {deleteVehicle _x} forEach _created;
-            deleteGroup _newGroup;
-            _bank = _release + _bank;
-            ["remnant-issue-failed",[
-                _key,count _created,ITW_CLASH_FormationAdmissionMinCombatSize
-            ]] call ITW_CLASH_FormationAdmission_fnc_Log;
-            _continueIssuing = false;
+        if (!isNull _newGroup) then {
+            {
+                _x params [
+                    "_class","_loadout","_skill","_rank",
+                    "_face","_speaker","_sourceId"
+                ];
+                private _unit = _newGroup createUnit [
+                    _class,_spawnPos,[],3,"NONE"
+                ];
+                if (!isNull _unit) then {
+                    _unit setUnitLoadout _loadout;
+                    _unit setSkill _skill;
+                    _unit setRank _rank;
+                    if (_face isNotEqualTo "") then {_unit setFace _face};
+                    if (_speaker isNotEqualTo "") then {
+                        _unit setSpeaker _speaker
+                    };
+                    _created pushBack _unit;
+                };
+            } forEach _release;
+
+            if (count _created == ITW_CLASH_FormationAdmissionMinCombatSize) then {
+                ITW_CLASH_FormationAdmissionBankSerial =
+                    ITW_CLASH_FormationAdmissionBankSerial + 1;
+                private _lineage = format [
+                    "PROVISIONAL-%1-%2",
+                    _key,ITW_CLASH_FormationAdmissionBankSerial
+                ];
+                private _archetype = _created apply {toLowerANSI typeOf _x};
+                _newGroup setVariable [
+                    "ITW_CLASH_ProvisionalFormation",true,true
+                ];
+                _newGroup setVariable ["ITW_CLASH_Archetype",+_archetype,true];
+                _newGroup setVariable ["ITW_CLASH_Lineage",_lineage,true];
+                _newGroup setVariable [
+                    "ITW_CLASH_DualHALObjectiveAffinity",_objectiveIndex
+                ];
+                _newGroup setVariable [
+                    "ITW_CLASH_FormationAdmissionExempt",true
+                ];
+                _accepted = [
+                    _newGroup,"deployment-remnant-provisional"
+                ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
+                _newGroup setVariable [
+                    "ITW_CLASH_FormationAdmissionExempt",nil
+                ];
+
+                ["remnant-issue-attempt",[
+                    _key,[_newGroup] call
+                        ITW_CLASH_FormationAdmission_fnc_GroupId,
+                    _lineage,count _created,_archetype,_accepted
+                ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+            };
         };
 
-        if (!_continueIssuing) then {continue};
-
-        ITW_CLASH_FormationAdmissionBankSerial =
-            ITW_CLASH_FormationAdmissionBankSerial + 1;
-        private _lineage = format [
-            "PROVISIONAL-%1-%2",
-            _key,ITW_CLASH_FormationAdmissionBankSerial
-        ];
-        private _archetype = _created apply {toLowerANSI typeOf _x};
-        _newGroup setVariable ["ITW_CLASH_ProvisionalFormation",true,true];
-        _newGroup setVariable ["ITW_CLASH_Archetype",+_archetype,true];
-        _newGroup setVariable ["ITW_CLASH_Lineage",_lineage,true];
-        _newGroup setVariable ["ITW_CLASH_FormationAdmissionExempt",true];
-
-        {
-            _x addCuratorEditableObjects [_created,true];
-        } forEach allCurators;
-
-        private _accepted = [
-            _newGroup,"deployment-remnant-provisional"
-        ] call ITW_CLASH_DualHAL_fnc_RegisterGroup;
-
-        _newGroup setVariable ["ITW_CLASH_FormationAdmissionExempt",nil];
-
-        ["remnant-issued",[
-            _key,
-            [_newGroup] call ITW_CLASH_FormationAdmission_fnc_GroupId,
-            _lineage,count _created,_archetype,_accepted
-        ]] call ITW_CLASH_FormationAdmission_fnc_Log;
-        _issued = _issued + 1;
+        if (_accepted) then {
+            _records deleteRange [
+                0,ITW_CLASH_FormationAdmissionMinCombatSize
+            ];
+            _issued = _issued + 1;
+            ["remnant-issued",[
+                _key,ITW_CLASH_FormationAdmissionMinCombatSize,
+                count _records
+            ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+            { _x addCuratorEditableObjects [_created,true] } forEach allCurators;
+        } else {
+            // No money/personnel loss on missing HQ, group cap, spawn failure,
+            // or rejected admission. The original snapshots remain banked.
+            {deleteVehicle _x} forEach _created;
+            if (!isNull _newGroup) then {deleteGroup _newGroup};
+            private _nextLog = ITW_CLASH_FormationAdmissionBankRetryAt
+                getOrDefault [_key,0];
+            if (time >= _nextLog) then {
+                ITW_CLASH_FormationAdmissionBankRetryAt set [
+                    _key,time + 30
+                ];
+                ["remnant-issue-deferred",[
+                    _key,count _created,count _records,
+                    "no-admission-or-spawn-capacity"
+                ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+            };
+            _retry = false;
+        };
     };
 
-    ITW_CLASH_FormationAdmissionBanks set [_key,_bank];
+    _entry set [3,_records];
+    ITW_CLASH_FormationAdmissionBanks set [_key,_entry];
     _issued
 };
 
 ITW_CLASH_FormationAdmission_fnc_Bank = {
-    params ["_group",["_source","unknown"]];
-    if (isNull _group) exitWith {false};
+    params ["_group",["_source","unknown"],["_context",[]]];
+    if (isNull _group || {!local _group}) exitWith {false};
     if !([_group] call ITW_CLASH_FormationAdmission_fnc_IsOrdinaryInfantry) exitWith {
         false
     };
 
     private _alive = [_group] call ITW_CLASH_FormationAdmission_fnc_AliveMen;
     if (_alive isEqualTo []) exitWith {false};
+    if (_source isEqualTo "runtime-existing-field" && {
+        (_group getVariable ["ITW_CLASH_ProducedBatch",""]) isEqualTo ""
+        && {((_alive#0) getVariable ["ITW_CLASH_ProducerBatch",""])
+            isEqualTo ""}
+    }) exitWith {false};
 
+    if (_context isEqualTo []) then {
+        _context = +(_group getVariable [
+            "ITW_CLASH_FormationAdmissionContext",[]
+        ]);
+    };
+    if (_context isEqualTo [] && {
+        !isNil "ITW_CLASH_DualHAL_fnc_GetSupportSpawn"
+    }) then {
+        _context = [
+            side _group,"GROUND",getPosATL leader _group
+        ] call ITW_CLASH_DualHAL_fnc_GetSupportSpawn;
+    };
+    if !(_context isEqualType [] && {count _context >= 4}) exitWith {
+        ["remnant-bank-deferred",[
+            [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId,
+            _source,"support-node-unavailable"
+        ]] call ITW_CLASH_FormationAdmission_fnc_Log;
+        false
+    };
+
+    _context params [
+        "_spawnPos","_baseIndex","_objectiveIndex","_spawnSource"
+    ];
+    if (_spawnPos isEqualTo []) exitWith {false};
     private _side = side _group;
-    private _key = [_side] call ITW_CLASH_FormationAdmission_fnc_SideKey;
-    private _bank = +(ITW_CLASH_FormationAdmissionBanks getOrDefault [_key,[]]);
-    private _before = count _bank;
-    private _groupId = [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId;
+    private _key = format [
+        "%1|base:%2",
+        [_side] call ITW_CLASH_FormationAdmission_fnc_SideKey,
+        _baseIndex
+    ];
+    // An unresolved base is never allowed to collect an entire side.
+    if (_baseIndex < 0) then {
+        _key = format ["%1|zone:%2|objective:%3",
+            [_side] call ITW_CLASH_FormationAdmission_fnc_SideKey,
+            missionNamespace getVariable ["ITW_ZoneIndex",-1],
+            _objectiveIndex
+        ];
+    };
 
-    _group setVariable ["ITW_CLASH_DeploymentRemnant",true,true];
-    _group setVariable ["ITW_CLASH_ExcludeHAL",true,true];
-    _group setVariable ["ITW_CLASH_FormationAdmissionBanked",true,true];
-    _group enableAttack false;
-    _group setCombatMode "BLUE";
-    _group setBehaviourStrong "CARELESS";
-    {deleteWaypoint _x} forEachReversed waypoints _group;
-
+    private _entry = ITW_CLASH_FormationAdmissionBanks getOrDefault
+        [_key,[_side,_baseIndex,+_spawnPos,[],_objectiveIndex]];
+    private _records = +(_entry#3);
+    private _before = count _records;
+    private _id = [_group] call ITW_CLASH_FormationAdmission_fnc_GroupId;
+    private _newRecords = [];
     {
-        _bank pushBack [
+        _newRecords pushBack [
             typeOf _x,
             getUnitLoadout _x,
             skill _x,
             rank _x,
-            getPosATL _x,
-            _groupId
+            face _x,
+            speaker _x,
+            _id
         ];
     } forEach _alive;
+    if (count _newRecords != count _alive) exitWith {false};
 
-    ITW_CLASH_FormationAdmissionBanks set [_key,_bank];
+    _records append _newRecords;
+    _entry set [3,_records];
+    ITW_CLASH_FormationAdmissionBanks set [_key,_entry];
+    _group setVariable ["ITW_CLASH_DeploymentRemnant",true,true];
+    _group setVariable ["ITW_CLASH_ExcludeHAL",true,true];
+    _group setVariable ["ITW_CLASH_FormationAdmissionBanked",true,true];
 
     ["remnant-banked",[
-        _groupId,_side,_source,count _alive,
-        _before,count _bank,
-        _alive apply {typeOf _x}
+        _id,_side,_source,count _alive,
+        _before,count _records,_alive apply {typeOf _x},
+        _key,_baseIndex,_objectiveIndex,_spawnSource
     ]] call ITW_CLASH_FormationAdmission_fnc_Log;
 
+    // Only source-confirmed *fresh* deployment fragments enter this bank.
+    // Virtualization prevents three idle tail units from blocking Impasse's
+    // next spawn attempt at a tight AI population cap.
     {deleteVehicle _x} forEach _alive;
     if (units _group isEqualTo []) then {deleteGroup _group};
 
-    [_side] call ITW_CLASH_FormationAdmission_fnc_IssueBank;
+    [_key] call ITW_CLASH_FormationAdmission_fnc_IssueBank;
     true
 };
 
