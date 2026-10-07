@@ -24,6 +24,10 @@ ITW_CLASH_FormationAdmissionBanks = createHashMap;
 ITW_CLASH_FormationAdmissionBankSerial = 0;
 ITW_CLASH_FormationAdmissionBankRetryAt = createHashMap;
 ITW_CLASH_FormationAdmissionLastAudit = -1000;
+ITW_CLASH_FormationAdmissionLastBankRetry = -1000;
+ITW_CLASH_FormationAdmissionBankRetrySeconds = missionNamespace getVariable [
+    "ITW_CLASH_FormationAdmissionBankRetrySeconds",10
+];
 
 ITW_CLASH_FormationAdmission_fnc_GroupId = {
     params ["_group"];
@@ -801,6 +805,14 @@ ITW_CLASH_FormationAdmission_fnc_Audit = {
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep 2;
         call ITW_CLASH_FormationAdmission_fnc_Audit;
+        if (time - ITW_CLASH_FormationAdmissionLastBankRetry >=
+            ITW_CLASH_FormationAdmissionBankRetrySeconds
+        ) then {
+            ITW_CLASH_FormationAdmissionLastBankRetry = time;
+            {
+                [_x] call ITW_CLASH_FormationAdmission_fnc_IssueBank;
+            } forEach +(keys ITW_CLASH_FormationAdmissionBanks);
+        };
     };
 };
 
