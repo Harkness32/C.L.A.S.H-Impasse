@@ -27,10 +27,27 @@ diag_log "CLASHHALADD | start | nativeHALCore=true functionSwaps=0 taskInit=nati
             waitUntil
             {
                 sleep 2;
-                !(isNil _HQname) && {
-                    !(isNull (missionNamespace getVariable [_HQname,objNull]))
-                }
+                private _hqObj = missionNamespace getVariable [
+                    _HQname,objNull
+                ];
+                private _hq = if (isNull _hqObj) then {
+                    grpNull
+                } else {
+                    group _hqObj
+                };
+                !isNull _hq
+                && {!isNil "RydxHQ_AllHQ"}
+                && {_hq in RydxHQ_AllHQ}
+                && {!isNil "RYD_TerraCognita"}
+                && {!isNil "RYD_DistOrd"}
+                && {!isNil "RYD_AmmoCount"}
+                && {!isNil "RYD_GoLaunch"}
+                && {!isNil "RYD_Spawn"}
             };
+            diag_log format [
+                "CLASHHALADD | native-hal-ready | hq=%1",
+                _HQname
+            ];
             [_HQname] call CLASH_fnc_HALAdd_Watch;
         };
     } forEach _names;
