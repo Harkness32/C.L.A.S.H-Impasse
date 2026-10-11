@@ -13,10 +13,10 @@ ANCHOR = (
 )
 
 SITES = {
-    "GoAttInf": ADD / "hal" / "GoAttInf.sqf",
-    "GoRecon": ADD / "hal" / "GoRecon.sqf",
-    "GoCapture": ADD / "hal" / "GoCapture.sqf",
-    "GoRest": ADD / "hal" / "GoRest.sqf",
+    "GoAttInf": NR6 / "HAL" / "GoAttInf.sqf",
+    "GoRecon": NR6 / "HAL" / "GoRecon.sqf",
+    "GoCapture": NR6 / "HAL" / "GoCapture.sqf",
+    "GoRest": NR6 / "HAL" / "GoRest.sqf",
     "GoAttSniper": NR6 / "HAL" / "GoAttSniper.sqf",
     "GoFlank": NR6 / "HAL" / "GoFlank.sqf",
     "GoSFAttack": NR6 / "HAL" / "GoSFAttack.sqf",
@@ -76,11 +76,13 @@ def test_hand_edited_unload_logic_is_gone_from_addon_orders():
         assert "ITW_CLASH_HALParadrop_fnc_ShouldUse" not in source, name
 
 
-def test_addon_override_records_the_source_each_global_was_compiled_from():
+def test_addon_does_not_rebind_the_order_sources_central_unload_patches():
     source = read(ADD / "functions" / "fnc_overrides.sqf")
     assert "CLASH_HALAdd_SourcePaths = createHashMap;" in source
-    assert "CLASH_HALAdd_SourcePaths set [_global,_sourcePath];" in source
-    assert 'private _sourcePath = "\\clash_hal_additions\\hal\\" + _file;' in source
+    assert "CLASH_HALAdd_OverridesApplied = [];" in source
+    assert "CLASH_HALAdd_NativeHALCore = true;" in source
+    assert "missionNamespace setVariable" not in source
+    assert "\\clash_hal_additions\\hal\\" not in source
 
 
 def test_central_owner_names_exactly_the_seven_sites():
