@@ -66,6 +66,7 @@ jobs:
           tests/test_hal_unload.py
           tests/test_hal_additions_overrides.py
           tests/test_hal_cargo_dice_fix.py
+          tests/test_anchor_lift_collision.py
           tests/test_carrier_release.py
           tests/test_hal_transport_isolation.py
           tests/test_hal_sf_raids.py
