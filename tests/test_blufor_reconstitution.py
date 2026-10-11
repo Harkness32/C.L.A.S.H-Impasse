@@ -91,7 +91,7 @@ def test_gtfo_bookkeeping_and_runtime_are_commander_aware_for_blufor():
     assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup" in bookkeeping
     assert "ITW_CLASH_GTFO_fnc_SetPersistentConstraints" in bookkeeping
 
-    assert "ITW_CLASH_GTFORuntimeVersion = 4;" in runtime
+    assert "ITW_CLASH_GTFORuntimeVersion = 5;" in runtime
     assert "ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal" in runtime
     assert 'getVariable ["ITW_CLASH_DualHALManaged",false]' in runtime
     assert "ITW_CLASH_GTFO_fnc_GetCommander" in runtime
@@ -291,7 +291,7 @@ def test_commander_parity_is_one_master_layer_not_behavior_specific_blufor_patch
     init = mission("init.sqf")
     attack = mission("ITW_Attack.sqf")
 
-    assert "ITW_CLASH_CommanderParityVersion = 3;" in parity
+    assert "ITW_CLASH_CommanderParityVersion = 4;" in parity
     assert "Single authority layer" in parity
     assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForSide" in parity
     assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup" in parity

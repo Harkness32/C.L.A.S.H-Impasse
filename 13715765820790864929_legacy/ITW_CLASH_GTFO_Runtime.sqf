@@ -3,7 +3,7 @@
 if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_GTFORuntimeStarted",false]) exitWith {};
 ITW_CLASH_GTFORuntimeStarted = true;
-ITW_CLASH_GTFORuntimeVersion = 4;
+ITW_CLASH_GTFORuntimeVersion = 5;
 ITW_CLASH_GTFO_ArrivalRadius = 160;
 ITW_CLASH_GTFO_RestRestartGrace = 90;
 ITW_CLASH_GTFO_RestRestartProgress = 25;
@@ -32,6 +32,12 @@ if (!isNil "ITW_CLASH_WithdrawalArrivalRadius") then {
       - A real Busy=true / Resting=false / no-progress stall uses HAL's native
         Break mechanism and then relaunches HAL_GoRest; C.L.A.S.H. never invents
         a withdrawal MOVE waypoint or blindly clears Busy.
+      - One Busy is not an order's: the one HAL sets by hand when it picks a
+        garrison (HQReset.sqf:304). A withdrawing garrison squad is handed to
+        ITW_CLASH_CommanderParity_fnc_ReleaseGarrison, which removes it from
+        both copies of the list and clears that Busy only after Break has gone
+        unread. Run of 2026-10-10 23:22: G40, last man of fifteen, deferred
+        16 times from 23:55 to the end of the log and never moved.
 */
 
 ITW_CLASH_GTFO_fnc_IsTrackedWithdrawal = {
@@ -62,6 +68,14 @@ ITW_CLASH_GTFO_fnc_ClearStaleHALRoles = {
     if (isNull _hq) exitWith {[]};
 
     private _removed = [];
+    // Garrison goes through the commander projection. Removing it from the HQ
+    // object alone lasts until the next SitRep copies the global back.
+    if (
+        !isNil "ITW_CLASH_CommanderParity_fnc_ReleaseGarrison"
+        && {[_group,"gtfo-" + _source] call ITW_CLASH_CommanderParity_fnc_ReleaseGarrison}
+    ) then {
+        _removed pushBack "RydHQ_Garrison";
+    };
     {
         private _name = _x;
         private _members = +(_hq getVariable [_name,[]]);
@@ -80,6 +94,12 @@ ITW_CLASH_GTFO_fnc_ClearStaleHALRoles = {
     if (_group getVariable ["Defending",false]) then {
         _group setVariable ["Defending",false];
         _removed pushBackUnique "Defending";
+    };
+
+    // Idempotent: starts one probe for a squad released with the garrison's
+    // Busy still on it, and does nothing for any other squad.
+    if (!isNil "ITW_CLASH_CommanderParity_fnc_SettleGarrisonBusy") then {
+        [_group,"gtfo-" + _source] call ITW_CLASH_CommanderParity_fnc_SettleGarrisonBusy;
     };
 
     if (_removed isNotEqualTo []) then {
@@ -465,7 +485,7 @@ ITW_CLASH_GTFO_fnc_RequestNativeRestRestart = {
 };
 
 diag_log format [
-    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true explicitGoRestRestart=true commanderAware=true symmetricCommanderFallback=true bluforTracked=true staleHALRoles=true busyStallGrace=%2 busyProgress=%3 constraintPoll=2 arrivalRadius=%4 nativeRestTelemetry=true",
+    "CLASH BOOT | gtfo-runtime-started | version=%1 reconGuard=true recoveryPostBoard=true explicitGoRestRestart=true commanderAware=true symmetricCommanderFallback=true bluforTracked=true staleHALRoles=true garrisonRelease=true busyStallGrace=%2 busyProgress=%3 constraintPoll=2 arrivalRadius=%4 nativeRestTelemetry=true",
     ITW_CLASH_GTFORuntimeVersion,
     ITW_CLASH_GTFO_RestRestartGrace,
     ITW_CLASH_GTFO_RestRestartProgress,

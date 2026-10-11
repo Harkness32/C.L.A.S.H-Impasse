@@ -194,7 +194,7 @@ def test_eligibility_itself_did_not_learn_about_busy():
 
 def test_the_boot_line_says_the_rule_is_loaded():
     source = parity()
-    assert "ITW_CLASH_CommanderParityVersion = 3;" in source
+    assert "ITW_CLASH_CommanderParityVersion = 4;" in source
     assert "anchorSkipsHALCommitted=true" in source
 
 

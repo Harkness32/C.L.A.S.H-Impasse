@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_CommanderParityStarted",false]) exi
 
 ITW_CLASH_CommanderParityStarted = true;
 ITW_CLASH_CommanderParityReady = false;
-ITW_CLASH_CommanderParityVersion = 3;
+ITW_CLASH_CommanderParityVersion = 4;
 ITW_CLASH_CommanderParity_AnchorReady = false;
 
 /*
@@ -133,6 +133,172 @@ ITW_CLASH_CommanderParity_fnc_ReconcileConstraintMembership = {
     } forEach _suffixes;
     true
 };
+
+/*
+    Taking a squad back from HAL's garrison.
+
+    When an objective is taken and has no garrison within RydHQ_ObjRadius2,
+    HAL picks the nearest free infantry group, sets its Busy flag by hand and
+    adds it to RydHQ_Garrison (HQReset.sqf:239-307). Three things follow from
+    that pick, and each one has to be undone for the squad to be usable again.
+
+      1. The list has two names. Every SitRep does
+             _HQ setVariable ["RydHQ_Garrison",RydHQB_Garrison]
+         (HQSitRepB.sqf:319, HQSitRep.sqf:319 for Commander A), and HQReset
+         pushes onto the array it reads back from the HQ, which is that same
+         array. Removing the squad from the HQ's copy alone lasts until the
+         next SitRep: G37 and G40 were "removed" 14 and 10 times on
+         2026-10-10, every 2.5 minutes. The removal here writes both names,
+         and writes ONE array to both, so HAL's next pick still lands in the
+         list SitRep reads.
+
+      2. The Garrisoned flags go back to their defaults.
+
+      3. Busy has no owner. No order thread set it, nothing in HAL clears it
+         (HQReset.sqf:304 is the only write), and while it is set HAL will not
+         task the squad, Garrison.sqf will not place it (lines 34 and 255 both
+         require not Busy), HAL_GoDef exits on entry (GoDef.sqf:31) and
+         HAL_GoRest sets Break and waits for a reader that does not exist
+         (GoRest.sqf:76-79).
+
+    Busy is not cleared on sight. A garrison member can be running a real
+    order, so HAL's own cancel is tried first: Break is set and given
+    ITW_CLASH_GarrisonBusyProbeWait seconds. An order that owns Busy reads
+    Break inside one RYD_Wait interval and releases Busy itself. Only when
+    Break sits unread for the whole wait, with Busy unchanged and no rest
+    started, is Busy cleared by hand, and Break with it.
+*/
+ITW_CLASH_GarrisonBusyProbeWait = missionNamespace getVariable [
+    "ITW_CLASH_GarrisonBusyProbeWait",20
+];
+
+/*
+    A squad in a lift is never probed. Break inside a cargo loop does not end
+    the order, it strands the helicopter (see Anchor_fnc_IsHALCommitted, whose
+    last four tests these are).
+*/
+ITW_CLASH_CommanderParity_fnc_IsInLift = {
+    params ["_group"];
+    if (isNull _group) exitWith {false};
+    _group getVariable ["CargoChosen",false]
+    || {_group getVariable ["CargoCheckPending" + str _group,false]}
+    || {_group getVariable ["ITW_CLASH_TransportRetaskLock",false]}
+    || {((units _group) findIf {alive _x && {vehicle _x != _x}}) >= 0}
+};
+
+ITW_CLASH_CommanderParity_fnc_ReleaseGarrison = {
+    params ["_group",["_source","unknown"]];
+    if (isNull _group) exitWith {false};
+
+    private _side = side _group;
+    private _hq = [_side] call ITW_CLASH_CommanderParity_fnc_GetCommanderForSide;
+    private _prefix = [_side] call ITW_CLASH_CommanderParity_fnc_GlobalPrefixForSide;
+    if (isNull _hq || {_prefix isEqualTo ""}) exitWith {false};
+
+    private _globalName = _prefix + "Garrison";
+    private _hqList = _hq getVariable ["RydHQ_Garrison",[]];
+    private _global = missionNamespace getVariable [_globalName,[]];
+    if !(_group in _hqList || {_group in _global}) exitWith {false};
+
+    // Both names, one array. The union keeps a pick HAL pushed onto an HQ copy
+    // that some earlier writer had already split from the global.
+    private _kept = (_global + _hqList) - [_group];
+    _kept = _kept arrayIntersect _kept;
+    _hq setVariable ["RydHQ_Garrison",_kept];
+    missionNamespace setVariable [_globalName,_kept];
+
+    _group setVariable ["Garrisoned" + str _group,false];
+    _group setVariable ["NOGarrisoned" + str _group,false];
+
+    private _busy = _group getVariable ["Busy" + str _group,false];
+    if (_busy) then {
+        _group setVariable ["ITW_CLASH_GarrisonBusyOrphan",true];
+    };
+
+    ["garrison-released",[
+        [_group] call ITW_CLASH_fnc_GroupId,
+        _source,
+        _busy,
+        count _kept
+    ]] call ITW_CLASH_CommanderParity_fnc_Log;
+    true
+};
+
+/*
+    Returns "probing" while a released garrison squad still carries the Busy
+    it was picked with, "lifting" when that squad is in a lift and so is left
+    alone, and "none" otherwise. Safe to call on every pass: one probe runs at
+    a time, and a probe that finds a reader leaves the mark for the next call.
+*/
+ITW_CLASH_CommanderParity_fnc_SettleGarrisonBusy = {
+    params ["_group",["_source","unknown"]];
+    if (isNull _group) exitWith {"none"};
+    if !(_group getVariable ["ITW_CLASH_GarrisonBusyOrphan",false]) exitWith {"none"};
+
+    private _busyVar = "Busy" + str _group;
+    private _restVar = "Resting" + str _group;
+    // Busy gone: an order released it. Resting: a rest order has taken it.
+    // Either way it is no longer the garrison's.
+    if (
+        !(_group getVariable [_busyVar,false])
+        || {_group getVariable [_restVar,false]}
+    ) exitWith {
+        _group setVariable ["ITW_CLASH_GarrisonBusyOrphan",nil];
+        "none"
+    };
+    if (_group getVariable ["ITW_CLASH_GarrisonBusyProbe",false]) exitWith {"probing"};
+    if ([_group] call ITW_CLASH_CommanderParity_fnc_IsInLift) exitWith {"lifting"};
+
+    _group setVariable ["ITW_CLASH_GarrisonBusyProbe",true];
+    [_group,_source,_busyVar,_restVar] spawn {
+        params ["_group","_source","_busyVar","_restVar"];
+        if (isNull _group) exitWith {};
+
+        _group setVariable ["Break",true];
+        private _began = time;
+        private _deadline = time + ITW_CLASH_GarrisonBusyProbeWait;
+        private _read = false;
+        waitUntil {
+            sleep 1;
+            if (!isNull _group && {!(_group getVariable ["Break",false])}) then {
+                _read = true;
+            };
+            isNull _group
+            || {_read}
+            || {!(_group getVariable [_busyVar,false])}
+            || {_group getVariable [_restVar,false]}
+            || {time >= _deadline}
+        };
+        if (isNull _group) exitWith {};
+        _group setVariable ["ITW_CLASH_GarrisonBusyProbe",nil];
+
+        private _busy = _group getVariable [_busyVar,false];
+        private _resting = _group getVariable [_restVar,false];
+        if (_read || {!_busy} || {_resting}) exitWith {
+            // Something answered. The mark stays only if Busy is still set and
+            // no rest has begun, so the next call probes again.
+            if (!_busy || {_resting}) then {
+                _group setVariable ["ITW_CLASH_GarrisonBusyOrphan",nil];
+            };
+            ["garrison-busy-owned",[
+                [_group] call ITW_CLASH_fnc_GroupId,
+                _source,_read,_busy,_resting,
+                round (time - _began)
+            ]] call ITW_CLASH_CommanderParity_fnc_Log;
+        };
+
+        _group setVariable [_busyVar,false];
+        _group setVariable ["Break",false];
+        _group setVariable ["ITW_CLASH_GarrisonBusyOrphan",nil];
+        ["garrison-busy-released",[
+            [_group] call ITW_CLASH_fnc_GroupId,
+            _source,
+            round (time - _began)
+        ]] call ITW_CLASH_CommanderParity_fnc_Log;
+    };
+    "probing"
+};
+
 ITW_CLASH_CommanderParity_AnchorGroups = createHashMap;
 ITW_CLASH_CommanderParity_AnchorRefills = createHashMap;
 ITW_CLASH_CommanderParity_AnchorPreviousConstraints = [];
@@ -416,6 +582,26 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Order = {
     [_group,_objectiveIndex,_target,_hq] spawn {
         params ["_group","_objectiveIndex","_target","_hq"];
         if (isNull _group || {isNull _hq}) exitWith {};
+
+        // HAL may have made this squad its own garrison for the same ground
+        // (HQReset.sqf:239-307). That pick's Busy would stop HAL_GoDef on
+        // entry and reads as a HAL order below, so the squad is taken back
+        // first and the thread waits out the probe. Not during a lift: that
+        // squad is deferred below exactly as before.
+        if !([_group] call ITW_CLASH_CommanderParity_fnc_IsInLift) then {
+            [_group,"anchor-order"] call ITW_CLASH_CommanderParity_fnc_ReleaseGarrison;
+            private _settleBy = time + ITW_CLASH_GarrisonBusyProbeWait + 5;
+            while {
+                !isNull _group
+                && {
+                    ([_group,"anchor-order"] call
+                        ITW_CLASH_CommanderParity_fnc_SettleGarrisonBusy)
+                    isEqualTo "probing"
+                }
+                && {time < _settleBy}
+            } do {sleep 1};
+        };
+        if (isNull _group) exitWith {};
 
         // Checked here, at the write, because the squad can be tasked between
         // the audit that chose it and this thread getting scheduled.
@@ -866,9 +1052,10 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Audit = {
     ITW_CLASH_CommanderParity_AnchorReady = true;
     ITW_CLASH_CommanderParityReady = true;
     diag_log format [
-        "CLASH BOOT | commander-parity-ready | version=%1 sections=projection,anchor minimum=%2 playerExcluded=true sofExcluded=true refill=impasse-friendly nativeHALDefense=true anchorSkipsHALCommitted=true",
+        "CLASH BOOT | commander-parity-ready | version=%1 sections=projection,anchor minimum=%2 playerExcluded=true sofExcluded=true refill=impasse-friendly nativeHALDefense=true anchorSkipsHALCommitted=true garrisonRelease=true garrisonBusyProbe=%3",
         ITW_CLASH_CommanderParityVersion,
-        missionNamespace getVariable ["ITW_CLASH_MinAnchorSoldiers",6]
+        missionNamespace getVariable ["ITW_CLASH_MinAnchorSoldiers",6],
+        ITW_CLASH_GarrisonBusyProbeWait
     ];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
