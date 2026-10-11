@@ -1,9 +1,10 @@
 # Paradrops flown ITW's way, and the aircraft handed back afterwards
 
 Status: on `agent/paradrop-run-in`, cut from `agent/anchor-lift-collision`
-(`bc3271c`). Static tests green. Not flown. Nothing here has run in the engine.
+(`bc3271c`). Version 5 flew once, 2026-10-10 23:22: section 12. Version 6
+changes the heights and the handback trigger and has not flown.
 
-Files: `ITW_CLASH_HALUnload.sqf` (version 5), `ITW_CLASH_HALParadrop.sqf`
+Files: `ITW_CLASH_HALUnload.sqf` (version 6), `ITW_CLASH_HALParadrop.sqf`
 (version 5).
 
 ---
@@ -48,7 +49,8 @@ v4 en-route climb no longer runs on these lifts.
 
 **PARADROP or HOT_PARADROP:**
 
-1. Drop height (45 m, or 130 m for HOT), full speed, CARELESS.
+1. Drop height (45 m; HOT was 130 m in v5 and is 45 m from v6), full speed,
+   CARELESS.
 2. HAL's own waypoint is moved 1000 m beyond the drop zone along the line the
    aircraft is already flying. Nothing is deleted. Nothing is added.
 3. The chalk goes out as the aircraft crosses the drop zone, through
@@ -101,6 +103,8 @@ v5 uses HAL's own input for each:
   Taken back after 15 s if nobody read it.
 - **`CargoM` false at the break point.** `SCargo` reads it every 5 s, sends the
   carrier home and frees `Busy` with its own code (`SCargo.sqf:645` onward).
+  From v6 the break is passed when its waypoint is no longer the current one.
+  v5 waited for the aircraft within 250 m of it, which a Huron never was.
 
 `CargoM` waits for the break because `SCargo`'s return leg replaces every
 waypoint the aircraft has.
@@ -146,15 +150,17 @@ uninterruptible step (`fnc_Claim`, inside `isNil`).
 - **Two squads, one aircraft, mixed order types:** the release timing follows
   the order that built the lift last.
 
-## 8. Not verified, because it needs the engine
+## 8. What needed the engine
 
-- That an AI helicopter flies through a moved waypoint as smoothly as ITW's
-  replaced one. This is the point of the change and it is untested.
-- That the break waypoint becomes current after HAL's statement deletes
-  waypoint 0 at the through point. HAL's own chained routes depend on the same
-  behaviour. If it does not, the aircraft skips the break and the handback
-  fires on its 60 s timeout.
-- The stick lead.
+Settled by the first flight (section 12):
+
+- An AI helicopter does fly through a moved waypoint without braking.
+- The break waypoint does become current after HAL's statement deletes
+  waypoint 0 at the through point.
+- The stick lead is about 30 m long of centre.
+
+Still not verified:
+
 - With a headless client owning the squad, `unassignVehicle` runs remotely. If
   it lags the order thread's lookup, HAL finishes the lift its own way and
   replaces the egress route.
@@ -163,7 +169,7 @@ uninterruptible step (`fnc_Claim`, inside `isNil`).
 
 Boot:
 
-- `hal-unload-ready | version=5 ... runIn=true runInDistance=1200 handback=true`
+- `hal-unload-ready | version=6 ... runIn=true runInDistance=1200 handback=true egressHeight=30 hotDropHeight=45`
 - `hal-paradrop-ready | version=5`
 
 Per lift, in order:
@@ -180,7 +186,7 @@ Per lift, in order:
 | `hal-unload-handback` | type, crew group, order, why, seconds, waypoints, Busy before, released at break, squads |
 
 A good drop: speed at `release` at or above speed at `run-in-armed`, and
-`why=break` on the handback within about 30 s. The same carrier taking a later
+`break-passed` on the handback within about 30 s. The same carrier taking a later
 lift is the proof that `SCargo` freed it.
 
 Worth reading when they appear: `run-in-aborted`, `seam-took-over`,
@@ -200,7 +206,8 @@ All read from `missionNamespace` at load.
 | `ITW_CLASH_HALUnloadReleaseWait` | 1 | seconds the drop may wait for height |
 | `ITW_CLASH_HALUnloadMaxOffset` | 350 | cross-track limit |
 
-Both switches false is v4.
+Both switches false is the v4 flight path. The v6 heights are separate: see
+`STAY_LOW.md` section 9.
 
 ## 11. Still open
 
@@ -209,3 +216,29 @@ Both switches false is v4.
 - `ITW_AllyParadropCargo` holds one global lock. Two aircraft dropping at the
   same moment go one after the other, and the second releases late by the
   length of the first stick.
+
+## 12. First flight, 2026-10-10 23:22
+
+Three paradrops, all `via=run-in`. One landing, decided LAND at 1159 m.
+
+| Lift | Armed | Released | Cross-track | Handback |
+|---|---|---|---|---|
+| Littlebird, GoRecon, UNKNOWN | 206 km/h, 70 m | 210 km/h, 52 m | 24 m | `carrier-lost`, 4 s |
+| Littlebird, GoRecon, CONTESTED | 220 km/h, 51 m | 215 km/h, 63 m | 121 m | `carrier-lost`, 13 s |
+| Huron, GoAttInf, UNKNOWN | 206 km/h, 89 m | 257 km/h, 47 m | 165 m | `timeout`, 60 s |
+
+What it shows:
+
+- **No braking.** Speed is held or gained from arming to release on all three.
+- **Both Littlebirds died on the egress climb** to 120 m. That height was this
+  module's. v6 leaves at 30 m.
+- **The Huron flew its J-hook and went home,** but the handback missed the
+  break and waited out its timeout. Fixed in v6.
+- **The landing lost its Huron** in the braking balloon. That is what
+  `ITW_CLASH_HALStayLow.sqf` is for.
+- No `POST-EMBARK-NO-OUTBOUND-MOVE`. No anchor collision arose either, so the
+  anchor fix was not exercised: no `order-deferred`, no `orphan-lift-cancelled`.
+- One `POST-EMBARK-MOVE-STALLED`: the Huron sat 25 s on the pad with its
+  outbound waypoint before it lifted. Not investigated.
+
+Detail, the model and the fix are in `STAY_LOW.md`.
