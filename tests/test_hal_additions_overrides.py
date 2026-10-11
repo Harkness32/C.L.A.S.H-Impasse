@@ -47,7 +47,8 @@ def test_legacy_override_entry_is_a_zero_swap_compatibility_shim():
     assert "missionNamespace setVariable" not in source
     assert "compile preprocess" not in source
     assert "\\clash_hal_additions\\hal\\" not in source
-    assert '["HAL_' not in source
+    assert "HAL_Go" not in source
+    assert "HAL_Supp" not in source
 
 
 def test_start_waits_for_native_hal_before_observer_loops():
