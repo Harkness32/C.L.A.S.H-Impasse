@@ -191,6 +191,7 @@ v0.1 loaded. If lifts launch, the addon was not the cause.
   the order file can no longer find the carrier to clear `CargoM`
   (`GoCapture.sqf:637, 656, 715`). Run A's one paradrop showed exactly that
   state 62 s after the drop, then the aircraft was lost. One sample.
+  Addressed on `agent/paradrop-run-in`: see `PARADROP_RUN_IN.md` section 5.
 - The anchor re-issues its order every 60 s while the squad is outside the
   objective. Run B's anchor covered about 1.8 km in 22 minutes and was vacated
   358 m short. Not investigated.
