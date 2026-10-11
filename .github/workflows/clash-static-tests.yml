@@ -64,6 +64,7 @@ jobs:
           tests/test_player_task_request_strike_classifier_v2.py
           tests/test_blufor_reconstitution.py
           tests/test_hal_unload.py
+          tests/test_clash_hal_additions.py
           tests/test_hal_additions_overrides.py
           tests/test_hal_cargo_dice_fix.py
           tests/test_carrier_release.py
