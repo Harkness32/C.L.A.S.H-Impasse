@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALCargoDiceFixStarted",false]) exi
 
 ITW_CLASH_HALCargoDiceFixStarted = true;
 ITW_CLASH_HALCargoDiceFixReady = false;
-ITW_CLASH_HALCargoDiceFixVersion = 5;
+ITW_CLASH_HALCargoDiceFixVersion = 6;
 scriptName "ITW_CLASH_HALCargoDiceFix";
 
 /*
@@ -60,6 +60,17 @@ ITW_CLASH_BaseEmbarkFastPathEnabled = missionNamespace getVariable [
 ];
 ITW_CLASH_BaseEmbarkRadius = missionNamespace getVariable [
     "ITW_CLASH_BaseEmbarkRadius",150
+];
+// A waiting squad is parked: no waypoint, or one on top of itself or of the
+// carrier. Measured in the two runs of 2026-10-10: seven healthy lifts had
+// nothing further than 60m, both orphaned squads had a route 3.9km long.
+ITW_CLASH_OrphanLiftRouteDistance = missionNamespace getVariable [
+    "ITW_CLASH_OrphanLiftRouteDistance",300
+];
+// One full pass of the order file's cargo loop (it polls every 5s), so a
+// squad caught between "lift chosen" and "parked" is not called an orphan.
+ITW_CLASH_OrphanLiftConfirmSeconds = missionNamespace getVariable [
+    "ITW_CLASH_OrphanLiftConfirmSeconds",6
 ];
 
 ITW_CLASH_HALCargoDice_fnc_Log = {
@@ -136,6 +147,67 @@ ITW_CLASH_HALCargoDice_fnc_BaseAtPosition = {
     _bestIndex
 };
 
+/*
+    Is anybody still waiting for this lift?
+
+    HAL_SCargo is spawned by an order file and then runs on its own. Nothing
+    ties it back to the order, so when the order leaves its cargo loop early
+    SCargo still flies the pickup, seats the squad and waits on CargoM for an
+    outbound waypoint that will never be written. Stock HAL strands the carrier
+    for its 600s stall timer. With the base embark below it stranded the squad
+    too: teleported into a helicopter whose order had already walked away.
+
+    A Break is enough to do it. The loop treats Break as "end after this pass"
+    and spawns SCargo in that same pass (GoRecon.sqf:320-344, the same shape in
+    GoAttInf and GoCapture). CommanderParity's anchor order was the Break in
+    the run that showed this, and it no longer sets one on a tasked squad, but
+    GTFO, resupply claims and Thunder Run set Break as well.
+
+    The sign is HAL's own: the squad already has a route. An order that is
+    still waiting keeps its squad parked, with no waypoint or one moved onto
+    the squad itself (GoRecon.sqf:370,382; GoFlank and GoSFAttack delete the
+    waypoints outright before they ask). An order that has moved on gives the
+    squad a waypoint to the objective. A waypoint near the carrier does not
+    count: SCargo walks a squad to an off-road pickup point itself
+    (SCargo.sqf:279).
+
+    Read twice, a loop pass apart, so a squad seen in the instant before its
+    order parks it is not mistaken for one that left.
+
+    Not covered, because no run has shown it: an order that ended outright and
+    left the squad idle. There is no route to read in that case.
+*/
+ITW_CLASH_HALCargoDice_fnc_OrphanReason = {
+    params ["_unitG","_vehicle"];
+    if (isNull _unitG || {isNull _vehicle}) exitWith {""};
+
+    private _waypoints = waypoints _unitG;
+    private _current = currentWaypoint _unitG;
+    if (_current < 0 || {_current >= count _waypoints}) exitWith {""};
+
+    private _target = waypointPosition [_unitG,_current];
+    if (_target isEqualTo [0,0,0]) exitWith {""};
+    private _limit = ITW_CLASH_OrphanLiftRouteDistance;
+    if (
+        (_target distance2D (leader _unitG)) > _limit
+        && {(_target distance2D _vehicle) > _limit}
+    ) exitWith {"own-route"};
+    ""
+};
+
+ITW_CLASH_HALCargoDice_fnc_OrphanLift = {
+    params ["_unitG","_vehicle"];
+    private _reason = [_unitG,_vehicle] call ITW_CLASH_HALCargoDice_fnc_OrphanReason;
+    if (_reason isEqualTo "") exitWith {""};
+    // SCargo calls this scheduled. Anywhere that cannot wait gets no verdict:
+    // a single reading is not enough to cancel a lift on.
+    if (!canSuspend) exitWith {""};
+    sleep ITW_CLASH_OrphanLiftConfirmSeconds;
+    private _again = [_unitG,_vehicle] call ITW_CLASH_HALCargoDice_fnc_OrphanReason;
+    if (_again isEqualTo "") exitWith {""};
+    _again
+};
+
 ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {
     params ["_unitG","_vehicle",["_hq",grpNull]];
     /*
@@ -172,6 +244,34 @@ ITW_CLASH_HALCargoDice_fnc_BaseEmbark = {
     private _troops = (units _unitG) select {alive _x};
     if (_troops isEqualTo []) exitWith {["no-living-troops"] call _decline};
     if ((_troops findIf {isPlayer _x}) >= 0) exitWith {["player-in-squad"] call _decline};
+
+    /*
+        Cancel a lift nobody is waiting for, before anyone is seated.
+
+        Clearing CargoM is how HAL's own order files call a lift off, and
+        SCargo's seat wait reads it on its next pass (SCargo.sqf:470): it
+        releases the squad's cargo flags, cancels the landing, sends the
+        carrier home and frees it. Returning true only tells the caller not to
+        seat anybody, so HAL is left exactly where a lift it aborted itself
+        would leave it.
+    */
+    private _orphan = [_unitG,_vehicle] call ITW_CLASH_HALCargoDice_fnc_OrphanLift;
+    if (_orphan isNotEqualTo "") exitWith {
+        private _orphanCarrierG = group (assignedDriver _vehicle);
+        if (!isNull _orphanCarrierG) then {
+            _orphanCarrierG setVariable ["CargoM" + str _orphanCarrierG,false];
+        };
+        diag_log format [
+            "CLASH HAL CARGO | orphan-lift-cancelled | group=%1 vehicle=%2 id=%3 reason=%4 busy=%5 waypoints=%6",
+            str _unitG,typeOf _vehicle,_vehicle call BIS_fnc_netId,_orphan,
+            _unitG getVariable ["Busy" + str _unitG,false],
+            count waypoints _unitG
+        ];
+        true
+    };
+    // The confirmation above can wait one loop pass, so read the squad again.
+    _troops = (units _unitG) select {alive _x};
+    if (_troops isEqualTo []) exitWith {["no-living-troops"] call _decline};
     if ((_troops findIf {
         !(_x isKindOf "CAManBase") || {vehicle _x != _x}
     }) >= 0) exitWith {["not-all-on-foot"] call _decline};
@@ -457,7 +557,7 @@ if (_hooked) then {
 
 ITW_CLASH_HALCargoDiceFixReady = true;
 diag_log format [
-    "CLASH BOOT | hal-cargo-dice-fix-ready | version=%1 result=%2 embark=%3 target=%4 routeAware=true baseEmbark=true postPickup=true liveImpasseBases=true nr6Untouched=true",
+    "CLASH BOOT | hal-cargo-dice-fix-ready | version=%1 result=%2 embark=%3 target=%4 routeAware=true baseEmbark=true postPickup=true liveImpasseBases=true orphanLiftGuard=true nr6Untouched=true",
     ITW_CLASH_HALCargoDiceFixVersion,
     _step#2,
     _assignStep#2,

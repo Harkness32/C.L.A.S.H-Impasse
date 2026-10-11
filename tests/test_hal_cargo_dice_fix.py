@@ -123,7 +123,7 @@ def test_same_live_impasse_base_can_fast_embark_ai_infantry():
     body = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseEmbark")
     resolver = function_body(source, "ITW_CLASH_HALCargoDice_fnc_BaseAtPosition")
 
-    assert "ITW_CLASH_HALCargoDiceFixVersion = 5;" in source
+    assert "ITW_CLASH_HALCargoDiceFixVersion = 6;" in source
     # The resolver was rewritten to walk every friendly base index and test
     # each one's anchors, instead of asking for a single nearest base. Same
     # rule - a live Impasse base, not a cached coordinate - via a wider test.
