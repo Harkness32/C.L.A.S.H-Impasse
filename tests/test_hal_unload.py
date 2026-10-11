@@ -497,8 +497,8 @@ def test_flythrough_defaults_are_long_enough_to_clear_the_drop_zone():
     assert '"ITW_CLASH_HALUnloadEgressOffset",600' in source
 
 
-def test_hal_unload_version_moved_to_six_for_staying_low():
-    assert "ITW_CLASH_HALUnloadVersion = 6;" in central()
+def test_hal_unload_version_moved_to_seven_for_the_landed_release():
+    assert "ITW_CLASH_HALUnloadVersion = 7;" in central()
 
 
 def test_native_itw_paradrop_preserves_the_prearmed_through_waypoint():
@@ -886,7 +886,8 @@ def test_the_order_thread_is_released_with_hals_own_flag():
     body = body_of("OrderRelease")
     assert '_carrierGroup setVariable ["RydHQ_MIA",true];' in body
     # Once per squad that was aboard: the read clears it.
-    assert 'for "_i" from 1 to (_orders max 1) do {' in body
+    assert "private _orders = (count _cargoGroups) max 1;" in body
+    assert 'for "_i" from 1 to _orders do {' in body
     assert "ITW_CLASH_HALUnloadOrderReleaseWait" in body
     for forbidden in ('"Busy"', "CargoChosen", "terminate", "deleteWaypoint", '"CC"'):
         assert forbidden not in body, forbidden
@@ -1028,3 +1029,87 @@ def test_the_break_is_passed_when_the_engine_says_so():
     egress = body_of("Egress")
     assert "waypointPosition (_written select ((count _written) - 2))" in egress
     assert egress.index("forEach [[_break,150],[_home,200]]") < egress.index("_written select")
+
+
+# --------------------------------------- what the squads did after they landed
+
+def test_hal_ends_an_order_when_the_leaders_vehicle_disappears():
+    """The mechanism, in HAL's own source. RYD_Wait takes the leader's vehicle
+    once, before its loop, and every pass treats that vehicle going null as
+    the group being lost."""
+    hac = read(NR6 / "HAC_fnc.sqf")
+    wait = hac[hac.index("RYD_Wait = "):hac.index("RYD_CreateDecoy = ")]
+    taken = wait.index("_AV = vehicle _UL;")
+    loop = wait.index("waituntil")
+    lost = wait.index("case (isNull _AV) : {_alive = false};")
+    assert taken < loop < lost
+    # And both orders that fly paradrops leave on that answer.
+    for name in ("GoRecon", "GoAttInf"):
+        order = read(HAL / f"{name}.sqf")
+        assert 'if not (_alive) exitwith {_unitG setVariable [("Busy" + (str _unitG)),false];' in order, name
+
+
+def test_the_order_is_not_released_while_the_squad_is_under_canopy():
+    """Hark, after the first run-in flight: "I'm noticing some units just
+    sitting and standing around."
+
+    v5 released the order at the drop. The order thread woke with the leader
+    in his parachute, RYD_Wait took the parachute as his vehicle, the chute
+    was deleted on landing, and the order ended on touchdown. All three drops
+    in the 2026-10-10 23:22 RPT: on foot at 23:28:32, 23:30:02 and 23:33:19;
+    Busy false at 23:28:35, 23:30:07 and 23:33:22. Every squad landed with
+    nothing to do."""
+    body = body_of("OrderRelease")
+    riding = body.index("alive _x && {vehicle _x != _x}")
+    waited = body.index("!(call _riding)")
+    released = body.index('_carrierGroup setVariable ["RydHQ_MIA",true];')
+    assert riding < waited < released
+    assert "ITW_CLASH_HALUnloadLandedWait" in body
+    assert body.index("ITW_CLASH_HALUnloadLandedWait") < released
+    # A bound, and longer than a canopy ride from the drop height.
+    wait = int(re.search(r'"ITW_CLASH_HALUnloadLandedWait",(\d+)', central()).group(1))
+    assert 30 <= wait <= 90, wait
+    # It is given the squads themselves, not a count of them.
+    handback = body_of("Handback")
+    assert handback.count("[_carrierGroup,_cargoGroups,_serial] spawn ITW_CLASH_HALUnload_fnc_OrderRelease;") == 2
+    assert "[_carrierGroup,_carrier,_orderFile,_cargoGroups] call ITW_CLASH_HALUnload_fnc_Handback;" in body_of("RunIn")
+    assert body_of("Unload").count("[_carrierGroup,_carrier,_orderFile,_cargoGroups] call") == 2
+
+
+def test_the_release_says_how_long_it_waited_for_the_ground():
+    body = body_of("OrderRelease")
+    assert '["order-release",[' in body
+    assert "time - _began" in body
+    assert body.index('["order-release",[') < body.index('setVariable ["RydHQ_MIA",true]')
+
+
+def test_a_paradropped_squad_is_told_to_form_on_its_leader():
+    """Hark: "Also some squads are not following their SL's."
+
+    moveOut and a parachute seat take a man out of his formation. Every other
+    caller of ITW_AllyParadropCargo follows it with doFollow. The HAL paradrop
+    owner was the one that did not, and HAL has no doFollow of its own."""
+    follow = '[units _grp,leader _grp] remoteExec ["doFollow",leader _grp];'
+    ally = read(MISSION / "ITW_Ally.sqf")
+    at = ally.index("[_veh,_grp] call ITW_AllyParadropCargo;")
+    assert follow in ally[at:at + 200]
+    bridge = read(MISSION / "ITW_CLASH_PlayerTransportNativeBridge.sqf")
+    at = bridge.index("[_carrier,_group] call ITW_AllyParadropCargo;")
+    assert '[units _group,leader _group] remoteExec ["doFollow",leader _group];' in bridge[at:at + 200]
+
+    execute = code_only(function_body(
+        read(MISSION / "ITW_CLASH_HALParadrop.sqf"), "ITW_CLASH_HALParadrop_fnc_Execute"
+    ))
+    at = execute.index("[_carrier,_cargoGroup] call ITW_AllyParadropCargo;")
+    assert '[units _cargoGroup,leader _cargoGroup] remoteExec ["doFollow",leader _cargoGroup];' in execute[at:at + 200]
+
+    for path in sorted((NR6 / "HAL").glob("*.sqf")) + sorted(NR6.glob("*.sqf")):
+        assert "dofollow" not in code_only(read(path)).lower(), path.name
+
+
+def test_they_are_told_again_once_they_are_standing():
+    """The first doFollow reaches a man who is the driver of a parachute. The
+    second reaches an infantryman, and comes before HAL's order wakes."""
+    body = body_of("OrderRelease")
+    said = body.index('[units _x,leader _x] remoteExec ["doFollow",leader _x];')
+    assert body.index("!(call _riding)") < said < body.index('setVariable ["RydHQ_MIA",true]')

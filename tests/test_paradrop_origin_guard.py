@@ -129,5 +129,5 @@ def test_every_execute_exit_now_says_why():
         assert f'"{reason}"' in body, reason
 
 
-def test_paradrop_version_moved_to_five_for_the_bounded_altitude_wait():
-    assert "ITW_CLASH_HALParadropVersion = 5;" in policy()
+def test_paradrop_version_moved_to_six_for_follow_after_the_drop():
+    assert "ITW_CLASH_HALParadropVersion = 6;" in policy()

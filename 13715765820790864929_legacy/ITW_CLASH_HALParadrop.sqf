@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]) exitWith {true};
 
-ITW_CLASH_HALParadropVersion = 5;
+ITW_CLASH_HALParadropVersion = 6;
 ITW_CLASH_HALParadropReady = false;
 
 ITW_CLASH_HALParadrop_HeavyCargoSeats = missionNamespace getVariable [
@@ -266,6 +266,15 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
     };
 
     [_carrier,_cargoGroup] call ITW_AllyParadropCargo;
+    /*
+        Every other caller of ITW_AllyParadropCargo follows it with this line:
+        ITW itself (ITW_Ally.sqf:1019) and the player transport bridge
+        (ITW_CLASH_PlayerTransportNativeBridge.sqf:113). moveOut and a
+        parachute seat take each man out of his formation, and HAL has no
+        doFollow anywhere to put him back. This was the one caller without it,
+        and it is the caller every HAL paradrop goes through.
+    */
+    [units _cargoGroup,leader _cargoGroup] remoteExec ["doFollow",leader _cargoGroup];
     _carrier land "NONE";
     _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
     _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];

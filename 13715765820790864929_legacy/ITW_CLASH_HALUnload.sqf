@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALUnloadStarted",false]) exitWith 
 
 ITW_CLASH_HALUnloadStarted = true;
 ITW_CLASH_HALUnloadReady = false;
-ITW_CLASH_HALUnloadVersion = 6;
+ITW_CLASH_HALUnloadVersion = 7;
 scriptName "ITW_CLASH_HALUnload";
 
 /*
@@ -215,6 +215,27 @@ ITW_CLASH_HALUnloadHandbackRadius = missionNamespace getVariable [
 ];
 ITW_CLASH_HALUnloadHandbackTimeout = missionNamespace getVariable [
     "ITW_CLASH_HALUnloadHandbackTimeout",60
+];
+/*
+    The order is released when the squad is on the ground, and not before.
+
+    v5 released it at the drop, with the men still under canopy. The order
+    thread woke inside six seconds and went into its next RYD_Wait, and
+    RYD_Wait takes the leader's vehicle once, when it starts
+    (HAC_fnc.sqf:1929), and treats that vehicle going null as the group being
+    lost (HAC_fnc.sqf:1944). The leader's vehicle was his parachute. It is
+    deleted on landing, so the order ended on touchdown and cleared Busy.
+
+    2026-10-10 23:22, all three drops: G29 on foot 23:28:32, order gone
+    23:28:35. G42 on foot 23:30:02, gone 23:30:07. G37 on foot 23:33:19, gone
+    23:33:22. Two "recon-complete" lines 14 and 20 s after the drop, on recons
+    that take ten minutes on foot. Every squad landed with no order.
+
+    This is how long the release waits for the last man to be out of his
+    chute. It is a bound: a drop from 45 m lands in about 14 s.
+*/
+ITW_CLASH_HALUnloadLandedWait = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadLandedWait",45
 ];
 // RYD_Wait polls every 6 s on a carrier. Two polls, then the flag is taken
 // back so it cannot end the NEXT lift's wait.
@@ -1098,12 +1119,51 @@ ITW_CLASH_HALUnload_fnc_AbortRunIn = {
     a new lift, this thread has no business writing to it.
 */
 ITW_CLASH_HALUnload_fnc_OrderRelease = {
-    params ["_carrierGroup","_orders","_serial"];
+    params ["_carrierGroup","_cargoGroups","_serial"];
     private _current = {
         !isNull _carrierGroup
         && {(_carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1]) isEqualTo _serial}
     };
-    for "_i" from 1 to (_orders max 1) do {
+
+    // Boots on the ground first. Anyone still in anything, a chute or the
+    // aircraft, holds the release; see ITW_CLASH_HALUnloadLandedWait.
+    private _riding = {
+        (_cargoGroups findIf {
+            !isNull _x
+            && {((units _x) findIf {alive _x && {vehicle _x != _x}}) >= 0}
+        }) >= 0
+    };
+    private _began = time;
+    private _deadline = time + ITW_CLASH_HALUnloadLandedWait;
+    waitUntil {
+        sleep 0.5;
+        !(call _current) || {!(call _riding)} || {time >= _deadline}
+    };
+    if !(call _current) exitWith {};
+
+    /*
+        The men are infantry again from this moment, so this is where they are
+        told to form on their leader. moveOut and a parachute seat take a unit
+        out of his formation and nothing puts him back: ITW follows every
+        paradrop with doFollow (ITW_Ally.sqf:1019), and so does the player
+        transport bridge. The paradrop owner says it at the drop, as they do.
+        This says it again once each man is standing on something.
+    */
+    {
+        if (!isNull _x && {!isNull (leader _x)}) then {
+            [units _x,leader _x] remoteExec ["doFollow",leader _x];
+        };
+    } forEach _cargoGroups;
+
+    private _orders = (count _cargoGroups) max 1;
+    ["order-release",[
+        groupId _carrierGroup,
+        _cargoGroups apply {if (isNull _x) then {"<null>"} else {groupId _x}},
+        (round ((time - _began) * 10)) / 10,
+        call _riding
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+
+    for "_i" from 1 to _orders do {
         if !(call _current) exitWith {};
         _carrierGroup setVariable ["RydHQ_MIA",true];
         private _deadline = time + ITW_CLASH_HALUnloadOrderReleaseWait;
@@ -1123,21 +1183,21 @@ ITW_CLASH_HALUnload_fnc_OrderRelease = {
 };
 
 ITW_CLASH_HALUnload_fnc_Handback = {
-    params ["_carrierGroup","_carrier",["_orderFile","UNKNOWN"],["_orders",1]];
+    params ["_carrierGroup","_carrier",["_orderFile","UNKNOWN"],["_cargoGroups",[]]];
     if (!ITW_CLASH_HALUnloadHandback) exitWith {false};
     if (isNull _carrierGroup) exitWith {false};
     // A player at the controls is not HAL's lift to end.
     if (!isNull _carrier && {(crew _carrier) findIf {isPlayer _x} >= 0}) exitWith {false};
 
     private _serial = _carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1];
-    [_carrierGroup,_carrier,_orderFile,_orders,_serial] spawn {
-        params ["_carrierGroup","_carrier","_orderFile","_orders","_serial"];
+    [_carrierGroup,_carrier,_orderFile,+_cargoGroups,_serial] spawn {
+        params ["_carrierGroup","_carrier","_orderFile","_cargoGroups","_serial"];
         scriptName "ITW_CLASH_HALUnload_Handback";
         private _started = time;
         private _atBreak = _orderFile in ITW_CLASH_HALUnloadReleaseAtBreak;
 
         if (!_atBreak) then {
-            [_carrierGroup,_orders,_serial] spawn ITW_CLASH_HALUnload_fnc_OrderRelease;
+            [_carrierGroup,_cargoGroups,_serial] spawn ITW_CLASH_HALUnload_fnc_OrderRelease;
         };
 
         private _break = _carrierGroup getVariable ["ITW_CLASH_HALUnloadBreak",[]];
@@ -1187,7 +1247,7 @@ ITW_CLASH_HALUnload_fnc_Handback = {
         };
 
         if (_atBreak) then {
-            [_carrierGroup,_orders,_serial] spawn ITW_CLASH_HALUnload_fnc_OrderRelease;
+            [_carrierGroup,_cargoGroups,_serial] spawn ITW_CLASH_HALUnload_fnc_OrderRelease;
         };
 
         // SCargo's own exit. It reads this every 5 s and does the rest itself.
@@ -1200,7 +1260,7 @@ ITW_CLASH_HALUnload_fnc_Handback = {
             groupId _carrierGroup,_orderFile,_why,
             round (time - _started),
             count (waypoints _carrierGroup),
-            _busy,_atBreak,_orders
+            _busy,_atBreak,count _cargoGroups
         ]] call ITW_CLASH_HALUnload_fnc_Log;
     };
     true
@@ -1434,7 +1494,7 @@ ITW_CLASH_HALUnload_fnc_RunIn = {
     private _result = if (_dropped > 0) then {_mode} else {_mode + "_DECLINED_EMPTY"};
 
     [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress;
-    [_carrierGroup,_carrier,_orderFile,count _cargoGroups] call ITW_CLASH_HALUnload_fnc_Handback;
+    [_carrierGroup,_carrier,_orderFile,_cargoGroups] call ITW_CLASH_HALUnload_fnc_Handback;
 
     _carrierGroup setVariable ["ITW_CLASH_HALUnloadCargoGroup",nil];
     _carrierGroup setVariable ["ITW_CLASH_HALUnloadOrigin",nil];
@@ -1552,7 +1612,7 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 if (_dropped) then {
                     _result = "PARADROP";
                     [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress;
-                    [_carrierGroup,_carrier,_orderFile,count _cargoGroups] call
+                    [_carrierGroup,_carrier,_orderFile,_cargoGroups] call
                         ITW_CLASH_HALUnload_fnc_Handback
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
@@ -1592,7 +1652,7 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 if (_dropped) then {
                     _result = "HOT_PARADROP";
                     [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress;
-                    [_carrierGroup,_carrier,_orderFile,count _cargoGroups] call
+                    [_carrierGroup,_carrier,_orderFile,_cargoGroups] call
                         ITW_CLASH_HALUnload_fnc_Handback
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
