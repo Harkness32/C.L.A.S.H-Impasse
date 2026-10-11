@@ -70,8 +70,8 @@ while {!isNull _HQ} do
         (+(_HQ getVariable ["RydHQ_CarsG",[]]))
         - (
             +(_HQ getVariable ["RydHQ_ATInfG",[]])
-            + +(_HQ getVariable ["RydHQ_AAInfG",[]])
-            + +(_HQ getVariable ["RydHQ_SupportG",[]])
+            + (_HQ getVariable ["RydHQ_AAInfG",[]])
+            + (_HQ getVariable ["RydHQ_SupportG",[]])
         )
     ] call _available;
 
@@ -79,7 +79,7 @@ while {!isNull _HQ} do
     // removed by the same reservation filter before they can be candidates.
     private _airCAS = [
         +(_HQ getVariable ["RydHQ_RCAS",[]])
-        + +(_HQ getVariable ["RydHQ_BAirG",[]])
+        + (_HQ getVariable ["RydHQ_BAirG",[]])
     ] call _available;
 
     private _categories =
