@@ -498,6 +498,15 @@ if (isServer) then {
         diag_log "CLASH BOOT | WARNING | hal-unload-missing | seven HAL order files retain native landing behavior";
     };
 
+    // Height and approach speed for HAL troop lifts. It writes flyInHeight and
+    // limitSpeed and nothing else, waits for HAL itself, and asks the unload
+    // owner above whether a delivery is going to land or drop.
+    if (fileExists "ITW_CLASH_HALStayLow.sqf") then {
+        [] execVM "ITW_CLASH_HALStayLow.sqf";
+    } else {
+        diag_log "CLASH BOOT | WARNING | hal-stay-low-missing | HAL transports keep engine height and arrival braking";
+    };
+
     // Temporary hosted-test comms are intentionally observer-only and load
     // synchronously so recovery/recon state transitions can be mirrored without
     // wrapping any C.L.A.S.H. or HAL authority function.

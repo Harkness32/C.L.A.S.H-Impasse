@@ -497,8 +497,8 @@ def test_flythrough_defaults_are_long_enough_to_clear_the_drop_zone():
     assert '"ITW_CLASH_HALUnloadEgressOffset",600' in source
 
 
-def test_hal_unload_version_moved_to_five_for_the_run_in():
-    assert "ITW_CLASH_HALUnloadVersion = 5;" in central()
+def test_hal_unload_version_moved_to_six_for_staying_low():
+    assert "ITW_CLASH_HALUnloadVersion = 6;" in central()
 
 
 def test_native_itw_paradrop_preserves_the_prearmed_through_waypoint():
@@ -604,7 +604,7 @@ def test_the_run_in_is_fast_and_at_drop_height():
     kilometre out, drop on the move."""
     body = body_of("ArmRunIn")
     assert '"ITW_CLASH_HALParadrop_MinAltitude",45' in body
-    assert '"ITW_CLASH_HotDropDropHeight",130' in body
+    assert "ITW_CLASH_HALUnloadHotDropHeight" in body
     assert '_mode isEqualTo "HOT_PARADROP"' in body
     assert "_carrier limitSpeed 1e10;" in body
     assert "_carrier forceSpeed -1;" in body
@@ -645,11 +645,12 @@ def test_hals_waypoint_is_found_by_its_statement_not_its_index():
 
 
 def test_the_run_in_decides_with_the_seams_owner_and_table():
-    body = body_of("RunIn")
+    body = body_of("Decide")
     assert "call ITW_CLASH_HALUnload_fnc_Commander" in body
     assert "[_hq,_carrierGroup,_carrier,_dropZone] call ITW_CLASH_HALUnload_fnc_Corridor" in body
     assert "[_carrier,_state,_carrierGroup] call ITW_CLASH_HALUnload_fnc_Mode" in body
     assert '"|player-touch"' in body
+    assert "[_carrierGroup,_carrier,_dropZone] call ITW_CLASH_HALUnload_fnc_Decide" in body_of("RunIn")
     # The corridor is the one to the drop zone, not to wherever the aircraft
     # happens to be a kilometre short of it.
     corridor = body_of("Corridor")
@@ -967,5 +968,63 @@ def test_the_lift_line_says_which_path_wrote_it():
 def test_the_boot_line_certifies_the_run_in():
     source = central()
     line = next(x for x in source.splitlines() if "hal-unload-ready" in x)
-    for field in ("runIn=%6", "runInDistance=%7", "handback=%8", "sources=%9"):
+    for field in (
+        "runIn=%6", "runInDistance=%7", "handback=%8", "egressHeight=%9",
+        "hotDropHeight=%10", "sources=%11",
+    ):
         assert field in line, field
+
+
+# ------------------------------------------- what the first run-in flight showed
+
+def test_the_question_can_be_asked_as_often_as_anyone_likes():
+    """The stay-low owner asks every few seconds whether a lift is going to
+    arrive or fly through, with the function the run-in decides by. So it may
+    not write anything, and it may not put a line in the RPT each time."""
+    body = body_of("Decide")
+    for forbidden in ("setVariable", "fnc_Log", "diag_log", "flyInHeight", "limitSpeed"):
+        assert forbidden not in body, forbidden
+    # An empty mode is how it says there is nobody aboard to decide about.
+    assert '["","COLD","no-cargo",0,0,[],grpNull]' in body
+
+
+def test_the_aircraft_no_longer_leaves_by_climbing():
+    """2026-10-10 23:22: both Littlebirds that dropped were lost on the way up
+    to the 120 m egress height, at 101 m after four seconds and at 118 m after
+    twelve. The pilot climbs by zooming, so the number was reached at once."""
+    source = central()
+    assert '"ITW_CLASH_HotDropTransitHeight",120' not in source
+    define = source[source.index("ITW_CLASH_HALUnloadTransitHeight = missionNamespace"):]
+    define = define[:define.index("];")]
+    assert 'missionNamespace getVariable ["ITW_CLASH_HALStayLowCruiseHeight",30]' in define
+    assert "_carrier flyInHeight ITW_CLASH_HALUnloadTransitHeight;" in body_of("Egress")
+
+
+def test_a_hot_run_drops_from_the_same_floor():
+    """130 m was HotDrop's number, chosen to clear the old 55 m minimum
+    "without a second climb". The minimum is 45 now."""
+    source = central()
+    assert '"ITW_CLASH_HotDropDropHeight"' not in source
+    define = source[source.index("ITW_CLASH_HALUnloadHotDropHeight = missionNamespace"):]
+    define = define[:define.index("];")]
+    assert 'missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",45]' in define
+    assert "_carrier flyInHeight ITW_CLASH_HALUnloadHotDropHeight;" in body_of("Unload")
+    # HotDrop's own profile keeps its own number; it is a different owner.
+    assert 'ITW_CLASH_HotDropDropHeight",130' in read(MISSION / "ITW_CLASH_HotDrop.sqf")
+
+
+def test_the_break_is_passed_when_the_engine_says_so():
+    """The Huron arced round its break at 250 km/h and never came within
+    390 m of it. The engine completed the waypoint, the 250 m test never
+    fired, and the handback sat out its whole 60 s with the aircraft already
+    on its way home."""
+    body = body_of("Handback")
+    assert "currentWaypoint _carrierGroup > _at" in body
+    assert '"break-passed"' in body
+    # A route somebody else has replaced is not one to wait on either.
+    assert 'if (_at < 0) exitWith {"route-replaced"};' in body
+    assert body.index('"route-replaced"') < body.index('"break-passed"')
+    # And it looks for the waypoint the engine holds, not the one asked for.
+    egress = body_of("Egress")
+    assert "waypointPosition (_written select ((count _written) - 2))" in egress
+    assert egress.index("forEach [[_break,150],[_home,200]]") < egress.index("_written select")
