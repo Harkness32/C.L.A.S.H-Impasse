@@ -1,11 +1,12 @@
 # Paradrops flown ITW's way, and the aircraft handed back afterwards
 
 Status: on `agent/paradrop-run-in`, cut from `agent/anchor-lift-collision`
-(`bc3271c`). Version 5 flew once, 2026-10-10 23:22: section 12. Version 6
-changes the heights and the handback trigger and has not flown.
+(`bc3271c`). Version 5 flew once, 2026-10-10 23:22: sections 12 and 13.
+Version 6 changes the heights and the handback trigger. Version 7 moves the
+order release to the landing. Neither has flown.
 
-Files: `ITW_CLASH_HALUnload.sqf` (version 6), `ITW_CLASH_HALParadrop.sqf`
-(version 5).
+Files: `ITW_CLASH_HALUnload.sqf` (version 7), `ITW_CLASH_HALParadrop.sqf`
+(version 6).
 
 ---
 
@@ -100,7 +101,8 @@ v5 uses HAL's own input for each:
 - **`RydHQ_MIA` on the carrier group.** `RYD_Wait` reads it and clears it
   (`HAC_fnc.sqf:1946`). The order thread carries on with the squad on the
   ground. Set once per squad that was aboard, because one read clears one flag.
-  Taken back after 15 s if nobody read it.
+  Taken back after 15 s if nobody read it. From v7 it is set when the last man
+  is out of his parachute, not at the drop (section 13).
 - **`CargoM` false at the break point.** `SCargo` reads it every 5 s, sends the
   carrier home and frees `Busy` with its own code (`SCargo.sqf:645` onward).
   From v6 the break is passed when its waypoint is no longer the current one.
@@ -169,8 +171,8 @@ Still not verified:
 
 Boot:
 
-- `hal-unload-ready | version=6 ... runIn=true runInDistance=1200 handback=true egressHeight=30 hotDropHeight=45`
-- `hal-paradrop-ready | version=5`
+- `hal-unload-ready | version=7 ... runIn=true runInDistance=1200 handback=true egressHeight=30 hotDropHeight=45`
+- `hal-paradrop-ready | version=6`
 
 Per lift, in order:
 
@@ -242,3 +244,51 @@ What it shows:
   outbound waypoint before it lifted. Not investigated.
 
 Detail, the model and the fix are in `STAY_LOW.md`.
+
+## 13. What the squads did after landing
+
+The full log of the same flight, to 00:19. Found when Hark reported units
+standing around and squads not following their leaders.
+
+**v5 killed each squad's order on touchdown.**
+
+| Squad | Order | Dropped | On foot | Order gone |
+|---|---|---|---|---|
+| G29 | GoRecon | 23:28:19 | 23:28:32 | 23:28:35 |
+| G42 | GoRecon | 23:29:47 | 23:30:02 | 23:30:07 |
+| G37 | GoAttInf | 23:33:05 | 23:33:19 | 23:33:22 |
+
+1. v5 set `RydHQ_MIA` at the drop, with the men under canopy.
+2. The order thread woke within 6 s and started its next `RYD_Wait`.
+3. `RYD_Wait` takes the leader's vehicle once, at its start
+   (`HAC_fnc.sqf:1929`). That was his parachute.
+4. Every pass, a null vehicle means the group is lost (`HAC_fnc.sqf:1944`).
+   The parachute is deleted on landing.
+5. The order exits and clears `Busy` (`GoRecon.sqf`, `GoAttInf.sqf`:
+   `if not (_alive) exitwith`).
+
+Both recons logged `recon-complete` 14 and 20 s after the drop. A recon on
+foot in the same run took 720 s. G42 then stood for 91 s until HAL's next
+cycle. G37, idle beside a taken objective, was taken as that objective's HAL
+garrison 16 s later.
+
+v4 did not do this. It released the order minutes late, but with the squad on
+foot.
+
+**Fix, v7:** `fnc_OrderRelease` waits until no living member of any dropped
+squad is in a vehicle, bounded by `ITW_CLASH_HALUnloadLandedWait` (45 s), then
+sets the flag. Logged as `hal-unload-order-release` with the seconds waited.
+
+**Nothing told the men to follow their leader.** Every other caller of
+`ITW_AllyParadropCargo` follows it with `doFollow`: ITW (`ITW_Ally.sqf:1019`)
+and the player transport bridge
+(`ITW_CLASH_PlayerTransportNativeBridge.sqf:113`). The HAL paradrop owner did
+not, and HAL has no `doFollow` of its own. v7 says it at the drop, as they do,
+and again when the squad is standing.
+
+The RPT has no per-man positions, so it cannot show which squads were strung
+out or prove this was the cause. It is the one path where the omission is
+certain.
+
+Certify: `hal-unload-order-release` 10 to 20 s after each `lift` line, no
+`recon-complete` inside a minute of a drop, and the squad `Busy` afterwards.
