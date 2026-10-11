@@ -32,6 +32,22 @@ private _flankAv   = _HQ getVariable ["RydHQ_FlankAv", []];
 private _NCVeh     = _HQ getVariable ["RydHQ_NCVeh", []];
 private _AAthreat  = _HQ getVariable ["RydHQ_AAthreat", []];
 private _ATthreat  = _HQ getVariable ["RydHQ_ATthreat", []];
+
+// Revalidate ownership at the commit boundary. Watch filters its candidate
+// pools, but SCargo/support/GTFO state can change during this response pass.
+private _reserved = [];
+{
+	_reserved append +(_HQ getVariable [_x,[]]);
+} forEach [
+	"RydHQ_NoAttack",
+	"RydHQ_CargoOnly",
+	"RydHQ_CargoG",
+	"RydHQ_SupportG",
+	"RydHQ_AmmoDrop",
+	"RydHQ_Exhausted"
+];
+_reserved = _reserved arrayIntersect _reserved;
+
 private _committed = 0;
 private _perPatternLimit = 2; // simplified pacing - see docs/CLASH_HAL_ADDITIONS.md
 
@@ -63,8 +79,27 @@ private _perPatternLimit = 2; // simplified pacing - see docs/CLASH_HAL_ADDITION
 			while {(_limit > 0) && {(count _avF) > 0} && {_ix < (count _sortedForce)}} do
 			{
 				private _chosen = _sortedForce select _ix;
-				private _chVP   = getPosATL (vehicle (leader _chosen));
 				_ix = _ix + 1;
+
+				if (isNull _chosen) then {continue};
+
+				private _cargoMission = _chosen getVariable [
+					"CargoM" + str _chosen,false
+				];
+				private _serviceAsset = _chosen getVariable [
+					"ITW_CLASH_ServiceAsset",false
+				];
+				if (
+					_chosen in _reserved
+					|| {_cargoMission}
+					|| {_serviceAsset}
+				) then {
+					continue
+				};
+
+				private _leader = leader _chosen;
+				if (isNull _leader || {!alive _leader}) then {continue};
+				private _chVP = getPosATL (vehicle _leader);
 
 				private _positive = true;
 				private _ammo = [_chosen, _NCVeh] call RYD_AmmoCount;
@@ -138,6 +173,25 @@ private _perPatternLimit = 2; // simplified pacing - see docs/CLASH_HAL_ADDITION
 							};
 						};
 					};
+				};
+
+				if (_positive) then
+				{
+					// Last-millisecond ownership check. SCargo can claim a carrier
+					// after Watch built the pool but before this dispatch commits.
+					private _nowReserved = (
+						_chosen in (
+							+(_HQ getVariable ["RydHQ_NoAttack",[]])
+							+ (_HQ getVariable ["RydHQ_CargoOnly",[]])
+							+ (_HQ getVariable ["RydHQ_CargoG",[]])
+							+ (_HQ getVariable ["RydHQ_SupportG",[]])
+							+ (_HQ getVariable ["RydHQ_AmmoDrop",[]])
+							+ (_HQ getVariable ["RydHQ_Exhausted",[]])
+						)
+						|| {_chosen getVariable ["CargoM" + str _chosen,false]}
+						|| {_chosen getVariable ["ITW_CLASH_ServiceAsset",false]}
+					);
+					if (_nowReserved) then {_positive = false};
 				};
 
 				if (_positive) then
