@@ -291,7 +291,7 @@ def test_commander_parity_is_one_master_layer_not_behavior_specific_blufor_patch
     init = mission("init.sqf")
     attack = mission("ITW_Attack.sqf")
 
-    assert "ITW_CLASH_CommanderParityVersion = 2;" in parity
+    assert "ITW_CLASH_CommanderParityVersion = 3;" in parity
     assert "Single authority layer" in parity
     assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForSide" in parity
     assert "ITW_CLASH_CommanderParity_fnc_GetCommanderForGroup" in parity

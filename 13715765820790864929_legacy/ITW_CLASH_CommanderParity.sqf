@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_CommanderParityStarted",false]) exi
 
 ITW_CLASH_CommanderParityStarted = true;
 ITW_CLASH_CommanderParityReady = false;
-ITW_CLASH_CommanderParityVersion = 2;
+ITW_CLASH_CommanderParityVersion = 3;
 ITW_CLASH_CommanderParity_AnchorReady = false;
 
 /*
@@ -155,6 +155,39 @@ ITW_CLASH_CommanderParity_Anchor_fnc_HeldObjectives = {
     }
 };
 
+/*
+    Is HAL using this squad right now?
+
+    The anchor takes a squad by setting Break and then issuing HAL_GoDef. That
+    is safe on an idle squad and destructive on one HAL has just tasked,
+    because Break does not abort an order that is in its cargo loop. The loop
+    reads Break as "leave the loop after this pass" (GoRecon.sqf:320,
+    GoAttInf.sqf:270, GoCapture.sqf:283), resets _alive two lines later, and
+    still spawns HAL_SCargo in that same pass. The order then marches on foot
+    while SCargo finishes the pickup alone, and nobody is left to give the
+    carrier its outbound waypoint.
+
+    Run of 2026-10-10 20:53, both stuck helicopters:
+      G30  promoted 20:56:50, lift requested 20:56:55, embarked 20:57:41
+      G34  promoted 20:57:43, lift requested 20:57:43, embarked 20:58:17
+    and the one lift in that run with no promotion on it (G29) flew and
+    dropped. HAL_GoDef exits at once on a Busy group (GoDef.sqf:31), so the
+    promotion bought nothing for what it broke.
+
+    Busy is HAL's own "an order is running" flag. The cargo flags cover a lift
+    in progress, the retask lock covers the ride, and the last test covers a
+    squad that is physically aboard something.
+*/
+ITW_CLASH_CommanderParity_Anchor_fnc_IsHALCommitted = {
+    params ["_group"];
+    if (isNull _group) exitWith {false};
+    _group getVariable ["Busy" + str _group,false]
+    || {_group getVariable ["CargoChosen",false]}
+    || {_group getVariable ["CargoCheckPending" + str _group,false]}
+    || {_group getVariable ["ITW_CLASH_TransportRetaskLock",false]}
+    || {((units _group) findIf {alive _x && {vehicle _x != _x}}) >= 0}
+};
+
 ITW_CLASH_CommanderParity_Anchor_fnc_IsEligible = {
     params ["_group","_objectiveIndex"];
     if (isNull _group || {isNil "ITW_PlayerSide"}) exitWith {false};
@@ -216,6 +249,11 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Select = {
         if !([_group,_objectiveIndex] call ITW_CLASH_CommanderParity_Anchor_fnc_IsEligible) then {
             continue
         };
+        // Never take a squad out from under a HAL order or a lift. The
+        // objective waits for a free squad or for the refill instead.
+        if ([_group] call ITW_CLASH_CommanderParity_Anchor_fnc_IsHALCommitted) then {
+            continue
+        };
 
         private _aliveCount = [
             units _group
@@ -269,13 +307,24 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Clear = {
             _group setVariable ["ITW_CLASH_CommanderParity_AnchorObjective",nil];
             _group setVariable ["ITW_CLASH_CommanderParity_AnchorAssignedAt",nil];
             _group setVariable ["ITW_CLASH_CommanderParity_AnchorOrderPending",nil];
-            _group setVariable ["Defending",false];
-            _group setVariable ["Break",false];
 
-            if (!isNil "RYD_WPdel") then {
-                [_group] call RYD_WPdel;
-            } else {
-                {deleteWaypoint _x} forEachReversed waypoints _group;
+            /*
+                Only unwind a squad that is still ours to unwind.
+
+                An anchor that HAL has since tasked or lifted is released by
+                bookkeeping alone. Deleting its waypoints here is what wiped
+                G30's route two seconds after it was put in a helicopter, and
+                clearing Break could cancel one another owner had just set.
+            */
+            if !([_group] call ITW_CLASH_CommanderParity_Anchor_fnc_IsHALCommitted) then {
+                _group setVariable ["Defending",false];
+                _group setVariable ["Break",false];
+
+                if (!isNil "RYD_WPdel") then {
+                    [_group] call RYD_WPdel;
+                } else {
+                    {deleteWaypoint _x} forEachReversed waypoints _group;
+                };
             };
         };
 
@@ -367,6 +416,19 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Order = {
     [_group,_objectiveIndex,_target,_hq] spawn {
         params ["_group","_objectiveIndex","_target","_hq"];
         if (isNull _group || {isNull _hq}) exitWith {};
+
+        // Checked here, at the write, because the squad can be tasked between
+        // the audit that chose it and this thread getting scheduled.
+        if ([_group] call ITW_CLASH_CommanderParity_Anchor_fnc_IsHALCommitted) exitWith {
+            _group setVariable [
+                "ITW_CLASH_CommanderParity_AnchorOrderPending",nil
+            ];
+            ["order-deferred",[
+                _objectiveIndex,
+                [_group] call ITW_CLASH_fnc_GroupId,
+                "hal-committed"
+            ]] call ITW_CLASH_CommanderParity_Anchor_fnc_Log;
+        };
 
         _group setVariable ["Break",true];
         _group setVariable ["Defending",false];
@@ -804,7 +866,7 @@ ITW_CLASH_CommanderParity_Anchor_fnc_Audit = {
     ITW_CLASH_CommanderParity_AnchorReady = true;
     ITW_CLASH_CommanderParityReady = true;
     diag_log format [
-        "CLASH BOOT | commander-parity-ready | version=%1 sections=projection,anchor minimum=%2 playerExcluded=true sofExcluded=true refill=impasse-friendly nativeHALDefense=true",
+        "CLASH BOOT | commander-parity-ready | version=%1 sections=projection,anchor minimum=%2 playerExcluded=true sofExcluded=true refill=impasse-friendly nativeHALDefense=true anchorSkipsHALCommitted=true",
         ITW_CLASH_CommanderParityVersion,
         missionNamespace getVariable ["ITW_CLASH_MinAnchorSoldiers",6]
     ];
