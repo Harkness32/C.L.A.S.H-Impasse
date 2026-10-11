@@ -7,7 +7,7 @@ if (missionNamespace getVariable ["ITW_CLASH_HALUnloadStarted",false]) exitWith 
 
 ITW_CLASH_HALUnloadStarted = true;
 ITW_CLASH_HALUnloadReady = false;
-ITW_CLASH_HALUnloadVersion = 7;
+ITW_CLASH_HALUnloadVersion = 8;
 scriptName "ITW_CLASH_HALUnload";
 
 /*
@@ -116,6 +116,92 @@ ITW_CLASH_HALUnloadTransitHeight = missionNamespace getVariable [
 ITW_CLASH_HALUnloadHotDropHeight = missionNamespace getVariable [
     "ITW_CLASH_HALUnloadHotDropHeight",
     missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",45]
+];
+
+/*
+    The hot drop lives here now.
+
+    Hark: "HOTDROPs never fire because the lift is always busy or already
+    reserved. its a flaw in our implementation."
+
+    ITW_CLASH_HotDrop.sqf was a second pilot: it polled for a loaded helicopter
+    on the ground and took it. It declined any carrier whose group was Busy,
+    which is right, and HAL_SCargo sets Busy on the carrier before pickup and
+    holds it until after the return (SCargo.sqf:265), which is every HAL lift.
+    Everything else that loads a helicopter is lifecycle reserved. Three
+    flights on 2026-10-10: 111 declined-busy, 26 declined-reserved, 0 claimed.
+
+    This module already has the aircraft, handed over by HAL about a kilometre
+    out, and already flies most of that profile: 30 m cruise, fast run-in, drop
+    on the move, low break. So a hot drop is this run-in plus flares, and the
+    poll is switched off.
+
+    Which corridors are hot is Hark's call: HOT and CONTESTED, where AA is
+    actually known near the route. AIR_DENIED never launches, but a corridor
+    can get worse with the lift already in the air. UNKNOWN stays a plain
+    paradrop.
+*/
+ITW_CLASH_HALUnloadHotStates = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadHotStates",["HOT","AIR_DENIED","CONTESTED"]
+];
+/*
+    Flares, in three stages.
+
+    Hark: "we should start preflaring when we're decently close to the drop,
+    then HAMMER THEM as we're away and then keep spraying them as we egress."
+
+      PRE     from FlareStart metres short of the drop zone until the release,
+              one pull every PreCadence seconds
+      HAMMER  from the release, for HammerSeconds, one pull every
+              HammerCadence seconds
+      EGRESS  after that, for EgressSeconds, one pull every EgressCadence
+
+    The old hot mode flared only while the chalk was aboard and stopped the
+    moment the last man was out, which is the opposite of the above: it went
+    quiet exactly as the aircraft turned its back.
+
+    A pull is one forceWeaponFire through Thunder Run's primitive, so the
+    countermeasure override a modset installs there is honoured here too.
+
+    What one pull dispenses is the launcher's business and differs by mode and
+    modset: a single pair, or a burst that eats ten rounds. So the cadences
+    above only say how often to ask, and the limit is kept in ROUNDS, read
+    back off the launcher before every pull. One hot drop may spend FlareSpend
+    of what the launcher holds when the run is armed. Of that allowance PRE
+    may use FlarePreShare and HAMMER a further FlareHammerShare, and the rest
+    is the egress's, so a small launcher or a greedy burst mode still has
+    something left for the way out. Every number is a placeholder until flown;
+    the "flares" line reports pulls and rounds so they can be set from a log.
+*/
+ITW_CLASH_HALUnloadFlares = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlares",true
+];
+ITW_CLASH_HALUnloadFlareStart = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlareStart",1000
+];
+ITW_CLASH_HALUnloadFlarePreCadence = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlarePreCadence",2.5
+];
+ITW_CLASH_HALUnloadFlareHammerSeconds = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlareHammerSeconds",10
+];
+ITW_CLASH_HALUnloadFlareHammerCadence = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlareHammerCadence",0.4
+];
+ITW_CLASH_HALUnloadFlareEgressSeconds = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlareEgressSeconds",30
+];
+ITW_CLASH_HALUnloadFlareEgressCadence = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlareEgressCadence",1.5
+];
+ITW_CLASH_HALUnloadFlareSpend = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlareSpend",0.75
+];
+ITW_CLASH_HALUnloadFlarePreShare = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlarePreShare",0.15
+];
+ITW_CLASH_HALUnloadFlareHammerShare = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadFlareHammerShare",0.5
 ];
 
 /*
@@ -545,10 +631,13 @@ ITW_CLASH_HALUnload_fnc_Mode = {
         ["LAND",0,_capacity]
     };
 
-    if (_state in ["HOT","AIR_DENIED"]) exitWith {
+    // Hot is a list, and the list is Hark's. Anything dangerous that is not
+    // on it still always drops, so trimming the list cannot turn a contested
+    // corridor into a dice roll.
+    if (_state in ITW_CLASH_HALUnloadHotStates) exitWith {
         ["HOT_PARADROP",100,_capacity]
     };
-    if (_state in ["CONTESTED","UNKNOWN"]) exitWith {
+    if (_state in ["HOT","AIR_DENIED","CONTESTED","UNKNOWN"]) exitWith {
         ["PARADROP",100,_capacity]
     };
 
@@ -596,49 +685,221 @@ ITW_CLASH_HALUnload_fnc_Aboard = {
 };
 
 /*
+    Which flare stage a hot drop is in.
+
+    Pure: the release time and the clock in, a name out. -1 means the chalk
+    has not gone yet. "" means the run is over.
+*/
+ITW_CLASH_HALUnload_fnc_FlareStage = {
+    params ["_releasedAt","_now"];
+    if (_releasedAt < 0) exitWith {"PRE"};
+    private _since = _now - _releasedAt;
+    if (_since < ITW_CLASH_HALUnloadFlareHammerSeconds) exitWith {"HAMMER"};
+    if (
+        _since < ITW_CLASH_HALUnloadFlareHammerSeconds
+            + ITW_CLASH_HALUnloadFlareEgressSeconds
+    ) exitWith {"EGRESS"};
+    ""
+};
+
+// Countermeasure rounds left in the aircraft, by Thunder Run's own test for
+// what a countermeasure magazine is (ammo simulation shotCM).
+ITW_CLASH_HALUnload_fnc_FlareRounds = {
+    params ["_carrier"];
+    if (isNull _carrier) exitWith {0};
+    private _rounds = 0;
+    {
+        private _magazine = _x param [0,""];
+        private _count = _x param [2,0];
+        if (_magazine isEqualTo "" || {_count <= 0}) then {continue};
+        private _ammo = getText (configFile >> "CfgMagazines" >> _magazine >> "ammo");
+        if (_ammo isEqualTo "") then {continue};
+        if (
+            (toLowerANSI getText (configFile >> "CfgAmmo" >> _ammo >> "simulation"))
+            isEqualTo "shotcm"
+        ) then {_rounds = _rounds + _count};
+    } forEach (magazinesAllTurrets [_carrier,true]);
+    _rounds
+};
+
+/*
     HOT_PARADROP still does not become a second en-route pilot.
 
-    HAL owns the lift all the way to its insertion seam. At that seam the
-    centralized unload owner is allowed to replace HAL's now-finished waypoint
-    with the same terminal fly-through continuation used by PARADROP. This flare
-    helper itself owns no movement; it only dispenses countermeasures while the
-    carrier follows that continuation.
+    This owns no movement. It fires countermeasures while the carrier flies
+    the run-in, the drop and the break that the rest of this file gave it, and
+    it reads two things off the carrier group to know where that flight is:
+    the phase, and ITW_CLASH_HALUnloadFlareRelease, which the drop writes as
+    the first man goes.
+
+    One thread per lift. The seam can take over a run that is already armed,
+    and would otherwise start a second one beside the first.
 */
-ITW_CLASH_HALUnload_fnc_StartHotFlares = {
-    params ["_carrier","_cargoGroup"];
+ITW_CLASH_HALUnload_fnc_StartFlares = {
+    params ["_carrierGroup","_carrier",["_dropZone",[]]];
+    if (!ITW_CLASH_HALUnloadFlares) exitWith {false};
+    if (isNull _carrierGroup || {isNull _carrier}) exitWith {false};
+
+    private _serial = _carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1];
     if (
-        isNull _carrier
-        || {isNull _cargoGroup}
-        || {isNil "ITW_CLASH_HotDrop_fnc_Flare"}
+        (_carrierGroup getVariable ["ITW_CLASH_HALUnloadFlareSerial",-2])
+        isEqualTo _serial
     ) exitWith {false};
 
-    private _state = createHashMapFromArray [
-        ["vehicle",_carrier],
-        ["phase","POPUP"],
-        ["countermeasureEmitter",
-            if (isNil "ITW_CLASH_ThunderRun_fnc_FindCountermeasureEmitter") then {[]} else {
-                [_carrier] call ITW_CLASH_ThunderRun_fnc_FindCountermeasureEmitter
-            }
-        ]
-    ];
-    if (!isNil "ITW_CLASH_ThunderRun_fnc_InitFlareBudget") then {
-        [_state] call ITW_CLASH_ThunderRun_fnc_InitFlareBudget;
+    if (
+        isNil "ITW_CLASH_ThunderRun_fnc_FindCountermeasureEmitter"
+        || {isNil "ITW_CLASH_ThunderRun_fnc_FireCountermeasure"}
+    ) exitWith {
+        ["flares-none",[
+            typeOf _carrier,groupId _carrierGroup,"no-thunder-run"
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+        false
+    };
+    private _emitter = [_carrier] call ITW_CLASH_ThunderRun_fnc_FindCountermeasureEmitter;
+    if (_emitter isEqualTo []) exitWith {
+        ["flares-none",[
+            typeOf _carrier,groupId _carrierGroup,"no-launcher-or-empty"
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+        false
     };
 
-    [_state,_carrier,_cargoGroup] spawn {
-        params ["_state","_carrier","_cargoGroup"];
-        private _deadline = time + (
-            missionNamespace getVariable ["ITW_CLASH_HALParadrop_ClimbTimeout",45]
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadFlareSerial",_serial];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadFlareRelease",-1];
+
+    [_carrierGroup,_carrier,_dropZone,_emitter,_serial] spawn {
+        params ["_carrierGroup","_carrier","_dropZone","_emitter","_serial"];
+        scriptName "ITW_CLASH_HALUnload_Flares";
+
+        // The shape Thunder Run's primitive, and any override on it, expects.
+        private _state = createHashMapFromArray [
+            ["vehicle",_carrier],["countermeasureEmitter",_emitter]
+        ];
+        // Allowances are cumulative, in rounds spent since the run was armed.
+        private _rounds = [_carrier] call ITW_CLASH_HALUnload_fnc_FlareRounds;
+        private _allow = _rounds * ITW_CLASH_HALUnloadFlareSpend;
+        private _preAllow = _allow * ITW_CLASH_HALUnloadFlarePreShare;
+        private _hammerAllow = _allow * (
+            ITW_CLASH_HALUnloadFlarePreShare + ITW_CLASH_HALUnloadFlareHammerShare
         );
-        while {
-            alive _carrier
-            && {canMove _carrier}
-            && {time < _deadline}
-            && {([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []}
-        } do {
-            [_state,"POPUP"] call ITW_CLASH_HotDrop_fnc_Flare;
-            sleep 0.5;
+        private _left = _rounds;
+        private _pre = 0;
+        private _hammer = 0;
+        private _egress = 0;
+        private _next = 0;
+        private _last = "";
+        private _released = -1;
+        private _began = time;
+        // An armed run has ITW_CLASH_HALUnloadRunInTimeout to release in.
+        private _preBy = time + ITW_CLASH_HALUnloadRunInTimeout + 15;
+        private _why = "";
+
+        waitUntil {
+            sleep 0.1;
+            _why = switch (true) do {
+                case (isNull _carrierGroup || {isNull _carrier}): {"lift-gone"};
+                case (!alive _carrier || {!canMove _carrier}): {"carrier-lost"};
+                case (
+                    (_carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1])
+                    isNotEqualTo _serial
+                ): {"next-lift"};
+                default {""};
+            };
+            if (_why isEqualTo "") then {
+                _released = _carrierGroup getVariable [
+                    "ITW_CLASH_HALUnloadFlareRelease",-1
+                ];
+                private _stage = [
+                    _released,time
+                ] call ITW_CLASH_HALUnload_fnc_FlareStage;
+
+                switch (_stage) do {
+                    case "": {_why = "done"};
+                    case "PRE": {
+                        // Handed back to HAL, or armed and never released.
+                        private _phase = _carrierGroup getVariable [
+                            "ITW_CLASH_HALUnloadPhase",""
+                        ];
+                        if !(_phase in ["RUN_IN","DROPPING","SEAM"]) then {
+                            _why = "run-ended";
+                        };
+                        if (time >= _preBy) then {_why = "no-release"};
+                    };
+                    default {};
+                };
+                // A new stage pulls at once. Otherwise the hammer would start
+                // up to one PRE interval late, which is most of the drop.
+                if (_stage isNotEqualTo _last) then {
+                    _last = _stage;
+                    _next = 0;
+                };
+
+                if (_why isEqualTo "" && {time >= _next}) then {
+                    _left = [_carrier] call ITW_CLASH_HALUnload_fnc_FlareRounds;
+                    private _spent = _rounds - _left;
+                    private _pull = switch (_stage) do {
+                        case "PRE": {
+                            _spent < _preAllow
+                            && {
+                                _dropZone isEqualTo []
+                                || {
+                                    (_carrier distance2D _dropZone)
+                                    <= ITW_CLASH_HALUnloadFlareStart
+                                }
+                            }
+                        };
+                        case "HAMMER": {_spent < _hammerAllow};
+                        default {_spent < _allow};
+                    };
+                    // The allowance is gone and there is no later stage to
+                    // wait for. PRE and HAMMER just wait for theirs.
+                    if (_stage isEqualTo "EGRESS" && {_spent >= _allow}) then {
+                        _why = "spent";
+                    };
+                    if (_pull) then {
+                        if ([_state] call ITW_CLASH_ThunderRun_fnc_FireCountermeasure) then {
+                            switch (_stage) do {
+                                case "PRE": {_pre = _pre + 1};
+                                case "HAMMER": {_hammer = _hammer + 1};
+                                default {_egress = _egress + 1};
+                            };
+                        };
+                        _next = time + (switch (_stage) do {
+                            case "PRE": {ITW_CLASH_HALUnloadFlarePreCadence};
+                            case "HAMMER": {ITW_CLASH_HALUnloadFlareHammerCadence};
+                            default {ITW_CLASH_HALUnloadFlareEgressCadence};
+                        });
+                    } else {
+                        // Not yet close enough, or this stage's share is
+                        // spent. Look again soon without reading the
+                        // launcher ten times a second.
+                        _next = time + 0.5;
+                    };
+                };
+            };
+            _why isNotEqualTo ""
         };
+
+        // A run that never released is not finished: whoever takes the lift
+        // next may flare it. A run that did release has had its flares.
+        if (
+            !isNull _carrierGroup
+            && {_released < 0}
+            && {
+                (_carrierGroup getVariable ["ITW_CLASH_HALUnloadFlareSerial",-2])
+                isEqualTo _serial
+            }
+        ) then {
+            _carrierGroup setVariable ["ITW_CLASH_HALUnloadFlareSerial",nil];
+        };
+
+        if (!isNull _carrier) then {
+            _left = [_carrier] call ITW_CLASH_HALUnload_fnc_FlareRounds;
+        };
+        ["flares",[
+            if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+            if (isNull _carrierGroup) then {"<null>"} else {groupId _carrierGroup},
+            _pre,_hammer,_egress,_rounds,_left,_why,
+            round (time - _began)
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
     };
     true
 };
@@ -910,7 +1171,8 @@ ITW_CLASH_HALUnload_fnc_ClearDropState = {
         "ITW_CLASH_HALUnloadDropStarted",
         "ITW_CLASH_HALUnloadDropZone",
         "ITW_CLASH_HALUnloadDropRadius",
-        "ITW_CLASH_HALUnloadBreak"
+        "ITW_CLASH_HALUnloadBreak",
+        "ITW_CLASH_HALUnloadFlareRelease"
     ];
     true
 };
@@ -1401,7 +1663,14 @@ ITW_CLASH_HALUnload_fnc_RunIn = {
         ["arm-refused"] call _skip
     };
     if (_mode isEqualTo "HOT_PARADROP") then {
-        [_carrier,_primary] call ITW_CLASH_HALUnload_fnc_StartHotFlares;
+        ["hot-drop",[
+            typeOf _carrier,groupId _carrierGroup,
+            if (isNull _primary) then {"<none>"} else {groupId _primary},
+            _state,_reason,
+            round (_carrier distance2D _dropZone),
+            "run-in"
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+        [_carrierGroup,_carrier,_dropZone] call ITW_CLASH_HALUnload_fnc_StartFlares;
     };
 
     // --- fly it. Distance still to run along the approach line: positive
@@ -1453,6 +1722,8 @@ ITW_CLASH_HALUnload_fnc_RunIn = {
     private _releaseSpeed = speed _carrier;
     private _releaseHeight = (getPosATL _carrier)#2;
     _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropStarted",_releasedAt];
+    // The flare thread's cue: from here it hammers, then sprays the egress.
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadFlareRelease",_releasedAt];
     _cargoGroups = [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_CargoGroups;
     if (count _cargoGroups > 1) then {
         ["multi-group-lift",[
@@ -1641,11 +1912,22 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 _carrier flyInHeight ITW_CLASH_HALUnloadHotDropHeight;
                 [_carrierGroup,_carrier,_origin] call
                     ITW_CLASH_HALUnload_fnc_PrepareDropRun;
-                [_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_StartHotFlares;
+                ["hot-drop",[
+                    typeOf _carrier,groupId _carrierGroup,groupId _cargoGroup,
+                    _state,_reason,0,"seam"
+                ]] call ITW_CLASH_HALUnload_fnc_Log;
+                [_carrierGroup,_carrier,getPosATL _carrier] call
+                    ITW_CLASH_HALUnload_fnc_StartFlares;
+                // Hot decides the flares. Whether a refused drop may land is
+                // still the corridor's answer, the same one PARADROP uses, so
+                // a CONTESTED lift keeps the landing it could always fall
+                // back to and a HOT one still never gets it.
+                private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];
+                _carrierGroup setVariable ["ITW_CLASH_HALUnloadFlareRelease",time];
                 private _dropped = false;
                 {
                     _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_x];
-                    if ([_carrierGroup,_carrier,false] call
+                    if ([_carrierGroup,_carrier,!_noLand] call
                         ITW_CLASH_HALParadrop_fnc_Execute
                     ) then {_dropped = true};
                 } forEach _cargoGroups;
@@ -1656,10 +1938,19 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                         ITW_CLASH_HALUnload_fnc_Handback
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
-                        _carrier land "NONE";
-                        _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
-                        _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
-                        _result = "NO_LAND"
+                        _carrierGroup setVariable ["ITW_CLASH_HALUnloadFlareRelease",nil];
+                        if (_noLand) then {
+                            _carrier land "NONE";
+                            _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+                            _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
+                            _result = "NO_LAND"
+                        } else {
+                            [_carrierGroup,_carrier,"land-fallback"] call
+                                ITW_CLASH_HALUnload_fnc_CancelDropRun;
+                            _carrier land "GET OUT";
+                            [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_Release;
+                            _result = "LAND_FALLBACK"
+                        };
                     } else {
                         _result = "HOT_PARADROP_DECLINED_EMPTY"
                     };
@@ -1833,7 +2124,7 @@ if (
 
 ITW_CLASH_HALUnloadReady = true;
 diag_log format [
-    "CLASH BOOT | hal-unload-ready | version=%1 sites=%2 executionTime=true oneOwner=true halOwnsFlight=true terminalFlyThrough=%3 through=%4 break=%5 hotDropOwnsMovement=false runIn=%6 runInDistance=%7 handback=%8 egressHeight=%9 hotDropHeight=%10 sources=%11",
+    "CLASH BOOT | hal-unload-ready | version=%1 sites=%2 executionTime=true oneOwner=true halOwnsFlight=true terminalFlyThrough=%3 through=%4 break=%5 hotDropOwnsMovement=false runIn=%6 runInDistance=%7 handback=%8 egressHeight=%9 hotDropHeight=%10 sources=%11 hotStates=%12 flares=%13 flareStart=%14 flareHammer=%15s/%16s flareEgress=%17s/%18s",
     ITW_CLASH_HALUnloadVersion,
     count ITW_CLASH_HALUnloadOrderSpecs,
     ITW_CLASH_HALUnloadFlyThrough,
@@ -1844,6 +2135,13 @@ diag_log format [
     ITW_CLASH_HALUnloadHandback,
     ITW_CLASH_HALUnloadTransitHeight,
     ITW_CLASH_HALUnloadHotDropHeight,
-    _sources
+    _sources,
+    ITW_CLASH_HALUnloadHotStates,
+    ITW_CLASH_HALUnloadFlares,
+    ITW_CLASH_HALUnloadFlareStart,
+    ITW_CLASH_HALUnloadFlareHammerSeconds,
+    ITW_CLASH_HALUnloadFlareHammerCadence,
+    ITW_CLASH_HALUnloadFlareEgressSeconds,
+    ITW_CLASH_HALUnloadFlareEgressCadence
 ];
 true

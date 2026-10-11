@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassifyCorridor") exitWith {
 };
 
 ITW_CLASH_HotDropStarted = true;
-ITW_CLASH_HotDropVersion = 8;
+ITW_CLASH_HotDropVersion = 9;
 ITW_CLASH_HotDropReady = false;
 
 /*
@@ -53,7 +53,40 @@ ITW_CLASH_HotDropReady = false;
       - Anything a player is flying, riding or leading is untouched.
 */
 
-ITW_CLASH_HotDropEnabled = missionNamespace getVariable ["ITW_CLASH_HotDropEnabled",true];
+/*
+    Version 9: switched off. The hot drop is flown by ITW_CLASH_HALUnload.sqf.
+
+    Hark: "HOTDROPs never fire because the lift is always busy or already
+    reserved. its a flaw in our implementation."
+
+    It is, and it is in the two rules below taken together, each of which was
+    right when it was written:
+
+      - the claim window is a loaded helicopter on the ground (IsEligible,
+        "Decided once, on the ground");
+      - a carrier whose group is Busy is declined (IsEligible, "HAL is already
+        flying this one").
+
+    HAL_SCargo sets Busy on the carrier before it flies to the pickup
+    (SCargo.sqf:265) and clears it only at its exits, after the return. So
+    every helicopter HAL has loaded is Busy for the whole of the window, and
+    the only other things that load a helicopter are CASEVAC, MEDEVAC and
+    reconstitution, which are declined as reserved. Three flights on
+    2026-10-10: 111 declined-busy, 26 declined-reserved, 0 claimed.
+
+    Dropping the Busy rule is not the fix. That is run8, two pilots on one
+    Littlebird. The fix is that the lift already has an owner for its last
+    kilometre, the unload owner, which HAL hands the aircraft to through its
+    own waypoint. That module now flies HOT and CONTESTED corridors as hot
+    drops, with its own flare stages.
+
+    The poll is off by default and everything else here is left as it was, so
+    ITW_CLASH_HotDrop_fnc_Destination, which the unload owner's v4 climb still
+    calls, keeps working. Turning the poll back on brings back the declines
+    and nothing else. The takeover code can be deleted once the run-in hot
+    drop has flown.
+*/
+ITW_CLASH_HotDropEnabled = missionNamespace getVariable ["ITW_CLASH_HotDropEnabled",false];
 ITW_CLASH_HotDropPoll = missionNamespace getVariable ["ITW_CLASH_HotDropPoll",10];
 /*
     How far the lift has to actually be going.
@@ -720,7 +753,7 @@ ITW_CLASH_HotDrop_fnc_Consider = {
 
 ITW_CLASH_HotDropReady = true;
 diag_log format [
-    "CLASH BOOT | hot-drop-ready | version=%1 states=%2 takeover=%3 ingress=%4 popup=%5 dropHeight=%6 poll=%7 boardingHeight=%8 payload=troops claimedAt=boarding seizesAirborne=false logisticsUntouched=true borrows=flares,corridor,paradrop",
+    "CLASH BOOT | hot-drop-ready | version=%1 states=%2 takeover=%3 ingress=%4 popup=%5 dropHeight=%6 poll=%7 boardingHeight=%8 payload=troops claimedAt=boarding seizesAirborne=false logisticsUntouched=true borrows=flares,corridor,paradrop enabled=%9 hotDropsFlownBy=hal-unload",
     ITW_CLASH_HotDropVersion,
     ITW_CLASH_HotDropStates,
     ITW_CLASH_HotDropTakeoverRadius,
@@ -728,6 +761,7 @@ diag_log format [
     ITW_CLASH_HotDropPopupRadius,
     ITW_CLASH_HotDropDropHeight,
     ITW_CLASH_HotDropPoll,
-    ITW_CLASH_HotDropBoardingHeight
+    ITW_CLASH_HotDropBoardingHeight,
+    ITW_CLASH_HotDropEnabled
 ];
 true

@@ -194,6 +194,19 @@ ITW_CLASH_LoudDebug_fnc_Sentence = {
         case "hot-drop|handback": {
             format ["HOT DROP %1: %2 handed back to HAL after %3s",0 call _p,1 call _p,2 call _p]
         };
+        // The hot drop is flown by the unload owner since HALUnload v8. The
+        // four sentences above belong to the retired poll.
+        case "hal-unload|hot-drop": {
+            format ["HOT DROP: %1 (%2) taking %3 into a %4 corridor (%5), %6m out, by %7",
+                0 call _p,1 call _p,2 call _p,3 call _p,4 call _p,5 call _p,6 call _p]
+        };
+        case "hal-unload|flares": {
+            format ["HOT DROP FLARES: %1 (%2) pulled %3 running in, %4 at the drop, %5 leaving - %7 of %6 rounds left (%8)",
+                0 call _p,1 call _p,2 call _p,3 call _p,4 call _p,5 call _p,6 call _p,7 call _p]
+        };
+        case "hal-unload|flares-none": {
+            format ["HOT DROP: %1 (%2) has no flares to fire (%3)",0 call _p,1 call _p,2 call _p]
+        };
         default {""};
     }
 };

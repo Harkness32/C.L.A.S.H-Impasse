@@ -251,5 +251,6 @@ Also: no `air-picture-air-loss` above 100 m within 15 s of a `lift` line, and
 - Takeoff: the pilot climbs straight up to cruise height before it moves.
   Lower now, since cruise is, but not addressed.
 - Idle transports hover at about 48 m. Not HAL's lift, not touched.
-- HotDrop's own profile still pops to 130 m. It declines every HAL-busy
-  carrier, so it did not fly on this log.
+- HotDrop's own profile popped to 130 m. It declined every HAL-busy
+  carrier and could never fly; its poll is off since unload owner v8
+  (`PARADROP_RUN_IN.md` section 14).

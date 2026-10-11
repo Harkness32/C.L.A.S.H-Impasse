@@ -75,5 +75,6 @@ jobs:
           tests/test_hal_sf_raids.py
           tests/test_paradrop_origin_guard.py
           tests/test_hot_drop.py
+          tests/test_hot_drop_run_in.py
           tests/test_hotdrop_scargo_interlock.py
           tests/test_sqf_static_checks.py

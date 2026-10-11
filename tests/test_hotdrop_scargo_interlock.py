@@ -95,4 +95,4 @@ def test_the_remaining_hole_is_written_down():
 
 
 def test_hotdrop_version_moved():
-    assert "ITW_CLASH_HotDropVersion = 8;" in hotdrop()
+    assert "ITW_CLASH_HotDropVersion = 9;" in hotdrop()

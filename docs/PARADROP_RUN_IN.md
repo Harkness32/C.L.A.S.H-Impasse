@@ -292,3 +292,106 @@ certain.
 
 Certify: `hal-unload-order-release` 10 to 20 s after each `lift` line, no
 `recon-complete` inside a minute of a drop, and the squad `Busy` afterwards.
+
+## 14. The hot drop, v8
+
+Hark: "HOTDROPs never fire because the lift is always busy or already
+reserved. its a flaw in our implementation."
+
+**Why it never fired.** `ITW_CLASH_HotDrop.sqf` polled for a loaded helicopter
+on the ground and took it, unless its crew group was `Busy`. Both rules were
+right when written. Together they leave nothing to take:
+
+- `HAL_SCargo` sets `Busy` on the carrier before it flies to the pickup
+  (`SCargo.sqf:265`) and clears it only at its four exits, after the return.
+  Every helicopter HAL has loaded is `Busy` for the whole of the window.
+- Everything else that loads a helicopter is CASEVAC, MEDEVAC or
+  reconstitution, declined as reserved.
+
+| Flight | declined-busy | declined-reserved | claimed |
+|---|---|---|---|
+| 20:14 | 1 | 5 | 0 |
+| 20:53 | 90 | 0 | 0 |
+| 23:22 | 20 | 21 | 0 |
+
+The busy declines at 23:22 are the carriers this module then paradropped:
+Alpha 4-4, Alpha 3-2, Bravo 1-2.
+
+Dropping the `Busy` rule is run8 again: two pilots on one Littlebird. The lift
+already has an owner for its last kilometre, this one, handed the aircraft by
+HAL's own waypoint. And it already flies most of that profile: 30 m cruise,
+fast run-in, drop on the move, low break.
+
+**What changed.**
+
+- A hot drop is the run-in plus flares. `HOT_PARADROP` now covers
+  `ITW_CLASH_HALUnloadHotStates`: HOT, AIR_DENIED and CONTESTED. UNKNOWN stays
+  a plain paradrop. COLD is still the host's dice.
+- Hot decides flares only. Whether a refused drop may land is still the
+  corridor's answer: CONTESTED may, HOT and UNKNOWN may not.
+- The HotDrop poll is off by default (`ITW_CLASH_HotDropEnabled`, version 9).
+  The file still loads and its code is left in place until this has flown.
+
+**Flares.** Hark: "start preflaring when we're decently close to the drop,
+then HAMMER THEM as we're away and then keep spraying them as we egress."
+
+| Stage | When | Asks every |
+|---|---|---|
+| PRE | from 1000 m short of the drop zone to the release | 2.5 s |
+| HAMMER | 10 s from the release | 0.4 s |
+| EGRESS | the next 30 s | 1.5 s |
+
+The old hot mode flared only while the chalk was aboard and stopped as the
+last man left, which is the reverse.
+
+A pull is one `forceWeaponFire` through Thunder Run's primitive, so a modset's
+countermeasure override applies. What one pull dispenses is the launcher's
+business: a pair, or a burst of ten. So the limit is in rounds, read off the
+launcher before each pull. One drop may spend 75% of what the launcher holds
+at arming; of that, PRE 15%, HAMMER a further 50%, EGRESS the rest.
+
+Modelled at 58 m/s from 1200 m (`tests/test_hot_drop_run_in.py`):
+
+| Launcher | Rounds a pull | PRE | HAMMER | EGRESS | Left |
+|---|---|---|---|---|---|
+| 168 | 1 | 7 | 25 | 20 | 116 |
+| 60 | 1 | 7 | 23 | 15 | 15 |
+| 60 | 2 | 4 | 11 | 8 | 14 |
+| 60 | 10 | 1 | 2 | 2 | 10 |
+
+**Not known from here.**
+
+- What a pull dispenses on each airframe, and whether the launcher accepts a
+  pull every 0.4 s. The `flares` line gives pulls and rounds per drop.
+- Whether anything rearms countermeasures. If nothing does, each hot drop has
+  three quarters of what the last one left.
+- None of the nine lifts in the logs was HOT. One was CONTESTED.
+
+**Not done.**
+
+- A lift the host forbids parachutes on (`ITW_ParamHelisUnload` 0) lands as
+  before, with no flares.
+- Parachutes are polled as helicopters by the HotDrop poll
+  (`Steerable_Parachute_F` in the declines). The poll is off.
+
+**Switches.**
+
+| Name | Default | |
+|---|---|---|
+| `ITW_CLASH_HALUnloadHotStates` | HOT, AIR_DENIED, CONTESTED | |
+| `ITW_CLASH_HALUnloadFlares` | true | |
+| `ITW_CLASH_HALUnloadFlareStart` | 1000 | m |
+| `ITW_CLASH_HALUnloadFlarePreCadence` | 2.5 | s |
+| `ITW_CLASH_HALUnloadFlareHammerSeconds` | 10 | s |
+| `ITW_CLASH_HALUnloadFlareHammerCadence` | 0.4 | s |
+| `ITW_CLASH_HALUnloadFlareEgressSeconds` | 30 | s |
+| `ITW_CLASH_HALUnloadFlareEgressCadence` | 1.5 | s |
+| `ITW_CLASH_HALUnloadFlareSpend` | 0.75 | of the launcher |
+| `ITW_CLASH_HALUnloadFlarePreShare` | 0.15 | of the allowance |
+| `ITW_CLASH_HALUnloadFlareHammerShare` | 0.5 | of the allowance |
+| `ITW_CLASH_HotDropEnabled` | false | the old poll |
+
+Certify: no `hot-drop-declined` lines; on a CONTESTED or HOT lift,
+`hal-unload-hot-drop`, then `run-in-armed` with `HOT_PARADROP`, then
+`hal-unload-flares` about 40 s after the `release` with all three counts
+above zero and `done` or `spent` as the reason.

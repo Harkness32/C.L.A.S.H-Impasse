@@ -131,19 +131,26 @@ def test_mode_table_keeps_host_setting_and_corridor_doctrine_separate():
     assert '_state in ["HOT","AIR_DENIED","UNKNOWN"]' in body
     assert 'if (_param == 0) exitWith {' in body
     assert 'if (_noLand) then {"NO_LAND"} else {"LAND"}' in body
-    assert '_state in ["HOT","AIR_DENIED"]' in body
+    # Hot is a tunable list (tests/test_hot_drop_run_in.py); every dangerous
+    # corridor that is not on it still always drops.
+    assert '_state in ITW_CLASH_HALUnloadHotStates' in body
     assert '["HOT_PARADROP",100,_capacity]' in body
-    assert '_state in ["CONTESTED","UNKNOWN"]' in body
+    assert '_state in ["HOT","AIR_DENIED","CONTESTED","UNKNOWN"]' in body
     assert '["PARADROP",100,_capacity]' in body
+    assert body.index("ITW_CLASH_HALUnloadHotStates") < body.index(
+        '_state in ["HOT","AIR_DENIED","CONTESTED","UNKNOWN"]'
+    )
     assert "ITW_CLASH_HALParadrop_fnc_ShouldUse" in body
 
 
 def test_unsafe_paradrop_never_falls_back_to_a_forward_landing():
     source = central()
     body = function_body(source, "ITW_CLASH_HALUnload_fnc_Unload")
-    assert 'private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];' in body
-    assert '[_carrierGroup,_carrier,!_noLand] call' in body
-    assert '[_carrierGroup,_carrier,false] call' in body
+    # Both drop branches ask the corridor, not the mode: CONTESTED is a hot
+    # drop now and may still fall back to a landing, HOT never may.
+    assert body.count('private _noLand = _state in ["HOT","AIR_DENIED","UNKNOWN"];') == 2
+    assert body.count('[_carrierGroup,_carrier,!_noLand] call') == 2
+    assert '[_carrierGroup,_carrier,false] call' not in body
     assert 'case "NO_LAND"' in body
     # A refused unsafe drop releases any sticky landing state but keeps HAL as
     # flight owner; it does not invent a doMove or RTB.
@@ -152,10 +159,13 @@ def test_unsafe_paradrop_never_falls_back_to_a_forward_landing():
 
 
 def test_hot_profile_borrows_flares_but_not_flight_control():
-    body = function_body(central(), "ITW_CLASH_HALUnload_fnc_StartHotFlares")
-    assert "ITW_CLASH_HotDrop_fnc_Flare" in body
-    assert "ITW_CLASH_ThunderRun_fnc_InitFlareBudget" in body
-    for forbidden in ("doMove", "commandMove", "RYD_WPdel", "setWaypointPosition"):
+    body = function_body(central(), "ITW_CLASH_HALUnload_fnc_StartFlares")
+    assert "ITW_CLASH_ThunderRun_fnc_FindCountermeasureEmitter" in body
+    assert "ITW_CLASH_ThunderRun_fnc_FireCountermeasure" in body
+    for forbidden in (
+        "doMove", "commandMove", "RYD_WPdel", "setWaypointPosition",
+        "addWaypoint", "flyInHeight", "limitSpeed", "forceSpeed",
+    ):
         assert forbidden not in body, forbidden
 
 
@@ -216,11 +226,12 @@ def test_the_two_argument_caller_keeps_the_old_behaviour():
 
 def test_the_unload_owner_passes_the_no_land_decision_through():
     """UNKNOWN corridors parachute and never land - Hark's rule after the
-    Littlebird losses - so PARADROP forwards !_noLand and HOT_PARADROP, which
-    only runs in HOT or AIR_DENIED, forwards a hard false."""
+    Littlebird losses - so both drop modes forward !_noLand. HOT_PARADROP used
+    to forward a hard false because it only ran in HOT or AIR_DENIED; it runs
+    in CONTESTED too now, which may land."""
     body = function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload")
-    assert "[_carrierGroup,_carrier,!_noLand] call" in body
-    assert "[_carrierGroup,_carrier,false] call" in body
+    assert body.count("[_carrierGroup,_carrier,!_noLand] call") == 2
+    assert "[_carrierGroup,_carrier,false] call" not in body
 
 
 def test_the_refusal_branch_leaves_the_airframe_flying():
@@ -340,13 +351,17 @@ def test_egress_appends_the_break_after_the_prearmed_through_leg():
 
 def test_safe_land_fallback_cancels_the_flythrough_first():
     body = code_only(function_body(central(), "ITW_CLASH_HALUnload_fnc_Unload"))
-    assert body.count("ITW_CLASH_HALUnload_fnc_CancelDropRun") == 1
-    at = body.index('"land-fallback"')
-    window = body[at - 250:at + 350]
-    assert "ITW_CLASH_HALUnload_fnc_CancelDropRun" in window
-    assert window.index("ITW_CLASH_HALUnload_fnc_CancelDropRun") < window.index(
-        '_carrier land "GET OUT"'
-    )
+    # Once in each drop branch.
+    assert body.count("ITW_CLASH_HALUnload_fnc_CancelDropRun") == 2
+    assert body.count('"land-fallback"') == 2
+    at = 0
+    for _ in range(2):
+        at = body.index('"land-fallback"', at + 1)
+        window = body[at - 250:at + 350]
+        assert "ITW_CLASH_HALUnload_fnc_CancelDropRun" in window
+        assert window.index("ITW_CLASH_HALUnload_fnc_CancelDropRun") < window.index(
+            '_carrier land "GET OUT"'
+        )
 
 
 def test_cancelling_a_drop_run_removes_only_its_continuation_state():
@@ -497,8 +512,8 @@ def test_flythrough_defaults_are_long_enough_to_clear_the_drop_zone():
     assert '"ITW_CLASH_HALUnloadEgressOffset",600' in source
 
 
-def test_hal_unload_version_moved_to_seven_for_the_landed_release():
-    assert "ITW_CLASH_HALUnloadVersion = 7;" in central()
+def test_hal_unload_version_moved_to_eight_for_the_hot_drop():
+    assert "ITW_CLASH_HALUnloadVersion = 8;" in central()
 
 
 def test_native_itw_paradrop_preserves_the_prearmed_through_waypoint():
