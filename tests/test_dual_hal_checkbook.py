@@ -303,7 +303,7 @@ def test_orphan_vehicle_crew_is_quarantined_then_cleaned_without_touching_infant
     cleanup = mission("ITW_CLASH_CrewRemnantCleanup.sqf")
     init = mission("init.sqf")
 
-    assert "ITW_CLASH_CrewRemnantCleanupVersion = 1;" in cleanup
+    assert "ITW_CLASH_CrewRemnantCleanupVersion = 2;" in cleanup
     assert '"ITW_CLASH_VehicleCrewGroup",false' in cleanup
     assert '"ITW_CLASH_VehicleCrewUnit",false' in cleanup
     assert "ITW_CLASH_CrewRemnantMaxSurvivors" in cleanup
@@ -314,7 +314,8 @@ def test_orphan_vehicle_crew_is_quarantined_then_cleaned_without_touching_infant
     assert 'setVariable ["ITW_CLASH_ExcludeHAL",true]' in cleanup
     assert "ITW_CLASH_Service_fnc_RemoveHALOwnership" in cleanup
     assert "ITW_CLASH_CrewRemnantPlayerRadius" in cleanup
-    assert "{deleteVehicle _x} forEach _survivors;" in cleanup
+    assert "deleteVehicle _x;" in cleanup
+    assert "} forEach _survivors;" in cleanup
 
     # Generic one-man infantry is intentionally not deleted; cleanup requires
     # explicit vehicle-crew provenance.
