@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALParadropReady",false]) exitWith {true};
 
-ITW_CLASH_HALParadropVersion = 4;
+ITW_CLASH_HALParadropVersion = 5;
 ITW_CLASH_HALParadropReady = false;
 
 ITW_CLASH_HALParadrop_HeavyCargoSeats = missionNamespace getVariable [
@@ -156,7 +156,17 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
         stamp left on the carrier, and the one-line-per-lift trace in
         HALUnload never reached - the symptom was silence.
     */
-    params ["_carrierGroup","_carrier",["_allowLandFallback",true]];
+    /*
+        _climbTimeout bounds the altitude wait below. Omitted, it is
+        ITW_CLASH_HALParadrop_ClimbTimeout, which is sized for an aircraft
+        standing over the point and climbing from wherever it arrived. A
+        caller that releases on a fly-by passes about a second: an aircraft
+        crossing the drop zone at speed cannot be asked to wait there.
+    */
+    params [
+        "_carrierGroup","_carrier",
+        ["_allowLandFallback",true],["_climbTimeout",-1]
+    ];
     if (
         isNull _carrierGroup
         || {isNull _carrier}
@@ -187,6 +197,7 @@ ITW_CLASH_HALParadrop_fnc_Execute = {
     };
 
     private _deadline = time + ITW_CLASH_HALParadrop_ClimbTimeout;
+    if (_climbTimeout >= 0) then {_deadline = time + _climbTimeout};
     waitUntil {
         sleep 0.2;
         !alive _carrier

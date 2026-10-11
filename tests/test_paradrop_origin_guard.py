@@ -97,9 +97,10 @@ def test_the_min_run_exceeds_a_base_footprint():
 
 def test_the_origin_is_stamped_at_the_execution_time_unload_owner():
     unload = read(MISSION / "ITW_CLASH_HALUnload.sqf")
-    # Both PARADROP and HOT_PARADROP stamp the real carrier departure before
-    # Execute is called. No order file predicts the future at build time.
-    assert unload.count('setVariable ["ITW_CLASH_HALParadropOrigin",_origin]') == 2
+    # PARADROP and HOT_PARADROP at the seam, and the run-in, each stamp the real
+    # carrier departure before Execute is called. No order file predicts the
+    # future at build time.
+    assert unload.count('setVariable ["ITW_CLASH_HALParadropOrigin",_origin]') == 3
     assert 'getVariable ["ITW_CLASH_HALUnloadOrigin",[]]' in unload
     assert "ITW_CLASH_HALUnload_fnc_TrackLift" in unload
     assert 'vehicle _x == _carrier' in unload
@@ -128,5 +129,5 @@ def test_every_execute_exit_now_says_why():
         assert f'"{reason}"' in body, reason
 
 
-def test_paradrop_version_moved_to_four():
-    assert "ITW_CLASH_HALParadropVersion = 4;" in policy()
+def test_paradrop_version_moved_to_five_for_the_bounded_altitude_wait():
+    assert "ITW_CLASH_HALParadropVersion = 5;" in policy()

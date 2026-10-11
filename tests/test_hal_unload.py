@@ -497,8 +497,8 @@ def test_flythrough_defaults_are_long_enough_to_clear_the_drop_zone():
     assert '"ITW_CLASH_HALUnloadEgressOffset",600' in source
 
 
-def test_hal_unload_version_moved_to_four_for_flythrough_drop_run():
-    assert "ITW_CLASH_HALUnloadVersion = 4;" in central()
+def test_hal_unload_version_moved_to_five_for_the_run_in():
+    assert "ITW_CLASH_HALUnloadVersion = 5;" in central()
 
 
 def test_native_itw_paradrop_preserves_the_prearmed_through_waypoint():
@@ -516,3 +516,456 @@ def test_native_itw_paradrop_preserves_the_prearmed_through_waypoint():
     assert 'if !(_crewGroup isEqualTo grpNull) then {' in native
     guarded = native[native.index('if !(_crewGroup isEqualTo grpNull) then {'):]
     assert "ITW_DELETE_WAYPOINTS(_crewGroup)" in guarded[:1200]
+
+
+# ------------------------------------------------ the run-in: ITW's way, on HAL's lift
+
+HAL = NR6 / "HAL"
+# The four order files the addon forks are compiled from the addon when it is
+# loaded and from NR6 when it is not, so both copies have to hold the shape.
+RELEASE_AT_DROP = {
+    "GoAttInf": [HAL / "GoAttInf.sqf", ADD / "hal" / "GoAttInf.sqf"],
+    "GoRecon": [HAL / "GoRecon.sqf", ADD / "hal" / "GoRecon.sqf"],
+    "GoCapture": [HAL / "GoCapture.sqf", ADD / "hal" / "GoCapture.sqf"],
+    "GoRest": [HAL / "GoRest.sqf", ADD / "hal" / "GoRest.sqf"],
+}
+RELEASE_AT_BREAK = {
+    "GoFlank": [HAL / "GoFlank.sqf"],
+    "GoSFAttack": [HAL / "GoSFAttack.sqf"],
+}
+CARGO_CLEAR = '_GDV setVariable [("CargoM" + (str _GDV)), false];'
+
+
+def body_of(name: str) -> str:
+    return code_only(function_body(central(), f"ITW_CLASH_HALUnload_fnc_{name}"))
+
+
+def after_the_carrier_wait(path: Path) -> str:
+    """From the carrier wait that follows the unload seam to the line where
+    the order file looks the carrier up again."""
+    source = read(path)
+    seam = source.index("land 'GET OUT'")
+    wait = source.index("call RYD_Wait", seam)
+    return source[wait:source.index("_AV = assignedVehicle _UL;", wait)]
+
+
+def test_native_itw_never_puts_a_waypoint_on_the_drop():
+    """Hark: "waitpoint behavior for the paradrops are all wrong, we need to
+    mimic how ITW does it. currently, we set the waypoint on the ground, helo
+    paths to transport place, slows, lowers, gets there, then raises, then
+    paradrops, then leaves. its stupid clunky."
+
+    What ITW does, pinned so the thing being copied cannot drift unnoticed:
+    the destination goes 1500 m beyond, the drop is a distance check, and the
+    aircraft is never arriving anywhere."""
+    native = code_only(function_body(read(MISSION / "ITW_Attack.sqf"), "ITW_AtkUnloadAirplane"))
+    assert "_vPos getPos [1500," in native
+    assert "_veh distance2D _objPt < _unloadDist" in native
+    assert native.index("_vPos getPos [1500,") < native.index("call ITW_AtkParachute")
+
+
+def test_arming_moves_hals_own_waypoint_and_makes_none():
+    """HAL's carrier wait counts waypoints and its statement is the unload
+    seam. Moving the waypoint HAL wrote keeps both alive; replacing it would
+    have ended the wait and thrown the seam away."""
+    body = body_of("ArmRunIn")
+    assert "call ITW_CLASH_HALUnload_fnc_HALWaypoint" in body
+    assert "_through = _dropZone getPos [" in body
+    assert "ITW_CLASH_HALUnloadEgressThrough" in body
+    assert "_wp setWaypointPosition [_through,0];" in body
+    for forbidden in (
+        "addWaypoint", "deleteWaypoint", "RYD_WPadd", "RYD_WPdel",
+        "ITW_CLASH_fnc_ClearGroupWaypoints", "setWaypointStatements", "doMove",
+    ):
+        assert forbidden not in body, forbidden
+
+
+def test_the_waypoint_move_is_the_last_thing_arming_does():
+    """Everything before it is height, speed and bookkeeping. A fault part way
+    through leaves the waypoint where HAL put it, which is a v4 lift."""
+    body = body_of("ArmRunIn")
+    move = body.index("_wp setWaypointPosition [_through,0];")
+    for earlier in (
+        "_carrier flyInHeight _height;",
+        '_carrierGroup setSpeedMode "FULL";',
+        'setVariable ["ITW_CLASH_HALUnloadDropRunArmed",true]',
+        'setVariable ["ITW_CLASH_HALUnloadDropZone",_dropZone]',
+        '"run-in-armed"',
+    ):
+        assert body.index(earlier) < move, earlier
+    after = body[move:]
+    assert "setVariable" not in after
+    assert "flyInHeight" not in after
+    assert "call " not in after
+
+
+def test_the_run_in_is_fast_and_at_drop_height():
+    """Hark chose it: hold cruise speed, settle at drop height about a
+    kilometre out, drop on the move."""
+    body = body_of("ArmRunIn")
+    assert '"ITW_CLASH_HALParadrop_MinAltitude",45' in body
+    assert '"ITW_CLASH_HotDropDropHeight",130' in body
+    assert '_mode isEqualTo "HOT_PARADROP"' in body
+    assert "_carrier limitSpeed 1e10;" in body
+    assert "_carrier forceSpeed -1;" in body
+    assert '_carrier land "NONE";' in body
+    source = central()
+    assert '"ITW_CLASH_HALUnloadRunInDistance",1200' in source
+
+
+def test_arming_hands_egress_the_names_it_already_reads():
+    """Hark kept the lateral break. fnc_Egress appends it to a prepared run by
+    reading these, so a run armed a kilometre out gets the same J-hook as one
+    armed at the seam, from unchanged code."""
+    arm = body_of("ArmRunIn")
+    egress = body_of("Egress")
+    for token in (
+        "ITW_CLASH_HALUnloadDropRunArmed",
+        "ITW_CLASH_HALUnloadDropBearing",
+        "ITW_CLASH_HALUnloadDropThrough",
+        "ITW_CLASH_HALUnloadDropPoint",
+        "ITW_CLASH_HALUnloadDropStarted",
+    ):
+        assert token in arm, token
+        assert token in egress, token
+    run = body_of("RunIn")
+    assert run.index("ITW_CLASH_HALParadrop_fnc_Execute") < run.index(
+        "call ITW_CLASH_HALUnload_fnc_Egress"
+    )
+
+
+def test_hals_waypoint_is_found_by_its_statement_not_its_index():
+    """HAL deletes waypoint 0 from inside its own statements, so every stored
+    index is wrong one completion later."""
+    body = body_of("HALWaypoint")
+    assert "waypointStatements _x" in body
+    assert '"ITW_CLASH_HALUnload_fnc_Unload"' in body
+    patch = function_body(central(), "ITW_CLASH_HALUnload_fnc_PatchSource")
+    assert "spawn ITW_CLASH_HALUnload_fnc_Unload" in patch
+
+
+def test_the_run_in_decides_with_the_seams_owner_and_table():
+    body = body_of("RunIn")
+    assert "call ITW_CLASH_HALUnload_fnc_Commander" in body
+    assert "[_hq,_carrierGroup,_carrier,_dropZone] call ITW_CLASH_HALUnload_fnc_Corridor" in body
+    assert "[_carrier,_state,_carrierGroup] call ITW_CLASH_HALUnload_fnc_Mode" in body
+    assert '"|player-touch"' in body
+    # The corridor is the one to the drop zone, not to wherever the aircraft
+    # happens to be a kilometre short of it.
+    corridor = body_of("Corridor")
+    assert '["_destination",[]]' in corridor
+    assert "_destination = getPosATL _carrier;" in corridor
+
+
+def test_a_lift_that_is_going_to_land_is_not_touched():
+    """LAND and NO_LAND are HAL's lift to HAL's waypoint. Nothing below the
+    decision may run for them, and nothing above it may act on the aircraft."""
+    body = body_of("RunIn")
+    leave = body.index('if !(_mode in ["PARADROP","HOT_PARADROP"]) exitWith {};')
+    assert leave < body.index("call ITW_CLASH_HALUnload_fnc_ArmRunIn")
+    before = body[:leave]
+    for actuator in (
+        "flyInHeight", "setWaypointPosition", "setWaypointCompletionRadius",
+        "addWaypoint", "deleteWaypoint", "setSpeedMode", "setBehaviourStrong",
+        "limitSpeed", "forceSpeed", " land ", "doMove", "RydHQ_MIA", "CargoM",
+        "ITW_CLASH_HALUnload_fnc_Claim",
+    ):
+        assert actuator not in before, actuator
+
+
+def test_the_run_in_does_not_arm_on_the_pad():
+    """A short lift is inside the run-in distance before it has taken off, and
+    an armed run has a clock on it."""
+    body = body_of("RunIn")
+    arm = body.index("call ITW_CLASH_HALUnload_fnc_ArmRunIn")
+    transit = body[:arm]
+    assert "ITW_CLASH_HALUnloadRunInMinHeight" in transit
+    assert "ITW_CLASH_HALUnloadRunInDistance" in transit
+
+
+def test_the_release_is_measured_along_the_approach_line():
+    """A radius misses an aircraft that passes wide and never ends for one that
+    turns away. Distance to run along the line reaches zero abeam either way."""
+    body = body_of("RunIn")
+    assert "_along = _range * cos _angle;" in body
+    assert "_cross = abs (_range * sin _angle);" in body
+    assert "_along <= _lead" in body
+    assert "call ITW_CLASH_HALUnload_fnc_StickLead" in body
+    assert "_cross > ITW_CLASH_HALUnloadMaxOffset" in body
+
+
+def test_the_stick_lead_uses_itws_own_jumper_spacing():
+    native = read(MISSION / "ITW_Attack.sqf")
+    assert "private _sleep = 0.1 max (40/_speed) min 0.5;" in native
+    assert "_veh modeltoWorld [7, -30, -20]" in native
+    body = body_of("StickLead")
+    assert "(0.1 max (40 / _kph)) min 0.5" in body
+    assert "- 30" in body
+    assert "ITW_CLASH_HALUnloadReleaseBias" in body
+
+
+def test_a_fly_by_never_lands_and_never_waits_over_the_point():
+    """At the seam the paradrop owner may wait 45 s for altitude, because the
+    aircraft is standing there. On a run-in that is two kilometres further in."""
+    body = body_of("RunIn")
+    assert "[_carrierGroup,_carrier,false,ITW_CLASH_HALUnloadReleaseWait] call" in body
+    assert '"ITW_CLASH_HALUnloadReleaseWait",1' in central()
+    policy = read(MISSION / "ITW_CLASH_HALParadrop.sqf")
+    execute = code_only(function_body(policy, "ITW_CLASH_HALParadrop_fnc_Execute"))
+    assert '["_climbTimeout",-1]' in execute
+    # The default is untouched, so the seam and HotDrop wait as they always did.
+    assert "private _deadline = time + ITW_CLASH_HALParadrop_ClimbTimeout;" in execute
+    assert "if (_climbTimeout >= 0) then {_deadline = time + _climbTimeout};" in execute
+
+
+def test_the_run_in_drops_every_group_through_the_paradrop_owner():
+    body = body_of("RunIn")
+    assert body.count("forEach _cargoGroups") >= 2
+    assert 'setVariable ["ITW_CLASH_HALParadropCargoGroup",_x]' in body
+    assert 'setVariable ["ITW_CLASH_HALParadropOrigin",_origin]' in body
+    assert "ITW_AllyParadropCargo" not in body, "the paradrop owner calls ITW, not this"
+    assert '"multi-group-lift"' in body
+
+
+def test_a_pass_that_does_not_drop_gives_hal_its_waypoint_back():
+    """The worst the run-in may do is v4."""
+    run = body_of("RunIn")
+    assert "if (_dropped == 0 && {_aboard > 0}) exitWith {" in run
+    declined = run[run.index("if (_dropped == 0 && {_aboard > 0}) exitWith {"):]
+    assert "ITW_CLASH_HALUnload_fnc_AbortRunIn" in declined[:200]
+    assert '"never-crossed"' in run
+    assert '"passed-wide"' in run
+
+    abort = body_of("AbortRunIn")
+    assert "_wp setWaypointPosition [_dropZone,0];" in abort
+    assert "_wp setWaypointCompletionRadius _radius;" in abort
+    assert 'setVariable ["ITW_CLASH_HALUnloadPhase","TRANSIT"]' in abort
+    assert "call ITW_CLASH_HALUnload_fnc_ClearDropState" in abort
+    for forbidden in ("addWaypoint", "deleteWaypoint", "RYD_WPdel", ' land "GET OUT"'):
+        assert forbidden not in abort, forbidden
+    # And the radius it restores is the one it found, not a guess.
+    assert "waypointCompletionRadius _wp" in body_of("ArmRunIn")
+
+
+def test_only_one_of_the_seam_and_the_run_in_acts():
+    """Two threads can reach the same aircraft: the watcher, and HAL's waypoint
+    statement. A scheduled script can be paused between any two statements, so
+    the check and the write are one uninterruptible step."""
+    claim = body_of("Claim")
+    assert "isNil {" in claim
+    inside = claim[claim.index("isNil {"):]
+    assert inside.index("getVariable") < inside.index("if (_was in _from)") < inside.index("setVariable")
+
+    run = body_of("RunIn")
+    arm = run.index('[_carrierGroup,["TRANSIT"],"RUN_IN"] call ITW_CLASH_HALUnload_fnc_Claim')
+    drop = run.index('[_carrierGroup,["RUN_IN"],"DROPPING"] call ITW_CLASH_HALUnload_fnc_Claim')
+    assert arm < run.index("call ITW_CLASH_HALUnload_fnc_ArmRunIn")
+    assert arm < drop < run.index("ITW_CLASH_HALParadrop_fnc_Execute")
+
+    seam = body_of("Unload")
+    assert '["","TRANSIT","RUN_IN","SEAM"],"SEAM"' in seam
+    assert seam.index("ITW_CLASH_HALUnload_fnc_Claim") < seam.index("ITW_ParamHelisUnload")
+
+
+def test_the_seam_does_nothing_after_a_run_in_drop():
+    """HAL's statement still fires, at the through point, a kilometre past the
+    drop zone with nobody aboard. It has to find the lift finished."""
+    seam = body_of("Unload")
+    done = seam.index('"seam-after-run-in"')
+    assert seam.index("if (!_mine && {!isNull _carrierGroup}) exitWith {") < done
+    assert done < seam.index("ITW_CLASH_HALUnload_fnc_CargoGroups")
+    assert done < seam.index("switch (_mode) do")
+    # DROPPING and DROPPED are exactly the phases the seam may not take.
+    assert '"DROPPING"' not in seam and '"DROPPED"' not in seam
+
+
+def test_the_seam_can_still_take_an_armed_run():
+    """If the waypoint completes before the watcher releases, the chalk is
+    still aboard and somebody has to own it. That is the v4 seam, from where
+    the aircraft is, and the RPT says so."""
+    seam = body_of("Unload")
+    assert 'if (_was isEqualTo "RUN_IN") then {' in seam
+    assert '"seam-took-over"' in seam
+    assert "call ITW_CLASH_HALUnload_fnc_ClearDropState" in seam
+
+
+def test_one_roll_per_lift():
+    """A quiet corridor is decided by chance and the question is now asked
+    twice. Two rolls could tell a lift LAND a kilometre out and PARADROP on
+    arrival, which is the hover again."""
+    mode = body_of("Mode")
+    assert '["_carrierGroup",grpNull]' in mode
+    assert mode.count("call ITW_CLASH_HALParadrop_fnc_ShouldUse") == 1
+    assert 'getVariable ["ITW_CLASH_HALUnloadRoll",[]]' in mode
+    assert 'setVariable ["ITW_CLASH_HALUnloadRoll",_roll]' in mode
+    assert 'setVariable ["ITW_CLASH_HALUnloadRoll",nil]' in body_of("TrackLift")
+    assert "[_carrier,_state,_carrierGroup] call ITW_CLASH_HALUnload_fnc_Mode" in body_of("Unload")
+
+
+def test_a_new_lift_starts_clean():
+    body = body_of("TrackLift")
+    assert 'setVariable ["ITW_CLASH_HALUnloadPhase","TRANSIT"]' in body
+    assert 'setVariable ["ITW_CLASH_HALUnloadSerial",_serial]' in body
+    assert "call ITW_CLASH_HALUnload_fnc_ClearDropState" in body
+    patch = function_body(central(), "ITW_CLASH_HALUnload_fnc_PatchSource")
+    assert '"[_cg,_AV,_unitG," + str _orderFile + "] call ITW_CLASH_HALUnload_fnc_TrackLift; "' in patch
+
+
+def test_switched_off_the_run_in_leaves_v4():
+    body = body_of("TrackLift")
+    off = body.index("if (ITW_CLASH_HALUnloadRunIn) exitWith {")
+    assert off < body.index("ITW_CLASH_HALUnloadClimbEnRoute")
+    assert "spawn\n                    ITW_CLASH_HALUnload_fnc_RunIn" in body
+    source = central()
+    assert '"ITW_CLASH_HALUnloadRunIn",true' in source
+    assert '"ITW_CLASH_HALUnloadHandback",true' in source
+    assert "if (!ITW_CLASH_HALUnloadHandback) exitWith {false};" in body_of("Handback")
+
+
+# ---------------------------------------------- handing the aircraft back to HAL
+
+def test_hals_carrier_wait_ends_on_no_waypoints_or_on_mia():
+    """Why a paradrop needs a handback at all. The egress route is waypoints,
+    so the wait HAL leaves on an empty waypoint list does not end; and the flag
+    it does read is cleared by the read, so one flag ends one wait."""
+    hac = read(NR6 / "HAC_fnc.sqf")
+    wait = hac[hac.index("RYD_Wait = "):hac.index("RYD_CreateDecoy = ")]
+    assert "(count (waypoints _GDV)) < _wplimit" in wait
+    assert (
+        'case ((_this select 0) getVariable ["RydHQ_MIA",false]) : '
+        '{_alive = false;(_this select 0) setVariable ["RydHQ_MIA",nil]};'
+    ) in wait
+
+
+def test_itw_unassigns_every_jumper():
+    """Which is why HAL's own CargoM clear cannot find the carrier after a
+    drop: it looks it up through assignedVehicle."""
+    para = code_only(function_body(read(MISSION / "ITW_Attack.sqf"), "ITW_AtkParachute"))
+    assert "unassignVehicle _unit;" in para
+
+
+def test_four_orders_can_be_released_at_the_drop():
+    """Their only reachable CargoM clear comes after they look the carrier up
+    again, so releasing them early cannot send the aircraft home early."""
+    for name, paths in RELEASE_AT_DROP.items():
+        for path in paths:
+            span = after_the_carrier_wait(path)
+            guard = span.index("if (not (_alive) and not (_OtherGroup)) exitwith")
+            assert span.index(CARGO_CLEAR) > guard, (name, path)
+            for at in (m.start() for m in re.finditer(re.escape(CARGO_CLEAR), span)):
+                line_start = span.rfind("\n", 0, at) + 1
+                assert span[line_start:at] == "\t\t", (name, path, "not inside an exit block")
+        assert name not in re.search(
+            r'"ITW_CLASH_HALUnloadReleaseAtBreak",\[(.*?)\]', central()
+        ).group(1)
+
+
+def test_flank_and_sf_are_released_at_the_break():
+    """They clear CargoM on the carrier group they already hold, on the line
+    after the wait. Released at the drop they would turn the aircraft for home
+    over the drop zone and the break would never be flown."""
+    table = re.search(r'"ITW_CLASH_HALUnloadReleaseAtBreak",\[(.*?)\]', central()).group(1)
+    for name, paths in RELEASE_AT_BREAK.items():
+        assert f'"{name}"' in table, name
+        for path in paths:
+            span = after_the_carrier_wait(path)
+            at = span.index(CARGO_CLEAR)
+            line_start = span.rfind("\n", 0, at) + 1
+            assert span[line_start:at] == "\t", (name, path, "expected an unconditional clear")
+            assert "exitwith" not in span[:at].lower(), (name, path)
+    handback = body_of("Handback")
+    assert "_atBreak = _orderFile in ITW_CLASH_HALUnloadReleaseAtBreak;" in handback
+    first = handback.index("if (!_atBreak) then {")
+    wait = handback.index("ITW_CLASH_HALUnloadHandbackRadius")
+    second = handback.index("if (_atBreak) then {")
+    assert first < wait < second
+
+
+def test_the_order_thread_is_released_with_hals_own_flag():
+    body = body_of("OrderRelease")
+    assert '_carrierGroup setVariable ["RydHQ_MIA",true];' in body
+    # Once per squad that was aboard: the read clears it.
+    assert 'for "_i" from 1 to (_orders max 1) do {' in body
+    assert "ITW_CLASH_HALUnloadOrderReleaseWait" in body
+    for forbidden in ('"Busy"', "CargoChosen", "terminate", "deleteWaypoint", '"CC"'):
+        assert forbidden not in body, forbidden
+    # C.L.A.S.H. already releases groups from HAL this way.
+    assert '_group setVariable ["RydHQ_MIA",true];' in read(MISSION / "ITW_CLASH.sqf")
+
+
+def test_a_flag_nobody_read_is_taken_back():
+    """Left set, it would end the wait of the next lift this aircraft flies on
+    its first poll, with the chalk aboard."""
+    body = body_of("OrderRelease")
+    unread = body.index('"order-release-unread"')
+    assert body.index('_carrierGroup setVariable ["RydHQ_MIA",nil];') < unread
+    assert "time >= _deadline" in body
+    # RYD_Wait polls a carrier every 6 s; the window has to cover two polls.
+    wait = int(re.search(r'"ITW_CLASH_HALUnloadOrderReleaseWait",(\d+)', central()).group(1))
+    assert wait > 12, wait
+
+
+def test_scargo_is_released_with_its_own_exit_at_the_break():
+    scargo = read(HAL / "SCargo.sqf")
+    assert '_busy = _GD getvariable ("CargoM" + (str _GD));' in scargo
+    assert "(not (_busy) or (_timer > 600) or (_reqdone) or not (_alive));" in scargo
+
+    body = body_of("Handback")
+    assert '_carrierGroup setVariable ["CargoM" + str _carrierGroup,false];' in body
+    clear = body.index('setVariable ["CargoM" + str _carrierGroup,false]')
+    assert body.index("(_carrier distance2D _break) <= ITW_CLASH_HALUnloadHandbackRadius") < clear
+    assert body.index("time >= _deadline") < clear
+    # SCargo frees the carrier itself. This module never writes Busy.
+    assert 'setVariable ["Busy"' not in central()
+    assert 'setVariable ["ITW_CLASH_HALUnloadBreak",_break]' in body_of("Egress")
+
+
+def test_the_handback_never_writes_to_a_lift_it_does_not_own():
+    """Clearing CargoM on a lift in flight would send it home with the chalk
+    aboard. The serial is taken when the drop finishes and checked before
+    every write."""
+    handback = body_of("Handback")
+    assert 'private _serial = _carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1];' in handback
+    clear = handback.index('setVariable ["CargoM" + str _carrierGroup,false]')
+    assert handback.index("isNotEqualTo _serial) exitWith {") < clear
+    assert "isPlayer _x" in handback
+    release = body_of("OrderRelease")
+    assert release.index("if !(call _current) exitWith {};") < release.index(
+        'setVariable ["RydHQ_MIA",true]'
+    )
+
+
+def test_every_drop_is_handed_back_whichever_path_made_it():
+    """Run A's one paradrop, 62 s later: three waypoints, Busy and CargoM both
+    true. That was the seam path, so it gets the handback too."""
+    seam = body_of("Unload")
+    assert seam.count("ITW_CLASH_HALUnload_fnc_Handback") == 2
+    para = seam[seam.index('case "PARADROP"'):seam.index('case "HOT_PARADROP"')]
+    hot = seam[seam.index('case "HOT_PARADROP"'):seam.index('case "NO_LAND"')]
+    for branch in (para, hot):
+        assert branch.index("ITW_CLASH_HALUnload_fnc_Egress") < branch.index(
+            "ITW_CLASH_HALUnload_fnc_Handback"
+        )
+    run = body_of("RunIn")
+    assert run.index("call ITW_CLASH_HALUnload_fnc_Egress") < run.index(
+        "call ITW_CLASH_HALUnload_fnc_Handback"
+    )
+    # A landing is HAL's own finish and is left to it.
+    land = seam[seam.index("default {"):]
+    assert "ITW_CLASH_HALUnload_fnc_Handback" not in land
+
+
+def test_the_lift_line_says_which_path_wrote_it():
+    source = central()
+    line = next(x for x in source.splitlines() if "CLASH HAL UNLOAD | lift |" in x)
+    assert "via=%11" in line
+    assert source.count("CLASH HAL UNLOAD | lift |") == 1, "one format, two callers"
+    assert '_chance,_capacity,"seam"' in body_of("Unload")
+    assert '_chance,_capacity,"run-in"' in body_of("RunIn")
+
+
+def test_the_boot_line_certifies_the_run_in():
+    source = central()
+    line = next(x for x in source.splitlines() if "hal-unload-ready" in x)
+    for field in ("runIn=%6", "runInDistance=%7", "handback=%8", "sources=%9"):
+        assert field in line, field

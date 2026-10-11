@@ -7,15 +7,20 @@ if (missionNamespace getVariable ["ITW_CLASH_HALUnloadStarted",false]) exitWith 
 
 ITW_CLASH_HALUnloadStarted = true;
 ITW_CLASH_HALUnloadReady = false;
-ITW_CLASH_HALUnloadVersion = 4;
+ITW_CLASH_HALUnloadVersion = 5;
 scriptName "ITW_CLASH_HALUnload";
 
 /*
     One owner for HAL troop-lift unloads.
 
-    HAL owns whether a squad rides, which carrier is used, and every waypoint.
-    This module owns exactly one question when HAL's insertion waypoint fires:
-    LAND, PARADROP, or HOT_PARADROP.
+    HAL owns whether a squad rides, which carrier is used, and the route.
+    This module owns exactly one question about the insertion: LAND, PARADROP,
+    or HOT_PARADROP.
+
+    Since v5 the question is asked about a kilometre short of HAL's insertion
+    waypoint, and a lift that is going to drop has that one waypoint moved past
+    the drop zone so the aircraft flies through instead of arriving. A lift
+    that is going to land is not touched at all. See "The run-in" below.
 
     The order-file hook is deliberately asynchronous. It spawns fnc_Unload and
     then deletes HAL's completed waypoint in the caller. A runtime error in this
@@ -88,6 +93,120 @@ ITW_CLASH_HALUnloadEgressOffset = missionNamespace getVariable [
 ITW_CLASH_HALUnloadTransitHeight = missionNamespace getVariable [
     "ITW_CLASH_HALUnloadTransitHeight",
     missionNamespace getVariable ["ITW_CLASH_HotDropTransitHeight",120]
+];
+
+/*
+    The run-in: a paradrop is flown the way native ITW flies one.
+
+    Hark, on v4: "we set the waypoint on the ground, helo paths to transport
+    place, slows, lowers, gets there, then raises, then paradrops, then leaves.
+    its stupid clunky."
+
+    Every clause of that is the same cause. v4 decided the mode AT HAL's
+    insertion waypoint, so the aircraft had to arrive there first, and an AI
+    helicopter arrives at its last waypoint by braking for it. Run A measured
+    it: 24 km/h at the seam, drop five seconds later, 89 km/h on the way out.
+
+    Native ITW never puts a waypoint on the drop (ITW_AtkUnloadAirplane,
+    ITW_Attack.sqf:4157). It moves the aircraft's destination 1500 m PAST the
+    objective, watches the distance, and ejects as the aircraft passes. The
+    aircraft is never arriving anywhere, so it never slows.
+
+    This is that, on HAL's lift:
+
+    - About ITW_CLASH_HALUnloadRunInDistance out, the mode is decided, with the
+      same owner and the same table as the seam.
+    - LAND and NO_LAND change nothing. HAL's waypoint stays where HAL put it.
+    - PARADROP and HOT_PARADROP move HAL's OWN waypoint to the through point
+      beyond the drop zone, and set drop height and full speed. No waypoint is
+      deleted and none is added before the drop, so HAL's carrier wait and its
+      statement are both still live.
+    - The chalk goes out as the aircraft crosses the drop zone, through the
+      same paradrop owner as before.
+    - fnc_Egress appends the lateral break and home, exactly as in v4.
+
+    Switched off, this file is v4: en-route climb, decision at the seam.
+*/
+ITW_CLASH_HALUnloadRunIn = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadRunIn",true
+];
+ITW_CLASH_HALUnloadRunInDistance = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadRunInDistance",1200
+];
+// Not armed on the pad. Metres above ground before the run-in may begin.
+ITW_CLASH_HALUnloadRunInMinHeight = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadRunInMinHeight",10
+];
+// Armed but never crossed the drop zone: give HAL its waypoint back.
+ITW_CLASH_HALUnloadRunInTimeout = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadRunInTimeout",120
+];
+// Metres to shift the release. Positive is earlier, on the friendly side.
+ITW_CLASH_HALUnloadReleaseBias = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadReleaseBias",0
+];
+// How long the paradrop owner may wait for altitude on a fly-by. At the seam
+// it waits ITW_CLASH_HALParadrop_ClimbTimeout, because the aircraft is
+// standing over the point. On a run-in every second is 50 m further in.
+ITW_CLASH_HALUnloadReleaseWait = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadReleaseWait",1
+];
+// Sideways miss, in metres, past which the pass is not a drop.
+ITW_CLASH_HALUnloadMaxOffset = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadMaxOffset",350
+];
+
+/*
+    Handing the aircraft back after a drop.
+
+    HAL ends a lift in two places, and a paradrop reaches neither:
+
+    - The order file waits in RYD_Wait until the carrier has NO waypoints
+      (HAC_fnc.sqf:2143). The egress route is waypoints, so that wait does not
+      end until the aircraft has been parked for three minutes.
+    - It then clears CargoM on group (assignedDriver (assignedVehicle _UL)).
+      ITW_AtkParachute unassigns every jumper (ITW_Attack.sqf:4244), so that
+      is grpNull, the write goes nowhere, and SCargo keeps the carrier Busy
+      until its 600 s standstill timer (SCargo.sqf:645).
+
+    Run A showed that state 62 s after its one drop: three waypoints, Busy and
+    CargoM both true.
+
+    Both have a native input, and this uses those and nothing else:
+
+    - RydHQ_MIA on the carrier group is HAL's own "stop waiting", read and
+      cleared by RYD_Wait (HAC_fnc.sqf:1946). The order thread then carries on
+      with the squad on the ground. ITW_CLASH_fnc_BeginRelease uses the same
+      flag the same way.
+    - CargoM false is SCargo's own exit. It sends the carrier home and frees
+      Busy with its own code.
+
+    CargoM waits for the break point, because SCargo's return leg replaces
+    every waypoint the aircraft has, and the J-hook is two of them.
+*/
+ITW_CLASH_HALUnloadHandback = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadHandback",true
+];
+ITW_CLASH_HALUnloadHandbackRadius = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadHandbackRadius",250
+];
+ITW_CLASH_HALUnloadHandbackTimeout = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadHandbackTimeout",60
+];
+// RYD_Wait polls every 6 s on a carrier. Two polls, then the flag is taken
+// back so it cannot end the NEXT lift's wait.
+ITW_CLASH_HALUnloadOrderReleaseWait = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadOrderReleaseWait",15
+];
+/*
+    GoFlank.sqf and GoSFAttack.sqf clear CargoM on the carrier group they
+    already hold, on the line after their wait returns. Released at the drop,
+    they would send the aircraft home from over the drop zone and the break
+    would never be flown. These two are released at the break instead, which
+    holds the squad's order for the length of the egress and no longer.
+*/
+ITW_CLASH_HALUnloadReleaseAtBreak = missionNamespace getVariable [
+    "ITW_CLASH_HALUnloadReleaseAtBreak",["GoFlank","GoSFAttack"]
 ];
 
 ITW_CLASH_HALUnloadOrderSpecs = [
@@ -187,7 +306,7 @@ ITW_CLASH_HALUnload_fnc_CargoGroup = {
     chalk is still walking to the aircraft.
 */
 ITW_CLASH_HALUnload_fnc_TrackLift = {
-    params ["_carrierGroup","_carrier","_cargoGroup"];
+    params ["_carrierGroup","_carrier","_cargoGroup",["_orderFile","UNKNOWN"]];
     if (
         isNull _carrierGroup
         || {isNull _carrier}
@@ -196,8 +315,17 @@ ITW_CLASH_HALUnload_fnc_TrackLift = {
 
     _carrierGroup setVariable ["ITW_CLASH_HALUnloadCargoGroup",_cargoGroup];
 
-    [_carrierGroup,_carrier,_cargoGroup] spawn {
-        params ["_carrierGroup","_carrier","_cargoGroup"];
+    // A new lift. Whatever an earlier one left on this group is not its state:
+    // the serial retires any watcher still running, and the phase tells the
+    // seam that nothing has claimed this unload yet.
+    private _serial = (_carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",0]) + 1;
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadSerial",_serial];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadPhase","TRANSIT"];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadRoll",nil];
+    [_carrierGroup] call ITW_CLASH_HALUnload_fnc_ClearDropState;
+
+    [_carrierGroup,_carrier,_cargoGroup,_orderFile,_serial] spawn {
+        params ["_carrierGroup","_carrier","_cargoGroup","_orderFile","_serial"];
         private _deadline = time + 300;
         waitUntil {
             sleep 0.2;
@@ -226,6 +354,17 @@ ITW_CLASH_HALUnload_fnc_TrackLift = {
             _carrierGroup setVariable [
                 "ITW_CLASH_HALUnloadOrigin",getPosATL _carrier
             ];
+            /*
+                The run-in owns the approach when it is on: it sets drop height
+                itself, about a kilometre out, and only on a lift that is going
+                to drop. The en-route climb below is the v4 approach and runs
+                only when the run-in is switched off, so the two never both
+                ask the same aircraft for a height.
+            */
+            if (ITW_CLASH_HALUnloadRunIn) exitWith {
+                [_carrierGroup,_carrier,_cargoGroup,_orderFile,_serial] spawn
+                    ITW_CLASH_HALUnload_fnc_RunIn;
+            };
             /*
                 Climb now, not over the objective.
 
@@ -306,7 +445,9 @@ ITW_CLASH_HALUnload_fnc_Commander = {
 };
 
 ITW_CLASH_HALUnload_fnc_Corridor = {
-    params ["_hq","_carrierGroup","_carrier"];
+    // _destination is the drop zone when the question is asked on the run-in.
+    // At the seam it is omitted, and the aircraft is standing on the answer.
+    params ["_hq","_carrierGroup","_carrier",["_destination",[]]];
     private _fallback = createHashMapFromArray [
         ["state","COLD"],["reason","unload-corridor-unavailable"]
     ];
@@ -324,14 +465,16 @@ ITW_CLASH_HALUnload_fnc_Corridor = {
     if (_origin isEqualTo []) then {
         _origin = _carrierGroup getVariable ["START" + str _carrierGroup,[]];
     };
-    private _destination = getPosATL _carrier;
+    if !(_destination isEqualType [] && {count _destination >= 2}) then {
+        _destination = getPosATL _carrier;
+    };
     if (_origin isEqualTo [] || {_destination isEqualTo []}) exitWith {_fallback};
 
     [_hq,_origin,_destination] call ITW_CLASH_AirPicture_fnc_ClassifyCorridor
 };
 
 ITW_CLASH_HALUnload_fnc_Mode = {
-    params ["_carrier",["_state","COLD"]];
+    params ["_carrier",["_state","COLD"],["_carrierGroup",grpNull]];
 
     private _param = missionNamespace getVariable ["ITW_ParamHelisUnload",50];
     if !(_param isEqualType 0) then {_param = 50};
@@ -368,9 +511,27 @@ ITW_CLASH_HALUnload_fnc_Mode = {
     if (isNil "ITW_CLASH_HALParadrop_fnc_ShouldUse") exitWith {
         ["LAND",0,_capacity]
     };
-    ([_carrier,false] call ITW_CLASH_HALParadrop_fnc_ShouldUse) params [
-        "_drop","_chance","_resolvedCapacity"
-    ];
+    /*
+        One roll per lift.
+
+        A quiet corridor is decided by chance, and the question is now asked
+        twice: on the run-in, and again at the seam if the run-in left the lift
+        alone. Two rolls could disagree, and a lift told LAND a kilometre out
+        would then be told PARADROP on arrival, which is the v4 hover. The
+        first answer is kept on the carrier group and TrackLift clears it for
+        the next lift. Corridor doctrine above is not chance and is still read
+        fresh every time.
+    */
+    private _roll = if (isNull _carrierGroup) then {[]} else {
+        _carrierGroup getVariable ["ITW_CLASH_HALUnloadRoll",[]]
+    };
+    if (_roll isEqualTo []) then {
+        _roll = [_carrier,false] call ITW_CLASH_HALParadrop_fnc_ShouldUse;
+        if (!isNull _carrierGroup) then {
+            _carrierGroup setVariable ["ITW_CLASH_HALUnloadRoll",_roll];
+        };
+    };
+    _roll params ["_drop","_chance","_resolvedCapacity"];
     [if (_drop) then {"PARADROP"} else {"LAND"},_chance,_resolvedCapacity]
 };
 
@@ -641,6 +802,9 @@ ITW_CLASH_HALUnload_fnc_Egress = {
         _wp setWaypointCompletionRadius _radius;
     } forEach [[_break,150],[_home,200]];
 
+    // Where the handback gives the aircraft back to SCargo.
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadBreak",_break];
+
     private _dwell = if (_started >= 0) then {time - _started} else {-1};
     ["egress",[
         typeOf _carrier,groupId _carrierGroup,_prepared,
@@ -661,8 +825,591 @@ ITW_CLASH_HALUnload_fnc_Egress = {
     true
 };
 
+// One format for the line that answers the whole insertion question, whichever
+// path wrote it. _via says which: the seam, or the run-in.
+ITW_CLASH_HALUnload_fnc_LiftLine = {
+    params [
+        "_cargoGroup","_carrier","_orderFile","_param","_state","_mode",
+        "_result","_reason","_chance","_capacity",["_via","seam"]
+    ];
+    private _group = if (isNull _cargoGroup) then {"<none>"} else {groupId _cargoGroup};
+    private _aircraft = if (isNull _carrier) then {"<null>"} else {typeOf _carrier};
+    diag_log format [
+        "CLASH HAL UNLOAD | lift | group=%1 aircraft=%2 order=%3 param=%4 corridor=%5 mode=%6 result=%7 reason=%8 chance=%9 capacity=%10 via=%11",
+        _group,_aircraft,_orderFile,_param,_state,_mode,_result,_reason,_chance,_capacity,_via
+    ];
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+        ["hal-unload","lift",[
+            _group,_aircraft,_orderFile,_param,_state,_mode,_result,_reason,
+            _chance,_capacity,_via
+        ]] call ITW_CLASH_LoudDebug_fnc_Emit;
+    };
+    true
+};
+
+ITW_CLASH_HALUnload_fnc_ClearDropState = {
+    params ["_carrierGroup"];
+    if (isNull _carrierGroup) exitWith {false};
+    {
+        _carrierGroup setVariable [_x,nil];
+    } forEach [
+        "ITW_CLASH_HALUnloadDropRunArmed",
+        "ITW_CLASH_HALUnloadDropBearing",
+        "ITW_CLASH_HALUnloadDropThrough",
+        "ITW_CLASH_HALUnloadDropPoint",
+        "ITW_CLASH_HALUnloadDropStarted",
+        "ITW_CLASH_HALUnloadDropZone",
+        "ITW_CLASH_HALUnloadDropRadius",
+        "ITW_CLASH_HALUnloadBreak"
+    ];
+    true
+};
+
+/*
+    Who owns this unload: the run-in, or the seam.
+
+    Two threads can reach the same aircraft. The run-in watcher is one. HAL's
+    waypoint statement, which spawns fnc_Unload, is the other, and it fires
+    whenever the engine decides the waypoint is complete. Whichever gets there
+    first has to be the only one that acts.
+
+    Phases, on the carrier group:
+
+        TRANSIT   tracked, nothing decided              (TrackLift)
+        RUN_IN    HAL's waypoint is at the through point (run-in)
+        DROPPING  the chalk is going out                 (run-in)
+        DROPPED   the run-in finished the lift           (run-in)
+        SEAM      fnc_Unload has it                      (seam)
+
+    The move is made inside isNil, which the scheduler cannot interrupt, so a
+    check and its write are one step. A script is otherwise free to be paused
+    between any two statements, sleep or no sleep.
+*/
+ITW_CLASH_HALUnload_fnc_Claim = {
+    params ["_carrierGroup","_from","_to"];
+    private _was = "";
+    private _ok = false;
+    if (isNull _carrierGroup) exitWith {[false,_was]};
+    isNil {
+        _was = _carrierGroup getVariable ["ITW_CLASH_HALUnloadPhase",""];
+        if (_was in _from) then {
+            _carrierGroup setVariable ["ITW_CLASH_HALUnloadPhase",_to];
+            _ok = true;
+        };
+    };
+    [_ok,_was]
+};
+
+/*
+    HAL's outbound waypoint, found by what it does and not by where it sits.
+
+    PatchSource writes the statement, so the statement names this module. The
+    index is not stored: HAL deletes waypoint 0 from inside its own statements
+    and every later index moves when it does.
+*/
+ITW_CLASH_HALUnload_fnc_HALWaypoint = {
+    params ["_carrierGroup"];
+    if (isNull _carrierGroup) exitWith {[]};
+    private _found = [];
+    {
+        private _statement = (waypointStatements _x) param [1,""];
+        if ((_statement find "ITW_CLASH_HALUnload_fnc_Unload") >= 0) exitWith {
+            _found = _x;
+        };
+    } forEach (waypoints _carrierGroup);
+    _found
+};
+
+/*
+    How far short of the drop zone the first jumper leaves.
+
+    ITW_AtkParachute spaces jumpers by speed, 40/kph seconds each, held between
+    0.1 and 0.5 (ITW_Attack.sqf:4228). Between 80 and 400 km/h that is one
+    jumper every 11 m of track whatever the speed, so the stick is about 11 m
+    per man. Each chute opens 30 m behind the aircraft (modelToWorld
+    [7,-30,-20]). Half the stick, less those 30 m, plus half a second of flight
+    for this watcher's poll and the paradrop owner's first look, centres the
+    stick on the point HAL chose.
+
+    It is an estimate. moveOut takes frames that the arithmetic does not see,
+    so the real stick runs longer than this. The release line in the RPT
+    carries the planned lead and the distances actually flown, and
+    ITW_CLASH_HALUnloadReleaseBias moves it.
+*/
+ITW_CLASH_HALUnload_fnc_StickLead = {
+    params ["_carrier","_jumpers"];
+    private _kph = (speed _carrier) max 1;
+    private _mps = _kph / 3.6;
+    private _interval = (0.1 max (40 / _kph)) min 0.5;
+    private _stick = _jumpers * _interval * _mps;
+    (((_stick / 2) - 30 + (_mps * 0.5) + ITW_CLASH_HALUnloadReleaseBias) max 0) min 300
+};
+
+/*
+    Arm the run-in: HAL's own waypoint, moved past the drop zone.
+
+    Nothing is deleted and nothing is added. HAL's carrier wait counts
+    waypoints and still counts one. HAL's statement is still on it and still
+    fires, at the through point now, where fnc_Unload finds the lift already
+    finished. If anything after this goes wrong, the aircraft is flying a
+    waypoint HAL wrote, with HAL's unload on the end of it.
+
+    The move is the last line on purpose. Everything before it only sets
+    height, speed and bookkeeping, so a fault part way through leaves the
+    waypoint where HAL put it and the seam handles the lift as it did in v4.
+*/
+ITW_CLASH_HALUnload_fnc_ArmRunIn = {
+    params ["_carrierGroup","_carrier","_dropZone","_mode"];
+    if (isNull _carrierGroup || {isNull _carrier} || {!alive _carrier}) exitWith {false};
+    if (!canMove _carrier) exitWith {false};
+    if ((crew _carrier) findIf {isPlayer _x} >= 0) exitWith {false};
+    if !(_dropZone isEqualType [] && {count _dropZone >= 2}) exitWith {false};
+
+    private _wp = [_carrierGroup] call ITW_CLASH_HALUnload_fnc_HALWaypoint;
+    if (_wp isEqualTo []) exitWith {false};
+
+    private _here = getPosATL _carrier;
+    // The line the aircraft is already flying, carried on through the point.
+    private _bearing = if ((_here distance2D _dropZone) > 50) then {
+        _here getDir _dropZone
+    } else {
+        getDir _carrier
+    };
+    private _through = _dropZone getPos [
+        ITW_CLASH_HALUnloadEgressThrough,_bearing
+    ];
+    private _height = if (_mode isEqualTo "HOT_PARADROP") then {
+        missionNamespace getVariable ["ITW_CLASH_HotDropDropHeight",130]
+    } else {
+        missionNamespace getVariable ["ITW_CLASH_HALParadrop_MinAltitude",45]
+    };
+
+    _carrier land "NONE";
+    _carrier flyInHeight _height;
+    _carrier limitSpeed 1e10;
+    _carrier forceSpeed -1;
+    _carrierGroup setBehaviourStrong "CARELESS";
+    _carrierGroup setCombatMode "BLUE";
+    _carrierGroup setSpeedMode "FULL";
+
+    // The names fnc_Egress already reads, so it appends the break and home to
+    // this run exactly as it does to one armed at the seam.
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropRunArmed",true];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropBearing",_bearing];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropThrough",_through];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropPoint",_dropZone];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropStarted",time];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropZone",_dropZone];
+    _carrierGroup setVariable [
+        "ITW_CLASH_HALUnloadDropRadius",waypointCompletionRadius _wp
+    ];
+
+    ["run-in-armed",[
+        typeOf _carrier,groupId _carrierGroup,_mode,
+        round _bearing,
+        round (_here distance2D _dropZone),
+        round speed _carrier,
+        round (_here#2),
+        _height
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+
+    _wp setWaypointCompletionRadius 120;
+    _wp setWaypointPosition [_through,0];
+    true
+};
+
+/*
+    Give HAL its waypoint back.
+
+    A pass that did not drop, with the chalk still aboard, is not finished and
+    is not this module's to finish any other way. The waypoint goes back to the
+    drop zone HAL chose and the seam takes the lift when the aircraft gets
+    there: the v4 behaviour, hover and all, which is the worst this can do.
+*/
+ITW_CLASH_HALUnload_fnc_AbortRunIn = {
+    params ["_carrierGroup","_carrier",["_reason","aborted"]];
+    if (isNull _carrierGroup) exitWith {false};
+
+    private _dropZone = _carrierGroup getVariable ["ITW_CLASH_HALUnloadDropZone",[]];
+    private _radius = _carrierGroup getVariable ["ITW_CLASH_HALUnloadDropRadius",0];
+    private _wp = [_carrierGroup] call ITW_CLASH_HALUnload_fnc_HALWaypoint;
+    private _restored = false;
+    if (
+        _wp isNotEqualTo []
+        && {_dropZone isEqualType []}
+        && {count _dropZone >= 2}
+    ) then {
+        _wp setWaypointCompletionRadius _radius;
+        _wp setWaypointPosition [_dropZone,0];
+        _restored = true;
+    };
+
+    [_carrierGroup] call ITW_CLASH_HALUnload_fnc_ClearDropState;
+    _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadPhase","TRANSIT"];
+
+    ["run-in-aborted",[
+        if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+        groupId _carrierGroup,_reason,_restored
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+    _restored
+};
+
+/*
+    Release the order thread, once per squad that was aboard.
+
+    RYD_Wait clears the flag when it reads it, so one flag ends one wait. Two
+    squads in one aircraft are two order threads in two waits on the same
+    carrier group, and each needs its own.
+
+    A flag nobody reads is taken back. Left set, it would end the wait of the
+    next lift this aircraft flies, on its first poll, with the chalk aboard.
+    The serial is the same guard from the other side: if the group has started
+    a new lift, this thread has no business writing to it.
+*/
+ITW_CLASH_HALUnload_fnc_OrderRelease = {
+    params ["_carrierGroup","_orders","_serial"];
+    private _current = {
+        !isNull _carrierGroup
+        && {(_carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1]) isEqualTo _serial}
+    };
+    for "_i" from 1 to (_orders max 1) do {
+        if !(call _current) exitWith {};
+        _carrierGroup setVariable ["RydHQ_MIA",true];
+        private _deadline = time + ITW_CLASH_HALUnloadOrderReleaseWait;
+        waitUntil {
+            sleep 0.5;
+            isNull _carrierGroup
+            || {!(_carrierGroup getVariable ["RydHQ_MIA",false])}
+            || {time >= _deadline}
+        };
+        if (!isNull _carrierGroup && {_carrierGroup getVariable ["RydHQ_MIA",false]}) exitWith {
+            _carrierGroup setVariable ["RydHQ_MIA",nil];
+            ["order-release-unread",[
+                groupId _carrierGroup,_i,_orders
+            ]] call ITW_CLASH_HALUnload_fnc_Log;
+        };
+    };
+};
+
+ITW_CLASH_HALUnload_fnc_Handback = {
+    params ["_carrierGroup","_carrier",["_orderFile","UNKNOWN"],["_orders",1]];
+    if (!ITW_CLASH_HALUnloadHandback) exitWith {false};
+    if (isNull _carrierGroup) exitWith {false};
+    // A player at the controls is not HAL's lift to end.
+    if (!isNull _carrier && {(crew _carrier) findIf {isPlayer _x} >= 0}) exitWith {false};
+
+    private _serial = _carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1];
+    [_carrierGroup,_carrier,_orderFile,_orders,_serial] spawn {
+        params ["_carrierGroup","_carrier","_orderFile","_orders","_serial"];
+        scriptName "ITW_CLASH_HALUnload_Handback";
+        private _started = time;
+        private _atBreak = _orderFile in ITW_CLASH_HALUnloadReleaseAtBreak;
+
+        if (!_atBreak) then {
+            [_carrierGroup,_orders,_serial] spawn ITW_CLASH_HALUnload_fnc_OrderRelease;
+        };
+
+        private _break = _carrierGroup getVariable ["ITW_CLASH_HALUnloadBreak",[]];
+        private _deadline = time + ITW_CLASH_HALUnloadHandbackTimeout;
+        private _why = "no-break";
+        if (_break isEqualType [] && {count _break >= 2}) then {
+            _why = "";
+            waitUntil {
+                sleep 0.5;
+                _why = switch (true) do {
+                    case (isNull _carrierGroup): {"group-gone"};
+                    case (isNull _carrier): {"carrier-lost"};
+                    case (!alive _carrier || {!canMove _carrier}): {"carrier-lost"};
+                    case ((_carrier distance2D _break) <= ITW_CLASH_HALUnloadHandbackRadius): {"break"};
+                    case (time >= _deadline): {"timeout"};
+                    default {""};
+                };
+                _why isNotEqualTo ""
+            };
+        };
+
+        if (isNull _carrierGroup) exitWith {};
+        if ((_carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1]) isNotEqualTo _serial) exitWith {
+            ["handback-superseded",[
+                groupId _carrierGroup,_orderFile,_why
+            ]] call ITW_CLASH_HALUnload_fnc_Log;
+        };
+
+        if (_atBreak) then {
+            [_carrierGroup,_orders,_serial] spawn ITW_CLASH_HALUnload_fnc_OrderRelease;
+        };
+
+        // SCargo's own exit. It reads this every 5 s and does the rest itself.
+        private _busy = _carrierGroup getVariable ["Busy" + str _carrierGroup,false];
+        _carrierGroup setVariable ["CargoM" + str _carrierGroup,false];
+        _carrierGroup setVariable ["ITW_CLASH_HALUnloadBreak",nil];
+
+        ["handback",[
+            if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+            groupId _carrierGroup,_orderFile,_why,
+            round (time - _started),
+            count (waypoints _carrierGroup),
+            _busy,_atBreak,_orders
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+    };
+    true
+};
+
+/*
+    The run-in watcher. One per lift, started when the chalk is aboard.
+
+    It reads HAL's waypoint and decides nothing until the aircraft is close.
+    Until it arms, it has touched nothing, and any exit before that point is a
+    v4 lift.
+*/
+ITW_CLASH_HALUnload_fnc_RunIn = {
+    params ["_carrierGroup","_carrier","_cargoGroup","_orderFile","_serial"];
+    scriptName "ITW_CLASH_HALUnload_RunIn";
+
+    private _live = {
+        !isNull _carrierGroup
+        && {!isNull _carrier}
+        && {alive _carrier}
+        && {canMove _carrier}
+        && {(_carrierGroup getVariable ["ITW_CLASH_HALUnloadSerial",-1]) isEqualTo _serial}
+    };
+    private _phase = {_carrierGroup getVariable ["ITW_CLASH_HALUnloadPhase",""]};
+    private _skip = {
+        params ["_why"];
+        ["run-in-skipped",[
+            if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+            if (isNull _carrierGroup) then {"<null>"} else {groupId _carrierGroup},
+            _orderFile,_why
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+    };
+
+    // --- transit: wait for HAL's waypoint, then for the run-in distance.
+    private _dropZone = [];
+    private _seen = false;
+    private _seenBy = time + 60;
+    private _deadline = time + 900;
+    private _stop = "";
+    waitUntil {
+        sleep 0.5;
+        _stop = switch (true) do {
+            case (!(call _live)): {"lift-gone"};
+            case ((call _phase) isNotEqualTo "TRANSIT"): {"seam-first"};
+            case (!_seen && {time >= _seenBy}): {"no-hal-waypoint"};
+            case (time >= _deadline): {"transit-timeout"};
+            default {""};
+        };
+        if (_stop isEqualTo "") then {
+            private _wp = [_carrierGroup] call ITW_CLASH_HALUnload_fnc_HALWaypoint;
+            if (_wp isEqualTo []) then {
+                // Not written yet, or already completed and deleted.
+                if (_seen) then {_stop = "hal-waypoint-gone"};
+            } else {
+                // Read every pass. HAL moves this waypoint when it wants an
+                // early drop, and the drop zone is wherever HAL has it now.
+                private _position = waypointPosition _wp;
+                if (_position isNotEqualTo [0,0,0]) then {
+                    _dropZone = _position;
+                    _seen = true;
+                };
+            };
+        };
+        // Airborne as well as close. A short lift is inside the distance while
+        // it is still on the pad, and the armed run has a clock on it.
+        _stop isNotEqualTo ""
+        || {
+            _seen
+            && {((getPosATL _carrier)#2) > ITW_CLASH_HALUnloadRunInMinHeight}
+            && {(_carrier distance2D _dropZone) <= ITW_CLASH_HALUnloadRunInDistance}
+        }
+    };
+    if (_stop isNotEqualTo "") exitWith {[_stop] call _skip};
+
+    // --- decide, with the seam's own owner and table.
+    private _cargoGroups = [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_CargoGroups;
+    private _primary = [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_CargoGroup;
+    if (isNull _primary || {_cargoGroups isEqualTo []}) exitWith {["no-cargo"] call _skip};
+
+    private _hq = [_primary,_carrierGroup] call ITW_CLASH_HALUnload_fnc_Commander;
+    private _corridor = [_hq,_carrierGroup,_carrier,_dropZone] call ITW_CLASH_HALUnload_fnc_Corridor;
+    private _state = _corridor getOrDefault ["state","COLD"];
+    private _reason = _corridor getOrDefault ["reason",""];
+    ([_carrier,_state,_carrierGroup] call ITW_CLASH_HALUnload_fnc_Mode) params [
+        "_mode","_chance","_capacity"
+    ];
+    // Any player touching the lift gets stock HAL landing behavior.
+    if (
+        ((crew _carrier) findIf {isPlayer _x}) >= 0
+        || {(_cargoGroups findIf {((units _x) findIf {isPlayer _x}) >= 0}) >= 0}
+    ) then {
+        _mode = "LAND";
+        _reason = _reason + "|player-touch";
+    };
+
+    ["run-in",[
+        typeOf _carrier,groupId _carrierGroup,_orderFile,_state,_mode,
+        round (_carrier distance2D _dropZone),
+        round speed _carrier,
+        round ((getPosATL _carrier)#2),
+        _reason
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+
+    // LAND and NO_LAND are HAL's lift, untouched, to HAL's waypoint.
+    if !(_mode in ["PARADROP","HOT_PARADROP"]) exitWith {};
+
+    // --- arm.
+    if !(([_carrierGroup,["TRANSIT"],"RUN_IN"] call ITW_CLASH_HALUnload_fnc_Claim)#0) exitWith {
+        ["seam-first"] call _skip
+    };
+    if !([_carrierGroup,_carrier,_dropZone,_mode] call ITW_CLASH_HALUnload_fnc_ArmRunIn) exitWith {
+        [_carrierGroup,["RUN_IN"],"TRANSIT"] call ITW_CLASH_HALUnload_fnc_Claim;
+        [_carrierGroup] call ITW_CLASH_HALUnload_fnc_ClearDropState;
+        ["arm-refused"] call _skip
+    };
+    if (_mode isEqualTo "HOT_PARADROP") then {
+        [_carrier,_primary] call ITW_CLASH_HALUnload_fnc_StartHotFlares;
+    };
+
+    // --- fly it. Distance still to run along the approach line: positive
+    // short of the drop zone, zero abeam of it, negative past it. Measured
+    // along the line and not as a radius, so an aircraft that passes wide
+    // still reaches zero, and one that never comes back does not.
+    private _bearing = _carrierGroup getVariable ["ITW_CLASH_HALUnloadDropBearing",0];
+    private _jumpers = 0;
+    {
+        _jumpers = _jumpers + count ([_carrier,_x] call ITW_CLASH_HALUnload_fnc_Aboard);
+    } forEach _cargoGroups;
+    private _along = 1e9;
+    private _cross = 0;
+    private _lead = 0;
+    _deadline = time + ITW_CLASH_HALUnloadRunInTimeout;
+    waitUntil {
+        sleep 0.1;
+        private _here = getPosATL _carrier;
+        private _range = _here distance2D _dropZone;
+        private _angle = (_here getDir _dropZone) - _bearing;
+        _along = _range * cos _angle;
+        _cross = abs (_range * sin _angle);
+        _lead = [_carrier,_jumpers] call ITW_CLASH_HALUnload_fnc_StickLead;
+        !(call _live)
+        || {(call _phase) isNotEqualTo "RUN_IN"}
+        || {time >= _deadline}
+        || {_along <= _lead}
+    };
+
+    // From here the run-in either has the unload or has nothing to do with it.
+    if !(([_carrierGroup,["RUN_IN"],"DROPPING"] call ITW_CLASH_HALUnload_fnc_Claim)#0) exitWith {
+        ["seam-first"] call _skip
+    };
+    if !(call _live) exitWith {
+        _carrierGroup setVariable ["ITW_CLASH_HALUnloadPhase","TRANSIT"];
+        ["lift-gone"] call _skip
+    };
+    if (_along > _lead) exitWith {
+        [_carrierGroup,_carrier,"never-crossed"] call ITW_CLASH_HALUnload_fnc_AbortRunIn;
+    };
+    if (_cross > ITW_CLASH_HALUnloadMaxOffset) exitWith {
+        [_carrierGroup,_carrier,"passed-wide"] call ITW_CLASH_HALUnload_fnc_AbortRunIn;
+    };
+
+    // --- drop. One pass per group aboard, through the paradrop owner, which
+    // is never allowed to land an aircraft that is flying through.
+    private _origin = _carrierGroup getVariable ["ITW_CLASH_HALUnloadOrigin",[]];
+    private _releasedAt = time;
+    private _releaseSpeed = speed _carrier;
+    private _releaseHeight = (getPosATL _carrier)#2;
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadDropStarted",_releasedAt];
+    _cargoGroups = [_carrierGroup,_carrier] call ITW_CLASH_HALUnload_fnc_CargoGroups;
+    if (count _cargoGroups > 1) then {
+        ["multi-group-lift",[
+            typeOf _carrier,groupId _carrierGroup,
+            _cargoGroups apply {groupId _x}
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+    };
+    private _dropped = 0;
+    {
+        _carrierGroup setVariable ["ITW_CLASH_HALParadropCargoGroup",_x];
+        _carrierGroup setVariable ["ITW_CLASH_HALParadropOrigin",_origin];
+        if ([_carrierGroup,_carrier,false,ITW_CLASH_HALUnloadReleaseWait] call
+            ITW_CLASH_HALParadrop_fnc_Execute
+        ) then {_dropped = _dropped + 1};
+    } forEach _cargoGroups;
+
+    private _aboard = 0;
+    {
+        _aboard = _aboard + count ([_carrier,_x] call ITW_CLASH_HALUnload_fnc_Aboard);
+    } forEach _cargoGroups;
+
+    // Planned against flown, so the lead can be tuned from the log.
+    ["release",[
+        typeOf _carrier,groupId _carrierGroup,
+        round _lead,round _along,round _cross,
+        round _releaseSpeed,round _releaseHeight,
+        _jumpers,_dropped,_aboard,
+        round ((getPosATL _carrier) distance2D _dropZone),
+        (round ((time - _releasedAt) * 10)) / 10
+    ]] call ITW_CLASH_HALUnload_fnc_Log;
+
+    // Nobody out and the chalk still aboard: not a drop. HAL gets its
+    // waypoint back and the seam finishes the lift.
+    if (_dropped == 0 && {_aboard > 0}) exitWith {
+        [_carrierGroup,_carrier,"drop-declined"] call ITW_CLASH_HALUnload_fnc_AbortRunIn;
+    };
+
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadPhase","DROPPED"];
+    private _result = if (_dropped > 0) then {_mode} else {_mode + "_DECLINED_EMPTY"};
+
+    [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress;
+    [_carrierGroup,_carrier,_orderFile,count _cargoGroups] call ITW_CLASH_HALUnload_fnc_Handback;
+
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadCargoGroup",nil];
+    _carrierGroup setVariable ["ITW_CLASH_HALUnloadOrigin",nil];
+
+    private _param = missionNamespace getVariable ["ITW_ParamHelisUnload",50];
+    if !(_param isEqualType 0) then {_param = 50};
+    [
+        _primary,_carrier,_orderFile,_param,_state,_mode,_result,_reason,
+        _chance,_capacity,"run-in"
+    ] call ITW_CLASH_HALUnload_fnc_LiftLine;
+    _result
+};
+
 ITW_CLASH_HALUnload_fnc_Unload = {
     params ["_carrierGroup","_carrier",["_orderFile","UNKNOWN"]];
+
+    /*
+        The seam, after the run-in.
+
+        HAL's statement spawns this whenever its waypoint completes. On a lift
+        the run-in dropped, that is at the through point, a kilometre past the
+        drop zone, with nobody aboard and nothing left to decide. On a lift
+        the run-in left alone, or never reached, it is where it always was and
+        this is the v4 seam.
+    */
+    ([
+        _carrierGroup,["","TRANSIT","RUN_IN","SEAM"],"SEAM"
+    ] call ITW_CLASH_HALUnload_fnc_Claim) params ["_mine","_was"];
+    if (!_mine && {!isNull _carrierGroup}) exitWith {
+        ["seam-after-run-in",[
+            if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+            groupId _carrierGroup,_orderFile,_was
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+        "RUN_IN"
+    };
+    if (_was isEqualTo "RUN_IN") then {
+        // Armed, and the waypoint completed before the watcher released.
+        // The run is this function's now, from wherever the aircraft is.
+        private _dropZone = _carrierGroup getVariable ["ITW_CLASH_HALUnloadDropZone",[]];
+        ["seam-took-over",[
+            if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
+            groupId _carrierGroup,_orderFile,
+            if (isNull _carrier || {_dropZone isEqualTo []}) then {-1} else {
+                round (_carrier distance2D _dropZone)
+            }
+        ]] call ITW_CLASH_HALUnload_fnc_Log;
+        [_carrierGroup] call ITW_CLASH_HALUnload_fnc_ClearDropState;
+    };
 
     private _param = missionNamespace getVariable ["ITW_ParamHelisUnload",50];
     if !(_param isEqualType 0) then {_param = 50};
@@ -687,7 +1434,7 @@ ITW_CLASH_HALUnload_fnc_Unload = {
         _state = _corridor getOrDefault ["state","COLD"];
         _reason = _corridor getOrDefault ["reason",""];
 
-        ([_carrier,_state] call ITW_CLASH_HALUnload_fnc_Mode) params [
+        ([_carrier,_state,_carrierGroup] call ITW_CLASH_HALUnload_fnc_Mode) params [
             "_resolvedMode","_resolvedChance","_resolvedCapacity"
         ];
         _mode = _resolvedMode;
@@ -731,7 +1478,9 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 } forEach _cargoGroups;
                 if (_dropped) then {
                     _result = "PARADROP";
-                    [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress
+                    [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress;
+                    [_carrierGroup,_carrier,_orderFile,count _cargoGroups] call
+                        ITW_CLASH_HALUnload_fnc_Handback
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
                         if (_noLand) then {
@@ -771,7 +1520,9 @@ ITW_CLASH_HALUnload_fnc_Unload = {
                 } forEach _cargoGroups;
                 if (_dropped) then {
                     _result = "HOT_PARADROP";
-                    [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress
+                    [_carrierGroup,_carrier,_origin] call ITW_CLASH_HALUnload_fnc_Egress;
+                    [_carrierGroup,_carrier,_orderFile,count _cargoGroups] call
+                        ITW_CLASH_HALUnload_fnc_Handback
                 } else {
                     if (([_carrier,_cargoGroup] call ITW_CLASH_HALUnload_fnc_Aboard) isNotEqualTo []) then {
                         _carrier land "NONE";
@@ -801,19 +1552,10 @@ ITW_CLASH_HALUnload_fnc_Unload = {
     _carrierGroup setVariable ["ITW_CLASH_HALUnloadOrigin",nil];
 
     // One line answers the whole insertion question.
-    diag_log format [
-        "CLASH HAL UNLOAD | lift | group=%1 aircraft=%2 order=%3 param=%4 corridor=%5 mode=%6 result=%7 reason=%8 chance=%9 capacity=%10",
-        if (isNull _cargoGroup) then {"<none>"} else {groupId _cargoGroup},
-        if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
-        _orderFile,_param,_state,_mode,_result,_reason,_chance,_capacity
-    ];
-    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
-        ["hal-unload","lift",[
-            if (isNull _cargoGroup) then {"<none>"} else {groupId _cargoGroup},
-            if (isNull _carrier) then {"<null>"} else {typeOf _carrier},
-            _orderFile,_param,_state,_mode,_result,_reason,_chance,_capacity
-        ]] call ITW_CLASH_LoudDebug_fnc_Emit;
-    };
+    [
+        _cargoGroup,_carrier,_orderFile,_param,_state,_mode,_result,_reason,
+        _chance,_capacity,"seam"
+    ] call ITW_CLASH_HALUnload_fnc_LiftLine;
     _result
 };
 
@@ -837,7 +1579,7 @@ ITW_CLASH_HALUnload_fnc_PatchSource = {
 
     private _track =
         "private _cg = group (assigneddriver _AV); "
-        + "[_cg,_AV,_unitG] call ITW_CLASH_HALUnload_fnc_TrackLift; ";
+        + "[_cg,_AV,_unitG," + str _orderFile + "] call ITW_CLASH_HALUnload_fnc_TrackLift; ";
 
     private _script =
         "private _g = group this; private _v = vehicle this; "
@@ -960,12 +1702,15 @@ if (
 
 ITW_CLASH_HALUnloadReady = true;
 diag_log format [
-    "CLASH BOOT | hal-unload-ready | version=%1 sites=%2 executionTime=true oneOwner=true halOwnsFlight=true terminalFlyThrough=%3 through=%4 break=%5 hotDropOwnsMovement=false sources=%6",
+    "CLASH BOOT | hal-unload-ready | version=%1 sites=%2 executionTime=true oneOwner=true halOwnsFlight=true terminalFlyThrough=%3 through=%4 break=%5 hotDropOwnsMovement=false runIn=%6 runInDistance=%7 handback=%8 sources=%9",
     ITW_CLASH_HALUnloadVersion,
     count ITW_CLASH_HALUnloadOrderSpecs,
     ITW_CLASH_HALUnloadFlyThrough,
     ITW_CLASH_HALUnloadEgressThrough,
     ITW_CLASH_HALUnloadEgressOffset,
+    ITW_CLASH_HALUnloadRunIn,
+    ITW_CLASH_HALUnloadRunInDistance,
+    ITW_CLASH_HALUnloadHandback,
     _sources
 ];
 true
