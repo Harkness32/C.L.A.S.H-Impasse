@@ -58,7 +58,7 @@ def test_player_priority_layers_are_not_part_of_service_lifecycle_refactor():
 
 def test_service_authority_no_longer_depends_on_removed_stage_alias():
     authority = mission("ITW_CLASH_ServiceAuthority.sqf")
-    assert "ITW_CLASH_ServiceAuthorityVersion = 3;" in authority
+    assert "ITW_CLASH_ServiceAuthorityVersion = 4;" in authority
     prereq = authority.split("if (",1)[1].split(") exitWith {",1)[0]
     assert "ITW_CLASH_Service_fnc_StageFieldVehicleBase" not in prereq
     assert "staleStagePrerequisiteRemoved=true" in authority

@@ -46,7 +46,7 @@ def test_virtual_reactivation_is_capacity_safe_and_free_for_paid_entitlement():
 def test_latest_air_quarantine_patch_is_unwound():
     stability = mission("ITW_CLASH_ServiceStability.sqf")
     authority = mission("ITW_CLASH_ServiceAuthority.sqf")
-    assert "ITW_CLASH_ServiceAuthorityVersion = 3;" in authority
+    assert "ITW_CLASH_ServiceAuthorityVersion = 4;" in authority
     assert "impasse-handoff-immediate" not in authority
     assert "immediateTransportQuarantine=true" not in authority
     quarantine = stability.split(

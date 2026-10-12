@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceAuthorityStarted",false]) exitWith {true};
 ITW_CLASH_ServiceAuthorityStarted = true;
-ITW_CLASH_ServiceAuthorityVersion = 3;
+ITW_CLASH_ServiceAuthorityVersion = 4;
 ITW_CLASH_ServiceAuthorityReady = false;
 
 if (
@@ -199,6 +199,112 @@ ITW_CLASH_Generation_fnc_RegisterAsset = {
     _this call ITW_CLASH_ServiceAuthority_fnc_RegisterGeneratedBase
 };
 
+/*
+    v4: a helicopter HAL calls non-combat gets the transport lease.
+
+    Hark, 2026-10-11: "tons of helicopters hanging". Run of 20:23, mission 2:
+    sixteen dual-role helicopters were handed from Impasse to HAL, and the rule
+    below leased none of them, because a combat DUAL deployment bypasses the
+    lifecycle. HAL gave attack orders to the ones it counts as combat aircraft.
+    The unarmed Ghost Hawks it could only ever use as cargo, and nothing stored
+    them, landed them or sent them anywhere:
+
+        G242  enemy   handed over 21:24   no waypoint to the end of the log
+        G304  BLUFOR  handed over 21:45   no waypoint to the end of the log
+        G366  BLUFOR  handed over 22:03   shot down at 48 m at 22:32
+        G504  BLUFOR  handed over 22:58   shot down at 48 m at 23:00
+        G121  enemy   handed over 20:53   shot down at 48 m at 20:55
+
+    The pure transports handed over in the same run were stored about four
+    minutes after they arrived, as this lease intends (SVC-603477-2, 20:38:01).
+
+    So the question "is this a transport" is put to HAL. HAL files every
+    aircraft class it knows as armed or not: RHQ_NCAir is the unarmed subset of
+    RHQ_Air (HAC_fnc2.sqf, the class autofill: armed means any magazine other
+    than flares), and its situation report puts a group on RydHQ_NCAirG, the
+    non-combat air list its attack and defence pools leave out, when the driver's
+    vehicle class is on that list (HQSitRep.sqf:149, HAC_fnc2.sqf:470). This
+    reads the same lists with the same expression. Non-combat: the helicopter
+    gets exactly what a transport deployment gets here, the transport doctrine
+    and the lease, and the lifecycle takes it from there. Combat: nothing
+    changes. Not yet known to HAL: asked again every few seconds until it is.
+
+    HAL's per-cycle combat lists (RydHQ_CombatAv, RydHQ_AttackAv) were not used.
+    They say who is free this cycle, not what the aircraft is. In the same run
+    attack helicopters first appeared on them 11 and 23 minutes after the
+    handover (G119, G460); a rule built on them would have leased those.
+*/
+ITW_CLASH_ServiceNonCombatAirLease = missionNamespace getVariable [
+    "ITW_CLASH_ServiceNonCombatAirLease",true
+];
+ITW_CLASH_ServiceAirVerdictWait = missionNamespace getVariable [
+    "ITW_CLASH_ServiceAirVerdictWait",600
+];
+
+// "non-combat", "combat", or "" when HAL's lists do not know the class yet.
+ITW_CLASH_ServiceAuthority_fnc_HALAirVerdict = {
+    params ["_veh"];
+    if (isNull _veh) exitWith {""};
+    if (isNil "RHQ_Air" || {isNil "RHQ_NCAir"}) exitWith {""};
+    private _class = toLower (typeOf _veh);
+    private _ncAir = RHQ_NCAir
+        + (missionNamespace getVariable ["RYD_WS_NCAir_class",[]])
+        - (missionNamespace getVariable ["RHQs_NCAir",[]]);
+    if (_class in _ncAir) exitWith {"non-combat"};
+    private _air = RHQ_Air
+        + (missionNamespace getVariable ["RYD_WS_Air_class",[]])
+        - (missionNamespace getVariable ["RHQs_Air",[]]);
+    if (_class in _air) exitWith {"combat"};
+    ""
+};
+
+ITW_CLASH_ServiceAuthority_fnc_AwaitAirVerdict = {
+    params ["_veh","_group"];
+    scriptName "ITW_CLASH_ServiceAuthority_AirVerdict";
+    private _startedAt = time;
+    private _verdict = "";
+    private _lost = false;
+    while {_verdict isEqualTo "" && {time < _startedAt + ITW_CLASH_ServiceAirVerdictWait}} do {
+        if (isNull _veh || {!alive _veh} || {isNull _group} || {
+            ({alive _x} count units _group) == 0
+        }) exitWith {_lost = true};
+        _verdict = [_veh] call ITW_CLASH_ServiceAuthority_fnc_HALAirVerdict;
+        if (_verdict isEqualTo "") then {sleep 5};
+    };
+    if (_lost) exitWith {false};
+
+    private _id = if (isNil "ITW_CLASH_DualHAL_fnc_GroupId") then {str _group} else {
+        [_group] call ITW_CLASH_DualHAL_fnc_GroupId
+    };
+    private _waited = round (time - _startedAt);
+    if (_verdict isEqualTo "") exitWith {
+        ["air-verdict-timeout",[_id,typeOf _veh,side _group,_waited]]
+            call ITW_CLASH_ServiceAuthority_fnc_Log;
+        false
+    };
+    if (_verdict isEqualTo "combat") exitWith {
+        ["air-verdict-combat",[_id,typeOf _veh,side _group,_waited]]
+            call ITW_CLASH_ServiceAuthority_fnc_Log;
+        false
+    };
+    if ([_veh] call ITW_CLASH_ServiceAuthority_fnc_HasLease) exitWith {false};
+
+    // What StageFieldVehicle and the wrapper below give a transport
+    // deployment, in the same order.
+    if (!isNil "ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine") then {
+        [_group,true,"hal-noncombat-air"] call
+            ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+    };
+    [_veh,_group,"TRANSPORT","hal-noncombat-air"] call
+        ITW_CLASH_ServiceAuthority_fnc_SetLease;
+    private _poolId = [
+        _veh,"TRANSPORT",[_veh] call ITW_CLASH_Service_fnc_ModeForVehicle,"hal-noncombat-air"
+    ] call ITW_CLASH_Service_fnc_RegisterPhysical;
+    ["air-verdict-noncombat-leased",[_id,typeOf _veh,side _group,_waited,_poolId]]
+        call ITW_CLASH_ServiceAuthority_fnc_Log;
+    true
+};
+
 // Lifecycle-v1 inferred service from role. Replace that field-handoff boundary:
 // combat DUAL deployments bypass the lifecycle wrapper entirely; pure transport
 // and explicitly DUAL-as-transport deployments carry an explicit lease first.
@@ -229,13 +335,25 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
             [_veh,"TRANSPORT",[_veh] call ITW_CLASH_Service_fnc_ModeForVehicle,"impasse-handoff"] call
                 ITW_CLASH_Service_fnc_RegisterPhysical;
         };
+
+        // v4: any other helicopter is a transport if HAL says it cannot fight.
+        if (
+            ITW_CLASH_ServiceNonCombatAirLease
+            && {!_transportDeployment}
+            && {!isNull _veh} && {!isNull _group}
+            && {_veh isKindOf "Helicopter"}
+        ) then {
+            [_veh,_group] spawn ITW_CLASH_ServiceAuthority_fnc_AwaitAirVerdict;
+        };
     };
     _result
 };
 
 ITW_CLASH_ServiceAuthorityReady = true;
 diag_log format [
-    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true transportVirtualization=true logisticsVirtualization=true sharedVehDefImmutable=true idempotentRegistration=true staleStagePrerequisiteRemoved=true",
-    ITW_CLASH_ServiceAuthorityVersion
+    "CLASH BOOT | service-authority-ready | version=%1 explicitLease=true transportVirtualization=true logisticsVirtualization=true sharedVehDefImmutable=true idempotentRegistration=true staleStagePrerequisiteRemoved=true nonCombatAirLease=%2 airVerdictWait=%3s airVerdictFrom=RHQ_NCAir",
+    ITW_CLASH_ServiceAuthorityVersion,
+    ITW_CLASH_ServiceNonCombatAirLease,
+    ITW_CLASH_ServiceAirVerdictWait
 ];
 true
