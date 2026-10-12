@@ -575,7 +575,13 @@ ITW_CLASH_fnc_ClassifyGroup = {
         };
     };
     if (_managedVehicleIndex >= 0) exitWith {[false,"vehicle-managed",[_managedVehicleIndex]]};
-    if (assignedVehicles _group isNotEqualTo []) exitWith {[false,"assigned-vehicle",[]]};
+    // A deleted vehicle stays in assignedVehicles as a null object that nothing
+    // can remove, and a parachute is a vehicle. Counted, it would keep an enemy
+    // squad that had jumped out of the roster for good. Only a vehicle that
+    // still exists counts (see ITW_CLASH_ReconstitutionTransitFix.sqf v6).
+    if (((assignedVehicles _group) select {!isNull _x}) isNotEqualTo []) exitWith {
+        [false,"assigned-vehicle",[]]
+    };
     if (_aliveUnits findIf {vehicle _x != _x} >= 0) exitWith {[false,"vehicle-or-cargo",[]]};
     if (_aliveUnits findIf {!(_x isKindOf "CAManBase")} >= 0) exitWith {[false,"not-infantry",[]]};
 

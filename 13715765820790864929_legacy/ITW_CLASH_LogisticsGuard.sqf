@@ -4,13 +4,13 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_LogisticsGuardStarted",false]) exitWith {};
 
 ITW_CLASH_LogisticsGuardStarted = true;
-ITW_CLASH_LogisticsHandoffVersion = 4;
+ITW_CLASH_LogisticsHandoffVersion = 5;
 ITW_CLASH_WithdrawalArrivalRadius = 150;
 ITW_CLASH_WithdrawalWaypointRadius = 100;
 ITW_CLASH_PostTransportSettle = 30;
 
 diag_log format [
-    "CLASH BOOT | logistics-guard-ready | version=%1 egress=%2 waypoint=%3 settle=%4 symmetricTransportSettle=true reconstitutionDismountReconcile=true unassignLogThrottle=15",
+    "CLASH BOOT | logistics-guard-ready | version=%1 egress=%2 waypoint=%3 settle=%4 symmetricTransportSettle=true reconstitutionDismountReconcile=true deletedVehiclesNotAssigned=true unassignLogThrottle=15",
     ITW_CLASH_LogisticsHandoffVersion,
     ITW_CLASH_WithdrawalArrivalRadius,
     ITW_CLASH_WithdrawalWaypointRadius,
@@ -52,7 +52,17 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
             private _transitOnFoot = _transitUnits isNotEqualTo [] && {
                 (_transitUnits findIf {vehicle _x != _x}) < 0
             };
-            private _assigned = assignedVehicles _grp;
+            // v5: a deleted parachute stays in assignedVehicles as a null
+            // object that nothing can remove. Counting it kept this reconcile
+            // running once a second for ever (RC1, 2026-10-11: 4 before, 4
+            // after, 31 logged passes). Only vehicles that still exist count.
+            private _assigned = if (!isNil
+                "ITW_CLASH_Reconstitution_fnc_LiveAssigned"
+            ) then {
+                [_grp] call ITW_CLASH_Reconstitution_fnc_LiveAssigned
+            } else {
+                (assignedVehicles _grp) select {!isNull _x}
+            };
             if (_liveState in ["transport","walking"] && {_transitOnFoot}) then {
                 private _managedCargo = -1;
                 if (!isNil "ITW_ManagedVehs") then {
@@ -71,7 +81,7 @@ while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
                             ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership
                     } else {
                         {unassignVehicle _x} forEach _transitUnits;
-                        [count assignedVehicles _grp,0,true]
+                        [count ((assignedVehicles _grp) select {!isNull _x}),0,true]
                     };
                     _reconciled params [
                         "_afterAssigned","_clearedCargoLinks","_attempted"

@@ -196,10 +196,35 @@ ITW_AllyAttackVectors = {
     // only let one thread run this routine at a time
     SEM_LOCK(ITW_AllyAttackVectorsBusy);
     
+    // C.L.A.S.H.: a reconstitution lift is raised for one objective and says so
+    // on its crew and cargo groups. ITW_EnemyAttackVectors has read that since
+    // the lift was written; this side did not, so a BLUFOR lift went to the
+    // least staffed objective of the zone instead (RC1, 2026-10-11: raised for
+    // objective 8, flown to objective 23, 6.7 km away and 1.9 km from the
+    // enemy forward base). Same branch, same rule, both sides.
+    private _forcedObjective = _group getVariable [
+        "ITW_CLASH_TransitObjective",-1
+    ];
+    if (_forcedObjective < 0) then {
+        private _forcedCargoIdx = _cargoGroups findIf {
+            (_x getVariable ["ITW_CLASH_TransitObjective",-1]) >= 0
+        };
+        if (_forcedCargoIdx >= 0) then {
+            _forcedObjective = (_cargoGroups#_forcedCargoIdx) getVariable [
+                "ITW_CLASH_TransitObjective",-1
+            ];
+        };
+    };
+
     if (ITW_defendPhaseObjIdx > 0) then {
         _objIndex = ITW_defendPhaseObjIdx;
     } else {
         private _objIndexes = ITW_Zones#ITW_ZoneIndex;
+        if (_forcedObjective >= 0 && {
+            _forcedObjective in _objIndexes
+        }) then {
+            _objIndex = _forcedObjective;
+        } else {
         private _walkingObjs = _objIndexes;
         
         // if infantry are walking, then limit how far they are going to walk (no more than 2k unless no objectives that close)
@@ -257,10 +282,19 @@ ITW_AllyAttackVectors = {
                 _deltaMax = _delta;
             };
         } forEach _objIndexes;
+        };
     };
         
     VAR_SET_OBJ_IDX(_group,_objIndex);
     _cargoGroups apply {VAR_SET_OBJ_IDX(_x,_objIndex)};
+    if ((_group getVariable ["ITW_CLASH_TransitObjective",-1]) >= 0) then {
+        _group setVariable ["ITW_CLASH_TransitObjective",_objIndex];
+    };
+    {
+        if ((_x getVariable ["ITW_CLASH_TransitObjective",-1]) >= 0) then {
+            _x setVariable ["ITW_CLASH_TransitObjective",_objIndex];
+        };
+    } forEach _cargoGroups;
         
     private _objTo = ITW_Objectives#_objIndex;
     

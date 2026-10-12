@@ -3839,7 +3839,9 @@ ITW_AtkVehicleManager = {
             
             // transports and attack vehicles w/o ammo need to vacate the area after unloading
             private _driverGrp = group driver _veh;
-            private _transportDone = (_role == ITW_VEH_ROLE_TRANSPORT) && {_cargoGroups isEqualTo []};
+            // C.L.A.S.H.: a reconstitution lift has one job whatever role it was
+            // bought under, so an empty one goes home like any transport.
+            private _transportDone = (_role == ITW_VEH_ROLE_TRANSPORT || {_veh getVariable ["ITW_CLASH_ReconstitutionLift",false]}) && {_cargoGroups isEqualTo []};
             private _attackDone = (_role != ITW_VEH_ROLE_TRANSPORT) && 
                                         {_cargoGroups isEqualTo [] && 
                                         {{_x#1 > 0} count magazinesAmmo [_veh, false] == 0}};

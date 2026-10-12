@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 6;
+ITW_CLASH_DualHALCheckbookVersion = 7;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -116,6 +116,15 @@ ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter = {
     private _veh = if (
         _vehInfo isEqualType [] && {count _vehInfo > VEHINFO_VEH}
     ) then {_vehInfo#VEHINFO_VEH} else {vehicle leader _group};
+    // v7: a reconstitution lift is never taken from Impasse, loaded or empty.
+    // Its reservation flag is dropped when the squad is out; this mark is not
+    // (ITW_CLASH_ReconstitutionDispatchFix.sqf v7 sets it and says why). At
+    // function scope on purpose: the vehicle tests inside
+    // ITW_CLASH_DualHAL_fnc_IsLifecycleReserved sit in a `then` block, where
+    // exitWith only leaves the block.
+    if (!isNull _veh && {
+        _veh getVariable ["ITW_CLASH_ReconstitutionLift",false]
+    }) exitWith {false};
     if ([_group,_veh] call ITW_CLASH_DualHAL_fnc_IsLifecycleReserved) exitWith {false};
 
     private _supported = false;

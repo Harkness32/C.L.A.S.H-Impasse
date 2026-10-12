@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixStarted",f
     missionNamespace getVariable ["ITW_CLASH_ReconstitutionDispatchFixReady",false]
 };
 ITW_CLASH_ReconstitutionDispatchFixStarted = true;
-ITW_CLASH_ReconstitutionDispatchFixVersion = 6;
+ITW_CLASH_ReconstitutionDispatchFixVersion = 7;
 ITW_CLASH_ReconstitutionDispatchFixReady = false;
 
 // Resolve the exact active objective's attack-source forward FOB. Prefer the
@@ -63,9 +63,102 @@ ITW_CLASH_Reconstitution_fnc_ResolveForwardSpawn = {
     [_position,_objectiveIndex,_source,_baseIndex]
 };
 
+/*
+    v7: the replacement squad is handed to its commander where it is born.
+
+    Run of 2026-10-11 20:23, mission 2. Two replacement lifts flew, one a side,
+    and neither squad was ever handed over:
+
+        RC1 (BLUFOR, for objective 8)   flown to objective 23, 6.7 km away,
+                                        dropped 20:59:20, no order to 21:07
+        RC2 (enemy, for objective 8)    dropped 21:02:54, 590 m out, waiting on
+                                        "physical-dismount" to 21:07
+
+    "reconstitution-transit-arrived" appears 0 times in that log. The lift is a
+    third kind of lift, between Impasse and HAL, with a handoff at each end and
+    one in the middle, and each of the three had its own fault (the fallback
+    below and ITW_CLASH_ReconstitutionTransitFix.sqf v6 say which).
+
+    Every other squad either side fields is given to its commander at the base
+    it spawns at and HAL decides where it goes and whether it flies. The
+    handoff a replacement squad gets at the end of its lift is the same one:
+    ITW_CLASH_fnc_AcknowledgeReconstitution stamps lineage, archetype and the
+    objective it was raised for, registers the group, and writes no waypoint
+    and no order. So it is called here, once the squad stands at the forward
+    FOB, on both sides.
+
+    If the commander takes the squad the dedicated lift is never bought. If he
+    does not (HAL is not up, the bridge is frozen for a zone change, the enemy
+    roster is full) the squad goes down the transit path exactly as before.
+*/
+ITW_CLASH_ReconstitutionSpawnHandoff = missionNamespace getVariable [
+    "ITW_CLASH_ReconstitutionSpawnHandoff",true
+];
+
+ITW_CLASH_Reconstitution_fnc_SpawnHandoff = {
+    params [
+        "_group","_requestId","_objectiveIndex","_archetype","_lineage",["_queuedAt",0]
+    ];
+    if (!ITW_CLASH_ReconstitutionSpawnHandoff) exitWith {false};
+    if (isNull _group || {isNil "ITW_CLASH_fnc_AcknowledgeReconstitution"}) exitWith {false};
+    if (_objectiveIndex < 0 || {isNil "ITW_Objectives"} || {
+        _objectiveIndex >= count ITW_Objectives
+    }) exitWith {false};
+
+    // Both commanders refuse a group that Impasse still marks as being built.
+    // The transit manager clears the mark at its own handoff for that reason.
+    _group setVariable ["itwInitGrp",nil,true];
+    VAR_SET_OBJ_IDX(_group,_objectiveIndex);
+
+    private _accepted = [
+        _group,_requestId,_objectiveIndex,_archetype,_lineage,_queuedAt
+    ] call ITW_CLASH_fnc_AcknowledgeReconstitution;
+    if (isNil "_accepted") then {_accepted = false};
+
+    private _friendly = !isNil "ITW_PlayerSide" && {side _group == ITW_PlayerSide};
+    private _distance = round (
+        leader _group distance2D ((ITW_Objectives#_objectiveIndex)#ITW_OBJ_POS)
+    );
+
+    if (!_accepted) exitWith {
+        // Back to what the transit path expects to find.
+        _group setVariable ["itwInitGrp",true,true];
+        if (!isNil "ITW_CLASH_fnc_Log") then {
+            ["reconstitution-spawn-handoff-refused",[
+                _requestId,_lineage,_objectiveIndex,side _group,
+                {alive _x} count units _group,_distance,
+                missionNamespace getVariable ["ITW_CLASH_HALReady",false],
+                missionNamespace getVariable ["ITW_CLASH_DualHALReady",false]
+            ]] call ITW_CLASH_fnc_Log;
+        };
+        false
+    };
+
+    // Same closing step the transit manager's handoff takes for the enemy.
+    if (
+        !_friendly
+        && {!isNil "ITW_EnemySide"}
+        && {side _group == ITW_EnemySide}
+        && {!isNil "ITW_EnemyGroupCallback"}
+    ) then {
+        [_group] call ITW_EnemyGroupCallback
+    };
+
+    if (!isNil "ITW_CLASH_fnc_Log") then {
+        ["reconstitution-spawn-handoff",[
+            _requestId,_lineage,_objectiveIndex,side _group,
+            {alive _x} count units _group,_distance,
+            _group getVariable ["ITW_CLASH_ReconstitutionSupportBase",-1],
+            _group getVariable ["ITW_CLASH_ReconstitutionSpawnSource",""]
+        ]] call ITW_CLASH_fnc_Log;
+    };
+    true
+};
+
 // Reconstituted combat squads are born at the forward FOB, not the logistics
-// corridor. They remain in transit and are not handed back to HAL until the
-// existing transit manager observes their physical return to the AO.
+// corridor. From v7 the commander is offered the squad there. Only a squad he
+// does not take remains in transit, and that one is not handed back to HAL
+// until the existing transit manager observes its physical return to the AO.
 if (isNil "ITW_AtkBeginReconstitutionTransit") exitWith {
     diag_log "CLASH BOOT | FAILED | reconstitution-origin-fix-source-missing";
     false
@@ -97,6 +190,10 @@ ITW_AtkBeginReconstitutionTransit = {
             ]] call ITW_CLASH_fnc_Log;
         };
     };
+
+    if ([
+        _group,_requestId,_objectiveIndex,_archetype,_lineage,_queuedAt
+    ] call ITW_CLASH_Reconstitution_fnc_SpawnHandoff) exitWith {true};
 
     _group setVariable ["ITW_CLASH_ReconstitutionTransit",true];
     _group setVariable ["ITW_CLASH_TransitObjective",_objectiveIndex];
@@ -256,6 +353,18 @@ ITW_AtkDispatchReconstitutionTransport = {
         // it into standing HAL cargo before the reconstitution trip begins.
         _veh setVariable ["ITW_CLASH_ReconstitutionTransport",true,true];
 
+        // v7: and it stays Impasse's for the rest of its life. The flag above
+        // is dropped when the squad is out, and from that moment the Dual-HAL
+        // migration took the empty aircraft out of ITW_ManagedVehs, two
+        // seconds before Impasse would have sent it home. HAL had no order for
+        // it and nothing else returns a carrier that never flew a HAL lift:
+        // Bravo 2-4 hovered at Impasse's last waypoint from 21:00:09 to the end
+        // of the log, in the enemy commander's known contacts throughout. This
+        // mark is never cleared. ShouldSuppressImpasseVehicleWriter reads it,
+        // so Impasse's vehicle manager flies the empty lift back to where it
+        // started and deletes it there.
+        _veh setVariable ["ITW_CLASH_ReconstitutionLift",true,true];
+
         private _vehInfo = [
             _vehDef#ITW_VEH_TYPE,
             _vehDef#ITW_VEH_ROLE,
@@ -321,8 +430,9 @@ private _finalized = _beginFinalized && _dispatchFinalized;
 ITW_CLASH_ReconstitutionDispatchFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true sideContexts=true capExemptCrew=true lifecycleReserved=true costEfficientLiftOrder=true preInit=true",
-        ITW_CLASH_ReconstitutionDispatchFixVersion
+        "CLASH BOOT | reconstitution-dispatch-fix-ready | version=%1 forwardFOB=true origin=true transport=true sideContexts=true capExemptCrew=true lifecycleReserved=true costEfficientLiftOrder=true preInit=true spawnHandoff=%2 liftReturnsToImpasse=true",
+        ITW_CLASH_ReconstitutionDispatchFixVersion,
+        ITW_CLASH_ReconstitutionSpawnHandoff
     ];
 } else {
     diag_log format [

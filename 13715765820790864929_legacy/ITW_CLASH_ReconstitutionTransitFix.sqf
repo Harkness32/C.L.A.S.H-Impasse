@@ -5,12 +5,41 @@ if (missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixStarted",fa
     missionNamespace getVariable ["ITW_CLASH_ReconstitutionTransitFixReady",false]
 };
 ITW_CLASH_ReconstitutionTransitFixStarted = true;
-ITW_CLASH_ReconstitutionTransitFixVersion = 5;
+ITW_CLASH_ReconstitutionTransitFixVersion = 6;
 ITW_CLASH_ReconstitutionTransitFixReady = false;
 ITW_CLASH_ReconstitutionHandoffBuffer = 250;
 ITW_CLASH_ReconstitutionTransitPoll = missionNamespace getVariable [
     "ITW_CLASH_ReconstitutionTransitPoll",2
 ];
+
+/*
+    v6: a vehicle that no longer exists is not an assigned vehicle.
+
+    Run of 2026-10-11 20:23, mission 2. Both replacement squads were delivered
+    by parachute and neither was ever handed to its commander:
+
+        RC1  "reconstitution-transport-unassigned" [.., 4 men, 4 before, 4 after]
+             31 times, 20:59:29 to 21:07:18
+        RC2  "reconstitution-handoff-wait" [.., 3 assigned, 590 m] to 21:07:21
+
+    assignedVehicles returns a group's vehicle list, and a parachute is a
+    vehicle. It is deleted when the man lands and stays in the list as a null
+    object. unassignVehicle on the man does not remove it, and neither does
+    leaveVehicle with the null object: the field hardening pass logs the list
+    after trying both, and it is still "<NULL-object>". The handoff below
+    waited for that list to be empty, so it waited for ever.
+
+    A vehicle that has been deleted cannot be boarded again, which is the only
+    thing the gate was guarding against. Only vehicles that still exist are
+    counted. A wreck still exists and still counts, as it does for the unit
+    test BLUFOR admission uses (assignedVehicle of each man), so the two sides
+    read the same thing.
+*/
+ITW_CLASH_Reconstitution_fnc_LiveAssigned = {
+    params ["_group"];
+    if (isNull _group) exitWith {[]};
+    (assignedVehicles _group) select {!isNull _x}
+};
 
 // Once replacement infantry is physically out of its dedicated transit
 // vehicle, release the lifecycle reservation. Impasse can finish removing the
@@ -47,7 +76,9 @@ ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership = {
     private _aliveUnits = units _group select {alive _x};
     if (_aliveUnits isEqualTo [] || {
         (_aliveUnits findIf {vehicle _x != _x}) >= 0
-    }) exitWith {[count assignedVehicles _group,0,false]};
+    }) exitWith {[
+        count ([_group] call ITW_CLASH_Reconstitution_fnc_LiveAssigned),0,false
+    ]};
 
     private _veh = _group getVariable ["ITW_CLASH_TransitVehicle",objNull];
     _aliveUnits orderGetIn false;
@@ -72,7 +103,10 @@ ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership = {
         };
     };
 
-    [count assignedVehicles _group,_clearedCargoLinks,true]
+    [
+        count ([_group] call ITW_CLASH_Reconstitution_fnc_LiveAssigned),
+        _clearedCargoLinks,true
+    ]
 };
 
 ITW_CLASH_Reconstitution_fnc_OrderWalkingTransit = {
@@ -209,11 +243,13 @@ ITW_AtkReconstitutionTransitManager = {
                     ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership;
             };
 
-            private _assigned = assignedVehicles _group;
+            private _assigned = [_group] call
+                ITW_CLASH_Reconstitution_fnc_LiveAssigned;
             if (_nearHandoff && {_assigned isNotEqualTo []}) then {
                 [_group] call
                     ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership;
-                _assigned = assignedVehicles _group;
+                _assigned = [_group] call
+                    ITW_CLASH_Reconstitution_fnc_LiveAssigned;
             };
 
             private _managedVehicleIndex = -1;
@@ -362,7 +398,7 @@ private _finalized = ["ITW_AtkReconstitutionTransitManager"] call SKL_fnc_Compil
 ITW_CLASH_ReconstitutionTransitFixReady = _finalized;
 if (_finalized) then {
     diag_log format [
-        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 poll=%3 authoritativeState=true preInit=true vehicleOwnershipGate=true lifecycleRelease=true physicalDismountHandoff=true staleCargoReconcile=true exactObjectiveWalk=true sideAwareHandoff=true",
+        "CLASH BOOT | reconstitution-transit-fix-ready | version=%1 handoffBuffer=%2 poll=%3 authoritativeState=true preInit=true vehicleOwnershipGate=true lifecycleRelease=true physicalDismountHandoff=true staleCargoReconcile=true exactObjectiveWalk=true sideAwareHandoff=true deletedVehiclesNotAssigned=true",
         ITW_CLASH_ReconstitutionTransitFixVersion,
         ITW_CLASH_ReconstitutionHandoffBuffer,
         ITW_CLASH_ReconstitutionTransitPoll

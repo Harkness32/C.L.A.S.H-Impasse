@@ -1,7 +1,7 @@
 #include "defines.hpp"
 
 if (!isServer) exitWith {false};
-ITW_CLASH_InfantryAuthorityVersion = 4;
+ITW_CLASH_InfantryAuthorityVersion = 5;
 
 /*
     Persistent infantry authority doctrine
@@ -82,7 +82,13 @@ ITW_CLASH_InfantryAuthority_fnc_IsHardHandoff = {
     if (_managedVehicleIndex >= 0) exitWith {
         [true,"vehicle-managed",[_managedVehicleIndex]]
     };
-    if (assignedVehicles _group isNotEqualTo []) exitWith {[true,"assigned-vehicle",[]]};
+    // A deleted vehicle stays in assignedVehicles as a null object that nothing
+    // can remove, and a parachute is a vehicle. Counted, it would hold an enemy
+    // squad that had jumped as "assigned-vehicle" for good. Only a vehicle that
+    // still exists counts (see ITW_CLASH_ReconstitutionTransitFix.sqf v6).
+    if (((assignedVehicles _group) select {!isNull _x}) isNotEqualTo []) exitWith {
+        [true,"assigned-vehicle",[]]
+    };
     if (_alive findIf {vehicle _x != _x} >= 0) exitWith {[true,"vehicle-or-cargo",[]]};
     if (_alive findIf {!(_x isKindOf "CAManBase")} >= 0) exitWith {[true,"not-infantry",[]]};
 

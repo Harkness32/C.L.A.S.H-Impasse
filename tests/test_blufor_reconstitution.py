@@ -148,7 +148,7 @@ def test_bootstrap_accepts_the_symmetric_runtime_versions():
 def test_field_vehicle_staging_obeys_shared_echelon_policy():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_DualHALCheckbookVersion = 6;" in dual
+    assert "ITW_CLASH_DualHALCheckbookVersion = 7;" in dual
     assert "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn" in dual
 
     echelon = dual[
@@ -228,7 +228,7 @@ def test_shared_infantry_hardening_covers_both_hal_registries():
     allocation = mission("ITW_CLASH_InfantryAuthorityAllocationFix.sqf")
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_InfantryAuthorityVersion = 4;" in authority
+    assert "ITW_CLASH_InfantryAuthorityVersion = 5;" in authority
     assert "ITW_CLASH_DualHALBLUFORGroups" in authority
     assert "ITW_CLASH_DualHALOPFORExtraGroups" in authority
     assert "ITW_CLASH_InfantryAuthorityGarrisonsBySide" in authority
@@ -250,7 +250,7 @@ def test_transport_settle_blocks_same_frame_hal_adoption_on_both_sides():
     guard = mission("ITW_CLASH_LogisticsGuard.sqf")
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_LogisticsHandoffVersion = 4;" in guard
+    assert "ITW_CLASH_LogisticsHandoffVersion = 5;" in guard
     assert "ITW_PlayerSide" in guard
     assert "ITW_EnemySide" in guard
     assert "side _grp != ITW_EnemySide" not in guard
@@ -344,7 +344,7 @@ def test_commander_parity_anchor_section_mirrors_six_man_ai_doctrine_only():
 def test_reconstitution_physical_dismount_is_direct_hal_handoff_boundary():
     transit = mission("ITW_CLASH_ReconstitutionTransitFix.sqf")
 
-    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 5;" in transit
+    assert "ITW_CLASH_ReconstitutionTransitFixVersion = 6;" in transit
     assert '"ITW_CLASH_ReconstitutionTransitPoll",2' in transit
     assert "ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership" in transit
     assert "_aliveUnits orderGetIn false;" in transit
@@ -376,7 +376,7 @@ def test_reconstitution_transport_dismount_does_not_fall_into_generic_walking_li
 def test_reconstitution_guard_repairs_stale_assignment_without_per_second_log_spam():
     guard = mission("ITW_CLASH_LogisticsGuard.sqf")
 
-    assert "ITW_CLASH_LogisticsHandoffVersion = 4;" in guard
+    assert "ITW_CLASH_LogisticsHandoffVersion = 5;" in guard
     assert "ITW_CLASH_Reconstitution_fnc_ReconcileDismountOwnership" in guard
     assert '"ITW_CLASH_ReconstitutionUnassignLogAt",time + 15' in guard
     assert "reconstitutionDismountReconcile=true" in guard
@@ -385,7 +385,7 @@ def test_reconstitution_guard_repairs_stale_assignment_without_per_second_log_sp
 def test_reconstitution_dispatch_prefers_cheaper_valid_lift_within_route_mode():
     dispatch = mission("ITW_CLASH_ReconstitutionDispatchFix.sqf")
 
-    assert "ITW_CLASH_ReconstitutionDispatchFixVersion = 6;" in dispatch
+    assert "ITW_CLASH_ReconstitutionDispatchFixVersion = 7;" in dispatch
     assert "private _fallback = _candidates - _preferred;" in dispatch
     assert dispatch.count("_x#ITW_VEH_REQD_TICKETS") >= 2
     assert "costEfficientLiftOrder=true" in dispatch
