@@ -395,3 +395,67 @@ Certify: no `hot-drop-declined` lines; on a CONTESTED or HOT lift,
 `hal-unload-hot-drop`, then `run-in-armed` with `HOT_PARADROP`, then
 `hal-unload-flares` about 40 s after the `release` with all three counts
 above zero and `done` or `spent` as the reason.
+
+## 15. Second flight, 2026-10-11 20:23, and the order lost on landing
+
+Hark: "massive success on the keep low helidrops", and "seems like we still
+have job wipe on delivery".
+
+Two missions in one RPT. Unload owner v8, stay-low v1, paradrop owner v6.
+
+| Squad | Order | Corridor | Armed at | Released at | Off the point | Canopy | Order after landing |
+|---|---|---|---|---|---|---|---|
+| Alpha 2-4 | recon | UNKNOWN | 206 km/h, 28 m | 177 km/h, 70 m | 127 m | 21.9 s | kept |
+| Alpha 2-5 | recon | UNKNOWN | 248 km/h, 78 m | 245 km/h, 58 m | 157 m | 14.1 s | kept |
+| Alpha 2-6 | recon | COLD | 196 km/h, 50 m | 207 km/h, 42 m | 123 m | 10.5 s | kept |
+| Alpha 2-2 | recon | UNKNOWN | 207 km/h, 64 m | 210 km/h, 42 m | 87 m | 13.2 s | kept |
+| Alpha 4-6 | capture | UNKNOWN | 178 km/h, 175 m | 205 km/h, 54 m | 52 m | 20.5 s | **lost** |
+
+No lift was HOT or CONTESTED, so no hot drop and no flares on this flight.
+Four handbacks at `break-passed`, 27 to 32 s after the drop. No
+`hot-drop-declined` lines.
+
+**The one that was lost.** G51, Alpha 4-6:
+
+- 20:46:28 dropped by Bravo 1-2.
+- 20:46:30 Bravo 1-2 shot down by an AA vehicle (`air-loss`).
+- 20:46:34 the order is awake. It writes the squad's waypoint to the
+  objective and starts its next wait. The leader is under canopy.
+- 20:46:48 leader on foot.
+- 20:46:53 `Busy` false.
+- 20:47:03 a new order. 20:47:23 a new lift requested for the same squad.
+
+Same mechanism as section 13, different way in. The order's carrier wait is a
+`RYD_Wait` on the carrier group, and a dead aircraft ends it
+(`HAC_fnc.sqf:1945`). A carrier that is somebody else's group does not end the
+order (`GoCapture.sqf:592`), so it carries on into its next wait, on the squad.
+That wait takes the leader's vehicle at its start (`HAC_fnc.sqf:1929`), which
+is the parachute, and ends as "group lost" when the parachute is deleted
+(`HAC_fnc.sqf:1944`).
+
+v7 closed the way in that this module had made, the early release. It did not
+close the hazard. On the first flight both Littlebirds were lost 4 and 12 s
+after their drops, so a carrier dying inside the descent is the normal case
+where it matters, not a rare one.
+
+**Fix, paradrop owner v7** (`tests/test_canopy_guard.py`). `RYD_Wait` is
+wrapped. The wrapper holds a wait while the group's leader is in a parachute,
+or still has one as his assigned vehicle, then runs HAL's function unchanged.
+A wait whose leader is not in a parachute is not delayed at all. The hold is
+bounded by `ITW_CLASH_HALParadrop_CanopyWait` (90 s). HAL source is not
+edited. It covers every order, and every source of parachutes, not only this
+module's.
+
+Certify: `CLASH BOOT | hal-paradrop-canopy-guard-ready`, and on a drop whose
+carrier is lost in the descent, `hal-paradrop-wait-held-for-landing` with the
+seconds held, and the squad `Busy` with its waypoint a minute later.
+
+**Also on this flight.**
+
+- The lost carrier armed its run-in at 175 m. Its last transit, 3.2 km over
+  broken ground at about 200 km/h, read 47 to 186 m above ground at five
+  second samples. 30 m is what was asked for; what a fast helicopter holds
+  over ridges is not that.
+- Stay-low peaks, from `hal-stay-low-approach`: pickups 46 to 91 m, returns
+  74 to 154 m over 4.5 to 6 km. No lift landed its chalk, so the delivery
+  braking schedule was not exercised.

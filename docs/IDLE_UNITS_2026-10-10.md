@@ -97,6 +97,20 @@ looks like. That is a guess until a log line says it.
   `cannot-move`, the hit points at or above 0.5, and how many of the crew are
   still mounted. That settles G36 and G57 from the next RPT.
 
+**Flown 2026-10-11 20:23.** Eight quarantined, six cleaned, each 20 s after
+its quarantine. The reason on the line answers the G36 and G57 question in
+part: two of the eight were at base in the first 90 s with nothing broken.
+
+| Group | Vehicle | Reason | Hit points at 0.5 or more | Still mounted |
+|---|---|---|---|---|
+| G9 | Rhino MGS UP | `cannot-move` | none | 0 |
+| G43 | Cheetah AA | `cannot-move` | lights only | 2 of 3 |
+
+A vehicle that cannot move with nothing damaged is not a damaged vehicle. On
+its side or roof at spawn is the likely reading, and it is still a guess: the
+line does not log attitude. Both crews were then deleted, so each of these
+costs the side a vehicle in the first two minutes.
+
 Two things this does, on purpose, that are worth knowing:
 
 - A crew still sitting in an immobilised vehicle is deleted with the rest. The

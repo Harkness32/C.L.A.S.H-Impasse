@@ -130,4 +130,4 @@ def test_every_execute_exit_now_says_why():
 
 
 def test_paradrop_version_moved_to_six_for_follow_after_the_drop():
-    assert "ITW_CLASH_HALParadropVersion = 6;" in policy()
+    assert "ITW_CLASH_HALParadropVersion = 7;" in policy()
