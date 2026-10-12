@@ -442,5 +442,5 @@ def test_the_boot_lines_say_what_is_loaded():
     guard = mission("ITW_CLASH_LogisticsGuard.sqf")
     assert "ITW_CLASH_LogisticsHandoffVersion = 5;" in guard
     assert "deletedVehiclesNotAssigned=true" in guard
-    assert "ITW_CLASH_DualHALCheckbookVersion = 7;" in mission("ITW_CLASH_DualHALCheckbook.sqf")
+    assert "ITW_CLASH_DualHALCheckbookVersion = 8;" in mission("ITW_CLASH_DualHALCheckbook.sqf")
     assert "ITW_CLASH_InfantryAuthorityVersion = 5;" in mission("ITW_CLASH_InfantryAuthority.sqf")

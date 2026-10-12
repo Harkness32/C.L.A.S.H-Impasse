@@ -6,7 +6,7 @@ if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookPreInitStarted",fal
 };
 
 ITW_CLASH_DualHALCheckbookPreInitStarted = true;
-ITW_CLASH_DualHALCheckbookPreInitVersion = 2;
+ITW_CLASH_DualHALCheckbookPreInitVersion = 3;
 ITW_CLASH_DualHALCheckbookPreInitReady = false;
 
 /*
@@ -61,6 +61,8 @@ ITW_AtkAddVehicle = {
             !isNull _veh
             && {_vehInfo#VEHINFO_ROLE == ITW_VEH_ROLE_TRANSPORT}
             && {!isNil "ITW_AtkVehRemoveMagazines"}
+            // v3: a door-gun helicopter keeps its guns (VehicleArrays.sqf).
+            && {!(!isNil "ITW_CLASH_fnc_KeepsDoorGuns" && {[_veh] call ITW_CLASH_fnc_KeepsDoorGuns})}
         ) then {
             [_veh] remoteExec ["ITW_AtkVehRemoveMagazines",_veh];
         };

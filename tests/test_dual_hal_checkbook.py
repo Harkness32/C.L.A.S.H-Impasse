@@ -138,7 +138,7 @@ def test_blufor_objectives_use_private_mirrors_and_full_hal_taken_contract():
     assert "ITW_CLASH_BLUFORObjectiveMirrors" in dual
     assert '_mirror setVariable ["SetTakenA",_friendlyOwned,true];' in dual
 
-    assert "ITW_CLASH_DualHALCheckbookHardeningVersion = 5;" in hardening
+    assert "ITW_CLASH_DualHALCheckbookHardeningVersion = 6;" in hardening
     assert "RydHQB_Taken = +_taken;" in hardening
     assert 'setVariable ["RydHQ_Taken",+_taken]' in hardening
     assert "ITW_CLASH_DualHALHardeningLastBZone" in hardening

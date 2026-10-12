@@ -1,6 +1,6 @@
 # Hanging helicopters
 
-Status: written 2026-10-11, not flown.
+Status: written 2026-10-11 and 2026-10-12, not flown.
 
 ## 1. What was seen
 
@@ -66,12 +66,53 @@ HAL's per-cycle lists (`RydHQ_CombatAv`, `RydHQ_AttackAv`) were not used. They
 say who is free this cycle, not what the aircraft is: attack helicopters G119
 and G460 first appeared on them 11 and 23 minutes after their handover.
 
-## 4. Not fixed
+## 4. Door-gun helicopters are transports
 
-- The door-gun Ghost Hawks are armed by HAL's rule, so HAL counts them as combat
-  aircraft and they are not leased. G252, G379 and G461 will still hover when
-  HAL has nothing for them. So will an attack helicopter between tasks (G119
-  waited 11 minutes, G460 15).
+Hark, 2026-10-12: "we should strip armed hurons and armed ghosthawks (minus the
+stub wing variants) from the dual roles. calling those attack helos is
+ridiculous, they can shred a small squad as they insert at BEST." Scope: any
+door-gun-only helicopter. Door guns: keep them loaded.
+
+`VehicleArrays.sqf`, Impasse's attack/transport/dual split. Before, any gun,
+armed pylon or CAS support entry made a vehicle armed, and armed with enough
+seats made it DUAL. Now a helicopter with the seats for either goes to
+Transport when:
+
+- nothing at class level fires (no pilot weapons),
+- no pylon is armed (stub wings, rocket pods),
+- every armed turret is not the copilot's and fires only bullets.
+
+That moves the door-gun Ghost Hawks, the armed Hurons and the unarmed Ghost Hawk
+(DUAL in the 2026-10-11 run with flares as its only magazine, so most likely
+because its config offers CAS support). The stub-wing Ghost
+Hawk keeps an armed pylon and stays DUAL. Attack helicopters are not touched:
+the rule only chooses between DUAL and Transport. Both sides, same split. Each
+class moved is logged once: `CLASH VEHICLES | door-gun-transport`, and listed in
+the boot line `door-gun-transports-ready`.
+
+As transports they take the transport path everywhere: transport doctrine,
+the storage lease, stored when idle, picked by HAL as carriers. That also covers
+G252, G379 and G461 from the table above.
+
+Impasse empties the magazines of any armed vehicle bought as a transport, at
+four places (`ITW_AtkAddVehicle`, the Dual-HAL pre-init wrapper, the hardening
+staging wrapper, Checkbook's transport purchase). Each now skips a class on
+`ITW_CLASH_DoorGunTransportClasses`, so the door guns stay loaded. CASEVAC and
+ground MEDEVAC still disarm whatever they take. The unload owner's run-in flies
+CARELESS and BLUE, so gunners hold fire on the drop itself; HAL's own transit
+legs fly AWARE.
+
+Switch: `ITW_CLASH_DoorGunHelisAreTransports` (default true).
+
+## 5. Not fixed
+
+- An attack helicopter between tasks still hovers where it is (G119 waited
+  11 minutes, G460 15).
+- A side whose only DUAL helicopters were door-gun ones now has none. Impasse
+  then fills its DUAL helicopter row from fallbacks, the last of which is the
+  transport list (`ITW_Ally.sqf`, `ITW_Enemy.sqf`), so door-gun helicopters can
+  come back as DUAL there. Not the case in the 2026-10-11 run: both sides had
+  the stub-wing Ghost Hawk.
 - BLUFOR's staging point at base 3 is within reach of an enemy AA tank: G366,
   G504, the armed Huron G503 and one more Huron were lost within about 150 m
   of [8900,10650].

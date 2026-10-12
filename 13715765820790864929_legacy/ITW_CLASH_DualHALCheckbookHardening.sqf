@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookHardeningStarted",false]) exitWith {true};
 ITW_CLASH_DualHALCheckbookHardeningStarted = true;
-ITW_CLASH_DualHALCheckbookHardeningVersion = 5;
+ITW_CLASH_DualHALCheckbookHardeningVersion = 6;
 ITW_CLASH_DualHALHardeningLastBZone = -1;
 
 if (
@@ -113,6 +113,9 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
         (_vehInfo#VEHINFO_ROLE) == ITW_VEH_ROLE_TRANSPORT && {
             !isNil "ITW_AtkVehRemoveMagazines"
         }
+    } && {
+        // v6: a door-gun helicopter keeps its guns (VehicleArrays.sqf).
+        !(!isNil "ITW_CLASH_fnc_KeepsDoorGuns" && {[_veh] call ITW_CLASH_fnc_KeepsDoorGuns})
     }) then {
         [_veh] remoteExec ["ITW_AtkVehRemoveMagazines",_veh];
     };

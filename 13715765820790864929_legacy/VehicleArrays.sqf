@@ -791,6 +791,74 @@ if (false) then {
 #define ATS_DEBUG comment 
 //#define ATS_DEBUG call compile
 
+/*
+    C.L.A.S.H.: door guns do not make a helicopter a combat aircraft.
+
+    Hark, 2026-10-12: "we should strip armed hurons and armed ghosthawks (minus
+    the stub wing variants) from the dual roles. calling those attack helos is
+    ridiculous, they can shred a small squad as they insert at BEST." Asked how
+    wide: any door-gun-only helicopter.
+
+    The split below calls a vehicle armed if any turret, pylon or weapon carries
+    a magazine that is not flares or smoke, or if its config offers CAS support,
+    and an armed vehicle with enough seats is DUAL: bought as a combat vehicle.
+    So a Huron or a Ghost Hawk with two door gunners was a combat vehicle, and so
+    was the unarmed Ghost Hawk (run of 2026-10-11: staged with role 22, its only
+    magazine flares, so most likely made armed by a CAS support entry).
+
+    A helicopter goes to Transport instead when nothing its pilots control can
+    fire and everything that can is a machine gun on a crew-served turret:
+      - no armed magazine at class level (the pilot's weapons),
+      - no armed pylon (stub wings, rocket pods),
+      - every armed turret is not the copilot's, and fires only bullets.
+    The same armed-magazine test as the split's own is used throughout.
+    Attack helicopters are untouched: this only decides between DUAL and
+    Transport for a helicopter that already has the seats to be either.
+
+    The classes moved are kept in ITW_CLASH_DoorGunTransportClasses, which also
+    keeps their door guns loaded where an armed transport is otherwise
+    disarmed (Hark: keep them loaded).
+*/
+ITW_CLASH_DoorGunHelisAreTransports = missionNamespace getVariable [
+    "ITW_CLASH_DoorGunHelisAreTransports",true
+];
+ITW_CLASH_DoorGunTransportClasses = [];
+
+private _fnClashArmedMagazine = {
+    params ["_mag"];
+    if (_mag isEqualTo "" || {_mag isEqualTo "waterCannonMagazine_RF"}) exitWith {false};
+    if (_mag isKindOf ["Laserbatteries",configFile >> "cfgMagazines"]) exitWith {false};
+    private _ammo = getText (configFile >> "CfgMagazines" >> _mag >> "ammo");
+    (["FlareCore","SmokeShell","SmokeLauncherAmmo","CMflareAmmo"] findIf {_ammo isKindOf _x}) < 0
+};
+
+private _fnClashDoorGunOnly = {
+    params ["_cfg"];
+    if (((getArray (_cfg >> "Magazines")) findIf {[_x] call _fnClashArmedMagazine}) >= 0) exitWith {false};
+    if (((configProperties [
+        _cfg >> "Components" >> "TransportPylonsComponent" >> "Pylons","isClass _x"
+    ]) findIf {[getText (_x >> "attachment")] call _fnClashArmedMagazine}) >= 0) exitWith {false};
+
+    private _crewServedOnly = true;
+    private _fnClashTurrets = {
+        {
+            private _armed = (getArray (_x >> "Magazines")) select {[_x] call _fnClashArmedMagazine};
+            if (getText (_x >> "gun") != "" && {_armed isNotEqualTo []}) then {
+                if (getNumber (_x >> "isCopilot") > 0) then {_crewServedOnly = false};
+                {
+                    private _ammo = getText (configFile >> "CfgMagazines" >> _x >> "ammo");
+                    if !(_ammo isKindOf ["BulletBase",configFile >> "CfgAmmo"]) then {
+                        _crewServedOnly = false
+                    };
+                } forEach _armed;
+            };
+            if (isClass (_x >> "Turrets")) then {_x call _fnClashTurrets};
+        } forEach (configProperties [_this >> "Turrets","isClass _x",true]);
+    };
+    _cfg call _fnClashTurrets;
+    _crewServedOnly
+};
+
 private _pCarClassesDualAsTransport  = [[],0]; // if no transports, we allow some dual versions to act as transports by removing their ammo
 private _eCarClassesDualAsTransport  = [[],0];
 private _pHeliClassesDualAsTransport = [[],0];
@@ -877,6 +945,22 @@ private _fnAttackTransportSplit = {
             };
             
             ATS_DEBUG 'diag_log ["ATS",_class,"Seats",_transportSeats,"Turrets",_turrets,"----------------"]';
+            // C.L.A.S.H.: a helicopter armed only with door guns is a transport.
+            private _doorGunTransport = _turrets
+                && {ITW_CLASH_DoorGunHelisAreTransports}
+                && {(_varArray find "HeliClasses") >= 0}
+                && {_transportSeats >= _minCargoSeats}
+                && {[_cfg] call _fnClashDoorGunOnly};
+            if (_doorGunTransport) then {
+                _transport pushBack _vehType;
+                if !((toLowerANSI _class) in ITW_CLASH_DoorGunTransportClasses) then {
+                    ITW_CLASH_DoorGunTransportClasses pushBack (toLowerANSI _class);
+                    diag_log format [
+                        "CLASH VEHICLES | door-gun-transport | %1",
+                        [_varArray,_class,_transportSeats]
+                    ];
+                };
+            } else {
             if (_turrets) then {
                 if (_transportSeats >= _minCargoSeats) then {
                     _dual pushBack _vehType;
@@ -897,6 +981,7 @@ private _fnAttackTransportSplit = {
             } else {
                 if (_transportSeats >= _minCargoSeats) then {_transport pushBack _vehType};
             };  
+            };
         };
         false
     } count _array;
@@ -1217,6 +1302,19 @@ ITW_CLASH_EnemyCASAircraftClasses = (
 );
 
 ITW_CLASH_CapabilityPoolsReady = true;
+
+// The door-gun transports keep their guns (see the split above). Asked by every
+// place that disarms an armed vehicle because it was bought as a transport.
+ITW_CLASH_fnc_KeepsDoorGuns = {
+    params [["_veh",objNull]];
+    !isNull _veh && {
+        (toLowerANSI typeOf _veh) in ITW_CLASH_DoorGunTransportClasses
+    }
+};
+diag_log format [
+    "CLASH BOOT | door-gun-transports-ready | enabled=%1 classes=%2",
+    ITW_CLASH_DoorGunHelisAreTransports,ITW_CLASH_DoorGunTransportClasses
+];
 
 
 VEHICLE_ARRAYS_COMPLETE = true;

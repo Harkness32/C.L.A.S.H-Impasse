@@ -2343,7 +2343,9 @@ ITW_AtkAddVehicle = {
     private _veh = _vehInfo#VEHINFO_VEH;
     if (!alive _veh) exitWith {}; // vehicle was removed
     
-    if (_vehInfo#VEHINFO_ROLE == ITW_VEH_ROLE_TRANSPORT) then {
+    // C.L.A.S.H.: except a door-gun helicopter, which is a transport by design
+    // and keeps its guns (VehicleArrays.sqf, ITW_CLASH_DoorGunTransportClasses).
+    if (_vehInfo#VEHINFO_ROLE == ITW_VEH_ROLE_TRANSPORT && {!(!isNil "ITW_CLASH_fnc_KeepsDoorGuns" && {[_veh] call ITW_CLASH_fnc_KeepsDoorGuns})}) then {
         // this file has many adjustments to try to ensure vehicles are available, but sometimes
         // a vehicle with weapons is assigned as a transport only.  In that case make sure it has no 
         // ammo available

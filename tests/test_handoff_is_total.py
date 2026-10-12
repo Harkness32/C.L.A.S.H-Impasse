@@ -17,7 +17,7 @@ def test_handed_off_units_never_reach_the_impasse_writer():
     # search-and-destroy order 2 s after staging, because `if (_handled)
     # exitWith` sat inside a `then` block and fell through to the base.
     bridge = mission("ITW_CLASH_DualHALCheckbookPreInit.sqf")
-    assert "ITW_CLASH_DualHALCheckbookPreInitVersion = 2;" in bridge
+    assert "ITW_CLASH_DualHALCheckbookPreInitVersion = 3;" in bridge
     for name, base in [
         ("ITW_AtkAddVehicle", "ITW_CLASH_DualHAL_fnc_AtkAddVehicleBase"),
         ("ITW_AtkEngageInfantry", "ITW_CLASH_DualHAL_fnc_AtkEngageInfantryBase"),
