@@ -780,7 +780,9 @@ ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider = {
                 _origin = +(_generation getOrDefault ["origin",_origin]);
             };
         };
-        _corridor = [_hq,_origin,getPosATL _threat] call
+        // A CAS aircraft is not flying the helicopter doctrine: any enemy jet
+        // with an air-to-air missile on its route still counts as a fighter.
+        _corridor = [_hq,_origin,getPosATL _threat,"ANY_AA_MISSILE"] call
             ITW_CLASH_AirPicture_fnc_ClassifyCorridor;
     };
     private _state = _corridor getOrDefault ["state","CONTESTED"];

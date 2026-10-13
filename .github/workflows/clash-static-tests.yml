@@ -81,4 +81,5 @@ jobs:
           tests/test_hot_drop.py
           tests/test_hot_drop_run_in.py
           tests/test_hotdrop_scargo_interlock.py
+          tests/test_air_picture_side_losses.py
           tests/test_sqf_static_checks.py

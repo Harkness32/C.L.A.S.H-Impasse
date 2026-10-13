@@ -258,9 +258,10 @@ def test_the_trip_is_weighted_not_counted():
 def test_the_killer_is_carried_from_the_kill_event_to_the_record():
     source = air_picture()
     on_kill = function_body(source, "ITW_CLASH_AirPicture_fnc_OnKill")
-    assert "[_victim,_killer] call ITW_CLASH_AirPicture_fnc_RecordLoss" in on_kill
+    # The side that lost the aircraft travels with it (side-aware closures).
+    assert "[_victim,_killer,_lostSide] call ITW_CLASH_AirPicture_fnc_RecordLoss" in on_kill
     record = function_body(source, "ITW_CLASH_AirPicture_fnc_RecordLoss")
-    assert 'params ["_veh",["_killer",objNull]]' in record
+    assert 'params ["_veh",["_killer",objNull],["_side",sideUnknown]]' in record
 
 
 def test_an_unknown_killer_is_not_treated_as_air_defence():

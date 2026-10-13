@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo") exitWith {
 };
 
 ITW_CLASH_AirPictureStarted = true;
-ITW_CLASH_AirPictureVersion = 3;
+ITW_CLASH_AirPictureVersion = 4;
 ITW_CLASH_AirPictureReady = false;
 
 /*
@@ -152,9 +152,11 @@ ITW_CLASH_AirPictureDenialCycleFallback = missionNamespace getVariable ["ITW_CLA
 // Contacts per side: sideKey -> (contact key -> [aircraft,position,firstSeenAt,
 // lastSeenAt,tier,immediate]).
 ITW_CLASH_AirPictureContacts = createHashMap;
-// Air losses: [position,time,class] - the loss counter's raw material.
+// Air losses: [position,time,class,weight,side] - the loss counter's raw
+// material. The side is whose aircraft it was.
 ITW_CLASH_AirPictureLosses = [];
-// Areas the loss counter has closed: [position,trippedAt,closureSeconds].
+// Areas the loss counter has closed: [position,trippedAt,closureSeconds,side].
+// Closed for that side only.
 ITW_CLASH_AirPictureLossAreas = [];
 // Remembered hard-kill systems per side, so a corridor stays shut while HAL is
 // merely not looking: sideKey -> (threat key -> entry).
@@ -835,10 +837,28 @@ ITW_CLASH_AirPicture_fnc_KnownAirDefence = {
 
     Each loss is checked against the recent ones: once
     ITW_CLASH_AirPictureLossThreshold of them fall inside the radius and the
-    window, that area trips. A trip inside the escalation window of the last one
-    for the same area DOUBLES its closure, up to the cap, so a commander cannot
-    learn the timetable and keep feeding the same nest.
+    window, that area trips. A re-trip refreshes the closure; it does not
+    lengthen it.
+
+    Per side. The counter used to be one list for the whole map, so a BLUFOR
+    helicopter downed by an OPFOR SAM closed that area to OPFOR's own lifts -
+    the side whose air defence was working got grounded by its own success.
+    A loss now counts only towards closing the area for the side that lost the
+    aircraft, and only that side's corridors read the closure.
 */
+/*
+    Whose aircraft it was. A dead man reports civilian, so the side comes from
+    the group he was still in when the kill event fired, and failing that from
+    the airframe's config. sideUnknown when neither answers.
+*/
+ITW_CLASH_AirPicture_fnc_LossSide = {
+    params [["_unit",objNull],["_veh",objNull]];
+    private _side = if (isNull _unit) then {sideUnknown} else {side group _unit};
+    if (_side in [west,east,independent]) exitWith {_side};
+    if (isNull _veh) exitWith {sideUnknown};
+    private _configSide = getNumber (configFile >> "CfgVehicles" >> typeOf _veh >> "side");
+    [east,west,independent] param [_configSide,sideUnknown]
+};
 /*
     What a loss is worth, decided by what killed the aircraft.
 
@@ -872,25 +892,29 @@ ITW_CLASH_AirPicture_fnc_LossWeight = {
 };
 
 ITW_CLASH_AirPicture_fnc_RecordLoss = {
-    params ["_veh",["_killer",objNull]];
+    params ["_veh",["_killer",objNull],["_side",sideUnknown]];
     if (isNull _veh) exitWith {false};
     private _position = getPosATL _veh;
     private _weight = [_killer] call ITW_CLASH_AirPicture_fnc_LossWeight;
-    ITW_CLASH_AirPictureLosses pushBack [_position,time,typeOf _veh,_weight];
+    ITW_CLASH_AirPictureLosses pushBack [_position,time,typeOf _veh,_weight,_side];
     ITW_CLASH_AirPictureLosses = ITW_CLASH_AirPictureLosses select {
         (time - (_x#1)) <= (ITW_CLASH_AirPictureLossWindow + ITW_CLASH_AirPictureLossClosureMax)
     };
     ["air-loss",[
         typeOf _veh,_position apply {round _x},
         if (isNull _killer) then {"<unknown>"} else {typeOf (vehicle _killer)},
-        _weight
+        _weight,
+        toUpperANSI str _side
     ]] call ITW_CLASH_AirPicture_fnc_Log;
 
     // Enough AIR DEFENCE, close together in space and in time, to call it a
     // nest? Weighted, not counted: a lucky IFV contributes nothing and can
     // never close a corridor on its own, however many times it gets lucky.
+    // Only this side's losses: the other side's dead aircraft say the area is
+    // dangerous for THEM.
     private _nearby = ITW_CLASH_AirPictureLosses select {
-        ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
+        ((_x param [4,sideUnknown]) isEqualTo _side)
+        && {((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius}
         && {(time - (_x#1)) <= ITW_CLASH_AirPictureLossWindow}
     };
     private _score = 0;
@@ -898,13 +922,15 @@ ITW_CLASH_AirPicture_fnc_RecordLoss = {
     if (_score < ITW_CLASH_AirPictureLossThreshold) exitWith {
         ["loss-below-threshold",[
             _score,ITW_CLASH_AirPictureLossThreshold,count _nearby,
-            ITW_CLASH_AirPictureLossRadius,ITW_CLASH_AirPictureLossWindow
+            ITW_CLASH_AirPictureLossRadius,ITW_CLASH_AirPictureLossWindow,
+            toUpperANSI str _side
         ]] call ITW_CLASH_AirPicture_fnc_Log;
         true
     };
 
     private _index = ITW_CLASH_AirPictureLossAreas findIf {
-        ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
+        ((_x param [3,sideUnknown]) isEqualTo _side)
+        && {((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius}
     };
     // Flat. A re-trip refreshes the ten minutes, it does not lengthen them.
     private _closure = ITW_CLASH_AirPictureLossClosure min
@@ -915,23 +941,29 @@ ITW_CLASH_AirPicture_fnc_RecordLoss = {
         _area set [1,time];
         _area set [2,_closure];
     } else {
-        ITW_CLASH_AirPictureLossAreas pushBack [_position,time,_closure];
+        ITW_CLASH_AirPictureLossAreas pushBack [_position,time,_closure,_side];
     };
 
     ["loss-area-closed",[
         _position apply {round _x},round _closure,count _nearby,
-        if (_index >= 0) then {"escalated"} else {"first"}
+        if (_index >= 0) then {"escalated"} else {"first"},
+        toUpperANSI str _side
     ]] call ITW_CLASH_AirPicture_fnc_Log;
     true
 };
 
 /*
-    Loss counter: an area where two aircraft went down close together stays shut
-    for its closure period, whatever shot them down. It catches a MANPADS nest
-    the commander keeps feeding, and air defence nobody has seen.
+    Loss counter: an area where this side lost enough aircraft to air defence,
+    close together, stays shut to this side for its closure period. It catches
+    a MANPADS nest the commander keeps feeding, and air defence nobody has seen.
+
+    An area whose losses could not be attributed to a side (sideUnknown) closes
+    for everyone, which is the old behaviour: with no way to tell whose air
+    defence did it, refusing the route is the safe answer. A caller that passes
+    no side gets every area, also the old behaviour.
 */
 ITW_CLASH_AirPicture_fnc_LossClosed = {
-    params ["_position"];
+    params ["_position",["_side",sideUnknown]];
     if (_position isEqualTo []) exitWith {false};
     // Forgotten the moment it reopens. There is no escalation memory to keep
     // any more: a nest that is still a nest re-trips on its own merits the next
@@ -940,7 +972,13 @@ ITW_CLASH_AirPicture_fnc_LossClosed = {
         (time - (_x#1)) <= (_x#2)
     };
     (ITW_CLASH_AirPictureLossAreas findIf {
-        ((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius
+        private _areaSide = _x param [3,sideUnknown];
+        (
+            (_side isEqualTo sideUnknown)
+            || {_areaSide isEqualTo sideUnknown}
+            || {_areaSide isEqualTo _side}
+        )
+        && {((_x#0) distance2D _position) <= ITW_CLASH_AirPictureLossRadius}
         && {(time - (_x#1)) <= (_x#2)}
     }) >= 0
 };
@@ -989,8 +1027,33 @@ ITW_CLASH_AirPicture_fnc_Observed = {
     _seen
 };
 
+/*
+    Does this enemy aircraft close a route outright?
+
+    HARD_KILL, the default, is the helicopter doctrine written on ThreatTier:
+    only a fixed-wing aircraft carrying four or more air-to-air missiles closes
+    a corridor. A CAS jet with a self-defence pair is TOLERATED - fought, not
+    routed around. The corridor used to ask IsFighter here instead, which is
+    true for any plane with any air-to-air missile, so every CAS jet with a pair
+    closed every lift, hot drop and Thunder Run route within the fighter
+    envelope for as long as it stayed in the picture. The hard-kill memory
+    (DenialKind) already used the tier; this was the one place that did not.
+
+    ANY_AA_MISSILE keeps the broader rule for the one caller asking a different
+    question: whether to send a CAS aircraft at all (ThreatCoverage's provider
+    choice), where a jet with a pair is still a real risk to ours.
+*/
+ITW_CLASH_AirPicture_fnc_DeniesAirspace = {
+    params ["_veh",["_rule","HARD_KILL"]];
+    if (isNull _veh || {!alive _veh} || {!(_veh isKindOf "Plane")}) exitWith {false};
+    if (_rule isEqualTo "ANY_AA_MISSILE") exitWith {
+        [_veh] call ITW_CLASH_AirPicture_fnc_IsFighter
+    };
+    (([_veh] call ITW_CLASH_AirPicture_fnc_ThreatTier) param [0,"NONE"]) isEqualTo "HARD_KILL"
+};
+
 ITW_CLASH_AirPicture_fnc_ClassifyCorridor = {
-    params ["_hq","_origin","_destination"];
+    params ["_hq","_origin","_destination",["_fighterRule","HARD_KILL"]];
     private _result = createHashMapFromArray [
         ["state","COLD"],["reason","corridor-clear"],
         ["aaDistance",1e12],["airDistance",1e12]
@@ -1017,12 +1080,13 @@ ITW_CLASH_AirPicture_fnc_ClassifyCorridor = {
     _aa params ["_aaDistance","_aa1500","_aa1000"];
     _result set ["aaDistance",_aaDistance];
 
-    // Enemy fighters on the route deny it outright: a CAS aircraft sent into
-    // one is a gift, and the ETB has a ground answer for the same need.
+    // Enemy fighters on the route deny it outright. Which aircraft count as
+    // fighters is the caller's rule: hard kill only for anything that flies
+    // under the helicopter doctrine, any air-to-air missile for the CAS choice.
     private _airDistance = 1e12;
     {
         _x params ["_veh","_position"];
-        if ([_veh] call ITW_CLASH_AirPicture_fnc_IsFighter) then {
+        if ([_veh,_fighterRule] call ITW_CLASH_AirPicture_fnc_DeniesAirspace) then {
             private _distance = [_origin,_destination,_position] call RYD_PointToSecDst;
             if (_distance >= 0 && {_distance < _airDistance}) then {_airDistance = _distance};
         };
@@ -1034,7 +1098,7 @@ ITW_CLASH_AirPicture_fnc_ClassifyCorridor = {
         _result set ["reason","enemy-fighter-corridor"];
         _result
     };
-    if ([_destination] call ITW_CLASH_AirPicture_fnc_LossClosed) exitWith {
+    if ([_destination,side _hq] call ITW_CLASH_AirPicture_fnc_LossClosed) exitWith {
         _result set ["state","AIR_DENIED"];
         _result set ["reason","recent-losses"];
         _result
@@ -1088,7 +1152,8 @@ ITW_CLASH_AirPicture_fnc_OnKill = {
     if (isNull _killed) exitWith {false};
     private _victim = vehicle _killed;
     if (_victim isKindOf "Air" && {_killed isEqualTo effectiveCommander _victim}) then {
-        [_victim,_killer] call ITW_CLASH_AirPicture_fnc_RecordLoss;
+        private _lostSide = [_killed,_victim] call ITW_CLASH_AirPicture_fnc_LossSide;
+        [_victim,_killer,_lostSide] call ITW_CLASH_AirPicture_fnc_RecordLoss;
     };
     if (isNull _killer) exitWith {false};
     private _shooter = vehicle _killer;
@@ -1153,7 +1218,7 @@ addMissionEventHandler ["EntityKilled",{
 
 ITW_CLASH_AirPictureReady = true;
 diag_log format [
-    "CLASH BOOT | air-picture-ready | version=%1 poll=%2 grace=%3 unseen=%4 knowledge=%5 ignoreFront=%6 denialCycles=%7 denialFloor=%8 staticValve=%9 fighterWindow=%10 lossRadius=%11 lossClosure=%12-%13 observeOnly=true halCycleUntouched=true classification=vehicle denialTimersInHALCycles=true",
+    "CLASH BOOT | air-picture-ready | version=%1 poll=%2 grace=%3 unseen=%4 knowledge=%5 ignoreFront=%6 denialCycles=%7 denialFloor=%8 staticValve=%9 fighterWindow=%10 lossRadius=%11 lossClosure=%12-%13 observeOnly=true halCycleUntouched=true classification=vehicle denialTimersInHALCycles=true lossClosuresPerSide=true corridorFighterRule=HARD_KILL casFighterRule=ANY_AA_MISSILE",
     ITW_CLASH_AirPictureVersion,
     ITW_CLASH_AirPicturePoll,
     ITW_CLASH_AirPictureSightingGrace,
