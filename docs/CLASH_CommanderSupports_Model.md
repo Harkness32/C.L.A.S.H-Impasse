@@ -274,20 +274,26 @@ Under CONSOLIDATE only candidates at held points enter the pool.
 |---|---|---|
 | Switch | Flavor enabled | `DISABLED` |
 | Knowledge | The flavor's statuses, rechecked at admission | `NO_CONTACT`, `TOO_UNCERTAIN` |
-| Objective | Plan objective under PUSH, or a held point under pressure. Not capture-frozen (`ITW_CLASH_fnc_ObjectiveFrozen`) | `NOT_PLAN_OBJECTIVE`, `CONSOLIDATING`, `OBJECTIVE_FROZEN` |
+| Objective | Plan objective under PUSH, or a held point under pressure. Not capture-frozen (`ITW_CLASH_fnc_ObjectiveFrozen`). Any other objective is simply not a candidate | `CONSOLIDATING`, `OBJECTIVE_FROZEN` |
 | Value | Cluster worth at least 2 | `BELOW_FLOOR` |
 | Danger close | Footprint plus 300 m clear of every living friendly: on foot, in vehicles, in aircraft below 300 m, under canopy. 500 m for players | `DANGER_CLOSE` |
 | Corridor | UAV and helicopters use the default fighter rule (`HARD_KILL`); jets use `ANY_AA_MISSILE`. `AIR_DENIED` denies | `AIR_DENIED` |
-| ETB overlap | Target not already tasked to an ETB responder (`ITW_CLASH_HALThreatCoverage_fnc_TaskedAgainst`) | `ETB_ANSWERING` |
+| ETB overlap | Target not already tasked to a busy ETB responder of the side (`ITW_CLASH_Supports_fnc_ETBAnswering` reads `ITW_CLASH_ThreatCoverageTarget` on the commander's groups) | `ETB_ANSWERING` |
 | Lane | Recon lane: one UAV. Commitment lane: one strike or drop in flight | `LANE_BUSY` |
 | Cooldown | Per flavor and per objective | `COOLDOWN` |
 | Budget | Price affordable | `INSUFFICIENT_FUNDS` |
 | Capability | The faction has the aircraft: UAV class (vanilla fallback), an attack plane, a guided anti-armor weapon on it, a transport helicopter, a transport plane | `NO_AIRCRAFT`, `NO_GUIDED_WEAPON` |
 | Airfield | Fixed-wing flavors need an owned airfield (`ITW_ObjOwnedAirports`) | `NO_AIRFIELD` |
 | Headcount | Airborne only: Impasse's live count of the side plus the squads stays under its cap | `NO_HEADROOM` |
+| Drop zone | Airborne only: the point is `RECENT_CONTACT` or `RECENTLY_CLEARED`, and dry open ground is found near it | `DZ_UNASSESSED`, `NO_DZ` |
 
-In dry run (`ITW_CLASH_SupportsDryRun`) admission runs every gate, logs the full
-result and stops before reserving.
+Dry run (`ITW_CLASH_SupportsDryRun`, on by default) is shadow mode. Everything
+decides, admits and reserves exactly as it would live: the money is spent, the
+cooldowns start and the lane is held for the support's nominal duration, then
+the support settles as `DRY_RUN`. Nothing spawns. Shadow-spending keeps the dry
+run's cadence honest: a commander that never spent would pick every
+assessment, and the dry run would say nothing about how often supports really
+happen.
 
 ### 7.2 Lanes
 
@@ -314,24 +320,29 @@ A loitering UAV never blocks strikes or drops.
    on-site scan. Failing breaks off and, with the aircraft alive, refunds.
 
 Impasse's unit cap cannot be reserved without editing Impasse's spawner, so
-airborne headcount is checked at admission and again at the pre-run check, where
-the squad is created. The window between is the setup delay.
+airborne headcount is checked at admission and again at the pre-run check. The
+squads are created by the drop executor straight after the pre-run check, before
+the aircraft spawns. The window between admission and creation is the setup
+delay.
 
 HAL and COLOSSUS never share a wallet. The shared resources are Impasse
 headcount (checked twice) and targets (the ETB overlap gate).
 
 ### 7.4 Lifecycle
 
-`PROPOSED` then `RESERVED` then `DELAY` then `INBOUND` then `RELEASED` (or
-`DROPPED`) then `EGRESS` then `DONE`.
-
-Terminal alternatives:
+`RESERVED` then `DELAY` then `INBOUND` then one terminal state. Release, the
+jump and egress are logged by the executors, not as core states. Every
+transition is a `supports-state` line.
 
 | State | When | Money |
 |---|---|---|
-| `REVOKED` | Pre-run check failed; nothing spawned | Refunded |
-| `BREAKOFF` | No target found, danger close or line of sight blocked at release; aircraft alive | Refunded |
-| `LOST` | Aircraft destroyed or crew killed before delivering | Spent |
+| `DONE` | Delivered: bombs released (all or part), missiles fired, the UAV's loiter served, troops jumped | Spent |
+| `REVOKED` | Pre-run check failed, or the executor could not start (no aircraft, no drop zone, no squads, spawn failed, no executor); nothing flew | Refunded |
+| `BREAKOFF` | Aircraft alive and nothing delivered: no target found, too uncertain or danger close at release, passed wide, never reached the task | Refunded |
+| `LOST` | Aircraft destroyed or unable to fly before delivering | Spent |
+| `DRY_RUN` | Shadow mode | Spent (shadow) |
+
+The cooldown stands whatever the outcome.
 
 The setup delay is varied per request (45 to 120 s) and never announced.
 
@@ -373,28 +384,40 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   and `flyInHeightASL` as a floor for fixed-wing.
 - Air-to-air missiles removed from strike aircraft, so a support jet never reads
   as a fighter to the other side and never engages aircraft.
-- After the task: flares, egress, despawn at distance or by timeout.
+- After the task: flares, egress, despawn at distance or by timeout. A
+  shot-down aircraft is never deleted: it falls where it was hit, and the
+  engine's own clean-up takes the wreck.
 
 ### 9.2 Orbit: recon UAV
 
 - **Class:** the side's UAV list, air classes only, falling back to the side's
   vanilla UAV. Weapons removed.
 - **Loiter:** 500 m AGL, inside MANPAD reach and above small arms.
-- **Each poll:** reveals to the HQ group what its sensors (`getSensorTargets`)
-  and crew see, so HAL learns it, and stamps a look on every objective inside
-  its footprint.
+- **Each poll (5 s):** reveals to the HQ group what its sensors
+  (`getSensorTargets`) and crew have seen in the last 30 s, at 1.5, so HAL
+  learns it (HAL counts what its HQ group knows, `HAC_fnc2.sqf:271`). The
+  knowledge layer never reads the HQ group, and reads the UAV crew directly as a
+  registered sensor group, so nothing is counted twice.
+- **On station** (within 1500 m of its task): stamps a `uav` look of 1000 m
+  around the task. The air picture accepts only `uav` looks as eyes on a
+  destination; friendly presence still stamps objectives for the intelligence
+  state.
 - **Task, refreshed each assessment without a roll:** the plan objective if
   Unobserved, else an objective with leads only, else overwatch of the plan
-  objective.
-- **Declared end:** 15 minutes of loiter, then it leaves and despawns.
+  objective. The UAV follows a task that moves more than 300 m.
+- **Declared end:** 15 minutes on task from first arrival, then it leaves and
+  despawns. Not on station within 600 s: `BREAKOFF`, refunded.
 - **Loss:** the recon lane stays blocked for a 300 s relaunch delay. The loss
   feeds AirPicture's side-aware loss counter.
 
 ### 9.3 Strike pass
 
-- The jet flies a line through the aim point. Unguided release is timed by
-  ballistic fall time from the jet's height and speed, aimed at the latest
-  reported position.
+- The jet flies a line through the aim point (bomb pass 250 m, carpet 400 m,
+  guided 600 m above it). Unguided release is timed by ballistic fall time from
+  the jet's height and speed, with no drag. About 600 m before the first
+  release the target is re-read once from the knowledge layer: the aim moves to
+  the latest report, and the uncertainty limit and danger close are checked
+  again.
 - **Bomb pass:** four unguided bombs, scripted under the aircraft at release with
   its velocity (class tunable, `Bo_Mk82` for both sides).
 - **Guided pass, with on-site scan:**
@@ -411,40 +434,57 @@ The setup delay is varied per request (45 to 120 s) and never announced.
      legitimate only because the jet acquired the target itself.
   4. **Nothing valid** within a 20 s window: `BREAKOFF`, egress, despawn,
      refund.
-- **Carpet:** 21 bombs in a 300 by 160 m pattern laid relative to the aim point,
-  released along the bomber's line.
+- **Carpet:** 21 bombs, Antistasi's layout centred on the aim point: 15 m
+  apart along the line, in five lanes 40 m apart across it.
 - **Every bomb:** released only while the aircraft is alive, and given the
   aircraft as its shooter (`setShotParents`) so kills are credited.
 
 ### 9.4 Drop run
 
-- **Squads:** created at the pre-run check by C.L.A.S.H. through Impasse's unit
-  factory (`ITW_AtkUnitToGroup`). The template is the archetype of a living
+- **Squads:** created by the drop executor straight after the pre-run check, on
+  the ground at the aircraft's origin, through Impasse's unit factory
+  (`ITW_AtkUnitToGroup`), protected until they are moved aboard. The template is the archetype of a living
   infantry squad of the side, so the drop matches what Impasse fields. As many
   squads as the cargo holds, capped (helicopter 2, C-130 3). They count against
   Impasse's live cap the moment they exist.
 - **Reserved until hand-off:** the squads carry `ITW_CLASH_ReconstitutionTransit`,
   which every sweep (Impasse's infantry manager, FormationAdmission, the BLUFOR
   adoption loop, enemy classification) already treats as hands-off.
-- **Helicopter:** its own routine; HALUnload is untouched. Run-in at the hot-drop
-  height (45 m), release lead from `ITW_CLASH_HALUnload_fnc_StickLead`, flares
-  through Thunder Run's countermeasure primitives, jumpers out through
-  `ITW_AtkParachute`, then a lateral break and egress.
+- **Drop zone:** dry open ground near the point. Taking a point, 250 m short of
+  it on the approach, so the stick lands at the edge of the fight; holding, the
+  point itself.
+- **Helicopter:** its own routine; HALUnload is untouched. Arrives at 150 m and
+  runs in at 50 m, one straight line through the zone to a waypoint 1 km past
+  it. Release lead from `ITW_CLASH_HALUnload_fnc_StickLead`, flares from 1200 m
+  through Thunder Run's countermeasure primitives.
+- **Jump:** Impasse's own, `ITW_AtkUnloadAirplane` called with no crew group and
+  no point, so it touches no waypoint and every man goes out through
+  `ITW_AtkParachute` at once; then `doFollow`, as every other paradrop caller
+  does.
 - **C-130:** CARELESS with a `flyInHeightASL` floor at 250 m above the drop zone.
-  Same jumper exit.
-- **Vehicle add-on:** a crewed light vehicle from `ITW_AtkSpawnVeh`, released
-  after the troops through `ITW_FncVehicleHalo`.
-- **Abort before anyone jumps:** the aircraft turns home, the squads are deleted
-  with it, and the money comes back.
-- **Hand-off,** once each squad leader is down plus a 10 s settle:
-  1. Clear the transit flag.
-  2. Register with the side's commander through
-     `ITW_CLASH_DualHAL_fnc_RegisterGroup`; FormationAdmission's minimum size
-     applies.
-  3. One native HAL order, issued as HAL's own dispatcher issues it: capture on
-     the plan objective, defend on a held point.
-  4. Refused: the squad is left on foot for Impasse's own infantry manager.
-  5. The vehicle crew registers the same way, marked as a vehicle crew.
+  Same jump.
+- **Vehicle add-on:** a crewed light vehicle built at the moment of release with
+  `ITW_AtkSpawnVeh` and dropped 80 m past the zone through `ITW_FncVehicleHalo`.
+- **Abort before anyone jumps** (passed wide, never reached): the squads never
+  touched the ground and are deleted, the aircraft egresses, and the money comes
+  back.
+- **Aircraft lost before the jump:** spent. Any man who lives through it is
+  handed on like a landed squad.
+- **Hand-off,** once every living man is out of the aircraft and his chute
+  (bounded at 90 s), plus a 10 s settle:
+  1. Clear the transit flag and the support stamp.
+  2. Impasse's own group callback (`ITW_EnemyGroupCallback` or
+     `ITW_AllyGroupCallback`), as the reconstitution hand-off does.
+  3. Register with the side's commander through
+     `ITW_CLASH_DualHAL_fnc_RegisterGroup` (reason `support-airborne`).
+  4. One native HAL order, issued as HAL's own dispatcher issues it: capture on
+     the objective when taking (`HQOrders.sqf:815-832`), defend at it when
+     holding (the anchor's path). A registered squad that cannot be given the
+     order is still HAL's, and HAL tasks it on its next pass.
+  5. Registration refused: Impasse's own `ITW_AtkEngageInfantry`.
+  6. The vehicle crew registers the same way once the vehicle is down, marked
+     as a vehicle crew and tracked as an asset. HAL tasks its own vehicles, so
+     it gets no order.
 
 ### 9.5 Provenance
 
@@ -456,15 +496,19 @@ AttackRestore skips support groups.
 
 ## 10. Telemetry
 
-Prefixes: `supports-core`, `supports-uav`, `supports-strike`,
-`supports-airborne`, `knowledge`.
+Every line goes through `ITW_CLASH_DualHAL_fnc_Log` (and the loud debugger).
+Prefixes: `supports-` for the core, `supports-strike-`, `supports-uav-`,
+`supports-airborne-` for the executors, `knowledge-` for the layer.
 
 | Line | Content |
 |---|---|
 | `supports-pool` | Side, posture, plan objective; every candidate in stable order with family, flavor, objective, target key, class, status and weight; every exclusion with its reason; draw value; pick |
 | `supports-admission` | Proposal, gate results, reservation or denial reason |
 | `supports-state` | Each lifecycle transition |
-| `supports-outcome` | Worth destroyed, aircraft lost, squads handed off, refunded or spent |
+| `supports-outcome` | Id, flavor, objective, reason, terminal state, detail, refunded or spent, price, cash after, seconds from reservation |
+| `supports-strike-released`, `-guided-fired`, `-scan-empty`, `-effect` | What each pass did, and how many of the target's entities died after it (log only) |
+| `supports-uav-launched`, `-on-station`, `-retasked`, `-ended` | The UAV's life: looks stamped, peak contacts in one sweep, retasks |
+| `supports-airborne-boarded`, `-released`, `-handoff`, `-vehicle-*` | The drop: squads and men, release geometry, who took each squad and which order it got |
 | `supports-ledger` | Periodic: cash, cap, income, lanes |
 | `knowledge-objective` | Periodic per objective: intelligence state, observed, fixed, leads, oldest report |
 | `knowledge-truth` | Diagnostic: reported against actual error, by class |
@@ -477,7 +521,7 @@ Prefixes: `supports-core`, `supports-uav`, `supports-strike`,
 - Each flavor has its own switch. Airborne starts off, and with it off nothing
   on the drop path runs.
 - Test order on one build:
-  1. Dry run. Tunes cadence and validates the knowledge layer.
+  1. Dry run (shadow mode). Tunes cadence and validates the knowledge layer.
   2. UAV and strikes live.
   3. Helicopter airborne live.
   4. C-130 and vehicle drop live.
@@ -499,6 +543,13 @@ class goes without that flavor.
 5. A C-130 drop height that clears terrain and survives.
 6. Whether `EntityKilled` fires for the UAV's AI crew, so its loss is attributed
    to a side.
+7. How often an unguided pass on vehicles survives the uncertainty limit. With
+   vehicles at 8 m/s and about 36 s from spawn to release, a vehicle's R is
+   already near 300 m at a fresh report: in practice a bomb pass or carpet on
+   vehicles needs the target under continuous observation, and the guided pass
+   (exempt) carries vehicle strikes.
+8. `moveInCargo` into an aircraft already in flight, the UAV AI on a `LOITER`
+   waypoint, and `ITW_AtkUnloadAirplane` called with no crew group.
 
 ## 14. Tunables
 
@@ -525,11 +576,35 @@ All placeholders.
 | Spawn distance | Jets 4 km, helicopters and transport planes 5 km |
 | UAV altitude, loiter, relaunch | 500 m AGL, 15 min, 300 s |
 | Guided scan | Within 3 km, radius cap 500 m, window 20 s |
-| Bomb pass payload | 4 bombs |
+| Strike heights | Bomb pass 250 m, carpet 400 m, guided 600 m |
+| Bomb pass payload | 4 bombs, 15 m apart |
 | Guided pass payload | 2 shots |
-| Carpet | 21 bombs, 300 by 160 m |
-| Helicopter drop height | 45 m |
+| Carpet | 21 bombs, 15 m along, lanes 40 m apart |
+| Strike cross limit | 250 m off the line at release |
+| UAV on station, look, retask | 1500 m, 1000 m, 300 m; transit timeout 600 s |
+| Helicopter heights | Arrives at 150 m, drops from 50 m |
 | C-130 drop height | 250 m |
+| Drop zone offset when taking | 250 m short on the approach |
+| Airborne cross limit | 350 m |
 | Squads per drop | Helicopter 2, C-130 3 |
 | Airborne far-force threshold | 1500 m |
-| Hand-off settle | 10 s |
+| Hand-off settle | 10 s, after up to 90 s waiting for the squad to be on its feet |
+
+## 15. Implementation
+
+| File | Owns |
+|---|---|
+| `ITW_CLASH_Knowledge.sqf` | Reports, uncertainty, statuses, looks, intelligence state, the truth diagnostic |
+| `ITW_CLASH_Colossus.sqf` (v5) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live |
+| `ITW_CLASH_Supports.sqf` | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code |
+| `ITW_CLASH_SupportsStrike.sqf` | Bomb pass, guided pass with the on-site scan, carpet |
+| `ITW_CLASH_SupportsUAV.sqf` | The recon UAV |
+| `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
+| `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
+| `ITW_CLASH_AttackRestore.sqf` | Skips groups carrying `ITW_CLASH_SupportAsset` |
+
+Boot (`init.sqf`): Knowledge, then COLOSSUS, then the core and its three
+executors; the core needs Knowledge and COLOSSUS, and an executor that is
+missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
+`tests/test_commander_supports.py`. Nothing here has run in engine yet: section
+13 is the list to verify.

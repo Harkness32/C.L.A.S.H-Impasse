@@ -174,7 +174,9 @@ init.sqf
   2  Economy    DualHALCheckbook(+Hardening), CheckbookAPI, ForceGeneration
   3  Utility    RoadDistance, HALLogistics, LoudDebug
   4  Air/threat AirPicture → EmergingThreatsBudget → HALThreatCoverage
-  5  Doctrine   Colossus, CounterBattery, ArtilleryScoot, SPAAOverwatch,
+  5  Doctrine   Knowledge → Colossus → Supports (+ SupportsStrike,
+                SupportsUAV, SupportsAirborne), CounterBattery, ArtilleryScoot,
+                SPAAOverwatch,
                 HALTaxonomy, RearBaseCRAM, FOBAirDefence, HALFront,
                 InfantryDemand, HotDrop, ThunderRunAirTiers
   6  Player     PlayerGarageDeployment, PlayerDemandDispatch,
@@ -335,9 +337,21 @@ carries out the order with its own dispatchers and locks.
 v4 adds concentration: when a push is feasible, the objective mirror owners ask
 COLOSSUS before writing HAL's candidate list, and it narrows that list to the
 plan objective. It declines when posture is `CONSOLIDATE`, when force is short,
-when held ground has no anchor, and when the objective is unobserved. Commander
-supports, the next layer up, are specified in
-`docs/CLASH_CommanderSupports_Model.md`.
+when held ground has no anchor, and when the objective is unobserved.
+
+v5 adds commander supports, specified in `docs/CLASH_CommanderSupports_Model.md`.
+After its order, each assessment COLOSSUS hands its picture, posture and plan to
+`Supports`, once, and that is all it does: it proposes, it never buys. The
+supports layer builds one weighted pool (recon UAV, bomb pass, guided pass,
+carpet, helicopter or C-130 airborne, and saving) against targets it reads from
+**`Knowledge`**, which holds what each side's own people have reported, with an
+uncertainty that grows with age, and never where the enemy really is. Admission
+takes money, lane and cooldowns in one unscheduled block; money is spent only on
+delivery or loss. Every support flies on an aircraft that exists only for it and
+never enters a HAL pool; the one HAL write is an airborne squad's single native
+order at hand-off. Shadow mode (`ITW_CLASH_SupportsDryRun`) is the default and
+airborne is off. COLOSSUS's verdict can read reported strength instead of live
+(`ITW_CLASH_ColossusReportedPositions`, off for the first run; both are logged).
 
 **`HALFront`** (v2) bounds where a commander reacts. Each cycle HAL's dispatcher
 answers every known enemy *on the map*, so a far contact pulls squads off the
@@ -560,7 +574,7 @@ its own, usually because a parent loads and reports it.
 
 | module | v | lines | ready flag | what it does (its own words) |
 |---|---|---|---|---|
-| `AirPicture` | 4 | 1236 | `air-picture-ready` | The air picture: observation only. |
+| `AirPicture` | 4 | 1243 | `air-picture-ready` | The air picture: observation only. |
 | `HALThreatCoverage` | 6 | 1109 | `hal-threat-coverage-ready` | Threat coverage, on the Emerging Threats Budget. |
 | `SPAAOverwatch` | 1 | 427 | `spaa-overwatch-ready` | SPAA overwatch: the one exception to "HAL owns employment". |
 | `RearBaseCRAM` | 2 | 382 | `rear-base-cram-ready` | Rear-base C-RAM. |
@@ -575,7 +589,12 @@ its own, usually because a parent loads and reports it.
 
 | module | v | lines | ready flag | what it does (its own words) |
 |---|---|---|---|---|
-| `Colossus` | 4 | 776 | `colossus-ready` | COLOSSUS - the strategy layer. |
+| `Colossus` | 5 | 850 | `colossus-ready` | COLOSSUS - the strategy layer. |
+| `Knowledge` | 1 | 635 | `knowledge-ready` | What each side's own people have reported, and how sure it can be. Observation only. |
+| `Supports` | 1 | 1589 | `supports-ready` | Commander supports: the core. COLOSSUS proposes; this decides, admits and owns the money. |
+| `SupportsStrike` | 1 | 443 | `supports-strike-ready` | The strike pass: bomb pass, guided pass with on-site scan, carpet. |
+| `SupportsUAV` | 1 | 238 | `supports-uav-ready` | The recon UAV: unarmed, one per side, a sensor like any squad. |
+| `SupportsAirborne` | 1 | 496 | `supports-airborne-ready` | The airborne insertion: Impasse's squads, Impasse's jump, one native order at hand-off. |
 | `HALFront` | 2 | 266 | `hal-front-ready` | HAL front for both commanders. |
 | `HALReconLatch` | 1 | 193 | `hal-recon-latch-ready` | RydHQ_ReconDone, latched. |
 | `HALWaypointGuardFix` | 1 | 160 | `hal-waypoint-guard-ready` | HAL drops a capture waypoint when _wp0 is not defined. |
@@ -592,7 +611,7 @@ its own, usually because a parent loads and reports it.
 | `InfantryAuthorityAllocationFix` | 2 | 338 | `infantry-allocation-authority-ready` | Persistent allocation authority correction. |
 | `InfantryDemand` | 2 | 220 | `infantry-demand-ready` | _no in-source header_ |
 | `FormationRecovery` | 1 | 148 | `formation-recovery-ready` | _no in-source header_ |
-| `AttackRestore` | 1 | 152 | `attack-restore-ready` | Give a squad its weapons back after the medics are done with it. |
+| `AttackRestore` | 1 | 155 | `attack-restore-ready` | Give a squad its weapons back after the medics are done with it. |
 
 ### Sustainment and recovery
 
@@ -741,6 +760,11 @@ of these in `description.ext` `class Params` or the mission namespace.
 | `ITW_CLASH_ColossusAdvisoryOnly = true` | COLOSSUS logs `would-order` and stops issuing orders; the parity layer's own ternary resumes ownership |
 | `ITW_CLASH_HALTaxonomyAdvisoryOnly = true` | taxonomy logs `would-classify` and writes no bucket; HAL's autofill keeps authority |
 | `ITW_CLASH_ColossusEnabled = false` | no ground picture at all |
+| `ITW_CLASH_SupportsEnabled = false` | no commander supports: no pool, no ledger spending |
+| `ITW_CLASH_SupportsDryRun = false` | supports go live; true (the default) is shadow mode: decides, admits and spends, spawns nothing |
+| `ITW_CLASH_Supports<Flavor>Enabled` | per flavor: `UAV`, `Bomb`, `Guided`, `Carpet` (on), `AirborneHeli`, `AirbornePlane`, `VehicleDrop` (off) |
+| `ITW_CLASH_KnowledgeEnabled = false` | the reported picture stops updating; supports then find no targets |
+| `ITW_CLASH_ColossusReportedPositions = true` | COLOSSUS's verdict reads reported strength instead of live, and ranks unobserved objectives down |
 | `ITW_CLASH_RearBaseCRAMEnabled = false` | no rear-base air defence |
 | `ITW_CLASH_RearBaseCRAMRespawn = 0` | a rear base cleared of air defence stays cleared |
 | `ITW_CLASH_ResupplyGFRHold = false` | claimed vehicle groups withdraw to a rally (v1 behaviour) instead of holding |
