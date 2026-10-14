@@ -227,7 +227,7 @@ fulfils the capability or refund and blacklist, register with HAL.
 
 ### 5.2 The air war
 
-**`AirPicture`** (v2) is the foundation and it only observes. HAL refreshes enemy
+**`AirPicture`** (v4) is the foundation and it only observes. HAL refreshes enemy
 lists once per cycle (3–6 min), far too slow for a jet over the rear — in one
 peer run a Black Wasp worked BLUFOR's helicopters and no air request was ever
 raised. This runs **HAL's own** known-enemy test (`knowsAbout >= 0.05`) on a
@@ -241,6 +241,11 @@ magazines, ammo and sensors), `ProtectionGrade` (0 soft / 1 protected / 2 heavy)
 *nobody has looked* — a distinction that did not exist until an unobserved
 corridor reporting `COLD / corridor-clear` was traced to Littlebirds flying
 landing approaches into unseen defences.
+
+Since v4, air-loss closures are per side (an area closes only for the side
+that lost aircraft there), and a corridor is denied only by a hard-kill fighter
+(4+ air-to-air missiles). The CAS provider choice keeps the any-missile rule.
+See `docs/COMMANDER_SUPPORTS_PHASE0.md`.
 
 **`HALThreatCoverage`** (v6) turns the picture into demand. It answers exactly
 two needs — anti-armour and counter-air — *"the gaps the baseline army
@@ -299,7 +304,7 @@ lift back rather than put the aircraft down forward.
 
 ### 5.3 The ground war
 
-**`Colossus`** (v3) is the strategy layer, and the reason it exists is stated in
+**`Colossus`** (v4) is the strategy layer, and the reason it exists is stated in
 its own header: *"Strategy has had no owner at all — HAL's own Big Boss is off
 and does not fit Impasse's zone model — so the war is a slugfest: every HAL
 cycle, whatever groups happen to be free get sent, they arrive one at a time and
@@ -326,6 +331,13 @@ defend; `PUSH` with sufficient force → attack; `PUSH` but short → defend, be
 attacking while short is what feeds groups in one at a time. An order holds for
 120 s before it may change again. **It still never touches a group** — HAL
 carries out the order with its own dispatchers and locks.
+
+v4 adds concentration: when a push is feasible, the objective mirror owners ask
+COLOSSUS before writing HAL's candidate list, and it narrows that list to the
+plan objective. It declines when posture is `CONSOLIDATE`, when force is short,
+when held ground has no anchor, and when the objective is unobserved. Commander
+supports, the next layer up, are specified in
+`docs/CLASH_CommanderSupports_Model.md`.
 
 **`HALFront`** (v2) bounds where a commander reacts. Each cycle HAL's dispatcher
 answers every known enemy *on the map*, so a far contact pulls squads off the
@@ -548,7 +560,7 @@ its own, usually because a parent loads and reports it.
 
 | module | v | lines | ready flag | what it does (its own words) |
 |---|---|---|---|---|
-| `AirPicture` | 2 | 1099 | `air-picture-ready` | The air picture: observation only. |
+| `AirPicture` | 4 | 1236 | `air-picture-ready` | The air picture: observation only. |
 | `HALThreatCoverage` | 6 | 1109 | `hal-threat-coverage-ready` | Threat coverage, on the Emerging Threats Budget. |
 | `SPAAOverwatch` | 1 | 427 | `spaa-overwatch-ready` | SPAA overwatch: the one exception to "HAL owns employment". |
 | `RearBaseCRAM` | 2 | 382 | `rear-base-cram-ready` | Rear-base C-RAM. |
@@ -563,7 +575,7 @@ its own, usually because a parent loads and reports it.
 
 | module | v | lines | ready flag | what it does (its own words) |
 |---|---|---|---|---|
-| `Colossus` | 3 | 576 | `colossus-ready` | COLOSSUS - the strategy layer. |
+| `Colossus` | 4 | 776 | `colossus-ready` | COLOSSUS - the strategy layer. |
 | `HALFront` | 2 | 266 | `hal-front-ready` | HAL front for both commanders. |
 | `HALReconLatch` | 1 | 193 | `hal-recon-latch-ready` | RydHQ_ReconDone, latched. |
 | `HALWaypointGuardFix` | 1 | 160 | `hal-waypoint-guard-ready` | HAL drops a capture waypoint when _wp0 is not defined. |
