@@ -185,15 +185,52 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
             };
+            // The knowledge layer: what each side's own people have reported,
+            // never where the enemy really is. Observation only. Loaded before
+            // COLOSSUS, which reads reported positions from it when asked to,
+            // and before the supports, which never read anything else.
+            private _knowledgeLoaded = false;
+            if (
+                _forceGenerationReady isEqualTo true
+                && {fileExists "ITW_CLASH_Knowledge.sqf"}
+            ) then {
+                _knowledgeLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_Knowledge.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | knowledge-missing-or-prereq-failed | no reported picture; commander supports will not start";
+            };
             // COLOSSUS: the strategy layer. v0 builds the ground picture and
             // logs the push it would commit; it issues no orders at all.
+            private _colossusLoaded = false;
             if (
                 _forceGenerationReady isEqualTo true
                 && {fileExists "ITW_CLASH_Colossus.sqf"}
             ) then {
-                call compile preprocessFileLineNumbers "ITW_CLASH_Colossus.sqf";
+                _colossusLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_Colossus.sqf";
             } else {
                 diag_log "CLASH BOOT | WARNING | colossus-missing-or-prereq-failed | no ground picture, no strategy layer";
+            };
+            // Commander supports: COLOSSUS proposes, the core admits and owns
+            // the money, the executors fly. Shadow mode by default.
+            if (
+                _knowledgeLoaded isEqualTo true
+                && {_colossusLoaded isEqualTo true}
+                && {fileExists "ITW_CLASH_Supports.sqf"}
+            ) then {
+                if ((call compile preprocessFileLineNumbers "ITW_CLASH_Supports.sqf") isEqualTo true) then {
+                    {
+                        if (fileExists _x) then {
+                            call compile preprocessFileLineNumbers _x;
+                        } else {
+                            diag_log format ["CLASH BOOT | WARNING | supports-executor-missing | %1 | its supports revoke with NO_EXECUTOR",_x];
+                        };
+                    } forEach [
+                        "ITW_CLASH_SupportsStrike.sqf",
+                        "ITW_CLASH_SupportsUAV.sqf",
+                        "ITW_CLASH_SupportsAirborne.sqf"
+                    ];
+                };
+            } else {
+                diag_log "CLASH BOOT | WARNING | supports-missing-or-prereq-failed | no commander supports";
             };
             // Shoot and scoot, and counter-battery acquisition. Each is the
             // other's counterplay: a fix is taken on where a gun was, and a gun
