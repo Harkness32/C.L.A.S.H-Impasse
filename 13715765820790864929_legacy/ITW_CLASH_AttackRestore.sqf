@@ -71,6 +71,9 @@ ITW_CLASH_AttackRestore_fnc_Log = {
 ITW_CLASH_AttackRestore_fnc_Owned = {
     params ["_group"];
     private _var = str _group;
+    // A commander support's aircraft crew or squad in flight: the support
+    // owns it from spawn to despawn or hand-off.
+    if ((_group getVariable ["ITW_CLASH_SupportAsset",""]) isNotEqualTo "") exitWith {true};
     // A dedicated service crew: the vehicle is the point, it never fights.
     if (_group getVariable ["ITW_CLASH_CASEVAC",false]) exitWith {true};
     if (_group getVariable ["ITW_CLASH_GroundMEDEVAC",false]) exitWith {true};

@@ -163,14 +163,24 @@ def test_hard_kill_for_aircraft_still_means_four_missiles():
     assert '"ITW_CLASH_AirPictureHardKillMissiles",4' in air_picture()
 
 
-def test_only_the_cas_provider_choice_keeps_the_broad_rule():
+def test_only_jets_flying_into_the_fight_keep_the_broad_rule():
+    # The CAS provider choice, and the commander-support registry rows for
+    # the strike jets and the transport plane. Everything else is hard-kill.
     users = []
     for path in MISSION.glob("ITW_CLASH*.sqf"):
         if path.name == "ITW_CLASH_AirPicture.sqf":
             continue
         if '"ANY_AA_MISSILE"' in path.read_text(encoding="utf-8"):
             users.append(path.name)
-    assert users == ["ITW_CLASH_HALThreatCoverage.sqf"], users
+    assert sorted(users) == [
+        "ITW_CLASH_HALThreatCoverage.sqf",
+        "ITW_CLASH_Supports.sqf",
+    ], users
+    supports = text("ITW_CLASH_Supports.sqf")
+    # Registry rows: fixed-wing flies from an airfield under the broad rule,
+    # the UAV and the helicopter from the rear under the hard-kill rule.
+    assert supports.count('["fighterRule","ANY_AA_MISSILE"],["airfield",true]') == 4
+    assert supports.count('["fighterRule","HARD_KILL"],["airfield",false]') == 2
     coverage = function_body(
         text("ITW_CLASH_HALThreatCoverage.sqf"),
         "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider",
