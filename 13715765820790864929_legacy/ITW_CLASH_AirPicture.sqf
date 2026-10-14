@@ -1024,7 +1024,14 @@ ITW_CLASH_AirPicture_fnc_Observed = {
             alive _x && {(getPosATL vehicle _x) distance2D _destination <= _radius}
         } >= 0) exitWith {_seen = true};
     } forEach (_hq getVariable ["RydHQ_Friends",[]]);
-    _seen
+    if (_seen) exitWith {true};
+
+    // Or the recon UAV looked recently and found it empty. Only the UAV's
+    // stamps count here: friendly presence is the test above, live, and
+    // remembering it would quietly widen what reads as observed for every
+    // corridor in the stack.
+    !isNil "ITW_CLASH_Knowledge_fnc_LookedAt"
+    && {[side _hq,_destination,-1,["uav"]] call ITW_CLASH_Knowledge_fnc_LookedAt}
 };
 
 /*

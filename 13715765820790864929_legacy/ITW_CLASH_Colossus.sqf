@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ColossusStarted",false]) exitWith {true};
 
 ITW_CLASH_ColossusStarted = true;
-ITW_CLASH_ColossusVersion = 4;
+ITW_CLASH_ColossusVersion = 5;
 ITW_CLASH_ColossusReady = false;
 
 /*
@@ -31,8 +31,11 @@ ITW_CLASH_ColossusReady = false;
     acts on it.
 
     The kill criterion, stated up front: if COLOSSUS ever issues an order to a
-    group or duplicates HAL's dispatcher, it has failed and should be deleted.
-    It says what the commander wants. Other layers decide what to do about it.
+    HAL group, moves a unit, or duplicates HAL's dispatcher, it has failed and
+    should be deleted. Supports it requests run on assets that exist only for
+    that support. It says what the commander wants. Other layers decide what to
+    do about it: since v5 that includes ITW_CLASH_Supports.sqf, which receives
+    one proposal per assessment and owns every gate, purchase and aircraft.
 
     ---------------------------------------------------------------------------
     For v1 (hold, stage, release), the levers are verified and recorded here so
@@ -150,6 +153,31 @@ ITW_CLASH_ColossusConcentrateMax = missionNamespace getVariable [
 // anchor refill of the groups it needs.
 ITW_CLASH_ColossusRequireAnchored = missionNamespace getVariable [
     "ITW_CLASH_ColossusRequireAnchored",true
+];
+
+/*
+    Reported positions (v5).
+
+    EnemyStrength counts HAL's known enemies at their LIVE positions. HAL keeps
+    an enemy known while any friendly's knowsAbout stays at 0.05, so a squad
+    seen once minutes ago is counted wherever it really is now. The knowledge
+    layer (ITW_CLASH_Knowledge.sqf) keeps what was actually reported, with an
+    uncertainty and a status, and every objective's picture now carries that
+    strength and the objective's intelligence state alongside the old number.
+
+    Off by default for the first run: both numbers are logged side by side, and
+    the verdict keeps using the old one until a run has been read. On, the
+    verdict uses the reported strength and the recommendation stops treating an
+    objective nobody has looked at as the softest one on the map.
+*/
+ITW_CLASH_ColossusReportedPositions = missionNamespace getVariable [
+    "ITW_CLASH_ColossusReportedPositions",false
+];
+// How far an unobserved objective is pushed down the ranking when reported
+// positions are on: behind any observed objective with the force for it, ahead
+// of anything the commander is short for.
+ITW_CLASH_ColossusUnobservedPenalty = missionNamespace getVariable [
+    "ITW_CLASH_ColossusUnobservedPenalty",500
 ];
 
 ITW_CLASH_ColossusPictures = createHashMap;
@@ -273,6 +301,25 @@ ITW_CLASH_Colossus_fnc_Picture = {
         ([_hq,_position] call ITW_CLASH_Colossus_fnc_FriendlyStrength) params [
             "_committed","_available","_availableGroups"
         ];
+
+        // The same question asked of what was reported (v5). Logged beside the
+        // live count either way; it only decides when the switch is on.
+        private _enemyLive = _enemy;
+        private _enemyReported = -1;
+        private _enemyReportedCount = -1;
+        private _intel = "";
+        if (!isNil "ITW_CLASH_Knowledge_fnc_ReportedStrength") then {
+            ([side _hq,_position,ITW_CLASH_ColossusObjectiveRadius] call
+                ITW_CLASH_Knowledge_fnc_ReportedStrength) params ["_reported","_reportedCount"];
+            _enemyReported = _reported;
+            _enemyReportedCount = _reportedCount;
+            _intel = [side _hq,_position,ITW_CLASH_ColossusObjectiveRadius] call
+                ITW_CLASH_Knowledge_fnc_IntelState;
+            if (ITW_CLASH_ColossusReportedPositions) then {
+                _enemy = _reported;
+                _enemyCount = _reportedCount;
+            };
+        };
         private _verdict = [_committed,_enemy] call ITW_CLASH_Colossus_fnc_Verdict;
         // What taking it would want, over and above what is already there.
         private _wanted = ((_enemy * ITW_CLASH_ColossusPushRatio) - _committed) max 0;
@@ -288,6 +335,10 @@ ITW_CLASH_Colossus_fnc_Picture = {
             ["verdict",_verdict],
             ["wanted",_wanted],
             ["sufficient",_available >= _wanted],
+            ["enemyLive",_enemyLive],
+            ["enemyReported",_enemyReported],
+            ["enemyReportedCount",_enemyReportedCount],
+            ["intel",_intel],
             ["at",time]
         ];
     } forEach (call ITW_CLASH_Generation_fnc_ActiveObjectiveIds);
@@ -412,6 +463,11 @@ ITW_CLASH_Colossus_fnc_Recommend = {
         private _entry = _x;
         private _score = _entry get "enemy";
         if !(_entry get "sufficient") then {_score = _score + 1000};
+        // Unobserved is unknown, not soft (v5, with reported positions on).
+        if (
+            ITW_CLASH_ColossusReportedPositions
+            && {(_entry getOrDefault ["intel",""]) isEqualTo "UNOBSERVED"}
+        ) then {_score = _score + ITW_CLASH_ColossusUnobservedPenalty};
         _score
     },"ASCEND"] call BIS_fnc_sortBy;
     private _best = _ranked#0;
@@ -702,6 +758,16 @@ ITW_CLASH_Colossus_fnc_Assess = {
             round (_x get "committed"),
             round (_x get "available")
         ]] call ITW_CLASH_Colossus_fnc_Log;
+        // Live against reported, side by side, whichever is deciding.
+        ["objective-intel",[
+            _hq getVariable ["RydHQ_CodeSign","?"],
+            _x get "objective",
+            _x getOrDefault ["intel",""],
+            round ((_x getOrDefault ["enemyLive",0]) * 10) / 10,
+            round ((_x getOrDefault ["enemyReported",-1]) * 10) / 10,
+            _x getOrDefault ["enemyReportedCount",-1],
+            if (ITW_CLASH_ColossusReportedPositions) then {"reported"} else {"live"}
+        ]] call ITW_CLASH_Colossus_fnc_Log;
     } forEach _picture;
 
     ([_hq] call ITW_CLASH_Colossus_fnc_Theatre) params ["_enemy","_friendly","_contacts"];
@@ -724,6 +790,13 @@ ITW_CLASH_Colossus_fnc_Assess = {
     if (count _plan > 0) then {_plan set ["posture",_posture]};
     ITW_CLASH_ColossusPlans set [toUpperANSI str (side _hq),_plan];
     [_hq,_posture,_plan] call ITW_CLASH_Colossus_fnc_Commit;
+
+    // Commander supports (v5): one weighted proposal per assessment, made
+    // after the order so it shapes the plan rather than racing it. COLOSSUS
+    // only proposes; the supports layer owns every gate, purchase and asset.
+    if (!isNil "ITW_CLASH_Supports_fnc_Assess") then {
+        [_hq,_picture,_posture,_plan] call ITW_CLASH_Supports_fnc_Assess;
+    };
     true
 };
 
@@ -755,7 +828,7 @@ ITW_CLASH_Colossus_fnc_Assess = {
 
 ITW_CLASH_ColossusReady = true;
 diag_log format [
-    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 requireAnchored=%16 halPoolsUntouched=true",
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 requireAnchored=%16 reportedPositions=%17 supportsProposeOnly=true halPoolsUntouched=true",
     ITW_CLASH_ColossusVersion,
     ITW_CLASH_ColossusAdvisoryOnly,
     ITW_CLASH_ColossusPoll,
@@ -771,6 +844,7 @@ diag_log format [
     ITW_CLASH_ColossusOrderDwell,
     ITW_CLASH_ColossusConcentrate,
     ITW_CLASH_ColossusConcentrateMax,
-    ITW_CLASH_ColossusRequireAnchored
+    ITW_CLASH_ColossusRequireAnchored,
+    ITW_CLASH_ColossusReportedPositions
 ];
 true
