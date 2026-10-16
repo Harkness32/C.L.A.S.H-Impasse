@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 8;
+ITW_CLASH_DualHALCheckbookVersion = 9;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -221,6 +221,42 @@ ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine = {
                 ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
         };
     };
+    true
+};
+
+/*
+    v9: Impasse's spawn CARELESS ends at the handoff.
+
+    Impasse makes every vehicle's driver its leader and sets him CARELESS with
+    ITW_FncSetUnitBehavior (ITW_Attack.sqf, vehicle spawn), then lifts that
+    with its own waypoints. A handoff switches Impasse's writers off for good,
+    and HAL sets behaviour only through a waypoint's settings, so the CARELESS
+    lasted until HAL's first waypoint took. Usually that is minutes idle at the
+    rear. On 2026-10-10 it was a stub-wing Ghost Hawk (G113) flying its whole
+    search-and-destroy CARELESS/YELLOW for 100 s: the waypoint's COMBAT/RED
+    never applied, and a CARELESS group ignores the enemy.
+
+    So a crew handed to HAL starts in AWARE, HAL's own default, and a waypoint
+    that fails to apply falls back to a mode that fights. Transports keep the
+    CARELESS: their lift doctrine and HAL's cargo waypoints own their
+    behaviour. Only CARELESS is touched; a crew something else already set is
+    left alone.
+*/
+ITW_CLASH_DualHAL_fnc_ClearImpasseCareless = {
+    params ["_group",["_source","vehicle"]];
+    if (isNull _group) exitWith {false};
+    private _leader = leader _group;
+    if (isNull _leader || {!((behaviour _leader) isEqualTo "CARELESS")}) exitWith {false};
+    if (local _group) then {
+        _group setBehaviourStrong "AWARE";
+    } else {
+        [[_group,"AWARE"],"setBehaviourStrong",_group] call ITW_FncRemoteLocalGroup;
+    };
+    ["impasse-careless-cleared",[
+        [_group] call ITW_CLASH_DualHAL_fnc_GroupId,
+        typeOf (vehicle _leader),
+        _source
+    ]] call ITW_CLASH_DualHAL_fnc_Log;
     true
 };
 
@@ -1028,6 +1064,8 @@ ITW_CLASH_DualHAL_fnc_StageFieldVehicle = {
     if (_transportDeployment) then {
         [_crewGroup,true,"impasse-field"] call
             ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+    } else {
+        [_crewGroup,"impasse-field"] call ITW_CLASH_DualHAL_fnc_ClearImpasseCareless;
     };
 
     if (_veh isKindOf "Air") then {
@@ -1099,6 +1137,9 @@ ITW_CLASH_DualHAL_fnc_MigrateManagedVehicles = {
         ) then {
             [_crewGroup,true,"managed-vehicle-migration"] call
                 ITW_CLASH_DualHAL_fnc_ApplyTransportDoctrine;
+        } else {
+            [_crewGroup,"managed-vehicle-migration"] call
+                ITW_CLASH_DualHAL_fnc_ClearImpasseCareless;
         };
 
         private _vehDef = _veh getVariable ["ITW_VehDef",[]];
@@ -1610,7 +1651,7 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
 };
 
 diag_log format [
-    "CLASH BOOT | dual-hal-checkbook-loaded | version=%1 compatibilityLayer=true impasse=checkbook hal=commander echelonFieldVehicles=true symmetricTransportSettle=true symmetricInfantryRoles=true",
+    "CLASH BOOT | dual-hal-checkbook-loaded | version=%1 compatibilityLayer=true impasse=checkbook hal=commander echelonFieldVehicles=true symmetricTransportSettle=true symmetricInfantryRoles=true impasseCarelessCleared=true",
     ITW_CLASH_DualHALCheckbookVersion
 ];
 

@@ -202,4 +202,4 @@ def test_the_disarm_itself_is_unchanged():
 def test_versions():
     assert "ITW_CLASH_DualHALCheckbookPreInitVersion = 3;" in read("ITW_CLASH_DualHALCheckbookPreInit.sqf")
     assert "ITW_CLASH_DualHALCheckbookHardeningVersion = 6;" in read("ITW_CLASH_DualHALCheckbookHardening.sqf")
-    assert "ITW_CLASH_DualHALCheckbookVersion = 8;" in read("ITW_CLASH_DualHALCheckbook.sqf")
+    assert "ITW_CLASH_DualHALCheckbookVersion = 9;" in read("ITW_CLASH_DualHALCheckbook.sqf")
