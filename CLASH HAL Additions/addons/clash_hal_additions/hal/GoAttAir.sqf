@@ -2,8 +2,8 @@
 	C.L.A.S.H. HAL Additions: NR6 HAL's GoAttAir.sqf with one change.
 
 	A helicopter sortie flies ITW_CLASH_HeliAttack.sqf instead of one
-	search-and-destroy waypoint on the target: attack runs or a gunner's
-	ring, sized from what the rack can fire. HAL still chooses the
+	search-and-destroy waypoint on the target: a gunner's ring, or for
+	fixed weapons a standoff that points the nose at what the crew knows of. HAL still chooses the
 	target and the moment (its dispatcher), still ends the sortie (Busy,
 	damage, fuel, the group lost) and still runs the return and landing below,
 	unchanged. A group taken mid-sortie (MIA, Break, a withdrawal) takes the

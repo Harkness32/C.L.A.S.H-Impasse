@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_RackProfileStarted",false]) exitWith {true};
 
 ITW_CLASH_RackProfileStarted = true;
-ITW_CLASH_RackProfileVersion = 2;
+ITW_CLASH_RackProfileVersion = 3;
 ITW_CLASH_RackProfileReady = false;
 
 /*
@@ -45,18 +45,15 @@ ITW_CLASH_RackAIModeMinReach = missionNamespace getVariable ["ITW_CLASH_RackAIMo
 // A turret that traverses less than this is a fixed gun for aiming purposes.
 ITW_CLASH_RackTurretMinSpan = missionNamespace getVariable ["ITW_CLASH_RackTurretMinSpan",60];
 /*
-    Attack runs (v2), for racks only the airframe can aim. A run starts at
-    the ingress point, flies straight at the target and breaks away at the
-    break point; the ring is for gunners only. Ingress is the farthest any
-    weapon can open fire, capped, plus a lead-in to line up. Break is the
-    weapons' floor with the margin, but never closer than BreakMin, and
-    never so far that the shortest-reaching weapon cannot fire before it.
+    Point-at standoff (v3), for racks only the airframe can aim: how far out
+    to hover and point. As far as the weapons stay effective: guided weapons
+    to 2 km (the DAP hit from 1.6 to 2.7 km on 2026-10-16), unguided ones to
+    1 km, because they scatter past it. With a guided weapon on the rack the
+    distance is the guided one; rockets and guns join in if they reach.
 */
-ITW_CLASH_RackRunBreakMin = missionNamespace getVariable ["ITW_CLASH_RackRunBreakMin",600];
-ITW_CLASH_RackRunOpenMax = missionNamespace getVariable ["ITW_CLASH_RackRunOpenMax",2500];
-ITW_CLASH_RackRunLeadIn = missionNamespace getVariable ["ITW_CLASH_RackRunLeadIn",400];
-ITW_CLASH_RackRunIngressMax = missionNamespace getVariable ["ITW_CLASH_RackRunIngressMax",3000];
-// Margin over a band's inner edge when sizing an orbit or a break.
+ITW_CLASH_RackPointGuidedMax = missionNamespace getVariable ["ITW_CLASH_RackPointGuidedMax",2000];
+ITW_CLASH_RackPointUnguidedMax = missionNamespace getVariable ["ITW_CLASH_RackPointUnguidedMax",1000];
+// Margin over a band's edge when sizing an orbit or a standoff.
 ITW_CLASH_RackRadiusMargin = missionNamespace getVariable ["ITW_CLASH_RackRadiusMargin",1.2];
 ITW_CLASH_RackRadiusMin = missionNamespace getVariable ["ITW_CLASH_RackRadiusMin",250];
 ITW_CLASH_RackRadiusMax = missionNamespace getVariable ["ITW_CLASH_RackRadiusMax",1500];
@@ -280,15 +277,15 @@ ITW_CLASH_Rack_fnc_Usable = {
 /*
     The orbit for a set of usable entries: the radius whose whole ring sits
     inside the most AI bands, smallest first on a tie, and whether to keep
-    moving around it (ORBIT: a gunner can shoot from the ring) or fly attack
-    runs instead (RUN: only the airframe can aim, so it has to point at the
-    target; see fnc_Run). On a stepped orbit the closest pass is mid-leg, at
+    moving around it (ORBIT: a gunner can shoot from the ring) or hover off
+    and point at targets instead (POINT: only the airframe can aim; see
+    fnc_Standoff). On a stepped orbit the closest pass is mid-leg, at
     R x cos(step/2), so that is what has to clear a band's inner edge.
 
-    v1 called RUN "STATION" and held a search-and-destroy point on the ring.
-    2026-10-16: the DAP never reached one; search-and-destroy with combat mode
-    RED let the AI leave it for the Panther, which it fought from 342 to 685
-    m until it lost its rotor.
+    v1 held a search-and-destroy point on the ring (STATION) and the AI left
+    it to knife-fight a Panther; v2 flew attack runs (RUN), which still
+    passed over targets and swung wide between their two points (Hark,
+    2026-10-16). Both are gone; POINT replaces them.
 
     Returns [radius, mode] or [-1,""] when nothing usable is on the rack.
 */
@@ -320,45 +317,41 @@ ITW_CLASH_Rack_fnc_Orbit = {
     } forEach _candidates;
 
     private _radius = (_best max ITW_CLASH_RackRadiusMin) min ITW_CLASH_RackRadiusMax;
-    private _mode = if ((_usable findIf {(_x#7) isEqualTo "TURRET"}) >= 0) then {"ORBIT"} else {"RUN"};
+    private _mode = if ((_usable findIf {(_x#7) isEqualTo "TURRET"}) >= 0) then {"ORBIT"} else {"POINT"};
     [_radius,_mode]
 };
 
 /*
-    The run for a set of usable entries: [break, ingress], or [-1,-1].
-    Each weapon's floor is its lowest band edge and its reach its highest.
+    The point-at standoff for a set of usable entries, or -1: the farthest
+    distance from which every weapon in the set is effective, never inside
+    any of their floors. The set is the guided weapons if there are any.
 */
-ITW_CLASH_Rack_fnc_Run = {
+ITW_CLASH_Rack_fnc_Standoff = {
     params ["_usable"];
-    if (_usable isEqualTo []) exitWith {[-1,-1]};
-    private _floor = 0;
-    private _shortest = 1e10;
-    private _farthest = 0;
+    if (_usable isEqualTo []) exitWith {-1};
+    private _guided = _usable select {!((_x#6) isEqualTo "NONE")};
+    private _set = if (_guided isNotEqualTo []) then {_guided} else {_usable};
+    private _cap = if (_guided isNotEqualTo []) then {ITW_CLASH_RackPointGuidedMax} else {ITW_CLASH_RackPointUnguidedMax};
+    private _high = _cap;
+    private _low = 0;
     {
         private _bands = _x#5;
+        if (_bands isEqualTo []) then {continue};
         private _lo = 1e10;
         private _hi = 0;
         {
             _lo = _lo min (_x#0);
             _hi = _hi max (_x#1);
         } forEach _bands;
-        if (_bands isEqualTo []) then {continue};
-        _floor = _floor max _lo;
-        _shortest = _shortest min _hi;
-        _farthest = _farthest max _hi;
-    } forEach _usable;
-    if (_farthest <= 0) exitWith {[-1,-1]};
-    private _break = ((_floor * ITW_CLASH_RackRadiusMargin) max ITW_CLASH_RackRunBreakMin)
-        min (_shortest / ITW_CLASH_RackRadiusMargin);
-    private _open = _farthest min ITW_CLASH_RackRunOpenMax;
-    private _ingress = (((_open max (_break + ITW_CLASH_RackRunLeadIn)) + ITW_CLASH_RackRunLeadIn)
-        min ITW_CLASH_RackRunIngressMax) max (_break + ITW_CLASH_RackRunLeadIn);
-    [round _break,round _ingress]
+        _high = _high min (_hi / ITW_CLASH_RackRadiusMargin);
+        _low = _low max (_lo * ITW_CLASH_RackRadiusMargin);
+    } forEach _set;
+    round (_high max _low)
 };
 
 /*
     The whole profile for a flight: entries across its aircraft, and per
-    contact type [usable count, ring radius, mode, run break, run ingress].
+    contact type [usable count, ring radius, mode, point-at standoff].
     Logged once per class and loadout, so a modded rack that reads oddly
     shows why in the RPT.
 */
@@ -371,8 +364,7 @@ ITW_CLASH_Rack_fnc_Profile = {
         private _type = _x;
         private _usable = _entries select {[_x,_type] call ITW_CLASH_Rack_fnc_Usable};
         ([_usable,_step] call ITW_CLASH_Rack_fnc_Orbit) params ["_radius","_mode"];
-        ([_usable] call ITW_CLASH_Rack_fnc_Run) params ["_break","_ingress"];
-        _types set [_type,[count _usable,_radius,_mode,_break,_ingress]];
+        _types set [_type,[count _usable,_radius,_mode,[_usable] call ITW_CLASH_Rack_fnc_Standoff]];
     } forEach (keys ITW_CLASH_RackTypeBits);
 
     private _class = if (_flight isEqualTo []) then {""} else {typeOf (_flight#0)};
@@ -404,16 +396,14 @@ ITW_CLASH_Rack_fnc_IsGuidedAntiArmour = {
 
 ITW_CLASH_RackProfileReady = true;
 diag_log format [
-    "CLASH BOOT | rack-profile-ready | version=%1 aiModeMinReach=%2 turretMinSpan=%3 radius=%4-%5 margin=%6 runBreakMin=%7 runOpenMax=%8 runLeadIn=%9 runIngressMax=%10 warheadFlags=true liveLoadout=true observeOnly=true",
+    "CLASH BOOT | rack-profile-ready | version=%1 aiModeMinReach=%2 turretMinSpan=%3 radius=%4-%5 margin=%6 pointGuided=%7 pointUnguided=%8 modes=ORBIT,POINT warheadFlags=true liveLoadout=true observeOnly=true",
     ITW_CLASH_RackProfileVersion,
     ITW_CLASH_RackAIModeMinReach,
     ITW_CLASH_RackTurretMinSpan,
     ITW_CLASH_RackRadiusMin,
     ITW_CLASH_RackRadiusMax,
     ITW_CLASH_RackRadiusMargin,
-    ITW_CLASH_RackRunBreakMin,
-    ITW_CLASH_RackRunOpenMax,
-    ITW_CLASH_RackRunLeadIn,
-    ITW_CLASH_RackRunIngressMax
+    ITW_CLASH_RackPointGuidedMax,
+    ITW_CLASH_RackPointUnguidedMax
 ];
 true

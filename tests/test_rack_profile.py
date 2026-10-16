@@ -67,7 +67,7 @@ def test_flags_are_the_missile_and_its_warhead_together():
     sub = function_body(source, "ITW_CLASH_Rack_fnc_Submunition")
     assert "if (isText _entry) exitWith {getText _entry};" in sub
     assert "(getArray _entry) select {_x isEqualType \"\"}" in sub
-    assert "ITW_CLASH_RackProfileVersion = 2;" in (MISSION / "ITW_CLASH_RackProfile.sqf").read_text()
+    assert "ITW_CLASH_RackProfileVersion = 3;" in (MISSION / "ITW_CLASH_RackProfile.sqf").read_text()
 
 
 def union(a, b):
@@ -191,33 +191,30 @@ def orbit(entries, step=45):
         if score > best_score:
             best, best_score = r, score
     radius = min(max(best, R_MIN), R_MAX)
-    mode = "ORBIT" if any(e["aim"] == "TURRET" for e in entries) else "RUN"
+    mode = "ORBIT" if any(e["aim"] == "TURRET" for e in entries) else "POINT"
     return radius, mode
 
 
-BREAK_MIN = 600
-OPEN_MAX = 2500
-LEAD_IN = 400
-INGRESS_MAX = 3000
+GUIDED_MAX = 2000
+UNGUIDED_MAX = 1000
 
 
-def run(entries):
-    """Python mirror of ITW_CLASH_Rack_fnc_Run: (break, ingress)."""
+def standoff(entries):
+    """Python mirror of ITW_CLASH_Rack_fnc_Standoff."""
     if not entries:
-        return -1, -1
-    floor, shortest, farthest = 0, 1e10, 0
-    for e in entries:
+        return -1
+    guided = [e for e in entries if e["lock"] != "NONE"]
+    chosen = guided or entries
+    high = GUIDED_MAX if guided else UNGUIDED_MAX
+    low = 0
+    for e in chosen:
         if not e["bands"]:
             continue
         lo = min(b[0] for b in e["bands"])
         hi = max(b[1] for b in e["bands"])
-        floor, shortest, farthest = max(floor, lo), min(shortest, hi), max(farthest, hi)
-    if farthest <= 0:
-        return -1, -1
-    brk = min(max(floor * MARGIN, BREAK_MIN), shortest / MARGIN)
-    opening = min(farthest, OPEN_MAX)
-    ingress = max(min(max(opening, brk + LEAD_IN) + LEAD_IN, INGRESS_MAX), brk + LEAD_IN)
-    return round(brk), round(ingress)
+        high = min(high, hi / MARGIN)
+        low = max(low, lo * MARGIN)
+    return round(max(high, low))
 
 
 DAGRM = {"flags": union(192, 512), "lock": "IR_LASER", "aim": "FIXED",
@@ -236,46 +233,54 @@ def test_the_stock_dap_cannot_be_flown_at_infantry():
     assert orbit([e for e in rack_ if usable(e, "INFANTRY")]) == (-1, "")
 
 
-def test_the_stock_dap_runs_on_vehicles_and_now_on_armour():
+def test_the_stock_dap_points_from_2_km_at_vehicles_and_armour():
     for kind in ["VEHICLE", "ARMOR"]:
         rack_ = [e for e in [DAGRM] if usable(e, kind)]
         assert rack_ == [DAGRM], kind
-        assert orbit(rack_)[1] == "RUN"
-        # In from 2.9 km (the AI opened fire from 2.7 km on 2026-10-16), out
-        # at 600 m: clear of the 300 m floor and of the 342 to 685 m fight.
-        assert run(rack_) == (600, 2900)
+        assert orbit(rack_)[1] == "POINT"
+        # The DAP hit from 1.6 to 2.7 km on 2026-10-16; 2 km is inside both
+        # DAGR-M AI bands and well clear of the 342 to 685 m fight.
+        assert standoff(rack_) == 2000
 
 
-def test_a_short_reaching_weapon_pulls_the_break_in():
+def test_rockets_point_from_a_kilometre():
+    assert standoff([e for e in [DAGRM, DAR] if usable(e, "INFANTRY")]) == 1000
+
+
+def test_with_a_guided_weapon_aboard_its_distance_wins():
+    # Rockets and guns join in if they reach; the missiles set the range.
+    assert standoff([DAGRM, DAR]) == 2000
+
+
+def test_a_short_gun_points_from_where_it_reaches():
     pod = {"flags": 192, "lock": "NONE", "aim": "FIXED", "bands": [(0, 500)]}
-    brk, ingress = run([pod, DAGRM])
-    assert brk == round(500 / MARGIN)
-    assert ingress == 2900
+    assert standoff([pod]) == round(500 / MARGIN)
 
 
-def test_rockets_break_outside_their_floor():
-    brk, ingress = run([e for e in [DAGRM, DAR] if usable(e, "INFANTRY")])
-    assert brk == 600 and 400 * MARGIN <= brk <= 1200
-    assert ingress == 2900
+def test_nothing_is_inside_a_floor():
+    far_floor = {"flags": 192, "lock": "IR", "aim": "FIXED", "bands": [(1900, 2100)]}
+    assert standoff([far_floor]) == round(1900 * MARGIN)
 
 
-def test_the_run_mirror_matches_the_sqf_shape():
-    body = function_body(rack(), "ITW_CLASH_Rack_fnc_Run")
-    assert "((_floor * ITW_CLASH_RackRadiusMargin) max ITW_CLASH_RackRunBreakMin)" in body
-    assert "min (_shortest / ITW_CLASH_RackRadiusMargin);" in body
-    assert "private _open = _farthest min ITW_CLASH_RackRunOpenMax;" in body
+def test_the_standoff_mirror_matches_the_sqf_shape():
+    body = function_body(rack(), "ITW_CLASH_Rack_fnc_Standoff")
+    assert 'private _guided = _usable select {!((_x#6) isEqualTo "NONE")};' in body
+    assert "_high = _high min (_hi / ITW_CLASH_RackRadiusMargin);" in body
+    assert "_low = _low max (_lo * ITW_CLASH_RackRadiusMargin);" in body
+    assert "round (_high max _low)" in body
     source = rack()
-    for tunable, value in [("RunBreakMin", 600), ("RunOpenMax", 2500), ("RunLeadIn", 400), ("RunIngressMax", 3000)]:
-        assert f'ITW_CLASH_Rack{tunable}",{value}]' in source, tunable
+    assert 'ITW_CLASH_RackPointGuidedMax",2000]' in source
+    assert 'ITW_CLASH_RackPointUnguidedMax",1000]' in source
+    assert "fnc_Run" not in source
     profile = function_body(source, "ITW_CLASH_Rack_fnc_Profile")
-    assert "_types set [_type,[count _usable,_radius,_mode,_break,_ingress]];" in profile
+    assert "_types set [_type,[count _usable,_radius,_mode,[_usable] call ITW_CLASH_Rack_fnc_Standoff]];" in profile
 
 
 def test_rockets_put_infantry_inside_the_dar_band():
     radius, mode = orbit([e for e in [DAGRM, DAR] if usable(e, "INFANTRY")])
     inner = math.cos(math.radians(22.5))
     assert 400 <= radius * inner and radius <= 1200, radius
-    assert mode == "RUN"
+    assert mode == "POINT"
 
 
 def test_a_gunner_on_the_rack_means_keep_moving():
