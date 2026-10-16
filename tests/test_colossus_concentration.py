@@ -180,7 +180,7 @@ def test_the_plan_is_stored_per_side_with_its_posture():
 
 def test_version_and_boot_line_report_concentration():
     source = colossus()
-    assert "ITW_CLASH_ColossusVersion = 6;" in source
+    assert "ITW_CLASH_ColossusVersion = 7;" in source
     assert "concentrate=%14/%15" in source
     assert '"ITW_CLASH_ColossusConcentrateMax",1' in source
 
@@ -250,3 +250,66 @@ def test_the_relaxed_anchor_floor_is_what_makes_the_gate_releasable():
     assert "ITW_CLASH_fnc_AnchorFloorFor" in patch
     minimum = int(re.search(r'\["ITW_CLASH_AnchorFloorMinimum",(\d+)\]', patch).group(1))
     assert minimum < 6, minimum
+
+
+# --- v7: the anchor gate blocks, and concentration is said on change ------
+
+def depth_at(body: str, index: int) -> int:
+    """Brace depth at index, counting from the function's own opening brace."""
+    return body[:index].count("{") - body[:index].count("}")
+
+
+def test_the_anchor_gate_exits_the_function_not_an_if_block():
+    """An exitWith inside if-then leaves only that block. Up to v6 the gate
+    logged its decline and carried on: on 2026-10-16 B concentrated on 23 83
+    times while holding 8 and 14 unanchored, every time right after saying it
+    would not (426 holding-unanchored lines = 343 unobserved + 83 concentrate).
+    """
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_Concentrate"))
+    gate = body.index('if (_unanchored isNotEqualTo []) exitWith {["holding-unanchored",_unanchored] call _decline};')
+    assert depth_at(body, gate) == 1
+    # Every decline in the function is at function depth too.
+    for match in re.finditer(r"exitWith \{\[\"[a-z-]+\"", body):
+        assert depth_at(body, match.start()) == 1, body[match.start():match.start() + 60]
+    assert body.index("ITW_CLASH_Colossus_fnc_HoldingUnanchored") < gate < body.index("fnc_ResolveMirror")
+
+
+def test_concentration_is_said_when_it_changes():
+    body = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_SayConcentration"))
+    assert "ITW_CLASH_ColossusConcentrationSaid" in body
+    assert "[_event,_payload + [_last#1]] call ITW_CLASH_Colossus_fnc_Log;" in body
+    concentrate = code_only(function_body(colossus(), "ITW_CLASH_Colossus_fnc_Concentrate"))
+    assert "call ITW_CLASH_Colossus_fnc_Log" not in concentrate
+    # The mirror count changes every offer, so it is not part of the key.
+    assert "],[_index,_plan getOrDefault [\"verdict\",\"\"]]] call ITW_CLASH_Colossus_fnc_SayConcentration;" in concentrate
+    assert "anchorGateBlocks=true concentrationSaidOnChange=true" in colossus()
+
+
+def say_model(calls):
+    """Python mirror of ITW_CLASH_Colossus_fnc_SayConcentration."""
+    said = {}
+    lines = []
+    for event, payload, key in calls:
+        sign = payload[0]
+        text = repr([event, key])
+        last = said.get(sign, ("", 0))
+        if last[0] == text:
+            said[sign] = (text, last[1] + 1)
+            continue
+        said[sign] = (text, 0)
+        lines.append((event, payload + [last[1]]))
+    return lines
+
+
+def test_the_say_model_on_the_run_shape():
+    calls = []
+    for _ in range(68):
+        calls.append(("concentrate-declined", ["B", "holding-unanchored", [8, 14]], ["holding-unanchored", [8, 14]]))
+    calls.append(("concentrate-declined", ["B", "holding-unanchored", [8]], ["holding-unanchored", [8]]))
+    calls.append(("concentrate-declined", ["A", "objective-unobserved"], ["objective-unobserved", []]))
+    lines = say_model(calls)
+    assert lines == [
+        ("concentrate-declined", ["B", "holding-unanchored", [8, 14], 0]),
+        ("concentrate-declined", ["B", "holding-unanchored", [8], 67]),
+        ("concentrate-declined", ["A", "objective-unobserved", 0]),
+    ]

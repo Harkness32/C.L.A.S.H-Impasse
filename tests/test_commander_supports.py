@@ -97,7 +97,7 @@ def test_the_air_picture_counts_only_uav_looks_as_eyes():
 
 def test_colossus_proposes_once_after_its_own_order():
     source = code("ITW_CLASH_Colossus.sqf")
-    assert "ITW_CLASH_ColossusVersion = 6;" in source
+    assert "ITW_CLASH_ColossusVersion = 7;" in source
     assess = function_body(source, "ITW_CLASH_Colossus_fnc_Assess")
     commit = assess.index("call ITW_CLASH_Colossus_fnc_Commit;")
     propose = assess.index("call ITW_CLASH_Supports_fnc_Assess;")

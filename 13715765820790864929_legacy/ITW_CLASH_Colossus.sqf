@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ColossusStarted",false]) exitWith {true};
 
 ITW_CLASH_ColossusStarted = true;
-ITW_CLASH_ColossusVersion = 6;
+ITW_CLASH_ColossusVersion = 7;
 ITW_CLASH_ColossusReady = false;
 
 /*
@@ -207,6 +207,8 @@ ITW_CLASH_ColossusPictures = createHashMap;
 // side key -> the last plan, so the mirror writers can ask what this
 // commander wants without recomputing the picture on their own clock.
 ITW_CLASH_ColossusPlans = createHashMap;
+// sign -> [what concentration last said, how often it has repeated since].
+ITW_CLASH_ColossusConcentrationSaid = createHashMap;
 
 ITW_CLASH_Colossus_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -740,6 +742,27 @@ ITW_CLASH_Colossus_fnc_HoldingUnanchored = {
     _unanchored
 };
 
+/*
+    Concentration is asked on every HAL offer, about once a second per side,
+    and gives the same answer for minutes at a time: 904 lines in 18 minutes
+    on 2026-10-16. So it is said when the answer changes, with how many times
+    the previous answer repeated, and the loud debugger hears it as rarely.
+    _key holds only what makes two answers different (not the mirror count).
+*/
+ITW_CLASH_Colossus_fnc_SayConcentration = {
+    params ["_event","_payload","_key"];
+    private _sign = _payload#0;
+    private _said = str [_event,_key];
+    private _last = ITW_CLASH_ColossusConcentrationSaid getOrDefault [_sign,["",0]];
+    if ((_last#0) isEqualTo _said) exitWith {
+        ITW_CLASH_ColossusConcentrationSaid set [_sign,[_said,(_last#1) + 1]];
+        false
+    };
+    ITW_CLASH_ColossusConcentrationSaid set [_sign,[_said,0]];
+    [_event,_payload + [_last#1]] call ITW_CLASH_Colossus_fnc_Log;
+    true
+};
+
 ITW_CLASH_Colossus_fnc_Concentrate = {
     params ["_hq","_mirrors"];
     private _pass = [_mirrors,-1];
@@ -750,8 +773,10 @@ ITW_CLASH_Colossus_fnc_Concentrate = {
     private _sign = _hq getVariable ["RydHQ_CodeSign","?"];
     private _plan = ITW_CLASH_ColossusPlans getOrDefault [toUpperANSI str (side _hq),createHashMap];
     private _decline = {
-        params ["_reason"];
-        ["concentrate-declined",[_sign,_reason]] call ITW_CLASH_Colossus_fnc_Log;
+        params ["_reason",["_detail",[]]];
+        private _payload = [_sign,_reason];
+        if (_detail isNotEqualTo []) then {_payload pushBack _detail};
+        ["concentrate-declined",_payload,[_reason,_detail]] call ITW_CLASH_Colossus_fnc_SayConcentration;
         _pass
     };
 
@@ -762,15 +787,19 @@ ITW_CLASH_Colossus_fnc_Concentrate = {
     };
     if (!(_plan getOrDefault ["feasible",false])) exitWith {["short-of-force"] call _decline};
 
-    // Hold what we took before reaching for the next one.
-    if (ITW_CLASH_ColossusRequireAnchored) then {
-        private _unanchored = [_hq] call ITW_CLASH_Colossus_fnc_HoldingUnanchored;
-        if (_unanchored isNotEqualTo []) exitWith {
-            ["concentrate-declined",[_sign,"holding-unanchored",_unanchored]] call
-                ITW_CLASH_Colossus_fnc_Log;
-            _pass
-        };
-    };
+    /*
+        Hold what we took before reaching for the next one.
+
+        v7: the check is out here because an exitWith inside an if-then
+        leaves only that block. Inside it (b9d90d1 to v6) this logged the
+        decline and carried on: on 2026-10-16 B concentrated on 23 83 times
+        while holding 8 and 14 unanchored, each right after saying it would
+        not.
+    */
+    private _unanchored = if (ITW_CLASH_ColossusRequireAnchored) then {
+        [_hq] call ITW_CLASH_Colossus_fnc_HoldingUnanchored
+    } else {[]};
+    if (_unanchored isNotEqualTo []) exitWith {["holding-unanchored",_unanchored] call _decline};
 
     private _index = _plan getOrDefault ["objective",-1];
     private _mirror = [_mirrors,_index] call ITW_CLASH_Colossus_fnc_ResolveMirror;
@@ -787,7 +816,7 @@ ITW_CLASH_Colossus_fnc_Concentrate = {
         _plan getOrDefault ["verdict",""],
         count _mirrors,
         ITW_CLASH_ColossusConcentrateMax
-    ]] call ITW_CLASH_Colossus_fnc_Log;
+    ],[_index,_plan getOrDefault ["verdict",""]]] call ITW_CLASH_Colossus_fnc_SayConcentration;
     [[_mirror],ITW_CLASH_ColossusConcentrateMax]
 };
 
@@ -877,7 +906,7 @@ ITW_CLASH_Colossus_fnc_Assess = {
 
 ITW_CLASH_ColossusReady = true;
 diag_log format [
-    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 requireAnchored=%16 reportedPositions=%17 pushSkipsHeld=true supportsProposeOnly=true halPoolsUntouched=true",
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 requireAnchored=%16 reportedPositions=%17 pushSkipsHeld=true anchorGateBlocks=true concentrationSaidOnChange=true supportsProposeOnly=true halPoolsUntouched=true",
     ITW_CLASH_ColossusVersion,
     ITW_CLASH_ColossusAdvisoryOnly,
     ITW_CLASH_ColossusPoll,

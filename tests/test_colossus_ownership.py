@@ -92,7 +92,7 @@ def test_supports_use_the_same_ownership_rule():
 
 def test_boot_line_and_version():
     raw = text("ITW_CLASH_Colossus.sqf")
-    assert "ITW_CLASH_ColossusVersion = 6;" in raw
+    assert "ITW_CLASH_ColossusVersion = 7;" in raw
     assert "pushSkipsHeld=true" in raw
 
 
