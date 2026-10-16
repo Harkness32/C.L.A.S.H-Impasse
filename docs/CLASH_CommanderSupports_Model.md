@@ -148,14 +148,33 @@ Knowledge v4, from the run of 2026-10-16:
   from B's side: too thin to set allowances. Vehicle true speed's p90 was 9 to
   15 m/s against the 8 m/s allowance.
 
+Knowledge v5, from 36 minutes of contact on 2026-10-16 (05:11 session):
+
+| Class | Allowance before | Broke it while moving | True speed p90 | Allowance now |
+|---|---|---|---|---|
+| Infantry | 2 m/s | 10 of 53 (19%) | 3.9 to 5.1 m/s | 4 m/s |
+| Armour | 8 m/s (the vehicle value) | 81 of 174 (47%) | to 29.5 m/s (wheeled AFVs on roads) | 15 m/s, its own |
+| Vehicles | 8 m/s | 10 of 152 (7%) | to 15 m/s | 8 m/s |
+| Statics | 0 | 0 of 91 | 0 | 0 |
+
+- The cost: a moving armoured contact's envelope reaches the 300 m strike limit
+  in about 20 s, so bomb passes and carpets on armour need very fresh reports;
+  the guided pass, which acquires on site, is exempt.
+- **A groupmate's sighting speaks for the group.** 3411 reports were rejected
+  as never-seen in that run, and in 626 of the 3346 checked (19%) another man
+  of the same group had seen the target himself. When the leader never saw it,
+  the group's report is now that groupmate's most recent sighting. Still one
+  report per group, never merged. `knowledge-never-seen` is now [leader never
+  saw it, groups checked, groupmate sightings used].
+
 ### 4.3 Uncertainty
 
 > R = E + v × (age + time ahead)
 
 - **E:** the report's position error.
-- **v:** a conservative movement allowance by class: statics 0 m/s, infantry
-  2 m/s, ground vehicles 8 m/s. Stationary now is not stationary later; only
-  real statics get zero.
+- **v:** a conservative movement allowance by class, from the truth diagnostic
+  (v5): statics 0 m/s, infantry 4 m/s, ground vehicles 8 m/s, armour 15 m/s.
+  Stationary now is not stationary later; only real statics get zero.
 - **age:** time since the report.
 - **time ahead:** zero for the status; the expected flight time to release when
   a support is weighed.
@@ -516,7 +535,11 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   back to the side's vanilla UAV. A rotary UAV only when the faction has no
   fixed-wing one: on 2026-10-16 A drew an AR-2 Darter at random from its list
   and sent it 5 km out to loiter at 500 m. Weapons removed.
-- **Loiter:** 500 m AGL, inside MANPAD reach and above small arms.
+- **Loiter:** fixed-wing UAVs at 2000 m AGL (v2), set on the spawn, the flight
+  height and the loiter waypoint's altitude; a rotary one, used only when the
+  faction has no fixed-wing UAV, at 500 m. v1 flew all of them at 500 m: on
+  2026-10-16 a Greyhawk died 5 s after reaching its station on each side, over
+  objectives covered by Cheetahs.
 - **Each poll (5 s):** reveals to the HQ group what its sensors
   (`getSensorTargets`) and crew have seen in the last 30 s, at 1.5, so HAL
   learns it (HAL counts what its HQ group knows, `HAC_fnc2.sqf:271`). The
@@ -739,7 +762,7 @@ All placeholders.
 | Setting | Value |
 |---|---|
 | Knowledge poll | 10 s |
-| Movement allowance | Statics 0, infantry 2, vehicles 8 m/s |
+| Movement allowance | Statics 0, infantry 4, vehicles 8, armour 15 m/s |
 | Uncertainty floor | 5 m |
 | Diagnostic samples | Clock 300; truth 400 per bucket, from 10 s old |
 | Observed | Age 60 s, R 100 m |
@@ -757,7 +780,7 @@ All placeholders.
 | Holding discount | 0.75 |
 | Setup delay | 45 to 120 s |
 | Spawn distance | Jets 4 km, helicopters and transport planes 5 km |
-| UAV altitude, loiter, relaunch | 500 m AGL, 15 min, 300 s |
+| UAV altitude, loiter, relaunch | 2000 m AGL (rotary 500 m), 15 min, 300 s |
 | Guided scan | Within 3 km, radius cap 500 m, window 20 s |
 | Strike heights | Bomb pass 250 m, carpet 400 m, guided 600 m |
 | Bomb pass payload | 4 bombs, 15 m apart |
@@ -801,12 +824,12 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 
 | File | Owns |
 |---|---|
-| `ITW_CLASH_Knowledge.sqf` (v4) | Reports, uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
+| `ITW_CLASH_Knowledge.sqf` (v5) | Reports (a groupmate's sighting when the leader has none), uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
 | `ITW_CLASH_Colossus.sqf` (v7) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held; concentration gated on anchored holdings |
 | `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
 | `ITW_CLASH_Supports.sqf` (v3) | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code; live by default |
 | `ITW_CLASH_SupportsStrike.sqf` (v3) | Bomb pass, guided pass with the on-site scan, carpet |
-| `ITW_CLASH_SupportsUAV.sqf` | The recon UAV |
+| `ITW_CLASH_SupportsUAV.sqf` (v2) | The recon UAV |
 | `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
 | `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
 | `ITW_CLASH_DebugPreflight.sqf` | Lists the five modules |

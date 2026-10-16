@@ -1,7 +1,7 @@
 # C.L.A.S.H. HAL Air Employment Model
 
 Status: **built; v1 and v2 run in engine on 2026-10-16, v3 not yet.** Rack
-profile v3, heli attack v3, GoAttAir swapped in C.L.A.S.H. HAL Additions,
+profile v4, heli attack v3, GoAttAir swapped in C.L.A.S.H. HAL Additions,
 Dual-HAL Checkbook v9.
 
 How a HAL attack helicopter flies its sortie, and how any C.L.A.S.H. layer
@@ -94,7 +94,11 @@ smoke, illumination, the laser designator and horns are skipped.
   that reaches 50 m or more. A weapon with none falls back to the missile's
   lock distances, then to 50 to 1500 m.
 - **Lock:** MANUAL (manual control), ACE (an ACE seeker), IR_LASER, IR, LASER,
-  AIR (air-to-air), NONE.
+  AIR (air-to-air), NONE. Only missiles, rockets and submunition carriers
+  guide; a bullet or shell is NONE whatever its config says (v4). v3 read
+  `airLock` on bullets as an air-to-air seeker, so on 2026-10-16 the Pawnee's
+  M134 and the Blackfoot's 20 mm did not count against infantry: on a gun,
+  `airLock` only means it may shoot at aircraft.
 - **Aim:** FIXED for a pylon or the pilot's seat, or a turret that traverses
   under 60 degrees; TURRET otherwise.
 
@@ -393,7 +397,7 @@ flies its original SAD.
 
 | File | Owns |
 |---|---|
-| `ITW_CLASH_RackProfile.sqf` (v3) | Reading racks (missile and warhead flags); mode; ring and standoff; the guided anti-armour test |
+| `ITW_CLASH_RackProfile.sqf` (v4) | Reading racks (missile and warhead flags; only missiles, rockets and carriers guide); mode; ring and standoff; the guided anti-armour test |
 | `ITW_CLASH_HeliAttack.sqf` (v3) | The sortie between HAL's order and its return leg: the ring, or point at; the yaw assist |
 | `CLASH HAL Additions/.../hal/GoAttAir.sqf` | HAL's GoAttAir plus the helicopter branch |
 | `CLASH HAL Additions/.../functions/fnc_overrides.sqf` | `HAL_GoAttAir` among the 10 swaps |
