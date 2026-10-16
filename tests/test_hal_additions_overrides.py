@@ -50,7 +50,7 @@ def test_start_copy_differs_from_hal_only_where_clash_swaps_scripts():
 def test_every_swapped_global_is_one_hal_compiles_from_the_same_file():
     var_init = read(NR6 / "VarInit.sqf")
     swaps = overrides()
-    assert len(swaps) == 9
+    assert len(swaps) == 10
     for global_name, file_name in swaps.items():
         native = f'{global_name} = compile preprocessfile (RYD_Path + "HAL\\{file_name}");'
         assert native in var_init, global_name

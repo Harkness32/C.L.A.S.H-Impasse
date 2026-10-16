@@ -240,6 +240,17 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | supports-missing-or-prereq-failed | no commander supports";
             };
+            // HAL attack helicopters: C.L.A.S.H.'s GoAttAir (HAL additions)
+            // hands their sorties here to fly a stand-off ring sized from the
+            // rack. HAL keeps the target, the sortie limits and the return.
+            if (
+                (missionNamespace getVariable ["ITW_CLASH_RackProfileReady",false])
+                && {fileExists "ITW_CLASH_HeliAttack.sqf"}
+            ) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_HeliAttack.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | heli-attack-missing-or-prereq-failed | helicopter sorties fly HAL's own search-and-destroy";
+            };
             // Shoot and scoot, and counter-battery acquisition. Each is the
             // other's counterplay: a fix is taken on where a gun was, and a gun
             // that displaces leaves that fix stale.

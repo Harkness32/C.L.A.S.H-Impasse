@@ -21,6 +21,7 @@ CLASH_HALAdd_SourcePaths = createHashMap;
 	_swapped pushBack _global;
 } forEach [
 	["HAL_GoAmmoSupp","GoAmmoSupp.sqf"],
+	["HAL_GoAttAir","GoAttAir.sqf"],
 	["HAL_GoAttInf","GoAttInf.sqf"],
 	["HAL_GoCapture","GoCapture.sqf"],
 	["HAL_GoCaptureNaval","GoCaptureNaval.sqf"],

@@ -83,6 +83,7 @@ ITW_CLASH_DebugPreflightManifest = [
     ["ITW_CLASH_SupportsUAV","UAV executor","the recon UAV revokes with NO_EXECUTOR"],
     ["ITW_CLASH_SupportsAirborne","airborne executor","airborne drops revoke with NO_EXECUTOR"],
     ["ITW_CLASH_RackProfile","rack profile","helicopter sorties fly HAL's search-and-destroy; guided pass falls back to its own reader"],
+    ["ITW_CLASH_HeliAttack","heli attack","helicopter sorties fly HAL's radius-0 search-and-destroy on the target"],
     ["ITW_CLASH_HALReconLatch","recon latch","capture orders stay on HAL's RapidCapt dice"],
     ["ITW_CLASH_HALSoftArmorFix","soft-armor fix","soft vehicles dispatched at tanks with no risk check"],
     ["ITW_CLASH_AttackRestore","attack restore","medevac'd squads stay unable to attack"],
