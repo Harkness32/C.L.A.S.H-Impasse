@@ -451,6 +451,14 @@ ITW_CLASH_Supports_fnc_PickClass = {
                 if (isClass (configFile >> "CfgVehicles" >> _fallback)) then {_classes = [_fallback]};
             };
             if (_classes isEqualTo []) exitWith {["","NO_AIRCRAFT"]};
+            /*
+                Fixed-wing first: a faction's UAV list also holds quadcopters
+                (the AR-2 Darter on 2026-10-16, sent 5 km out to loiter at
+                500 m), which are slow and short-ranged for an overwatch
+                orbit. A rotary one only when the faction has nothing else.
+            */
+            private _fixed = _classes select {_x isKindOf "Plane"};
+            if (_fixed isNotEqualTo []) then {_classes = _fixed};
             [selectRandom _classes,""]
         };
         case "JET": {
@@ -1842,7 +1850,7 @@ ITW_CLASH_SupportsAirbornePlaneSquads = missionNamespace getVariable ["ITW_CLASH
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,

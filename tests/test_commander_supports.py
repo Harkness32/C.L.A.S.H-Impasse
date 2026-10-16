@@ -598,3 +598,14 @@ def test_preflight_knows_the_five_modules():
     for prefix in ("ITW_CLASH_Knowledge", "ITW_CLASH_Supports", "ITW_CLASH_SupportsStrike",
                    "ITW_CLASH_SupportsUAV", "ITW_CLASH_SupportsAirborne"):
         assert f'["{prefix}",' in manifest, prefix
+
+
+def test_the_uav_is_fixed_wing_when_the_faction_has_one():
+    # 2026-10-16: A's UAV was an AR-2 Darter, picked at random from a list
+    # that also held fixed-wing UAVs, and sent 5 km out to loiter at 500 m.
+    pick = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_PickClass")
+    uav = pick[pick.index('case "UAV": {'):pick.index('case "JET": {')]
+    assert 'private _fixed = _classes select {_x isKindOf "Plane"};' in uav
+    assert "if (_fixed isNotEqualTo []) then {_classes = _fixed};" in uav
+    assert uav.index("_fixed isNotEqualTo []") < uav.index("[selectRandom _classes,\"\"]")
+    assert "uavFixedWingFirst=true" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
