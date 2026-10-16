@@ -83,7 +83,11 @@ private _infLoaded = false;
 if (_infPreInitReady && {_infExists && {_infChars > 0}}) then {
     private _result = call compile _infSource;
     _infLoaded = _result isEqualTo true && {
-        (missionNamespace getVariable ["ITW_CLASH_InfantryAuthorityVersion",-1]) == 4 && {
+        // Must match ITW_CLASH_InfantryAuthority.sqf. 213475d moved the module
+        // to v5 and left this at 4, so every boot since logged the module ready
+        // and then rejected it: no allocation fix, no late finalizers.
+        // tests/test_module_version_gates.py pins every gate in this file.
+        (missionNamespace getVariable ["ITW_CLASH_InfantryAuthorityVersion",-1]) == 5 && {
             !isNil "ITW_CLASH_InfantryAuthority_fnc_IsHardHandoff" && {
                 !isNil "ITW_CLASH_InfantryAuthority_fnc_IsManagedFielded" && {
                     !isNil "ITW_CLASH_InfantryAuthority_fnc_ApplyRoleConstraints" && {
