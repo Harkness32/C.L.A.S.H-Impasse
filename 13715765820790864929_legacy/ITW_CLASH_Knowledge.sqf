@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_KnowledgeStarted",false]) exitWith {true};
 
 ITW_CLASH_KnowledgeStarted = true;
-ITW_CLASH_KnowledgeVersion = 1;
+ITW_CLASH_KnowledgeVersion = 2;
 ITW_CLASH_KnowledgeReady = false;
 
 /*
@@ -42,6 +42,26 @@ ITW_CLASH_KnowledgeReady = false;
     live enemy position is read in exactly one place: the truth diagnostic,
     which logs reported against actual error so the engine's numbers can be
     checked, and whose result is never fed back.
+
+    v2: losing the position is not losing the enemy.
+
+    A mobile contact's uncertainty passes the lead radius fast (a vehicle in
+    about 36 s, infantry in about 140 s), and v1 dropped every LOST record from
+    every count. An objective where infantry was seen three minutes ago then
+    read as UNOBSERVED, or with one of our squads nearby as RECENTLY_CLEARED,
+    and its reported strength was zero. Two questions were being answered with
+    one list:
+      - Can I hit this position? Only while the uncertainty allows it. Targeting
+        still reads fnc_Contacts, which never holds a LOST record.
+      - Could the enemy still be here? Yes, in proportion to how sure we are it
+        still exists and how much of where it could be lies inside the place in
+        question (fnc_Presence). Strength and the intelligence state read every
+        record still believed to exist (fnc_Held).
+    Where a contact was placed and when it was last seen to exist are kept
+    apart: the position is the report with the smallest uncertainty NOW, which
+    is not always the newest, while any newer sighting still confirms it exists.
+    And an empty contact list never clears a place on its own: a look needs our
+    own people on the ground inside the objective, or the UAV over it.
 */
 
 ITW_CLASH_KnowledgeEnabled = missionNamespace getVariable ["ITW_CLASH_KnowledgeEnabled",true];
@@ -67,6 +87,10 @@ ITW_CLASH_KnowledgeExistenceZero = missionNamespace getVariable ["ITW_CLASH_Know
 // and is still moving until it has held still this long.
 ITW_CLASH_KnowledgeMovingThreshold = missionNamespace getVariable ["ITW_CLASH_KnowledgeMovingThreshold",30];
 ITW_CLASH_KnowledgeMovingSettle = missionNamespace getVariable ["ITW_CLASH_KnowledgeMovingSettle",60];
+// A record still believed to exist counts toward a place's intelligence state
+// only if at least this much of it (existence x share of where it could be
+// that lies inside the place) is there.
+ITW_CLASH_KnowledgePresenceFloor = missionNamespace getVariable ["ITW_CLASH_KnowledgePresenceFloor",0.1];
 // How long a look at an empty place counts.
 ITW_CLASH_KnowledgeClearedWindow = missionNamespace getVariable ["ITW_CLASH_KnowledgeClearedWindow",300];
 // Records older than this are forgotten entirely.
@@ -212,7 +236,10 @@ ITW_CLASH_Knowledge_fnc_Status = {
 ITW_CLASH_Knowledge_fnc_Existence = {
     params ["_record"];
     if (count _record == 0) exitWith {0};
-    private _age = (time - (_record getOrDefault ["seenAt",-1e10])) max 0;
+    // When something last confirmed it exists, which a newer but sloppier
+    // sighting can do without moving where it is placed.
+    private _confirmed = _record getOrDefault ["confirmedAt",_record getOrDefault ["seenAt",-1e10]];
+    private _age = (time - _confirmed) max 0;
     if (_age <= ITW_CLASH_KnowledgeExistenceFull) exitWith {1};
     private _span = (ITW_CLASH_KnowledgeExistenceZero - ITW_CLASH_KnowledgeExistenceFull) max 1;
     (1 - ((_age - ITW_CLASH_KnowledgeExistenceFull) / _span)) max 0
@@ -243,6 +270,50 @@ ITW_CLASH_Knowledge_fnc_Contacts = {
     _result
 };
 
+// Every record still believed to exist, LOST ones included, as
+// [key,record,status]. For "could it still be here", never for targeting.
+ITW_CLASH_Knowledge_fnc_Held = {
+    params ["_side"];
+    private _result = [];
+    {
+        if (([_y] call ITW_CLASH_Knowledge_fnc_Existence) > 0) then {
+            _result pushBack [_x,_y,[_y] call ITW_CLASH_Knowledge_fnc_Status];
+        };
+    } forEach ([_side] call ITW_CLASH_Knowledge_fnc_SideContacts);
+    _result
+};
+
+// Area shared by two circles of radius _r1 and _r2 whose centres are _d apart.
+ITW_CLASH_Knowledge_fnc_CircleOverlap = {
+    params ["_d","_r1","_r2"];
+    if (_r1 <= 0 || {_r2 <= 0}) exitWith {0};
+    if (_d >= (_r1 + _r2)) exitWith {0};
+    if (_d <= abs (_r1 - _r2)) exitWith {pi * ((_r1 min _r2) ^ 2)};
+    private _a = (((_d * _d) + (_r1 * _r1) - (_r2 * _r2)) / (2 * _d * _r1)) max -1 min 1;
+    private _b = (((_d * _d) + (_r2 * _r2) - (_r1 * _r1)) / (2 * _d * _r2)) max -1 min 1;
+    // acos is in degrees in SQF; the segment formula wants radians.
+    private _alpha = (acos _a) * pi / 180;
+    private _beta = (acos _b) * pi / 180;
+    private _k = ((-_d + _r1 + _r2) * (_d + _r1 - _r2) * (_d - _r1 + _r2) * (_d + _r1 + _r2)) max 0;
+    ((_r1 * _r1) * _alpha) + ((_r2 * _r2) * _beta) - (0.5 * sqrt _k)
+};
+
+/*
+    How much of a contact is in a place: how sure we are it still exists,
+    times the share of where it could be now (a circle of its uncertainty
+    around its reported position) that lies inside the place. 0 to 1.
+*/
+ITW_CLASH_Knowledge_fnc_Presence = {
+    params ["_record","_center","_radius"];
+    if (count _record == 0 || {_center isEqualTo []}) exitWith {0};
+    private _existence = [_record] call ITW_CLASH_Knowledge_fnc_Existence;
+    if (_existence <= 0) exitWith {0};
+    private _r = ([_record,0] call ITW_CLASH_Knowledge_fnc_Uncertainty) max 1;
+    private _d = (_record get "position") distance2D _center;
+    private _share = ([_d,_r,_radius] call ITW_CLASH_Knowledge_fnc_CircleOverlap) / (pi * _r * _r);
+    _existence * ((_share max 0) min 1)
+};
+
 ITW_CLASH_Knowledge_fnc_Record = {
     params ["_side","_key"];
     ([_side] call ITW_CLASH_Knowledge_fnc_SideContacts) getOrDefault [_key,createHashMap]
@@ -258,7 +329,9 @@ ITW_CLASH_Knowledge_fnc_StampLook = {
     private _key = [_side] call ITW_CLASH_Knowledge_fnc_SideKey;
     private _looks = ITW_CLASH_KnowledgeLooks getOrDefault [_key,[],true];
     private _index = _looks findIf {
-        ((_x#0) distance2D _position) <= 50 && {(_x#2) isEqualTo _radius}
+        ((_x#0) distance2D _position) <= 50
+        && {(_x#2) isEqualTo _radius}
+        && {(_x#3) isEqualTo _source}
     };
     if (_index >= 0) then {
         (_looks#_index) set [1,time];
@@ -282,7 +355,12 @@ ITW_CLASH_Knowledge_fnc_LookedAt = {
     }) >= 0
 };
 
-// [observed, fixed, leads, oldest age] inside a radius, by reported position.
+/*
+    [observed, fixed, leads, oldest age] inside a radius. Placed contacts count
+    by reported position. A record whose position is LOST but which is still
+    believed to exist counts as a lead when enough of it is here: it can no
+    longer be hit, but it has not been shown to be gone.
+*/
 ITW_CLASH_Knowledge_fnc_Census = {
     params ["_side","_position","_radius"];
     private _observed = 0;
@@ -291,14 +369,19 @@ ITW_CLASH_Knowledge_fnc_Census = {
     private _oldest = 0;
     {
         _x params ["","_record","_status"];
-        if (((_record get "position") distance2D _position) > _radius) then {continue};
-        switch (_status) do {
-            case "OBSERVED": {_observed = _observed + 1};
-            case "FIXED": {_fixed = _fixed + 1};
-            case "LEAD": {_leads = _leads + 1};
+        if (_status isEqualTo "LOST") then {
+            if (([_record,_position,_radius] call ITW_CLASH_Knowledge_fnc_Presence) < ITW_CLASH_KnowledgePresenceFloor) then {continue};
+            _leads = _leads + 1;
+        } else {
+            if (((_record get "position") distance2D _position) > _radius) then {continue};
+            switch (_status) do {
+                case "OBSERVED": {_observed = _observed + 1};
+                case "FIXED": {_fixed = _fixed + 1};
+                case "LEAD": {_leads = _leads + 1};
+            };
         };
         _oldest = _oldest max (time - (_record get "seenAt"));
-    } forEach ([_side] call ITW_CLASH_Knowledge_fnc_Contacts);
+    } forEach ([_side] call ITW_CLASH_Knowledge_fnc_Held);
     [_observed,_fixed,_leads,round _oldest]
 };
 
@@ -317,17 +400,22 @@ ITW_CLASH_Knowledge_fnc_IntelState = {
     "UNOBSERVED"
 };
 
-// Enemy strength at a place, counted from reported positions only.
+/*
+    Enemy strength at a place, from reports only: each record still believed
+    to exist, at its class worth times its presence there. The count is the
+    records with at least the presence floor here.
+*/
 ITW_CLASH_Knowledge_fnc_ReportedStrength = {
     params ["_side","_position","_radius"];
     private _score = 0;
     private _count = 0;
     {
         _x params ["","_record"];
-        if (((_record get "position") distance2D _position) > _radius) then {continue};
-        _score = _score + ([_record] call ITW_CLASH_Knowledge_fnc_Worth);
-        _count = _count + 1;
-    } forEach ([_side] call ITW_CLASH_Knowledge_fnc_Contacts);
+        private _presence = [_record,_position,_radius] call ITW_CLASH_Knowledge_fnc_Presence;
+        if (_presence <= 0) then {continue};
+        _score = _score + ([_record get "class"] call ITW_CLASH_Knowledge_fnc_ClassWorth) * _presence;
+        if (_presence >= ITW_CLASH_KnowledgePresenceFloor) then {_count = _count + 1};
+    } forEach ([_side] call ITW_CLASH_Knowledge_fnc_Held);
     [_score,_count]
 };
 
@@ -435,7 +523,7 @@ ITW_CLASH_Knowledge_fnc_Update = {
             _record = createHashMapFromArray [
                 ["entity",_target],["class",_class],["source","SIGHT"],
                 ["position",_position],["seenAt",_seenAt],["error",_error],
-                ["firstSeen",_seenAt],["movedAt",-1e10],["moving",false],
+                ["firstSeen",_seenAt],["confirmedAt",_seenAt],["movedAt",-1e10],["moving",false],
                 ["observer",[_bestObserver] call ITW_CLASH_Knowledge_fnc_GroupId]
             ];
             _contacts set [_contactKey,_record];
@@ -452,8 +540,10 @@ ITW_CLASH_Knowledge_fnc_Update = {
                     };
                 };
             };
+            // Any sighting confirms it exists; only a better one moves it.
+            _record set ["confirmedAt",_seenAt max (_record getOrDefault ["confirmedAt",_record get "seenAt"])];
             private _heldR = [_record,0] call ITW_CLASH_Knowledge_fnc_Uncertainty;
-            if (_bestR <= _heldR || {_seenAt > (_record get "seenAt")}) then {
+            if (_bestR <= _heldR) then {
                 _record set ["position",_position];
                 _record set ["seenAt",_seenAt];
                 _record set ["error",_error];
@@ -489,7 +579,7 @@ ITW_CLASH_Knowledge_fnc_Update = {
             _contacts set [_contactKey,createHashMapFromArray [
                 ["entity",objNull],["class",_fixClass],["source","COUNTER_BATTERY"],
                 ["position",_reported],["seenAt",_last],["error",_fixError],
-                ["firstSeen",_first],["movedAt",-1e10],["moving",false],
+                ["firstSeen",_first],["confirmedAt",_last],["movedAt",-1e10],["moving",false],
                 ["observer","counter-battery"]
             ]];
         } forEach (ITW_CLASH_CounterBatteryFixes getOrDefault [_key,createHashMap]);
@@ -503,19 +593,24 @@ ITW_CLASH_Knowledge_fnc_Update = {
         private _drop = switch (true) do {
             case ((_record get "source") isEqualTo "COUNTER_BATTERY"): {!(_contactKey in _seen)};
             case (isNull _entity || {!alive _entity}): {true};
-            case ((_now - (_record get "seenAt")) > ITW_CLASH_KnowledgeForgetAfter): {true};
+            case ((_now - (_record getOrDefault ["confirmedAt",_record get "seenAt"])) > ITW_CLASH_KnowledgeForgetAfter): {true};
             default {false};
         };
         if (_drop) then {_contacts deleteAt _contactKey};
     } forEach (+_contacts);
 
-    // Friendly presence near an objective is a look at it.
+    /*
+        Our people on the ground inside an objective are a look at it: positive
+        evidence, not an empty list. Aircraft overhead and anyone still under
+        canopy are not (Air covers parachutes), and neither is anyone outside
+        the objective itself.
+    */
     if (!isNil "ITW_CLASH_Generation_fnc_ActiveObjectiveIds" && {!isNil "ITW_Objectives"}) then {
         private _ours = [];
         {
-            if (alive _x) then {_ours pushBack (getPosATL vehicle _x)};
+            if (alive _x && {!((vehicle _x) isKindOf "Air")}) then {_ours pushBack (getPosATL vehicle _x)};
         } forEach (units _side);
-        private _eyes = missionNamespace getVariable ["ITW_CLASH_AirPictureObservedRadius",800];
+        private _eyes = missionNamespace getVariable ["ITW_CLASH_ColossusObjectiveRadius",500];
         {
             private _index = _x;
             if (_index < 0 || {_index >= count ITW_Objectives}) then {continue};
@@ -561,6 +656,7 @@ ITW_CLASH_Knowledge_fnc_Summary = {
             _sign,
             count ([_side] call ITW_CLASH_Knowledge_fnc_SideContacts),
             count ([_side] call ITW_CLASH_Knowledge_fnc_Contacts),
+            count ([_side] call ITW_CLASH_Knowledge_fnc_Held),
             count (ITW_CLASH_KnowledgeLooks getOrDefault [[_side] call ITW_CLASH_Knowledge_fnc_SideKey,[]])
         ]] call ITW_CLASH_Knowledge_fnc_Log;
     } forEach _sides;
@@ -616,7 +712,7 @@ ITW_CLASH_Knowledge_fnc_Summary = {
 
 ITW_CLASH_KnowledgeReady = true;
 diag_log format [
-    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 hqObserver=false reportsMerged=false observeOnly=true",
+    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
     ITW_CLASH_KnowledgeVersion,
     ITW_CLASH_KnowledgePoll,
     ITW_CLASH_KnowledgeSpeedStatic,
@@ -630,6 +726,7 @@ diag_log format [
     ITW_CLASH_KnowledgeExistenceFull,
     ITW_CLASH_KnowledgeExistenceZero,
     ITW_CLASH_KnowledgeClearedWindow,
-    ITW_CLASH_KnowledgeTruthDiagnostic
+    ITW_CLASH_KnowledgeTruthDiagnostic,
+    ITW_CLASH_KnowledgePresenceFloor
 ];
 true
