@@ -1,6 +1,6 @@
 # C.L.A.S.H. Commander Supports Model
 
-Status: **design, being built.** Phase 0 (per-side air-loss closures, hard-kill
+Status: **built; live by default since supports v3.** Phase 0 (per-side air-loss closures, hard-kill
 fighter denial) shipped in `448324b`; see `COMMANDER_SUPPORTS_PHASE0.md`.
 
 Every number in this document is a placeholder for calibration, not a decision.
@@ -130,6 +130,24 @@ breaks coming from movement: vehicles above 11 to 12 m/s, infantry above about
 2.7 m/s. The allowances (4.3) stay where they are until the speed lines set
 them from data.
 
+Knowledge v4, from the run of 2026-10-16:
+
+- **The clock rejections were never clock trouble.** Every one (11 to 93 a
+  minute) had `lastSeen` exactly -2147483.648 (-2^31/1000), which is what
+  `targetKnowledge` gives for a target the man knows of but has never seen: a
+  reveal or a report, not a sighting. None was in the future. They are now
+  their own count, `knowledge-never-seen` [rejected, groupmates checked,
+  groupmates who had seen it], and the clock line is kept for real anomalies.
+  Rejecting them stays right: a revealed target is HAL's own knowledge, and
+  taking it as a sighting would feed it back as fresh. In 5 to 12 a window a
+  groupmate had seen the target himself; reading the best groupmate's report
+  would recover those, and is not done.
+- **True speed is a magnitude** (`vectorMagnitude velocity`): `speed` is signed,
+  and reversing vehicles read negative in v3.
+- That run gave about 96 vehicle samples, 14 armour and 1 infantry, almost all
+  from B's side: too thin to set allowances. Vehicle true speed's p90 was 9 to
+  15 m/s against the 8 m/s allowance.
+
 ### 4.3 Uncertainty
 
 > R = E + v × (age + time ahead)
@@ -221,6 +239,14 @@ UAV looks.
   not feasible, logs `colossus-no-push-candidate`, and the order is DEFEND;
   concentration declines with the same reason. Run of 2026-10-15: B planned its
   own objective 8 in 16 assessments of 16 while holding 8 and 14.
+- **Concentration waits for held ground to be anchored** (v7, for real). Up to
+  v6 the anchor gate's `exitWith` sat inside an if-then, which leaves only that
+  block: it logged `holding-unanchored` and carried on. On 2026-10-16 B
+  concentrated on 23 83 times while holding 8 and 14 unanchored, each right
+  after saying it would not. The gate is now at function scope.
+- Concentration is asked on every HAL offer, about once a second per side, so
+  its lines are said when the answer changes, each with how many times the
+  previous answer repeated (904 lines in 18 minutes before).
 
 ## 5. The menu
 
@@ -374,7 +400,7 @@ Under CONSOLIDATE only candidates at held points enter the pool.
 | Headcount | Airborne only: Impasse's live count of the side plus the squads stays under its cap | `NO_HEADROOM` |
 | Drop zone | Airborne only: the point is `RECENT_CONTACT` or `RECENTLY_CLEARED`, and dry open ground is found near it | `DZ_UNASSESSED`, `NO_DZ` |
 
-Dry run (`ITW_CLASH_SupportsDryRun`, on by default) is shadow mode. Everything
+Dry run (`ITW_CLASH_SupportsDryRun`, off by default since v3) is shadow mode. Everything
 decides, admits and reserves exactly as it would live: the money is spent, the
 cooldowns start and the lane is held for the support's nominal duration, then
 the support settles as `DRY_RUN`. Nothing spawns. Shadow-spending keeps the dry
@@ -644,21 +670,25 @@ the loud debugger; the pool and ledger lines are too long for chat.
 | `knowledge-objective` | Periodic per objective: intelligence state, observed, fixed, leads, oldest report |
 | `knowledge-truth` | Diagnostic: reported against actual error, by class |
 | `knowledge-truth-speed` | Diagnostic, per bucket: samples, moving, outside while moving, outside while settled, implied speed spread, implied speed spread while moving, real speed spread (each spread min, median, p90, max) |
-| `knowledge-clock-anomaly` | Rejected reports: count, samples kept, in the past and in the future, the raw `lastSeen` spread, its spread against `time`, `serverTime` and `diag_tickTime`, how many were unit reports, how many had a valid groupmate report, and the three clocks now |
+| `knowledge-clock-anomaly` | Rejected reports off the clock (not never-seen): count, samples kept, in the past and in the future, the raw `lastSeen` spread, its spread against `time`, `serverTime` and `diag_tickTime`, how many were unit reports, how many had a valid groupmate report, and the three clocks now |
+| `knowledge-never-seen` | Reports rejected as known of but never seen: count, groupmates checked, groupmates who had seen it |
 | `colossus-no-push-candidate` | The side holds every active objective: no push this assessment |
+| `colossus-concentrate`, `-concentrate-declined` | Said on change: objective and verdict, or the decline reason (and unanchored objectives); last field is how often the previous answer repeated |
 | `supports-ready`, `knowledge-ready` | Boot: version, dry run, every switch |
 
 ## 11. Rollout
 
-- `ITW_CLASH_SupportsDryRun` starts true: everything decides, admits and logs,
-  nothing spawns.
-- Each flavor has its own switch. Airborne starts off, and with it off nothing
-  on the drop path runs.
-- Test order on one build:
-  1. Dry run (shadow mode). Tunes cadence and validates the knowledge layer.
-  2. UAV and strikes live.
-  3. Helicopter airborne live.
-  4. C-130 and vehicle drop live.
+- **Supports v3: everything live** (2026-10-16). `ITW_CLASH_SupportsDryRun`
+  defaults to false, and every flavor's switch to true: UAV, bomb pass, guided
+  pass, carpet, helicopter airborne, C-130 airborne and the vehicle drop.
+- Shadow mode is one variable away: `ITW_CLASH_SupportsDryRun = true` before
+  the core loads decides, admits and logs exactly as live, and spawns nothing.
+  Each flavor keeps its own switch; with one off nothing on its path runs.
+- The staged order (dry run, then UAV and strikes, then helicopter airborne,
+  then C-130 and vehicle drop) was skipped by decision. Only the dry run has
+  run in engine: on 2026-10-16 it admitted one UAV per side and held each lane
+  for its nominal 15 minutes. The first live strikes and drops are their own
+  first tests: read `supports-outcome`, the executors' lines and section 13.
 
 ## 12. Parity
 
@@ -769,10 +799,10 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 
 | File | Owns |
 |---|---|
-| `ITW_CLASH_Knowledge.sqf` (v3) | Reports, uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock and speed instrumentation |
-| `ITW_CLASH_Colossus.sqf` (v6) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held |
+| `ITW_CLASH_Knowledge.sqf` (v4) | Reports, uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
+| `ITW_CLASH_Colossus.sqf` (v7) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held; concentration gated on anchored holdings |
 | `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
-| `ITW_CLASH_Supports.sqf` | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code |
+| `ITW_CLASH_Supports.sqf` (v3) | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code; live by default |
 | `ITW_CLASH_SupportsStrike.sqf` (v3) | Bomb pass, guided pass with the on-site scan, carpet |
 | `ITW_CLASH_SupportsUAV.sqf` | The recon UAV |
 | `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
@@ -785,4 +815,4 @@ core and its three executors; the core needs Knowledge and COLOSSUS, and an exec
 missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
 `tests/test_commander_supports.py`. The pure math (pick, overlap, presence,
 falloff, spawn point, release timing, economy) is cross-checked in a Python
-model; nothing here has run in engine yet. Section 13 is the list to verify.
+model. The dry run has run in engine (2026-10-16); no live support has yet. Section 13 is the list to verify.
