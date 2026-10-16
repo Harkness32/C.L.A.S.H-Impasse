@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsUAVStarted = true;
-ITW_CLASH_SupportsUAVVersion = 1;
+ITW_CLASH_SupportsUAVVersion = 2;
 ITW_CLASH_SupportsUAVReady = false;
 
 /*
@@ -39,7 +39,18 @@ ITW_CLASH_SupportsUAVReady = false;
     Every number below is a placeholder for calibration.
 */
 
-ITW_CLASH_SupportsUAVHeight = missionNamespace getVariable ["ITW_CLASH_SupportsUAVHeight",500];
+/*
+    Loiter height above the ground. v1 flew every UAV at 500 m, inside SPAA
+    reach: on 2026-10-16 a Greyhawk died 5 s after reaching its station on
+    each side, over objectives covered by Cheetahs. v2 flies fixed-wing UAVs
+    at 2000 m, set on the spawn, the flight height and the loiter waypoint.
+    The sweep's 3 km is measured over the ground, and the far edge of the
+    look is about 2.6 km slant from the loiter ring; whether the airframe's
+    own sensors see that far is the airframe's. A rotary one, used only when the faction has no
+    fixed-wing UAV, keeps 500 m: a quadcopter is built for low and close.
+*/
+ITW_CLASH_SupportsUAVHeight = missionNamespace getVariable ["ITW_CLASH_SupportsUAVHeight",2000];
+ITW_CLASH_SupportsUAVHeightRotary = missionNamespace getVariable ["ITW_CLASH_SupportsUAVHeightRotary",500];
 ITW_CLASH_SupportsUAVSpawnSpeed = missionNamespace getVariable ["ITW_CLASH_SupportsUAVSpawnSpeed",55];
 ITW_CLASH_SupportsUAVLoiterRadius = missionNamespace getVariable ["ITW_CLASH_SupportsUAVLoiterRadius",700];
 // Time on task, counted from first arrival.
@@ -91,12 +102,13 @@ ITW_CLASH_SupportsUAV_fnc_Disarm = {
 
 // One loiter waypoint over the station, replacing whatever was there.
 ITW_CLASH_SupportsUAV_fnc_Station = {
-    params ["_group","_position"];
+    params ["_group","_position",["_height",ITW_CLASH_SupportsUAVHeight]];
     {deleteWaypoint _x} forEachReversed (waypoints _group);
     private _wp = _group addWaypoint [_position,0];
     _wp setWaypointType "LOITER";
     _wp setWaypointLoiterType "CIRCLE_L";
     _wp setWaypointLoiterRadius ITW_CLASH_SupportsUAVLoiterRadius;
+    _wp setWaypointLoiterAltitude _height;
     _wp setWaypointSpeed "NORMAL";
     _wp setWaypointBehaviour "CARELESS";
     _wp setWaypointCombatMode "BLUE";
@@ -151,17 +163,18 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
     private _spawn = _support get "spawn";
     if (_station isEqualTo [] || {_spawn isEqualTo []}) exitWith {["REVOKED","NO_ORIGIN"]};
     private _heading = _spawn getDir _station;
-    private _start = [_spawn#0,_spawn#1,ITW_CLASH_SupportsUAVHeight];
+    private _height = if (_class isKindOf "Plane") then {ITW_CLASH_SupportsUAVHeight} else {ITW_CLASH_SupportsUAVHeightRotary};
+    private _start = [_spawn#0,_spawn#1,_height];
 
     ([_support,_class,_start,_heading,ITW_CLASH_SupportsUAVSpawnSpeed] call
         ITW_CLASH_Supports_fnc_SpawnAircraft) params ["_veh","_group"];
     if (isNull _veh) exitWith {["REVOKED","SPAWN_FAILED"]};
     private _disarmed = [_veh] call ITW_CLASH_SupportsUAV_fnc_Disarm;
-    _veh flyInHeight ITW_CLASH_SupportsUAVHeight;
-    [_group,_station] call ITW_CLASH_SupportsUAV_fnc_Station;
+    _veh flyInHeight _height;
+    [_group,_station,_height] call ITW_CLASH_SupportsUAV_fnc_Station;
     ["launched",[
         _id,_sign,_class,_station apply {round _x},_support get "objective",
-        round (_spawn distance2D _station),_disarmed
+        round (_spawn distance2D _station),_disarmed,_height
     ]] call ITW_CLASH_SupportsUAV_fnc_Log;
 
     private _arrivedAt = -1;
@@ -187,7 +200,7 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
                 _id,_sign,_taskObjective,_taskWhy,round (_taskPos distance2D _station)
             ]] call ITW_CLASH_SupportsUAV_fnc_Log;
             _station = +_taskPos;
-            [_group,_station] call ITW_CLASH_SupportsUAV_fnc_Station;
+            [_group,_station,_height] call ITW_CLASH_SupportsUAV_fnc_Station;
             _retasks = _retasks + 1;
         };
 
@@ -224,7 +237,7 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
 
 ITW_CLASH_SupportsUAVReady = true;
 diag_log format [
-    "CLASH BOOT | supports-uav-ready | version=%1 height=%2 loiter=%3s radius=%4 onStation=%5 look=%6 retask=%7 reveal=%8 revealAge=%9s unarmed=true followsAssessment=true",
+    "CLASH BOOT | supports-uav-ready | version=%1 height=%2/rotary%10 loiter=%3s radius=%4 onStation=%5 look=%6 retask=%7 reveal=%8 revealAge=%9s unarmed=true followsAssessment=true",
     ITW_CLASH_SupportsUAVVersion,
     ITW_CLASH_SupportsUAVHeight,
     ITW_CLASH_SupportsUAVLoiter,
@@ -233,6 +246,7 @@ diag_log format [
     ITW_CLASH_SupportsUAVLookRadius,
     ITW_CLASH_SupportsUAVRetask,
     ITW_CLASH_SupportsUAVRevealLevel,
-    ITW_CLASH_SupportsUAVRevealAge
+    ITW_CLASH_SupportsUAVRevealAge,
+    ITW_CLASH_SupportsUAVHeightRotary
 ];
 true

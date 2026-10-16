@@ -368,7 +368,7 @@ def test_the_uav_stamps_its_look_and_reveals_to_its_commander():
 def test_the_uav_follows_the_assessment_without_a_new_roll():
     run = function_body(code("ITW_CLASH_SupportsUAV.sqf"), "ITW_CLASH_SupportsUAV_fnc_Run")
     assert "ITW_CLASH_SupportsUAVTasks getOrDefault [_sideKey,[]]" in run
-    assert "[_group,_station] call ITW_CLASH_SupportsUAV_fnc_Station;" in run
+    assert "[_group,_station,_height] call ITW_CLASH_SupportsUAV_fnc_Station;" in run
 
 
 # ------------------------------------------------------------------- airborne
@@ -609,3 +609,21 @@ def test_the_uav_is_fixed_wing_when_the_faction_has_one():
     assert "if (_fixed isNotEqualTo []) then {_classes = _fixed};" in uav
     assert uav.index("_fixed isNotEqualTo []") < uav.index("[selectRandom _classes,\"\"]")
     assert "uavFixedWingFirst=true" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
+
+
+def test_fixed_wing_uavs_fly_above_spaa_reach_and_rotary_ones_stay_low():
+    # 2026-10-16: a Greyhawk died 5 s after reaching its station at 500 m on
+    # each side, over objectives covered by Cheetahs.
+    source = code("ITW_CLASH_SupportsUAV.sqf")
+    raw = (MISSION / "ITW_CLASH_SupportsUAV.sqf").read_text()
+    assert "ITW_CLASH_SupportsUAVVersion = 2;" in raw
+    assert 'ITW_CLASH_SupportsUAVHeight",2000]' in source
+    assert 'ITW_CLASH_SupportsUAVHeightRotary",500]' in source
+    run = function_body(source, "ITW_CLASH_SupportsUAV_fnc_Run")
+    assert ('private _height = if (_class isKindOf "Plane") then {ITW_CLASH_SupportsUAVHeight} '
+            'else {ITW_CLASH_SupportsUAVHeightRotary};') in run
+    assert "private _start = [_spawn#0,_spawn#1,_height];" in run
+    assert "_veh flyInHeight _height;" in run
+    station = function_body(source, "ITW_CLASH_SupportsUAV_fnc_Station")
+    assert "_wp setWaypointLoiterAltitude _height;" in station
+    assert "ITW_CLASH_SupportsUAVHeight;" not in run
