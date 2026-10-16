@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 1;
+ITW_CLASH_SupportsVersion = 2;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -34,6 +34,12 @@ ITW_CLASH_SupportsReady = false;
       - Supports read reported positions from the knowledge layer. A live
         enemy position is never an input to a decision.
       - Money is spent only when a support delivers or its aircraft is lost.
+
+    v2: the objective biases where supports go; it no longer decides which
+    enemies exist. Targets are searched across a 2 km influence area around
+    each target objective, weighted down with distance from the point, and a
+    cluster within reach of our own formations at that objective is weighted
+    as if it stood on it. A cluster near two objectives enters the pool once.
 
     Every number below is a placeholder for calibration.
 */
@@ -97,6 +103,18 @@ ITW_CLASH_SupportsDangerMarginPlayer = missionNamespace getVariable ["ITW_CLASH_
 ITW_CLASH_SupportsDangerAirHeight = missionNamespace getVariable ["ITW_CLASH_SupportsDangerAirHeight",300];
 ITW_CLASH_SupportsCorridorPenalty = missionNamespace getVariable ["ITW_CLASH_SupportsCorridorPenalty",0.5];
 ITW_CLASH_SupportsAirborneFarForce = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneFarForce",1500];
+/*
+    Objective influence (v2). Full weight inside the objective radius, falling
+    linearly to the edge weight at the influence radius, nothing beyond it:
+        W(d) = 1 - (1 - edge) x (d - objective radius) / (influence - objective radius)
+    A cluster within the threat-proximity distance of one of our ground
+    formations committed to that objective is weighted 1 wherever it stands:
+    being that close to our people makes it relevant, though it does not prove
+    it is shooting at them.
+*/
+ITW_CLASH_SupportsInfluenceRadius = missionNamespace getVariable ["ITW_CLASH_SupportsInfluenceRadius",2000];
+ITW_CLASH_SupportsInfluenceEdge = missionNamespace getVariable ["ITW_CLASH_SupportsInfluenceEdge",0.3];
+ITW_CLASH_SupportsThreatProximity = missionNamespace getVariable ["ITW_CLASH_SupportsThreatProximity",1000];
 
 // ------------------------------------------------------------------ timing
 
@@ -108,6 +126,11 @@ ITW_CLASH_SupportsSpawnDistanceSlow = missionNamespace getVariable ["ITW_CLASH_S
 ITW_CLASH_SupportsSpeedJet = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedJet",110];
 ITW_CLASH_SupportsSpeedHeli = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedHeli",60];
 ITW_CLASH_SupportsSpeedPlane = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedPlane",80];
+// A spawn point is kept this far inside the map edge.
+ITW_CLASH_SupportsSpawnMapMargin = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnMapMargin",500];
+// Egress: fly on this far past the task, then turn this far toward home.
+ITW_CLASH_SupportsEgressSeparation = missionNamespace getVariable ["ITW_CLASH_SupportsEgressSeparation",2000];
+ITW_CLASH_SupportsEgressTurn = missionNamespace getVariable ["ITW_CLASH_SupportsEgressTurn",2000];
 ITW_CLASH_SupportsLedgerInterval = missionNamespace getVariable ["ITW_CLASH_SupportsLedgerInterval",120];
 // How many exclusions one pool line carries before it summarises the rest.
 ITW_CLASH_SupportsLogExclusions = missionNamespace getVariable ["ITW_CLASH_SupportsLogExclusions",24];
@@ -196,6 +219,16 @@ ITW_CLASH_SupportsDenials = [
 ];
 
 ITW_CLASH_SupportsLedgers = createHashMap;
+// sideKey -> [contacts inside an influence area, contacts known] at the last
+// assessment, to count crossings of the hard influence cutoff.
+ITW_CLASH_SupportsInfluenceLast = createHashMap;
+// Only decision-level events are spoken by the loud debugger; the pool and
+// ledger lines are far too long for chat.
+ITW_CLASH_SupportsLoudEvents = [
+    "admission","outcome","uav-on-station","uav-ended",
+    "strike-released","strike-guided-fired","strike-scan-empty","strike-test-outcome",
+    "airborne-released","airborne-handoff","airborne-vehicle-handoff"
+];
 // sideKey -> [position,objective,reason]: where the UAV should be, refreshed
 // every assessment without a roll.
 ITW_CLASH_SupportsUAVTasks = createHashMap;
@@ -211,7 +244,7 @@ ITW_CLASH_Supports_fnc_Log = {
     } else {
         diag_log format ["CLASH SUPPORTS | %1 | %2",_event,_payload];
     };
-    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit") then {
+    if (!isNil "ITW_CLASH_LoudDebug_fnc_Emit" && {_event in ITW_CLASH_SupportsLoudEvents}) then {
         ["supports",_event,_payload] call ITW_CLASH_LoudDebug_fnc_Emit;
     };
 };
@@ -457,12 +490,31 @@ ITW_CLASH_Supports_fnc_Origin = {
     [+(_generation getOrDefault ["origin",[]]),""]
 };
 
-// A point on the line from the origin to the aim, at most _distance short of it.
+/*
+    Where an aircraft appears: _distance short of the aim, on the bearing from
+    the origin. Always the full distance, so a strike has its run-in even when
+    our airfield is next to the target; that point lies beyond the airfield,
+    in our own airspace. If it would fall off the map, the bearing is turned
+    in 15 degree steps toward the map, up to 90 either way, and only then
+    clamped.
+*/
 ITW_CLASH_Supports_fnc_SpawnPoint = {
     params ["_origin","_aim","_distance"];
-    private _range = _origin distance2D _aim;
-    if (_range <= _distance) exitWith {+_origin};
-    _aim getPos [_distance,_aim getDir _origin]
+    private _bearing = if ((_origin distance2D _aim) > 1) then {_aim getDir _origin} else {0};
+    private _margin = ITW_CLASH_SupportsSpawnMapMargin;
+    private _limit = worldSize - _margin;
+    private _found = [];
+    {
+        private _point = _aim getPos [_distance,_bearing + _x];
+        if ((_point#0) > _margin && {(_point#1) > _margin} && {(_point#0) < _limit} && {(_point#1) < _limit}) exitWith {
+            _found = _point;
+        };
+    } forEach [0,15,-15,30,-30,45,-45,60,-60,75,-75,90,-90];
+    if (_found isEqualTo []) then {
+        private _point = _aim getPos [_distance,_bearing];
+        _found = [((_point#0) max _margin) min _limit,((_point#1) max _margin) min _limit,0];
+    };
+    _found
 };
 
 ITW_CLASH_Supports_fnc_SpawnDistance = {
@@ -497,11 +549,14 @@ ITW_CLASH_Supports_fnc_Corridor = {
     cluster. Every position here is a reported one.
 */
 ITW_CLASH_Supports_fnc_Clusters = {
-    params ["_side","_center","_radius"];
+    params ["_side","_centers","_radius"];
+    // One centre or several: contacts within the radius of any of them.
+    if (_centers isNotEqualTo [] && {(_centers#0) isEqualType 0}) then {_centers = [_centers]};
     private _items = [];
     {
         _x params ["_key","_record","_status"];
-        if (((_record get "position") distance2D _center) > _radius) then {continue};
+        private _position = _record get "position";
+        if ((_centers findIf {(_position distance2D _x) <= _radius}) < 0) then {continue};
         _items pushBack [[_record] call ITW_CLASH_Knowledge_fnc_Worth,_key,_record,_status];
     } forEach ([_side] call ITW_CLASH_Knowledge_fnc_Contacts);
     private _ordered = [_items,[],{-(_x#0)},"ASCEND"] call BIS_fnc_sortBy;
@@ -660,6 +715,98 @@ ITW_CLASH_Supports_fnc_DangerClose = {
     }) >= 0
 };
 
+ITW_CLASH_Supports_fnc_DistanceWeight = {
+    params ["_distance"];
+    private _inner = call ITW_CLASH_Supports_fnc_ObjectiveRadius;
+    if (_distance <= _inner) exitWith {1};
+    if (_distance > ITW_CLASH_SupportsInfluenceRadius) exitWith {0};
+    1 - ((1 - ITW_CLASH_SupportsInfluenceEdge) * (_distance - _inner)
+        / ((ITW_CLASH_SupportsInfluenceRadius - _inner) max 1))
+};
+
+/*
+    Our ground formations committed to an objective, by COLOSSUS's own rule
+    (Colossus_fnc_FriendlyStrength): the commander's groups, less the pools it
+    would never send, whose leader is on the ground within the committed
+    radius. Transports passing through, supply trucks, artillery and special
+    forces are not committed to anything. Their own positions are ours to know.
+*/
+ITW_CLASH_Supports_fnc_Committed = {
+    params ["_hq","_center"];
+    if (isNull _hq || {_center isEqualTo []}) exitWith {[]};
+    private _radius = missionNamespace getVariable ["ITW_CLASH_ColossusCommittedRadius",900];
+    private _excluded = (_hq getVariable ["RydHQ_Exhausted",[]])
+        + (_hq getVariable ["RydHQ_SupportG",[]])
+        + (_hq getVariable ["RydHQ_SpecForG",[]])
+        + (_hq getVariable ["RydHQ_ArtG",[]])
+        + (_hq getVariable ["RydHQ_NavalG",[]])
+        + (_hq getVariable ["RydHQ_CargoOnly",[]])
+        + (_hq getVariable ["RydHQ_StaticG",[]]);
+    private _positions = [];
+    {
+        private _group = _x;
+        if (isNull _group || {_group in _excluded}) then {continue};
+        private _leader = leader _group;
+        if (isNull _leader || {!alive _leader}) then {continue};
+        private _veh = vehicle _leader;
+        if (_veh isKindOf "Air") then {continue};
+        private _position = getPosATL _veh;
+        if ((_position distance2D _center) > _radius) then {continue};
+        _positions pushBack _position;
+    } forEach (_hq getVariable ["RydHQ_Friends",[]]);
+    _positions
+};
+
+/*
+    Pressure on one held point: every enemy still believed to exist, at its
+    class worth, times its presence in the point's influence area (the share
+    of where it could be that lies inside it), times the distance falloff at
+    its reported position. Computed per point, so one tank threatening two
+    points is pressure on both.
+*/
+ITW_CLASH_Supports_fnc_Pressure = {
+    params ["_side","_center"];
+    if (_center isEqualTo []) exitWith {0};
+    private _score = 0;
+    {
+        _x params ["","_record"];
+        private _falloff = [(_record get "position") distance2D _center] call ITW_CLASH_Supports_fnc_DistanceWeight;
+        if (_falloff <= 0) then {continue};
+        private _presence = [_record,_center,ITW_CLASH_SupportsInfluenceRadius] call ITW_CLASH_Knowledge_fnc_Presence;
+        _score = _score + ([_record get "class"] call ITW_CLASH_Knowledge_fnc_ClassWorth) * _presence * _falloff;
+    } forEach ([_side] call ITW_CLASH_Knowledge_fnc_Held);
+    _score
+};
+
+/*
+    A diagnostic for the hard influence cutoff: contacts known at both of the
+    last two assessments that moved into or out of every target's influence
+    area. A change of plan objective shows here too.
+*/
+ITW_CLASH_Supports_fnc_CountCrossings = {
+    params ["_context","_clusters"];
+    private _side = _context get "side";
+    private _sideKey = [_side] call ITW_CLASH_Supports_fnc_SideKey;
+    private _inside = createHashMap;
+    {
+        {_inside set [_x,true]} forEach (_x get "keys");
+    } forEach _clusters;
+    private _known = createHashMap;
+    {_known set [_x#0,true]} forEach ([_side] call ITW_CLASH_Knowledge_fnc_Contacts);
+    (ITW_CLASH_SupportsInfluenceLast getOrDefault [_sideKey,[createHashMap,createHashMap]]) params [
+        "_lastInside","_lastKnown"
+    ];
+    private _crossings = 0;
+    {
+        if (_x in _lastKnown && {(_x in _inside) isNotEqualTo (_x in _lastInside)}) then {
+            _crossings = _crossings + 1;
+        };
+    } forEach (keys _known);
+    ITW_CLASH_SupportsInfluenceLast set [_sideKey,[_inside,_known]];
+    _context set ["crossings",_crossings];
+    _crossings
+};
+
 // Impasse's own live count against its own cap: what an airborne drop counts
 // against, the same arithmetic Impasse's spawner does (ITW_Attack.sqf).
 ITW_CLASH_Supports_fnc_Headroom = {
@@ -777,17 +924,34 @@ ITW_CLASH_Supports_fnc_Candidate = {
 };
 
 /*
-    Strike candidates against every cluster at one objective.
+    Strike candidates against every cluster the target objectives can see.
+
+    One clustering over the union of their influence areas, so a cluster near
+    two objectives is one cluster. Each cluster enters the pool once per
+    flavor, at the objective that values it most; the gates that do not depend
+    on an objective (class, contact, floor, uncertainty, ETB, danger close) are
+    applied once. Its run-in is computed from the cluster itself, not from the
+    objective's centre.
 */
 ITW_CLASH_Supports_fnc_StrikeCandidates = {
-    params ["_context","_objective","_reason","_urgency"];
+    params ["_context","_targets"];
     private _side = _context get "side";
     private _hq = _context get "hq";
-    private _center = [_objective] call ITW_CLASH_Supports_fnc_ObjectivePos;
-    if (_center isEqualTo []) exitWith {[]};
+    private _ledger = _context get "ledger";
+    private _objectives = [];
+    private _centers = [];
+    {
+        _x params ["_index","_reason","_urgency"];
+        private _center = [_index] call ITW_CLASH_Supports_fnc_ObjectivePos;
+        if (_center isEqualTo []) then {continue};
+        _objectives pushBack [_index,_reason,_urgency,_center,[_hq,_center] call ITW_CLASH_Supports_fnc_Committed];
+        _centers pushBack _center;
+    } forEach _targets;
+    if (_objectives isEqualTo []) exitWith {[]};
+
+    private _clusters = [_side,_centers,ITW_CLASH_SupportsInfluenceRadius] call ITW_CLASH_Supports_fnc_Clusters;
+    [_context,_clusters] call ITW_CLASH_Supports_fnc_CountCrossings;
     private _result = [];
-    private _clusters = [_side,_center,call ITW_CLASH_Supports_fnc_ObjectiveRadius] call
-        ITW_CLASH_Supports_fnc_Clusters;
     {
         private _cluster = _x;
         private _targetKey = _cluster get "key";
@@ -808,29 +972,22 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
 
             private _gate = [_context,_flavor] call ITW_CLASH_Supports_fnc_FlavorGate;
             if (_gate isNotEqualTo "") then {
-                [_context,_flavor,_objective,"",_gate] call ITW_CLASH_Supports_fnc_Exclude;
+                [_context,_flavor,-1,"",_gate] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
             if (_flavor isEqualTo "BOMB" && {!((_cluster get "best") in ["OBSERVED","FIXED"])}) then {
-                [_context,_flavor,_objective,_targetKey,"NO_CONTACT"] call ITW_CLASH_Supports_fnc_Exclude;
+                [_context,_flavor,-1,_targetKey,"NO_CONTACT"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
             if ((_cluster get "worth") < ITW_CLASH_SupportsValueFloor) then {
-                [_context,_flavor,_objective,_targetKey,"BELOW_FLOOR"] call ITW_CLASH_Supports_fnc_Exclude;
+                [_context,_flavor,-1,_targetKey,"BELOW_FLOOR"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
 
-            private _route = [_context,_flavor,_objective,_center] call ITW_CLASH_Supports_fnc_Route;
-            if ((_route#0) isEqualTo "") then {
-                [_context,_flavor,_objective,"",_route#1] call ITW_CLASH_Supports_fnc_Exclude;
-                continue
-            };
-            if ((_route#0) isEqualTo "AIR_DENIED") then {
-                [_context,_flavor,_objective,"","AIR_DENIED"] call ITW_CLASH_Supports_fnc_Exclude;
-                continue
-            };
-
-            private _ahead = ((_route#2) distance2D _aim) / ([_flavor] call ITW_CLASH_Supports_fnc_ProjectionSpeed);
+            // The spawn is always the full distance out, so this is the
+            // flight time to the target whichever objective it is struck for.
+            private _ahead = ([_flavor] call ITW_CLASH_Supports_fnc_SpawnDistance)
+                / ([_flavor] call ITW_CLASH_Supports_fnc_ProjectionSpeed);
             private _r = [_side,_cluster,_ahead] call ITW_CLASH_Supports_fnc_ClusterUncertainty;
             private _footprint = [_flavor,"footprint",50] call ITW_CLASH_Supports_fnc_RowNumber;
             private _multiplier = 1;
@@ -840,24 +997,62 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                 _multiplier = (_footprint / (_r max 1)) min 1;
             };
             if (_multiplier < 0) then {
-                [_context,_flavor,_objective,_targetKey,"TOO_UNCERTAIN"] call ITW_CLASH_Supports_fnc_Exclude;
+                [_context,_flavor,-1,_targetKey,"TOO_UNCERTAIN"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
-
             private _entities = ([_side,_cluster get "keys",0] call ITW_CLASH_Supports_fnc_TargetNow) param [3,[]];
             if ((_cluster get "vehicles") > 0 && {[_hq,_entities] call ITW_CLASH_Supports_fnc_ETBAnswering}) then {
-                [_context,_flavor,_objective,_targetKey,"ETB_ANSWERING"] call ITW_CLASH_Supports_fnc_Exclude;
+                [_context,_flavor,-1,_targetKey,"ETB_ANSWERING"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
             if ([_context get "friendlies",_aim,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) then {
-                [_context,_flavor,_objective,_targetKey,"DANGER_CLOSE"] call ITW_CLASH_Supports_fnc_Exclude;
+                [_context,_flavor,-1,_targetKey,"DANGER_CLOSE"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
 
-            private _weight = _base * _multiplier * ([_route#0] call ITW_CLASH_Supports_fnc_CorridorFactor) * _urgency;
+            // The objective that values this cluster most, among those that
+            // can afford it and reach it.
+            private _best = [];
+            private _bestWeight = 0;
+            {
+                _x params ["_index","_reason","_urgency","_center","_committed"];
+                private _distance = _aim distance2D _center;
+                if (_distance > ITW_CLASH_SupportsInfluenceRadius) then {continue};
+                if ((_ledger get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)) then {
+                    [_context,_flavor,_index,"","INSUFFICIENT_FUNDS"] call ITW_CLASH_Supports_fnc_Exclude;
+                    continue
+                };
+                private _route = [_context,_flavor,_index,_center] call ITW_CLASH_Supports_fnc_Route;
+                if ((_route#0) isEqualTo "") then {
+                    [_context,_flavor,_index,"",_route#1] call ITW_CLASH_Supports_fnc_Exclude;
+                    continue
+                };
+                if ((_route#0) isEqualTo "AIR_DENIED") then {
+                    [_context,_flavor,_index,"","AIR_DENIED"] call ITW_CLASH_Supports_fnc_Exclude;
+                    continue
+                };
+                private _falloff = [_distance] call ITW_CLASH_Supports_fnc_DistanceWeight;
+                private _threat = (_committed findIf {(_x distance2D _aim) <= ITW_CLASH_SupportsThreatProximity}) >= 0;
+                if (_threat) then {_falloff = 1};
+                private _weight = _base * _multiplier * ([_route#0] call ITW_CLASH_Supports_fnc_CorridorFactor)
+                    * _urgency * _falloff;
+                if (_weight > _bestWeight) then {
+                    _bestWeight = _weight;
+                    _best = [_index,_reason,_route,_distance,_threat];
+                };
+            } forEach _objectives;
+            if (_best isEqualTo []) then {continue};
+
+            _best params ["_bestIndex","_bestReason","_bestRoute","_bestDistance","_bestThreat"];
+            private _spawn = [_bestRoute#1,_aim,[_flavor] call ITW_CLASH_Supports_fnc_SpawnDistance] call
+                ITW_CLASH_Supports_fnc_SpawnPoint;
             _result pushBack ([
-                "STRIKE",_flavor,_objective,_reason,_aim,_weight,_route,_cluster,
-                createHashMapFromArray [["uncertainty",_r],["ahead",_ahead]]
+                "STRIKE",_flavor,_bestIndex,_bestReason,_aim,_bestWeight,
+                [_bestRoute#0,_bestRoute#1,_spawn],_cluster,
+                createHashMapFromArray [
+                    ["uncertainty",_r],["ahead",_ahead],
+                    ["distance",round _bestDistance],["threat",_bestThreat]
+                ]
             ] call ITW_CLASH_Supports_fnc_Candidate);
         } forEach ITW_CLASH_SupportsStrikeFlavors;
     } forEach _clusters;
@@ -900,6 +1095,10 @@ ITW_CLASH_Supports_fnc_DropCandidates = {
         private _squads = ((floor (_seats / ((count _template) max 1))) max 1) min _cap;
         if (_squadSize < 4) then {
             [_context,_flavor,_objective,"","NO_AIRCRAFT"] call ITW_CLASH_Supports_fnc_Exclude;
+            continue
+        };
+        if (((_context get "ledger") get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)) then {
+            [_context,_flavor,_objective,"","INSUFFICIENT_FUNDS"] call ITW_CLASH_Supports_fnc_Exclude;
             continue
         };
         if (([_side] call ITW_CLASH_Supports_fnc_Headroom) < (_squads * _squadSize)) then {
@@ -954,16 +1153,21 @@ ITW_CLASH_Supports_fnc_DropCandidates = {
 };
 
 /*
-    Where the UAV should be: the plan objective if nobody has looked at it,
-    else an objective known only by leads, else overwatch of the plan
-    objective. Refreshed every assessment without a roll.
+    Where the UAV should be: the plan objective if nobody has looked at it or
+    its enemy can no longer be placed, else another objective known only by
+    leads, else overwatch of the plan objective. Refreshed every assessment
+    without a roll.
 */
 ITW_CLASH_Supports_fnc_UAVTask = {
     params ["_side","_planObjective","_objectives"];
     private _planPos = [_planObjective] call ITW_CLASH_Supports_fnc_ObjectivePos;
-    if (_planPos isNotEqualTo [] && {
-        ([_side,_planPos] call ITW_CLASH_Knowledge_fnc_IntelState) isEqualTo "UNOBSERVED"
-    }) exitWith {[_planPos,_planObjective,"unobserved-plan"]};
+    // Where uncertainty keeps the commander from deciding, look there first:
+    // nobody has looked, or the enemy seen there can no longer be placed.
+    private _planIntel = if (_planPos isEqualTo []) then {""} else {
+        [_side,_planPos] call ITW_CLASH_Knowledge_fnc_IntelState
+    };
+    if (_planIntel isEqualTo "UNOBSERVED") exitWith {[_planPos,_planObjective,"unobserved-plan"]};
+    if (_planIntel isEqualTo "STALE_CONTACT") exitWith {[_planPos,_planObjective,"stale-plan"]};
     private _stale = _objectives findIf {
         private _pos = [_x] call ITW_CLASH_Supports_fnc_ObjectivePos;
         _pos isNotEqualTo [] && {([_side,_pos] call ITW_CLASH_Knowledge_fnc_IntelState) isEqualTo "STALE_CONTACT"}
@@ -1013,42 +1217,51 @@ ITW_CLASH_Supports_fnc_Assess = {
             [_context,"*",_index,"","OBJECTIVE_FROZEN"] call ITW_CLASH_Supports_fnc_Exclude;
             continue
         };
-        private _enemy = _entry getOrDefault ["enemyReported",-1];
-        if (_enemy < 0) then {_enemy = _entry getOrDefault ["enemy",0]};
         private _committed = _entry getOrDefault ["committed",0];
         if ([_side,_index] call ITW_CLASH_Supports_fnc_HeldBy) then {
-            if (_enemy <= 0) then {continue};
-            private _ratio = _committed / _enemy;
+            // Pressure from the point's whole influence area, not just the
+            // 500 m around it: a tank down the road shelling the defenders
+            // is pressure on the point.
+            private _pressure = [_side,[_index] call ITW_CLASH_Supports_fnc_ObjectivePos] call
+                ITW_CLASH_Supports_fnc_Pressure;
+            if (_pressure <= 0) then {continue};
+            private _ratio = _committed / _pressure;
             if (_ratio >= _vulnerable) then {continue};
             private _urgency = switch (true) do {
                 case (_index in _unanchored): {3};
                 case (_ratio < _contested): {2.5};
                 default {1.5};
             };
-            _targets pushBack [_index,"HOLD",_urgency,_entry];
+            _targets pushBack [_index,"HOLD",_urgency,_entry,_pressure];
         } else {
             if (_index isNotEqualTo _planObjective) then {continue};
             if (_posture isEqualTo "CONSOLIDATE") then {
                 [_context,"*",_index,"","CONSOLIDATING"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
-            _targets pushBack [_index,"TAKE",1,_entry];
+            _targets pushBack [_index,"TAKE",1,_entry,-1];
         };
     } forEach _picture;
 
     private _pool = [];
-    {
-        _x params ["_index","_reason","_urgency","_entry"];
+    private _active = _targets select {
+        private _index = _x#0;
         if (
             ITW_CLASH_SupportsObjectiveCooldown > 0
             && {[_ledger,"objective:" + str _index] call ITW_CLASH_Supports_fnc_OnCooldown}
         ) then {
             [_context,"*",_index,"","COOLDOWN"] call ITW_CLASH_Supports_fnc_Exclude;
-            continue
-        };
-        _pool append ([_context,_index,_reason,_urgency] call ITW_CLASH_Supports_fnc_StrikeCandidates);
+            false
+        } else {true};
+    };
+    _context set ["targets",_active apply {
+        [_x#0,_x#1,_x#2,(round ((_x#4) * 10)) / 10]
+    }];
+    _pool append ([_context,_active] call ITW_CLASH_Supports_fnc_StrikeCandidates);
+    {
+        _x params ["_index","_reason","_urgency","_entry"];
         _pool append ([_context,_index,_reason,_urgency,_entry] call ITW_CLASH_Supports_fnc_DropCandidates);
-    } forEach _targets;
+    } forEach _active;
 
     // The UAV: where it should be is decided every time; launching it is a
     // candidate like any other.
@@ -1060,6 +1273,9 @@ ITW_CLASH_Supports_fnc_Assess = {
     _task params ["_taskPos","_taskObjective","_taskWhy"];
     if (_taskPos isNotEqualTo []) then {
         private _gate = [_context,"UAV"] call ITW_CLASH_Supports_fnc_FlavorGate;
+        if (_gate isEqualTo "" && {(_ledger get "cash") < (["UAV","TAKE"] call ITW_CLASH_Supports_fnc_Price)}) then {
+            _gate = "INSUFFICIENT_FUNDS";
+        };
         if (_gate isNotEqualTo "") then {
             [_context,"UAV",_taskObjective,"",_gate] call ITW_CLASH_Supports_fnc_Exclude;
         } else {
@@ -1073,7 +1289,8 @@ ITW_CLASH_Supports_fnc_Assess = {
                 };
                 default {
                     private _weight = switch (_taskWhy) do {
-                        case "unobserved-plan": {3};
+                        case "unobserved-plan";
+                        case "stale-plan": {3};
                         case "stale-contact": {1};
                         default {0.5};
                     };
@@ -1144,7 +1361,9 @@ ITW_CLASH_Supports_fnc_LogPool = {
         _context get "sign",_posture,_planObjective,
         _picked,(round (_draw * 1000)) / 1000,(round (_total * 1000)) / 1000,
         _entries,_shown,(count _exclusions) - (count _shown),
-        round ((_context get "ledger") get "cash")
+        round ((_context get "ledger") get "cash"),
+        _context getOrDefault ["targets",[]],
+        _context getOrDefault ["crossings",0]
     ]] call ITW_CLASH_Supports_fnc_Log;
 };
 
@@ -1325,8 +1544,10 @@ ITW_CLASH_Supports_fnc_RunDrop = {
 
 /*
     The end of a support. Money is spent only on delivery or loss: anything
-    that ends without delivering, with the aircraft alive, is refunded in full.
-    The cooldown stands either way.
+    that ends without delivering, with the aircraft alive, is refunded in full,
+    up to the wallet's ceiling. The ceiling means one big support banked,
+    never two; a refund that would cross it is clipped, and the clipped amount
+    is logged. The cooldown stands either way.
 */
 ITW_CLASH_Supports_fnc_Settle = {
     params ["_support","_state",["_detail",""]];
@@ -1336,9 +1557,15 @@ ITW_CLASH_Supports_fnc_Settle = {
     private _id = _support get "id";
     private _lane = _support get "lane";
     private _cash = 0;
+    private _clipped = 0;
     isNil {
         private _ledger = [_side] call ITW_CLASH_Supports_fnc_Ledger;
-        if (_refund) then {_ledger set ["cash",(_ledger get "cash") + _price]};
+        if (_refund) then {
+            private _before = _ledger get "cash";
+            private _after = (_before + _price) min ((call ITW_CLASH_Supports_fnc_Cap) max _before);
+            _clipped = (_before + _price) - _after;
+            _ledger set ["cash",_after];
+        };
         private _lanes = _ledger get "lanes";
         if ((_lanes getOrDefault [_lane,""]) isEqualTo _id) then {_lanes set [_lane,""]};
         if (_lane isEqualTo "RECON" && {_state isEqualTo "LOST"}) then {
@@ -1353,7 +1580,8 @@ ITW_CLASH_Supports_fnc_Settle = {
         _support get "reason",_state,_detail,
         if (_refund) then {"refunded"} else {"spent"},
         round _price,round _cash,
-        round (time - (_support get "reservedAt"))
+        round (time - (_support get "reservedAt")),
+        round _clipped
     ]] call ITW_CLASH_Supports_fnc_Log;
     true
 };
@@ -1499,26 +1727,66 @@ ITW_CLASH_Supports_fnc_AlongCross = {
 };
 
 /*
-    Out and gone: a far waypoint on the way out, despawned once clear of the
-    target or after the timeout, whichever comes first.
+    Out and gone.
+
+    Without a support record (the UAV): a far waypoint on the given heading.
+    With one (strike and drop): fly on past the task for a short separation,
+    turn toward home on whichever side the corridor classifier rates colder
+    from the turn point, and go home. Never an about-face over the target.
+    Despawned once clear of the task, or at the timeout. An aircraft shot down
+    on the way out is left where it falls.
 */
 ITW_CLASH_Supports_fnc_Egress = {
-    params ["_veh","_group","_from","_heading",["_clear",4000],["_timeout",240]];
-    // A shot-down aircraft is left to fall where it was hit: deleting it in
-    // mid-air would hide the counterplay. The engine's clean-up takes the wreck.
+    params ["_veh","_group","_from","_heading",["_clear",4000],["_timeout",300],["_support",createHashMap]];
     if (isNull _veh || {!alive _veh}) exitWith {false};
-    private _out = _from getPos [_clear + 4000,_heading];
+    private _waypoint = {
+        params ["_group","_position"];
+        private _wp = _group addWaypoint [_position,0];
+        _wp setWaypointType "MOVE";
+        _wp setWaypointSpeed "FULL";
+        _wp setWaypointBehaviour "CARELESS";
+        _wp setWaypointCombatMode "BLUE";
+        _wp setWaypointCompletionRadius 300;
+        _wp
+    };
     {deleteWaypoint _x} forEachReversed (waypoints _group);
-    private _wp = _group addWaypoint [_out,0];
-    _wp setWaypointType "MOVE";
-    _wp setWaypointSpeed "FULL";
-    _wp setWaypointBehaviour "CARELESS";
-    _wp setWaypointCombatMode "BLUE";
+    private _home = _support getOrDefault ["origin",[]];
+    if (_home isEqualTo []) then {
+        [_group,_from getPos [_clear + 4000,_heading]] call _waypoint;
+    } else {
+        private _separation = _from getPos [ITW_CLASH_SupportsEgressSeparation,_heading];
+        private _rule = ([_support getOrDefault ["flavor",""]] call ITW_CLASH_Supports_fnc_Row)
+            getOrDefault ["fighterRule","HARD_KILL"];
+        private _rank = ["COLD","UNKNOWN","CONTESTED","HOT","AIR_DENIED"];
+        private _turns = [120,-120] apply {
+            private _turn = _separation getPos [ITW_CLASH_SupportsEgressTurn,_heading + _x];
+            private _state = ([_support getOrDefault ["hq",grpNull],_turn,_home,_rule] call
+                ITW_CLASH_Supports_fnc_Corridor) getOrDefault ["state","COLD"];
+            private _score = _rank find _state;
+            if (_score < 0) then {_score = 1};
+            [_score,_turn,_state]
+        };
+        // The colder side; the two are mirror images, so a tie is a coin toss.
+        private _pick = switch (true) do {
+            case (((_turns#0)#0) < ((_turns#1)#0)): {_turns#0};
+            case (((_turns#1)#0) < ((_turns#0)#0)): {_turns#1};
+            default {selectRandom _turns};
+        };
+        _pick params ["","_turn","_state"];
+        [_group,_separation] call _waypoint;
+        [_group,_turn] call _waypoint;
+        [_group,_turn getPos [8000,_turn getDir _home]] call _waypoint;
+        ["egress",[
+            _support getOrDefault ["id",""],_support getOrDefault ["sign",""],
+            _state,round _heading
+        ]] call ITW_CLASH_Supports_fnc_Log;
+    };
     private _deadline = time + _timeout;
     waitUntil {
         sleep 2;
         !alive _veh || {(_veh distance2D _from) > _clear} || {time > _deadline}
     };
+    if (!alive _veh) exitWith {false};
     [_veh,_group] call ITW_CLASH_Supports_fnc_Despawn;
     true
 };
@@ -1566,7 +1834,7 @@ ITW_CLASH_SupportsAirbornePlaneSquads = missionNamespace getVariable ["ITW_CLASH
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 colossusProposesOnly=true refundUnlessDeliveredOrLost=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -1584,6 +1852,9 @@ diag_log format [
     ITW_CLASH_SupportsDangerMargin,
     ITW_CLASH_SupportsDangerMarginPlayer,
     ITW_CLASH_SupportsDelayMin,
-    ITW_CLASH_SupportsDelayMax
+    ITW_CLASH_SupportsDelayMax,
+    ITW_CLASH_SupportsInfluenceRadius,
+    ITW_CLASH_SupportsInfluenceEdge,
+    ITW_CLASH_SupportsThreatProximity
 ];
 true

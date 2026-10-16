@@ -477,7 +477,8 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
             [_squads] call ITW_CLASH_SupportsAirborne_fnc_DeleteSquads;
         };
     };
-    [_veh,_group,_dz,_heading] spawn ITW_CLASH_Supports_fnc_Egress;
+    // On past the zone, a turn on the colder side, and home.
+    [_veh,_group,_dz,_heading,4000,300,_support] spawn ITW_CLASH_Supports_fnc_Egress;
     _result
 };
 
