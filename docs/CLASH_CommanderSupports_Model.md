@@ -109,6 +109,27 @@ A read-only truth diagnostic logs reported against actual positions, never fed
 back into any decision. It also confirms that `lastSeen` runs on the `time`
 clock; a report whose `lastSeen` lies in the future or below zero is discarded.
 
+Knowledge v3 instruments both, because the run of 2026-10-15 rejected 743
+reports on the clock and the truth table could not tell an engine error from a
+movement allowance that is too small:
+
+- **Clock rejections** are sampled (up to 300) with the raw `lastSeen` against
+  `time`, `serverTime` and `diag_tickTime`, whether the report came from a unit
+  or a group, and whether another member of the group held a valid report. The
+  periodic `knowledge-clock-anomaly` line gives the spreads, so the next run says
+  which clock `targetKnowledge` really uses and whether the rejection loses
+  anything.
+- **Truth samples** (up to 400 per class bucket, reports at least 10 s old)
+  carry the speed the report's error implies, whether the contact was moving,
+  whether it fell outside its envelope, and its real speed.
+  `knowledge-truth-speed` gives, per bucket, how many broke the envelope while
+  moving and while settled, and the spreads of implied and real speed.
+
+The run of 2026-10-15 already showed the engine's own error near zero and the
+breaks coming from movement: vehicles above 11 to 12 m/s, infantry above about
+2.7 m/s. The allowances (4.3) stay where they are until the speed lines set
+them from data.
+
 ### 4.3 Uncertainty
 
 > R = E + v × (age + time ahead)
@@ -120,6 +141,11 @@ clock; a report whose `lastSeen` lies in the future or below zero is discarded.
 - **age:** time since the report.
 - **time ahead:** zero for the status; the expected flight time to release when
   a support is weighed.
+
+R never goes below `ITW_CLASH_KnowledgeMinUncertainty` (5 m): a report with zero
+error and zero age is still not a point. Without the floor every fresh static
+read as R = 0, which made 100% of statics "outside" their envelope in the truth
+table for any nonzero engine error.
 
 This is a movement envelope, not a confidence interval: where the target could
 have gone, not where it probably went.
@@ -187,6 +213,14 @@ UAV looks.
 - `ITW_CLASH_ColossusReportedPositions` (default **false** for the first run)
   switches the verdict onto the reported strength, and makes the recommendation
   treat Unobserved as unknown rather than soft.
+- **A push is for ground the commander does not hold** (v6). Each picture entry
+  carries `held`, from Impasse's own ownership (`ITW_ObjContestedOwnerIsFriendly`,
+  through `ITW_CLASH_Colossus_fnc_HeldBy`, which the supports layer also uses).
+  The PUSH ranking runs over unheld objectives only. When the side holds every
+  active objective there is nothing to push: the plan carries objective -1, is
+  not feasible, logs `colossus-no-push-candidate`, and the order is DEFEND;
+  concentration declines with the same reason. Run of 2026-10-15: B planned its
+  own objective 8 in 16 assessments of 16 while holding 8 and 14.
 
 ## 5. The menu
 
@@ -507,7 +541,11 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   2. **Valid:** alive, a vehicle, inside the launch envelope (4), clear of
      danger close, not tasked to an ETB responder. Pick the nearest to the
      report.
-  3. **Fire** two shots from the jet's own guided anti-armor weapon:
+  3. **Fire** two shots from the jet's own guided anti-armor weapon, read through
+     the rack profile (`ITW_CLASH_RackProfile.sqf`) when it is loaded: a missile
+     with a seeker other than air-to-air and the armour flag on the missile or
+     its warhead, and the weapon that fires that magazine on that turret or
+     pylon (Strike v3 keeps its own reader for when the profile is missing).
      `fireAtTarget`, and if that returns false, the weapon's missile spawned at
      the jet and given the target with `setMissileTarget`. That fallback is
      legitimate only because the jet acquired the target itself.
@@ -605,6 +643,9 @@ the loud debugger; the pool and ledger lines are too long for chat.
 | `supports-ledger` | Periodic: cash, cap, income, lanes |
 | `knowledge-objective` | Periodic per objective: intelligence state, observed, fixed, leads, oldest report |
 | `knowledge-truth` | Diagnostic: reported against actual error, by class |
+| `knowledge-truth-speed` | Diagnostic, per bucket: samples, moving, outside while moving, outside while settled, implied speed spread, implied speed spread while moving, real speed spread (each spread min, median, p90, max) |
+| `knowledge-clock-anomaly` | Rejected reports: count, samples kept, in the past and in the future, the raw `lastSeen` spread, its spread against `time`, `serverTime` and `diag_tickTime`, how many were unit reports, how many had a valid groupmate report, and the three clocks now |
+| `colossus-no-push-candidate` | The side holds every active objective: no push this assessment |
 | `supports-ready`, `knowledge-ready` | Boot: version, dry run, every switch |
 
 ## 11. Rollout
@@ -652,6 +693,12 @@ class goes without that flavor.
    waypoint, and `ITW_AtkUnloadAirplane` called with no crew group.
 11. The `Explode` projectile event handler on the game version in use (the impact
    log needs 2.10 or later), and `addMissionEventHandler` with arguments.
+12. Movement allowances from `knowledge-truth-speed`: set each class's allowance
+   near the p90 of real speed while moving, and check that the settled outside
+   count is near zero (it measures the engine's own error).
+13. Which clock `lastSeen` uses, from `knowledge-clock-anomaly`: if rejected
+   reports line up with `serverTime` or `diag_tickTime`, the rejection is a clock
+   mismatch, not bad data.
 
 ## 14. Tunables
 
@@ -661,6 +708,8 @@ All placeholders.
 |---|---|
 | Knowledge poll | 10 s |
 | Movement allowance | Statics 0, infantry 2, vehicles 8 m/s |
+| Uncertainty floor | 5 m |
+| Diagnostic samples | Clock 300; truth 400 per bucket, from 10 s old |
 | Observed | Age 60 s, R 100 m |
 | Fixed | Error 100 m, age 900 s |
 | Lead | R 300 m |
@@ -720,18 +769,19 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 
 | File | Owns |
 |---|---|
-| `ITW_CLASH_Knowledge.sqf` | Reports, uncertainty, statuses, looks, intelligence state, the truth diagnostic |
-| `ITW_CLASH_Colossus.sqf` (v5) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live |
+| `ITW_CLASH_Knowledge.sqf` (v3) | Reports, uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock and speed instrumentation |
+| `ITW_CLASH_Colossus.sqf` (v6) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held |
+| `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
 | `ITW_CLASH_Supports.sqf` | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code |
-| `ITW_CLASH_SupportsStrike.sqf` | Bomb pass, guided pass with the on-site scan, carpet |
+| `ITW_CLASH_SupportsStrike.sqf` (v3) | Bomb pass, guided pass with the on-site scan, carpet |
 | `ITW_CLASH_SupportsUAV.sqf` | The recon UAV |
 | `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
 | `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
 | `ITW_CLASH_DebugPreflight.sqf` | Lists the five modules |
 | `ITW_CLASH_AttackRestore.sqf` | Skips groups carrying `ITW_CLASH_SupportAsset` |
 
-Boot (`init.sqf`): Knowledge, then COLOSSUS, then the core and its three
-executors; the core needs Knowledge and COLOSSUS, and an executor that is
+Boot (`init.sqf`): the rack profile, then Knowledge, then COLOSSUS, then the
+core and its three executors; the core needs Knowledge and COLOSSUS, and an executor that is
 missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
 `tests/test_commander_supports.py`. The pure math (pick, overlap, presence,
 falloff, spawn point, release timing, economy) is cross-checked in a Python
