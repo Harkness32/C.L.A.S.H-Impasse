@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 2;
+ITW_CLASH_SupportsVersion = 3;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -52,16 +52,19 @@ ITW_CLASH_SupportsEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsEna
     live - money is shadow-spent, cooldowns start and the lane is held for the
     support's nominal duration - but nothing spawns. That keeps the dry run's
     cadence honest: a commander that never spent would pick every assessment.
+
+    v3: live, every flavor on (Hark, 2026-10-16). Set this true from the
+    console or init to go back to shadow mode.
 */
-ITW_CLASH_SupportsDryRun = missionNamespace getVariable ["ITW_CLASH_SupportsDryRun",true];
+ITW_CLASH_SupportsDryRun = missionNamespace getVariable ["ITW_CLASH_SupportsDryRun",false];
 ITW_CLASH_SupportsUAVEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsUAVEnabled",true];
 ITW_CLASH_SupportsBombEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsBombEnabled",true];
 ITW_CLASH_SupportsGuidedEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsGuidedEnabled",true];
 ITW_CLASH_SupportsCarpetEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsCarpetEnabled",true];
-// Airborne starts off: with it off nothing on the drop path ever runs.
-ITW_CLASH_SupportsAirborneHeliEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliEnabled",false];
-ITW_CLASH_SupportsAirbornePlaneEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneEnabled",false];
-ITW_CLASH_SupportsVehicleDropEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropEnabled",false];
+// Each flavor has its own switch; with one off nothing on its path runs.
+ITW_CLASH_SupportsAirborneHeliEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliEnabled",true];
+ITW_CLASH_SupportsAirbornePlaneEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneEnabled",true];
+ITW_CLASH_SupportsVehicleDropEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropEnabled",true];
 
 // ------------------------------------------------------------------- economy
 

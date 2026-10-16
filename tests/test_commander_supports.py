@@ -118,12 +118,14 @@ def test_reported_positions_start_off_and_are_logged_beside_live():
 # ----------------------------------------------------------------------- core
 
 
-def test_shadow_mode_is_the_default_and_airborne_is_off():
+def test_every_support_is_live_by_default():
+    # v3 (Hark, 2026-10-16): unlock all of them. Shadow mode stays one
+    # variable away, and each flavor keeps its own switch.
     core = code("ITW_CLASH_Supports.sqf")
-    assert '["ITW_CLASH_SupportsDryRun",true]' in core
-    assert '["ITW_CLASH_SupportsAirborneHeliEnabled",false]' in core
-    assert '["ITW_CLASH_SupportsAirbornePlaneEnabled",false]' in core
-    assert '["ITW_CLASH_SupportsVehicleDropEnabled",false]' in core
+    assert "ITW_CLASH_SupportsVersion = 3;" in core
+    assert '["ITW_CLASH_SupportsDryRun",false]' in core
+    for flavor in ["UAV", "Bomb", "Guided", "Carpet", "AirborneHeli", "AirbornePlane", "VehicleDrop"]:
+        assert f'["ITW_CLASH_Supports{flavor}Enabled",true]' in core, flavor
 
 
 def test_shadow_mode_spends_and_holds_the_lane_but_spawns_nothing():
