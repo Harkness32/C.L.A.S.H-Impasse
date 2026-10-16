@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_KnowledgeStarted",false]) exitWith {true};
 
 ITW_CLASH_KnowledgeStarted = true;
-ITW_CLASH_KnowledgeVersion = 3;
+ITW_CLASH_KnowledgeVersion = 4;
 ITW_CLASH_KnowledgeReady = false;
 
 /*
@@ -140,6 +140,17 @@ ITW_CLASH_KnowledgeClockAnomalies = 0;
 // [lastSeen, vs time, vs serverTime, vs diag_tickTime, observer saw it, a
 // groupmate had a usable report], one per rejected report, per window.
 ITW_CLASH_KnowledgeClockSamples = [];
+/*
+    v4: targetKnowledge gives lastSeen -2147483.648 (-2^31/1000) for a target
+    the unit knows of but has never seen itself, through a reveal or a report.
+    Every one of the clock rejections on 2026-10-16 (11 to 93 a minute) was
+    exactly that, none from the future, so it is its own count, not an
+    anomaly. Rejecting them stays right: a revealed target is HAL's own
+    knowledge, and taking it as a sighting would feed it back as fresh.
+    [rejected, groupmates checked, groupmates who had seen it], per window.
+*/
+ITW_CLASH_KnowledgeNeverSeenBelow = -1e6;
+ITW_CLASH_KnowledgeNeverSeen = [0,0,0];
 // sideKey|class -> [[impliedSpeed or -1, moving, outside, trueSpeed],...]
 ITW_CLASH_KnowledgeTruthSamples = createHashMap;
 ITW_CLASH_KnowledgeSummaryAt = 0;
@@ -237,6 +248,27 @@ ITW_CLASH_Knowledge_fnc_ReadReport = {
     _intel params ["_byGroup","_byUnit","_lastSeen","","","_error","_position"];
     if (!(_byGroup isEqualTo true) && {!(_byUnit isEqualTo true)}) exitWith {[]};
     if !(_lastSeen isEqualType 0) exitWith {[]};
+    // Known of, never seen by this man: not a sighting. Counted, never used.
+    if (_lastSeen < ITW_CLASH_KnowledgeNeverSeenBelow) exitWith {
+        private _count = ITW_CLASH_KnowledgeNeverSeen;
+        _count set [0,(_count#0) + 1];
+        if ((_count#1) < ITW_CLASH_KnowledgeClockSampleCap) then {
+            // Diagnostic only: had another of the group's own men seen it?
+            // Nothing reads this back.
+            private _seenByMate = (units group _observer) findIf {
+                _x isNotEqualTo _observer && {alive _x} && {
+                    private _other = _x targetKnowledge _target;
+                    _other isEqualType [] && {count _other >= 7} && {
+                        private _otherSeen = _other#2;
+                        _otherSeen isEqualType 0 && {_otherSeen >= 0} && {_otherSeen <= (time + 1)}
+                    }
+                }
+            };
+            _count set [1,(_count#1) + 1];
+            if (_seenByMate >= 0) then {_count set [2,(_count#2) + 1]};
+        };
+        []
+    };
     // A sighting from the future, or before the mission began, means lastSeen
     // is not on the time clock. Counted and logged, never used.
     if (_lastSeen < 0 || {_lastSeen > (time + 1)}) exitWith {
@@ -524,7 +556,8 @@ ITW_CLASH_Knowledge_fnc_TruthSample = {
             _implied,
             _record getOrDefault ["moving",false],
             _outside,
-            (speed _entity) / 3.6
+            // Magnitude: speed is signed, and reversing read as negative (v3).
+            vectorMagnitude (velocity _entity)
         ];
     };
     true
@@ -791,6 +824,10 @@ ITW_CLASH_Knowledge_fnc_Summary = {
         the rejections the observer itself saw, and how many a groupmate
         could have reported instead. The last field is the three clocks now.
     */
+    if ((ITW_CLASH_KnowledgeNeverSeen#0) > 0) then {
+        ["never-seen",+ITW_CLASH_KnowledgeNeverSeen] call ITW_CLASH_Knowledge_fnc_Log;
+        ITW_CLASH_KnowledgeNeverSeen = [0,0,0];
+    };
     if (ITW_CLASH_KnowledgeClockAnomalies > 0) then {
         private _samples = ITW_CLASH_KnowledgeClockSamples;
         private _negative = _samples select {(_x#0) < 0};
@@ -843,7 +880,7 @@ ITW_CLASH_Knowledge_fnc_Summary = {
 
 ITW_CLASH_KnowledgeReady = true;
 diag_log format [
-    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 minUncertainty=%16 truthSpeeds=true clockSamples=true hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
+    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 minUncertainty=%16 truthSpeeds=true clockSamples=true neverSeenSeparate=true hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
     ITW_CLASH_KnowledgeVersion,
     ITW_CLASH_KnowledgePoll,
     ITW_CLASH_KnowledgeSpeedStatic,

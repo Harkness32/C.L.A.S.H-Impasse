@@ -82,12 +82,14 @@ def test_the_clock_line_splits_negative_from_future():
 def test_truth_keeps_per_sample_speeds_and_stays_read_only():
     source = knowledge()
     truth = function_body(source, "ITW_CLASH_Knowledge_fnc_TruthSample")
-    assert "(speed _entity) / 3.6" in truth
+    # Magnitude: speed is signed and read negative for a reversing vehicle.
+    assert "vectorMagnitude (velocity _entity)" in truth
+    assert "speed _entity" not in truth
     assert '_record getOrDefault ["moving",false]' in truth
     assert "_age >= ITW_CLASH_KnowledgeTruthMinAge" in truth
     assert "_record set" not in truth
     # The entity's real state is read in the diagnostic and nowhere else.
-    assert source.count("speed _entity") == 1
+    assert source.count("velocity _entity") == 1
     assert source.count("getPosATL _entity") == 1
 
 
@@ -116,3 +118,42 @@ def test_spread_math():
     assert spread([]) == []
     assert spread([3]) == [3, 3, 3, 3]
     assert spread(list(range(11))) == [0, 5, 9, 10]
+
+
+# ---------------------------------------------------------------- v4: never seen
+
+# targetKnowledge's lastSeen for a target known of but never seen by that man.
+NEVER_SEEN = -2147483.648
+
+
+def test_never_seen_is_its_own_count_before_the_clock_check():
+    source = knowledge()
+    assert "ITW_CLASH_KnowledgeVersion = 4;" in (MISSION / "ITW_CLASH_Knowledge.sqf").read_text()
+    assert "ITW_CLASH_KnowledgeNeverSeenBelow = -1e6;" in source
+    report = function_body(source, "ITW_CLASH_Knowledge_fnc_ReadReport")
+    never = report.index("if (_lastSeen < ITW_CLASH_KnowledgeNeverSeenBelow) exitWith {")
+    clock = report.index("if (_lastSeen < 0 || {_lastSeen > (time + 1)}) exitWith {")
+    assert never < clock
+    branch = report[never:clock]
+    assert "ITW_CLASH_KnowledgeClockAnomalies" not in branch
+    assert "_count set [0,(_count#0) + 1];" in branch
+    # Still discarded, and the groupmate check stays diagnostic and capped.
+    assert branch.rstrip().endswith("[]\n    };")
+    assert "if ((_count#1) < ITW_CLASH_KnowledgeClockSampleCap) then {" in branch
+    assert "_record" not in branch
+
+
+def test_the_threshold_splits_what_the_run_saw():
+    # Every rejection on 2026-10-16 was the sentinel; a real clock fault (a
+    # small negative, or the future) must still reach the anomaly path.
+    threshold = -1e6
+    assert NEVER_SEEN < threshold
+    for bad in [-0.5, -120.0, -5000.0]:
+        assert not (bad < threshold)
+
+
+def test_never_seen_is_logged_and_reset_each_window():
+    summary = function_body(knowledge(), "ITW_CLASH_Knowledge_fnc_Summary")
+    assert '["never-seen",+ITW_CLASH_KnowledgeNeverSeen] call ITW_CLASH_Knowledge_fnc_Log;' in summary
+    assert "ITW_CLASH_KnowledgeNeverSeen = [0,0,0];" in summary
+    assert summary.index('"never-seen"') < summary.index('"clock-anomaly"')

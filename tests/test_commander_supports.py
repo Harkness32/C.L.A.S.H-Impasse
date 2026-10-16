@@ -463,7 +463,7 @@ def test_every_denial_used_is_in_the_vocabulary():
 
 def test_losing_the_position_is_not_losing_the_enemy():
     source = code("ITW_CLASH_Knowledge.sqf")
-    assert "ITW_CLASH_KnowledgeVersion = 3;" in source
+    assert "ITW_CLASH_KnowledgeVersion = 4;" in source
     held = function_body(source, "ITW_CLASH_Knowledge_fnc_Held")
     assert "([_y] call ITW_CLASH_Knowledge_fnc_Existence) > 0" in held
     census = function_body(source, "ITW_CLASH_Knowledge_fnc_Census")
