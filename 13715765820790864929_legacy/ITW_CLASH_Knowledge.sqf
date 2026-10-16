@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_KnowledgeStarted",false]) exitWith {true};
 
 ITW_CLASH_KnowledgeStarted = true;
-ITW_CLASH_KnowledgeVersion = 4;
+ITW_CLASH_KnowledgeVersion = 5;
 ITW_CLASH_KnowledgeReady = false;
 
 /*
@@ -86,10 +86,19 @@ ITW_CLASH_KnowledgePoll = missionNamespace getVariable ["ITW_CLASH_KnowledgePoll
 // HAL's own known-enemy floor (HAC_fnc2.sqf:271). An observer below it does
 // not know the target well enough to report on it.
 ITW_CLASH_KnowledgeThreshold = missionNamespace getVariable ["ITW_CLASH_KnowledgeThreshold",0.05];
-// Movement allowance, metres per second, by class.
+/*
+    Movement allowance, metres per second, by class. v5 sets them from the
+    truth diagnostic of 2026-10-16 (36 minutes of contact): at 2 m/s, 19% of
+    moving infantry left their envelope (true p90 3.9 to 5.1 m/s); armour
+    shared the vehicle 8 m/s and 47% of moving armour left it (wheeled AFVs
+    on roads, true p90 up to 29.5 m/s); vehicles at 8 m/s left it 7% of the
+    time and stay. The cost: a moving armoured contact's envelope reaches the
+    300 m strike limit in about 20 s.
+*/
 ITW_CLASH_KnowledgeSpeedStatic = missionNamespace getVariable ["ITW_CLASH_KnowledgeSpeedStatic",0];
-ITW_CLASH_KnowledgeSpeedInfantry = missionNamespace getVariable ["ITW_CLASH_KnowledgeSpeedInfantry",2];
+ITW_CLASH_KnowledgeSpeedInfantry = missionNamespace getVariable ["ITW_CLASH_KnowledgeSpeedInfantry",4];
 ITW_CLASH_KnowledgeSpeedVehicle = missionNamespace getVariable ["ITW_CLASH_KnowledgeSpeedVehicle",8];
+ITW_CLASH_KnowledgeSpeedArmor = missionNamespace getVariable ["ITW_CLASH_KnowledgeSpeedArmor",15];
 // Status thresholds.
 ITW_CLASH_KnowledgeObservedAge = missionNamespace getVariable ["ITW_CLASH_KnowledgeObservedAge",60];
 ITW_CLASH_KnowledgeObservedRadius = missionNamespace getVariable ["ITW_CLASH_KnowledgeObservedRadius",100];
@@ -148,6 +157,12 @@ ITW_CLASH_KnowledgeClockSamples = [];
     anomaly. Rejecting them stays right: a revealed target is HAL's own
     knowledge, and taking it as a sighting would feed it back as fresh.
     [rejected, groupmates checked, groupmates who had seen it], per window.
+
+    v5: on 2026-10-16 a groupmate had seen the target himself in 626 of the
+    3346 checked (19%). The group's report is now its best-placed man's: when
+    the leader never saw the target, the groupmate's most recent sighting
+    speaks for the group. The count is [leader never saw it, groups checked,
+    groupmate sightings used]. Still one report per group, never merged.
 */
 ITW_CLASH_KnowledgeNeverSeenBelow = -1e6;
 ITW_CLASH_KnowledgeNeverSeen = [0,0,0];
@@ -220,6 +235,7 @@ ITW_CLASH_Knowledge_fnc_Speed = {
     switch (_class) do {
         case "STATIC": {ITW_CLASH_KnowledgeSpeedStatic};
         case "INFANTRY": {ITW_CLASH_KnowledgeSpeedInfantry};
+        case "ARMOR": {ITW_CLASH_KnowledgeSpeedArmor};
         default {ITW_CLASH_KnowledgeSpeedVehicle};
     }
 };
@@ -238,7 +254,9 @@ ITW_CLASH_Knowledge_fnc_ClassWorth = {
 
 /*
     One observer's report on one target, or [] when it has none worth using.
-    The left side of targetKnowledge is a unit; a group's leader speaks for it.
+    The left side of targetKnowledge is a unit; a group's leader speaks for
+    it, or, when he never saw the target himself, the groupmate who most
+    recently did (v5).
 */
 ITW_CLASH_Knowledge_fnc_ReadReport = {
     params ["_observer","_target"];
@@ -248,26 +266,26 @@ ITW_CLASH_Knowledge_fnc_ReadReport = {
     _intel params ["_byGroup","_byUnit","_lastSeen","","","_error","_position"];
     if (!(_byGroup isEqualTo true) && {!(_byUnit isEqualTo true)}) exitWith {[]};
     if !(_lastSeen isEqualType 0) exitWith {[]};
-    // Known of, never seen by this man: not a sighting. Counted, never used.
+    // Known of, never seen by this man: not his sighting. A groupmate who
+    // saw it himself speaks for the group; otherwise there is no report.
     if (_lastSeen < ITW_CLASH_KnowledgeNeverSeenBelow) exitWith {
         private _count = ITW_CLASH_KnowledgeNeverSeen;
         _count set [0,(_count#0) + 1];
-        if ((_count#1) < ITW_CLASH_KnowledgeClockSampleCap) then {
-            // Diagnostic only: had another of the group's own men seen it?
-            // Nothing reads this back.
-            private _seenByMate = (units group _observer) findIf {
-                _x isNotEqualTo _observer && {alive _x} && {
-                    private _other = _x targetKnowledge _target;
-                    _other isEqualType [] && {count _other >= 7} && {
-                        private _otherSeen = _other#2;
-                        _otherSeen isEqualType 0 && {_otherSeen >= 0} && {_otherSeen <= (time + 1)}
-                    }
-                }
+        _count set [1,(_count#1) + 1];
+        private _best = [];
+        {
+            if (_x isEqualTo _observer || {!alive _x}) then {continue};
+            private _other = _x targetKnowledge _target;
+            if !(_other isEqualType [] && {count _other >= 7}) then {continue};
+            _other params ["","","_otherSeen","","","_otherError","_otherPosition"];
+            if !(_otherSeen isEqualType 0 && {_otherSeen >= 0} && {_otherSeen <= (time + 1)}) then {continue};
+            if !(_otherPosition isEqualType [] && {count _otherPosition >= 2}) then {continue};
+            if (_best isEqualTo [] || {_otherSeen > (_best#1)}) then {
+                _best = [+_otherPosition,_otherSeen,if (_otherError isEqualType 0) then {_otherError max 0} else {0}];
             };
-            _count set [1,(_count#1) + 1];
-            if (_seenByMate >= 0) then {_count set [2,(_count#2) + 1]};
-        };
-        []
+        } forEach (units group _observer);
+        if (_best isNotEqualTo []) then {_count set [2,(_count#2) + 1]};
+        _best
     };
     // A sighting from the future, or before the mission began, means lastSeen
     // is not on the time clock. Counted and logged, never used.
@@ -880,7 +898,7 @@ ITW_CLASH_Knowledge_fnc_Summary = {
 
 ITW_CLASH_KnowledgeReady = true;
 diag_log format [
-    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 minUncertainty=%16 truthSpeeds=true clockSamples=true neverSeenSeparate=true hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
+    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5/armor%17 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 minUncertainty=%16 truthSpeeds=true clockSamples=true neverSeenSeparate=true groupmateSightings=true hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
     ITW_CLASH_KnowledgeVersion,
     ITW_CLASH_KnowledgePoll,
     ITW_CLASH_KnowledgeSpeedStatic,
@@ -896,6 +914,7 @@ diag_log format [
     ITW_CLASH_KnowledgeClearedWindow,
     ITW_CLASH_KnowledgeTruthDiagnostic,
     ITW_CLASH_KnowledgePresenceFloor,
-    ITW_CLASH_KnowledgeMinUncertainty
+    ITW_CLASH_KnowledgeMinUncertainty,
+    ITW_CLASH_KnowledgeSpeedArmor
 ];
 true

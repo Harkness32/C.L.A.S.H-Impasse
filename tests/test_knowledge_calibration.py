@@ -47,11 +47,19 @@ def test_no_envelope_is_smaller_than_the_floor():
     assert body.rstrip("};\n ").endswith("max ITW_CLASH_KnowledgeMinUncertainty")
 
 
-def test_the_allowances_are_unchanged_until_data_sets_them():
+def test_the_allowances_come_from_the_truth_diagnostic():
+    """v5, from 36 minutes of contact on 2026-10-16: moving infantry broke a
+    2 m/s envelope 19% of the time (true p90 3.9 to 5.1 m/s); armour shared
+    the vehicle 8 m/s and broke it 47% of the time (true p90 to 29.5 m/s);
+    vehicles broke 8 m/s 7% of the time and keep it."""
     source = knowledge()
     assert 'ITW_CLASH_KnowledgeSpeedStatic",0]' in source
-    assert 'ITW_CLASH_KnowledgeSpeedInfantry",2]' in source
+    assert 'ITW_CLASH_KnowledgeSpeedInfantry",4]' in source
     assert 'ITW_CLASH_KnowledgeSpeedVehicle",8]' in source
+    assert 'ITW_CLASH_KnowledgeSpeedArmor",15]' in source
+    speed = function_body(source, "ITW_CLASH_Knowledge_fnc_Speed")
+    assert 'case "ARMOR": {ITW_CLASH_KnowledgeSpeedArmor};' in speed
+    assert speed.index('case "ARMOR"') < speed.index("default {ITW_CLASH_KnowledgeSpeedVehicle};")
 
 
 def test_a_rejected_report_records_why():
@@ -128,7 +136,7 @@ NEVER_SEEN = -2147483.648
 
 def test_never_seen_is_its_own_count_before_the_clock_check():
     source = knowledge()
-    assert "ITW_CLASH_KnowledgeVersion = 4;" in (MISSION / "ITW_CLASH_Knowledge.sqf").read_text()
+    assert "ITW_CLASH_KnowledgeVersion = 5;" in (MISSION / "ITW_CLASH_Knowledge.sqf").read_text()
     assert "ITW_CLASH_KnowledgeNeverSeenBelow = -1e6;" in source
     report = function_body(source, "ITW_CLASH_Knowledge_fnc_ReadReport")
     never = report.index("if (_lastSeen < ITW_CLASH_KnowledgeNeverSeenBelow) exitWith {")
@@ -137,10 +145,25 @@ def test_never_seen_is_its_own_count_before_the_clock_check():
     branch = report[never:clock]
     assert "ITW_CLASH_KnowledgeClockAnomalies" not in branch
     assert "_count set [0,(_count#0) + 1];" in branch
-    # Still discarded, and the groupmate check stays diagnostic and capped.
-    assert branch.rstrip().endswith("[]\n    };")
-    assert "if ((_count#1) < ITW_CLASH_KnowledgeClockSampleCap) then {" in branch
     assert "_record" not in branch
+
+
+def test_a_groupmate_who_saw_it_speaks_for_the_group():
+    """v5: a groupmate had seen the target himself in 19% of the never-seen
+    rejections on 2026-10-16. His most recent sighting is the group's
+    report; still one report per group, never merged."""
+    report = function_body(knowledge(), "ITW_CLASH_Knowledge_fnc_ReadReport")
+    never = report[report.index("if (_lastSeen < ITW_CLASH_KnowledgeNeverSeenBelow) exitWith {"):
+                   report.index("if (_lastSeen < 0 || {_lastSeen > (time + 1)}) exitWith {")]
+    assert "} forEach (units group _observer);" in never
+    assert "if (_x isEqualTo _observer || {!alive _x}) then {continue};" in never
+    # Only a real sighting: on the clock, not never-seen, not the future.
+    assert "if !(_otherSeen isEqualType 0 && {_otherSeen >= 0} && {_otherSeen <= (time + 1)}) then {continue};" in never
+    # The most recent one, as [position, lastSeen, error] like any report.
+    assert "if (_best isEqualTo [] || {_otherSeen > (_best#1)}) then {" in never
+    assert "_best = [+_otherPosition,_otherSeen,if (_otherError isEqualType 0) then {_otherError max 0} else {0}];" in never
+    assert never.rstrip().endswith("_best\n    };")
+    assert "if (_best isNotEqualTo []) then {_count set [2,(_count#2) + 1]};" in never
 
 
 def test_the_threshold_splits_what_the_run_saw():
