@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsStrikeStarted = true;
-ITW_CLASH_SupportsStrikeVersion = 2;
+ITW_CLASH_SupportsStrikeVersion = 3;
 ITW_CLASH_SupportsStrikeReady = false;
 
 /*
@@ -99,9 +99,15 @@ ITW_CLASH_SupportsStrike_fnc_Log = {
 };
 
 // A guided anti-armor missile: a missile whose ammo is flagged for armor.
+// The rack profile is the one reader for this since v3: it also asks for a
+// seeker or manual guidance, so an unguided rocket flagged for armour is no
+// longer a "guided" weapon. The body below is its fallback.
 ITW_CLASH_SupportsStrike_fnc_IsGuidedAntiArmor = {
     params ["_ammo"];
     if (_ammo isEqualTo "") exitWith {false};
+    if (!isNil "ITW_CLASH_Rack_fnc_IsGuidedAntiArmour") exitWith {
+        [_ammo] call ITW_CLASH_Rack_fnc_IsGuidedAntiArmour
+    };
     private _config = configFile >> "CfgAmmo" >> _ammo;
     if ((toLowerANSI getText (_config >> "simulation")) isNotEqualTo "shotmissile") exitWith {false};
     if (!isNil "ITW_CLASH_DualHAL_fnc_IsAntiArmourAmmo") exitWith {
@@ -144,7 +150,11 @@ ITW_CLASH_SupportsStrike_fnc_GuidedWeapon = {
         if (_rounds <= 0) then {continue};
         private _ammo = getText (configFile >> "CfgMagazines" >> _magazine >> "ammo");
         if !([_ammo] call ITW_CLASH_SupportsStrike_fnc_IsGuidedAntiArmor) then {continue};
-        private _weapon = getText (configFile >> "CfgMagazines" >> _magazine >> "pylonWeapon");
+        private _weapon = if (!isNil "ITW_CLASH_Rack_fnc_WeaponFor") then {
+            ([_veh,_magazine,_turret] call ITW_CLASH_Rack_fnc_WeaponFor)#0
+        } else {
+            getText (configFile >> "CfgMagazines" >> _magazine >> "pylonWeapon")
+        };
         if (_weapon isEqualTo "") then {
             {
                 if (_magazine in getArray (configFile >> "CfgWeapons" >> _x >> "magazines")) exitWith {_weapon = _x};

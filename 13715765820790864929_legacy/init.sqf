@@ -185,6 +185,14 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | hal-threat-coverage-missing-or-prereq-failed | AAInf/StaticAA/StaticAT/Support/Cargo threats remain unrequested";
             };
+            // What a vehicle can fire, read from its live rack: AI fire bands,
+            // target flags, guidance and who aims. Read by the supports guided
+            // pass and the HAL helicopter attack. Config and live state only.
+            if (fileExists "ITW_CLASH_RackProfile.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_RackProfile.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | rack-profile-missing | helicopter sorties fly HAL's own search-and-destroy";
+            };
             // The knowledge layer: what each side's own people have reported,
             // never where the enemy really is. Observation only. Loaded before
             // COLOSSUS, which reads reported positions from it when asked to,
