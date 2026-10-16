@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HeliAttackStarted",false]) exitWith {true};
 
 ITW_CLASH_HeliAttackStarted = true;
-ITW_CLASH_HeliAttackVersion = 1;
+ITW_CLASH_HeliAttackVersion = 2;
 ITW_CLASH_HeliAttackReady = false;
 
 /*
@@ -28,18 +28,27 @@ ITW_CLASH_HeliAttackReady = false;
       - Pick a centre. A contact our side has reported near HAL's point, that
         the rack can hit, nearest and most precise first. HAL's own point if
         the knowledge layer has nothing and the rack can hit what HAL named.
-      - Size the ring from the rack (ITW_CLASH_RackProfile.sqf): the radius
-        whose whole stepped ring sits inside the most AI fire bands of the
-        weapons that can hit that contact.
+      - RUN when only the airframe can aim (pylons, pilot guns): attack runs,
+        sized from the rack (ITW_CLASH_RackProfile.sqf, fnc_Run). Each run
+        flies straight at the centre from the side the helicopter is on, to
+        a break point outside the weapons' floor (600 m at least), then out
+        to an ingress point 60 degrees round, past where its weapons can
+        first fire, so the next run comes from a new direction. Two move
+        waypoints per run, so it flies through the break without stopping.
       - ORBIT when a gunner can shoot from the ring (turrets, door guns): keep
-        moving around it, ALiVE style, entering on the near side.
-        STATION when only the airframe can aim (pylons, pilot guns): hold a
-        search-and-destroy point on the ring for a while, then the next one.
-        That is the stand-off the AI needs to set up its own attack pass.
-      - Reveal to the crew what the commander already knows inside the ring,
+        moving around a ring sized from the rack, ALiVE style, entering on
+        the near side.
+      - Combat mode YELLOW and attack off, both modes: the crew fires at will
+        but does not leave its line to chase. v1 held a search-and-destroy
+        point (STATION) with RED. 2026-10-16: the DAP shot well on its way in,
+        from 2.7 to 1.6 km at 265 km/h, then never reached its point; it left
+        it for a Panther and fought it from 342 to 685 m, at 25 to 250 km/h,
+        until it lost its rotor. Search-and-destroy with RED hands movement to
+        the AI's own engagement, which is what HAL's radius-0 point did too.
+      - Reveal to the crew what the commander already knows near the centre,
         and nothing else. The AI picks its own shots; nothing here fires.
-      - Re-pick the centre every lap. Two laps with nothing the rack can hit
-        near it, and the sortie is over.
+      - Re-pick the centre every pass (a run, or a lap of the ring). Two passes
+        with nothing the rack can hit near it, and the sortie is over.
 
     HAL's sortie rules end it from here too, so its return-to-base tail runs
     unchanged afterwards. When something else takes the group mid-sortie (a
@@ -52,25 +61,35 @@ ITW_CLASH_HeliAttackReady = false;
 ITW_CLASH_HeliAttackRetargetRadius = missionNamespace getVariable ["ITW_CLASH_HeliAttackRetargetRadius",1500];
 // A contact more uncertain than this is not worth orbiting.
 ITW_CLASH_HeliAttackMaxUncertainty = missionNamespace getVariable ["ITW_CLASH_HeliAttackMaxUncertainty",300];
-// Degrees per step around the ring.
+// Degrees per step around the ring (ORBIT).
 ITW_CLASH_HeliAttackStep = missionNamespace getVariable ["ITW_CLASH_HeliAttackStep",45];
-// Station hold once arrived, and the most any one leg may take.
-ITW_CLASH_HeliAttackStationDwell = missionNamespace getVariable ["ITW_CLASH_HeliAttackStationDwell",40];
+// The most one ring leg may take, and arrival at a ring point.
 ITW_CLASH_HeliAttackLegTimeout = missionNamespace getVariable ["ITW_CLASH_HeliAttackLegTimeout",120];
 ITW_CLASH_HeliAttackArrival = missionNamespace getVariable ["ITW_CLASH_HeliAttackArrival",150];
-// Laps with nothing to hit before the sortie ends.
+/*
+    RUN: degrees between one run's radial and the next. The way out never
+    comes closer to the centre than the break point while cos(offset) is at
+    most break / ingress: at 60, while ingress is at least twice the break
+    (2900 against 600 for the DAP). Arrival
+    at the next ingress point, and the slowest a run may average before it
+    times out.
+*/
+ITW_CLASH_HeliAttackRunOffset = missionNamespace getVariable ["ITW_CLASH_HeliAttackRunOffset",60];
+ITW_CLASH_HeliAttackRunArrival = missionNamespace getVariable ["ITW_CLASH_HeliAttackRunArrival",400];
+ITW_CLASH_HeliAttackRunMinSpeed = missionNamespace getVariable ["ITW_CLASH_HeliAttackRunMinSpeed",20];
+// Passes (runs or laps) with nothing to hit before the sortie ends.
 ITW_CLASH_HeliAttackClearLaps = missionNamespace getVariable ["ITW_CLASH_HeliAttackClearLaps",2];
 // HAL's own cap on a CAS loop (GoAttAir.sqf: _ct >= 1200).
 ITW_CLASH_HeliAttackMaxTime = missionNamespace getVariable ["ITW_CLASH_HeliAttackMaxTime",1200];
 // HAL's own sortie limits (GoAttAir.sqf mustRTB).
 ITW_CLASH_HeliAttackMaxDamage = missionNamespace getVariable ["ITW_CLASH_HeliAttackMaxDamage",0.5];
 ITW_CLASH_HeliAttackMinFuel = missionNamespace getVariable ["ITW_CLASH_HeliAttackMinFuel",0.3];
-// Height over the ring, from its radius, inside these bounds.
+// Height, from the ring radius or the run's break distance, inside these bounds.
 ITW_CLASH_HeliAttackHeightMin = missionNamespace getVariable ["ITW_CLASH_HeliAttackHeightMin",50];
 ITW_CLASH_HeliAttackHeightMax = missionNamespace getVariable ["ITW_CLASH_HeliAttackHeightMax",150];
 ITW_CLASH_HeliAttackHeightRatio = missionNamespace getVariable ["ITW_CLASH_HeliAttackHeightRatio",0.15];
 ITW_CLASH_HeliAttackPoll = missionNamespace getVariable ["ITW_CLASH_HeliAttackPoll",2];
-// Marks the station waypoints this places, so a hand-back removes only those.
+// Marks the run waypoints this places, so a hand-back removes only those.
 ITW_CLASH_HeliAttackWaypointName = "clash-heli-attack";
 
 ITW_CLASH_HeliAttack_fnc_Log = {
@@ -156,12 +175,16 @@ ITW_CLASH_HeliAttack_fnc_ClearWaypoints = {
     for "_i" from (count waypoints _group - 1) to 0 step -1 do {deleteWaypoint [_group,_i]};
 };
 
-// Weapons free, every sortie, without waiting for a waypoint to apply it.
+/*
+    Weapons free every pass, without waiting for a waypoint to apply it:
+    COMBAT, fire at will (YELLOW), and attack off, so the crew shoots what it
+    sees from the line it is flying instead of leaving it to close in.
+*/
 ITW_CLASH_HeliAttack_fnc_Arm = {
     params ["_group","_flight","_height"];
     _group setBehaviourStrong "COMBAT";
-    _group setCombatMode "RED";
-    _group enableAttack true;
+    _group setCombatMode "YELLOW";
+    _group enableAttack false;
     {
         _x enableAI "TARGET";
         _x enableAI "AUTOTARGET";
@@ -202,8 +225,9 @@ ITW_CLASH_HeliAttack_fnc_Stop = {
     // GTFO's withdrawal keeps the group HAL-managed and sets neither of the above.
     if (_group getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {"withdrawing"};
     if !(_group getVariable ["Busy" + str _group,false]) exitWith {"released"};
+    // canMove: a lost rotor can leave overall damage low (G63, 2026-10-16).
     if ((_flight findIf {
-        !alive _x || {damage _x > ITW_CLASH_HeliAttackMaxDamage} || {fuel _x < ITW_CLASH_HeliAttackMinFuel}
+        !alive _x || {!canMove _x} || {damage _x > ITW_CLASH_HeliAttackMaxDamage} || {fuel _x < ITW_CLASH_HeliAttackMinFuel}
     }) >= 0) exitWith {"rtb-condition"};
     if ((time - _started) > ITW_CLASH_HeliAttackMaxTime) exitWith {"time"};
     ""
@@ -234,6 +258,21 @@ ITW_CLASH_HeliAttack_fnc_WatchShots = {
 };
 
 /*
+    Shots each aircraft has fired since this was last asked, by weapon, and
+    reset. One line's worth, not a ledger.
+*/
+ITW_CLASH_HeliAttack_fnc_TakeShots = {
+    params ["_flight"];
+    private _shots = createHashMap;
+    {
+        private _veh = _x;
+        {_shots set [_x,(_shots getOrDefault [_x,0]) + _y]} forEach (_veh getVariable ["ITW_CLASH_HeliAttackShots",createHashMap]);
+        _veh setVariable ["ITW_CLASH_HeliAttackShots",createHashMap];
+    } forEach (_flight select {alive _x});
+    (keys _shots) apply {[_x,_shots get _x]}
+};
+
+/*
     The sortie. Returns [alive, reason]; alive false when the flight or its
     group is gone or no longer ours (ITW_CLASH_HeliAttackForeignStops), as
     HAL's own RYD_Wait reports a lost, MIA or broken group.
@@ -245,144 +284,201 @@ ITW_CLASH_HeliAttack_fnc_Fly = {
     private _id = [_group] call ITW_CLASH_HeliAttack_fnc_GroupId;
     private _step = ITW_CLASH_HeliAttackStep;
     private _ordered2 = [_ordered#0,_ordered#1,0];
+    private _halType = [_target] call ITW_CLASH_HeliAttack_fnc_TypeOf;
 
     ([_flight,_step] call ITW_CLASH_Rack_fnc_Profile) params ["_entries","_types"];
     private _anyUsable = (values _types) findIf {(_x#0) > 0};
     if (_anyUsable < 0) exitWith {
-        ["start",[_id,typeOf (_flight#0),"rack-empty",[_target] call ITW_CLASH_HeliAttack_fnc_TypeOf]] call
-            ITW_CLASH_HeliAttack_fnc_Log;
+        ["start",[_id,typeOf (_flight#0),"rack-empty",_halType]] call ITW_CLASH_HeliAttack_fnc_Log;
         [true,"rack-empty"]
     };
 
     private _handlers = _flight apply {[_x,[_x,_group] call ITW_CLASH_HeliAttack_fnc_WatchShots]};
     [_group] call ITW_CLASH_HeliAttack_fnc_ClearWaypoints;
+    // Arm turns attack off; a sortie ending on its own terms puts it back.
+    private _attackWas = attackEnabled _group;
 
     private _centre = [];
     private _type = "";
     private _source = "";
     private _radius = -1;
     private _mode = "";
+    private _break = -1;
+    private _ingress = -1;
     private _bearing = 0;
     private _direction = 1;
-    private _lap = 0;
-    private _stepsThisLap = 0;
-    private _emptyLaps = 0;
+    private _pass = 0;
+    private _legsLeft = 0;
+    private _emptyPasses = 0;
     private _reason = "";
     private _hadTarget = false;
+    // Measured each pass, for the "flown" line: how close it really came.
+    private _closest = 1e10;
+    private _closestSpeed = -1;
+    private _closestHeight = -1;
+    private _passStart = time;
 
     while {true} do {
         _reason = [_group,_flight,_started] call ITW_CLASH_HeliAttack_fnc_Stop;
         if (_reason isNotEqualTo "") exitWith {};
 
-        // A new lap: re-read the rack and the picture.
-        if (_stepsThisLap <= 0) then {
+        // A new pass: re-read the rack and the picture.
+        if (_legsLeft <= 0) then {
             ([_flight,_step] call ITW_CLASH_Rack_fnc_Profile) params ["_nowEntries","_nowTypes"];
             _types = _nowTypes;
             // Out of everything that can hit anything: HAL's pylon rule, read
             // from the rack instead of a pylon count.
             if (((values _types) findIf {(_x#0) > 0}) < 0) exitWith {_reason = "winchester"};
             private _pick = [_side,_ordered2,_target,_types] call ITW_CLASH_HeliAttack_fnc_PickCentre;
+            private _profile = [];
             if (_pick isEqualTo []) then {
-                _emptyLaps = _emptyLaps + 1;
+                _emptyPasses = _emptyPasses + 1;
                 if (_centre isEqualTo []) then {
-                    // Nothing to hit from the start: hold one lap at HAL's
-                    // point on whatever the rack can reach, then go home.
+                    // Nothing to hit from the start: one pass at HAL's point
+                    // on whatever the rack can reach, then go home.
                     _centre = _ordered2;
                     _source = "hal-point-hold";
-                    private _fallback = (values _types) select {(_x#0) > 0};
                     _type = "";
-                    _radius = if (_fallback isEqualTo []) then {-1} else {(_fallback#0)#1};
-                    _mode = if (_fallback isEqualTo []) then {""} else {(_fallback#0)#2};
+                    private _fallback = (values _types) select {(_x#0) > 0};
+                    if (_fallback isNotEqualTo []) then {_profile = _fallback#0};
                 };
             } else {
-                _emptyLaps = 0;
+                _emptyPasses = 0;
                 _hadTarget = true;
                 _pick params ["_pickCentre","_pickType","_pickSource"];
                 _centre = _pickCentre;
                 _type = _pickType;
                 _source = _pickSource;
-                (_types get _type) params ["","_pickRadius","_pickMode"];
-                _radius = _pickRadius;
-                _mode = _pickMode;
+                _profile = _types getOrDefault [_type,[]];
             };
-            if (_radius < 0) exitWith {_reason = "winchester"};
-            if (_emptyLaps >= ITW_CLASH_HeliAttackClearLaps) exitWith {
+            if (_profile isNotEqualTo []) then {
+                _profile params ["","_pRadius","_pMode","_pBreak","_pIngress"];
+                _radius = _pRadius;
+                _mode = _pMode;
+                _break = _pBreak;
+                _ingress = _pIngress;
+            };
+            if (_emptyPasses >= ITW_CLASH_HeliAttackClearLaps) exitWith {
                 _reason = if (_hadTarget) then {"clear"} else {"nothing-to-hit"};
             };
+            if ((_mode isEqualTo "RUN" && {_break < 0}) || {_mode isEqualTo "ORBIT" && {_radius < 0}} || {_mode isEqualTo ""}) exitWith {
+                _reason = "winchester";
+            };
 
-            private _height = [_radius] call ITW_CLASH_HeliAttack_fnc_Height;
+            private _height = [if (_mode isEqualTo "RUN") then {_break} else {_radius}] call ITW_CLASH_HeliAttack_fnc_Height;
             [_group,_flight,_height] call ITW_CLASH_HeliAttack_fnc_Arm;
-            // Enter on the side we are already on, so arrival is not an overflight.
-            if (_lap == 0) then {_bearing = _centre getDir (vehicle leader _group)};
-            private _shots = createHashMap;
-            {
-                private _veh = _x;
-                {_shots set [_x,(_shots getOrDefault [_x,0]) + _y]} forEach (_veh getVariable ["ITW_CLASH_HeliAttackShots",createHashMap]);
-                _veh setVariable ["ITW_CLASH_HeliAttackShots",createHashMap];
-            } forEach (_flight select {alive _x});
-            [if (_lap == 0) then {"start"} else {"lap"},[
-                _id,typeOf (_flight#0),_lap,_source,_type,
+            // Come in from the side we are already on, so no pass starts with
+            // an overflight. A run always does; a ring only enters that way.
+            if (_pass == 0 || {_mode isEqualTo "RUN"}) then {_bearing = _centre getDir (vehicle leader _group)};
+            [if (_pass == 0) then {"start"} else {"pass"},[
+                _id,typeOf (_flight#0),_pass,_source,_type,_halType,
                 (_centre apply {round _x}) select [0,2],
-                round _radius,_mode,round _height,
-                [_group,_hq,_centre,_radius] call ITW_CLASH_HeliAttack_fnc_Brief,
-                (keys _shots) apply {[_x,_shots get _x]}
+                _mode,
+                round (if (_mode isEqualTo "RUN") then {_break} else {_radius}),
+                round _ingress,
+                round _height,
+                [_group,_hq,_centre,if (_mode isEqualTo "RUN") then {_ingress} else {_radius}] call ITW_CLASH_HeliAttack_fnc_Brief
             ]] call ITW_CLASH_HeliAttack_fnc_Log;
-            _lap = _lap + 1;
-            _stepsThisLap = round (360 / _step);
+            _pass = _pass + 1;
+            _legsLeft = if (_mode isEqualTo "RUN") then {1} else {round (360 / _step)};
+            _closest = 1e10;
+            _closestSpeed = -1;
+            _closestHeight = -1;
+            _passStart = time;
         };
         if (_reason isNotEqualTo "") exitWith {};
 
-        // One step around the ring.
-        _bearing = _bearing + (_direction * _step);
-        private _point = _centre getPos [_radius,_bearing];
-        _point set [2,0];
+        // One leg: a whole run, or one step around the ring.
+        private _points = [];
+        private _runBearing = _bearing;
+        if (_mode isEqualTo "RUN") then {
+            private _breakPoint = _centre getPos [_break,_bearing];
+            private _nextBearing = _bearing + (_direction * ITW_CLASH_HeliAttackRunOffset);
+            private _ingressPoint = _centre getPos [_ingress,_nextBearing];
+            _breakPoint set [2,0];
+            _ingressPoint set [2,0];
+            _points = [_breakPoint,_ingressPoint];
+            _bearing = _nextBearing;
+        } else {
+            _bearing = _bearing + (_direction * _step);
+            private _point = _centre getPos [_radius,_bearing];
+            _point set [2,0];
+            _points = [_point];
+        };
         private _lead = leader _group;
+        private _last = _points select ((count _points) - 1);
         // Check and order in one unscheduled step, so a withdrawal or release
         // that lands between them is not overwritten by this leg.
         isNil {
             _reason = [_group,_flight,_started] call ITW_CLASH_HeliAttack_fnc_Stop;
             if (_reason isEqualTo "") then {
-                if (_mode isEqualTo "STATION") then {
+                if (_mode isEqualTo "RUN") then {
                     [_group] call ITW_CLASH_HeliAttack_fnc_ClearWaypoints;
-                    private _wp = _group addWaypoint [_point,0];
-                    _wp setWaypointType "SAD";
-                    _wp setWaypointBehaviour "COMBAT";
-                    _wp setWaypointCombatMode "RED";
-                    _wp setWaypointSpeed "NORMAL";
-                    _wp setWaypointCompletionRadius 100;
-                    _wp setWaypointName ITW_CLASH_HeliAttackWaypointName;
-                    _group setCurrentWaypoint _wp;
+                    {
+                        private _wp = _group addWaypoint [_x,0];
+                        _wp setWaypointType "MOVE";
+                        _wp setWaypointBehaviour "COMBAT";
+                        _wp setWaypointCombatMode "YELLOW";
+                        _wp setWaypointSpeed "NORMAL";
+                        // Through the break, not to it: the next leg takes
+                        // over well before arrival so it never slows there.
+                        _wp setWaypointCompletionRadius (if (_forEachIndex == 0) then {200} else {ITW_CLASH_HeliAttackRunArrival});
+                        _wp setWaypointName ITW_CLASH_HeliAttackWaypointName;
+                        if (_forEachIndex == 0) then {_group setCurrentWaypoint _wp};
+                    } forEach _points;
                 } else {
-                    _lead doMove _point;
+                    _lead doMove (_points#0);
                 };
             };
         };
         if (_reason isNotEqualTo "") exitWith {};
-        [_group,_hq,_centre,_radius] call ITW_CLASH_HeliAttack_fnc_Brief;
+        [_group,_hq,_centre,if (_mode isEqualTo "RUN") then {_ingress} else {_radius}] call ITW_CLASH_HeliAttack_fnc_Brief;
 
+        private _veh = vehicle _lead;
+        private _path = 0;
+        private _from = getPosATL _veh;
+        {_path = _path + (_from distance2D _x); _from = _x} forEach _points;
+        private _timeout = if (_mode isEqualTo "RUN") then {
+            ITW_CLASH_HeliAttackLegTimeout max ((_path / ITW_CLASH_HeliAttackRunMinSpeed) + 30)
+        } else {ITW_CLASH_HeliAttackLegTimeout};
+        private _arrival = if (_mode isEqualTo "RUN") then {ITW_CLASH_HeliAttackRunArrival} else {ITW_CLASH_HeliAttackArrival};
         private _legStart = time;
-        private _arrivedAt = -1;
-        private _checkPos = getPosATL (vehicle _lead);
+        private _checkPos = getPosATL _veh;
         private _checkAt = time;
         waitUntil {
             sleep ITW_CLASH_HeliAttackPoll;
             _reason = [_group,_flight,_started] call ITW_CLASH_HeliAttack_fnc_Stop;
             if (_reason isNotEqualTo "") exitWith {true};
-            private _veh = vehicle leader _group;
-            private _here = (_veh distance2D _point) <= ITW_CLASH_HeliAttackArrival;
+            _veh = vehicle leader _group;
+            private _range = _veh distance2D _centre;
+            if (_range < _closest) then {
+                _closest = _range;
+                _closestSpeed = speed _veh;
+                _closestHeight = (getPosATL _veh)#2;
+            };
+            private _here = (_veh distance2D _last) <= _arrival;
             // Stalled for 20 s counts as there, as ALiVE's unitReadyRemote does.
             if ((time - _checkAt) >= 20) then {
                 if ((getPosATL _veh) distance _checkPos < 10) then {_here = true};
                 _checkPos = getPosATL _veh;
                 _checkAt = time;
             };
-            if (_here && {_arrivedAt < 0}) then {_arrivedAt = time};
-            private _dwell = if (_mode isEqualTo "STATION") then {ITW_CLASH_HeliAttackStationDwell} else {0};
-            (_arrivedAt >= 0 && {(time - _arrivedAt) >= _dwell})
-            || {(time - _legStart) > ITW_CLASH_HeliAttackLegTimeout}
+            _here || {(time - _legStart) > _timeout}
         };
         if (_reason isNotEqualTo "") exitWith {};
-        _stepsThisLap = _stepsThisLap - 1;
+        _legsLeft = _legsLeft - 1;
+        if (_legsLeft <= 0) then {
+            // The pass as flown: closest it came to the centre, how fast and
+            // how high it was then, and what it fired. A RUN whose closest is
+            // well inside its break is a run the AI left to close in.
+            ["flown",[
+                _id,_pass,_mode,round _runBearing,
+                if (_mode isEqualTo "RUN") then {round _break} else {round _radius},
+                round _closest,round _closestSpeed,round _closestHeight,
+                round (time - _passStart),
+                [_flight] call ITW_CLASH_HeliAttack_fnc_TakeShots
+            ]] call ITW_CLASH_HeliAttack_fnc_Log;
+        };
     };
 
     // Hand the flight back the way HAL left it: no orders of ours pending.
@@ -411,22 +507,26 @@ ITW_CLASH_HeliAttack_fnc_Fly = {
             } else {
                 [_group] call ITW_CLASH_HeliAttack_fnc_ClearWaypoints;
                 if (!isNull _lead) then {{_x doFollow _lead} forEach units _group};
+                _group enableAttack _attackWas;
             };
         };
     };
     private _alive = !(_reason in ITW_CLASH_HeliAttackForeignStops);
-    ["end",[_id,_reason,_lap,round (time - _started),_source,_type]] call ITW_CLASH_HeliAttack_fnc_Log;
+    ["end",[
+        _id,_reason,_pass,round (time - _started),_source,_type,
+        [_flight] call ITW_CLASH_HeliAttack_fnc_TakeShots
+    ]] call ITW_CLASH_HeliAttack_fnc_Log;
     [_alive,_reason]
 };
 
 ITW_CLASH_HeliAttackReady = true;
 diag_log format [
-    "CLASH BOOT | heli-attack-ready | version=%1 retarget=%2 maxUncertainty=%3 step=%4 dwell=%5 legTimeout=%6 clearLaps=%7 maxTime=%8 height=%9-%10 modes=ORBIT,STATION halOwnsDecision=true reportedCentres=true revealsKnownOnly=true nativeFire=true yieldsToOwners=true",
+    "CLASH BOOT | heli-attack-ready | version=%1 retarget=%2 maxUncertainty=%3 step=%4 runOffset=%5 legTimeout=%6 clearPasses=%7 maxTime=%8 height=%9-%10 modes=ORBIT,RUN combatMode=YELLOW attack=false noSAD=true halOwnsDecision=true reportedCentres=true revealsKnownOnly=true nativeFire=true yieldsToOwners=true",
     ITW_CLASH_HeliAttackVersion,
     ITW_CLASH_HeliAttackRetargetRadius,
     ITW_CLASH_HeliAttackMaxUncertainty,
     ITW_CLASH_HeliAttackStep,
-    ITW_CLASH_HeliAttackStationDwell,
+    ITW_CLASH_HeliAttackRunOffset,
     ITW_CLASH_HeliAttackLegTimeout,
     ITW_CLASH_HeliAttackClearLaps,
     ITW_CLASH_HeliAttackMaxTime,

@@ -240,12 +240,15 @@ def test_an_empty_rack_or_nothing_to_hit_goes_home():
     assert '_reason = "winchester"' in fly
     assert '_reason = if (_hadTarget) then {"clear"} else {"nothing-to-hit"};' in fly
     assert '_source = "hal-point-hold";' in fly
-    assert "if (_emptyLaps >= ITW_CLASH_HeliAttackClearLaps) exitWith {" in fly
+    assert "if (_emptyPasses >= ITW_CLASH_HeliAttackClearLaps) exitWith {" in fly
 
 
-def test_weapons_free_each_lap_and_lift_limits_cleared():
+def test_weapons_free_each_pass_and_lift_limits_cleared():
+    # v2: fire at will (YELLOW) with attack off, so the crew shoots from its
+    # line instead of leaving it to close in, as RED let it on 2026-10-16.
     arm = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Arm")
-    for line in ['_group setBehaviourStrong "COMBAT";', '_group setCombatMode "RED";', "_group enableAttack true;",
+    assert '"RED"' not in arm
+    for line in ['_group setBehaviourStrong "COMBAT";', '_group setCombatMode "YELLOW";', "_group enableAttack false;",
                  '_x enableAI "AUTOTARGET";', "_x limitSpeed 1e10;", "_x forceSpeed -1;", "_x flyInHeight _height;"]:
         assert line in arm, line
 
@@ -263,6 +266,91 @@ def test_it_loads_after_the_rack_and_the_supports():
 
 def test_boot_line_says_what_it_does():
     raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
-    assert "ITW_CLASH_HeliAttackVersion = 1;" in raw
+    assert "ITW_CLASH_HeliAttackVersion = 2;" in raw
     assert "CLASH BOOT | heli-attack-ready |" in raw
     assert "yieldsToOwners=true" in raw
+    assert "modes=ORBIT,RUN combatMode=YELLOW attack=false noSAD=true" in raw
+
+
+# ------------------------------------------------------------- v2: attack runs
+
+
+def test_no_search_and_destroy_anywhere_in_the_sortie():
+    source = heli()
+    assert '"SAD"' not in source
+    assert '"STATION"' not in source
+    assert "StationDwell" not in source
+
+
+def test_a_run_is_two_move_waypoints_through_the_break():
+    fly = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Fly")
+    leg = fly[fly.index('if (_mode isEqualTo "RUN") then {\n            private _breakPoint'):]
+    assert "private _breakPoint = _centre getPos [_break,_bearing];" in leg
+    assert "private _nextBearing = _bearing + (_direction * ITW_CLASH_HeliAttackRunOffset);" in leg
+    assert "private _ingressPoint = _centre getPos [_ingress,_nextBearing];" in leg
+    assert "_points = [_breakPoint,_ingressPoint];" in leg
+    order = leg[leg.index("isNil {"):]
+    for line in ['_wp setWaypointType "MOVE";', '_wp setWaypointBehaviour "COMBAT";',
+                 '_wp setWaypointCombatMode "YELLOW";',
+                 "_wp setWaypointCompletionRadius (if (_forEachIndex == 0) then {200} else {ITW_CLASH_HeliAttackRunArrival});",
+                 "if (_forEachIndex == 0) then {_group setCurrentWaypoint _wp};"]:
+        assert line in order, line
+
+
+def test_every_run_starts_from_the_side_it_is_on():
+    fly = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Fly")
+    assert 'if (_pass == 0 || {_mode isEqualTo "RUN"}) then {_bearing = _centre getDir (vehicle leader _group)};' in fly
+
+
+def test_the_pass_as_flown_is_measured():
+    fly = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Fly")
+    wait = fly[fly.index("waitUntil {"):]
+    assert "private _range = _veh distance2D _centre;" in wait
+    assert "_closestSpeed = speed _veh;" in wait
+    flown = fly[fly.index('["flown",['):]
+    assert "round _closest,round _closestSpeed,round _closestHeight," in flown
+    assert "[_flight] call ITW_CLASH_HeliAttack_fnc_TakeShots" in flown
+
+
+def test_the_hold_says_what_hal_sent_it_at():
+    fly = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Fly")
+    assert "private _halType = [_target] call ITW_CLASH_HeliAttack_fnc_TypeOf;" in fly
+    start = fly[fly.index('[if (_pass == 0) then {"start"} else {"pass"},['):]
+    assert "_id,typeOf (_flight#0),_pass,_source,_type,_halType," in start
+
+
+def test_attack_is_put_back_only_when_the_sortie_ends_on_its_own_terms():
+    fly = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Fly")
+    assert "private _attackWas = attackEnabled _group;" in fly
+    cleanup = fly[fly.index("removeEventHandler"):]
+    foreign = cleanup[cleanup.index("if (_reason in ITW_CLASH_HeliAttackForeignStops) then {"):]
+    foreign_branch, own_branch = foreign.split("} else {", 1)
+    assert "enableAttack" not in foreign_branch
+    assert "_group enableAttack _attackWas;" in own_branch.split("private _alive", 1)[0]
+
+
+def test_a_crippled_aircraft_ends_the_sortie():
+    body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Stop")
+    assert "{!canMove _x}" in body
+
+
+def closest_on_way_out(brk, ingress, offset_deg):
+    """Closest distance to the centre on the leg from the break point to the
+    next ingress point."""
+    import math
+    p0 = (0.0, float(brk))
+    p1 = (ingress * math.sin(math.radians(offset_deg)), ingress * math.cos(math.radians(offset_deg)))
+    d = (p1[0] - p0[0], p1[1] - p0[1])
+    t = max(0.0, min(1.0, -(p0[0] * d[0] + p0[1] * d[1]) / (d[0] ** 2 + d[1] ** 2)))
+    x, y = p0[0] + t * d[0], p0[1] + t * d[1]
+    return (x * x + y * y) ** 0.5
+
+
+def test_the_way_out_never_cuts_back_inside_the_break():
+    raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
+    assert 'ITW_CLASH_HeliAttackRunOffset",60]' in raw
+    # The DAP's run, and the shortest ingress the rack can give a 600 m break.
+    for brk, ingress in [(600, 2900), (600, 1400), (417, 2900)]:
+        assert closest_on_way_out(brk, ingress, 60) >= brk - 0.5, (brk, ingress)
+    # Past cos(offset) = break / ingress it does cut back in.
+    assert closest_on_way_out(600, 2900, 85) < 600
