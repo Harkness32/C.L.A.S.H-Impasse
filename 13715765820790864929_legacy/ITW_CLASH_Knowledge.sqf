@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_KnowledgeStarted",false]) exitWith {true};
 
 ITW_CLASH_KnowledgeStarted = true;
-ITW_CLASH_KnowledgeVersion = 2;
+ITW_CLASH_KnowledgeVersion = 3;
 ITW_CLASH_KnowledgeReady = false;
 
 /*
@@ -62,6 +62,23 @@ ITW_CLASH_KnowledgeReady = false;
     is not always the newest, while any newer sighting still confirms it exists.
     And an empty contact list never clears a place on its own: a look needs our
     own people on the ground inside the objective, or the UAV over it.
+
+    v3: the 2026-10-15 run's truth diagnostic, read against this model.
+      - The engine's own error is close to zero for nearly every report, so
+        the envelope is speed x age and nothing else. Statics, at speed 0, had
+        R = 0, and a sub-metre difference between where a static was reported
+        and where it stands read as a miss: 100% "outside". No position is
+        exact, so R has a small floor (KnowledgeMinUncertainty).
+      - 743 reports were thrown away for a lastSeen off the time clock, and
+        nobody can say why from a count. Each rejection now records the
+        value against all three clocks, whether the observer itself saw the
+        target, and whether another man in its group had a usable report.
+      - Vehicles at 11 to 12 m/s and infantry near 2.7 m/s broke the
+        envelope, but the window means cannot give a percentile to calibrate
+        against. The truth diagnostic now keeps per-sample implied and true
+        speeds, split by moving and settled, so the next run can set the
+        allowances from data instead of a guess. The allowances themselves
+        are unchanged here.
 */
 
 ITW_CLASH_KnowledgeEnabled = missionNamespace getVariable ["ITW_CLASH_KnowledgeEnabled",true];
@@ -99,6 +116,14 @@ ITW_CLASH_KnowledgeForgetAfter = missionNamespace getVariable ["ITW_CLASH_Knowle
 ITW_CLASH_KnowledgeSensorRange = missionNamespace getVariable ["ITW_CLASH_KnowledgeSensorRange",6000];
 ITW_CLASH_KnowledgeSummaryInterval = missionNamespace getVariable ["ITW_CLASH_KnowledgeSummaryInterval",60];
 ITW_CLASH_KnowledgeTruthDiagnostic = missionNamespace getVariable ["ITW_CLASH_KnowledgeTruthDiagnostic",true];
+// No report is exact: the smallest uncertainty anything can have, in metres.
+ITW_CLASH_KnowledgeMinUncertainty = missionNamespace getVariable ["ITW_CLASH_KnowledgeMinUncertainty",5];
+// Diagnostic sample caps, per summary window.
+ITW_CLASH_KnowledgeClockSampleCap = missionNamespace getVariable ["ITW_CLASH_KnowledgeClockSampleCap",300];
+ITW_CLASH_KnowledgeTruthSampleCap = missionNamespace getVariable ["ITW_CLASH_KnowledgeTruthSampleCap",400];
+// Implied speed is only read from reports at least this old; younger ones are
+// mostly position noise divided by a small number.
+ITW_CLASH_KnowledgeTruthMinAge = missionNamespace getVariable ["ITW_CLASH_KnowledgeTruthMinAge",10];
 
 // sideKey -> (contactKey -> record)
 ITW_CLASH_KnowledgeContacts = createHashMap;
@@ -112,7 +137,26 @@ ITW_CLASH_KnowledgeFixOffsets = createHashMap;
 // sideKey|class -> [samples,sumActual,sumError,sumAge,outside]
 ITW_CLASH_KnowledgeTruth = createHashMap;
 ITW_CLASH_KnowledgeClockAnomalies = 0;
+// [lastSeen, vs time, vs serverTime, vs diag_tickTime, observer saw it, a
+// groupmate had a usable report], one per rejected report, per window.
+ITW_CLASH_KnowledgeClockSamples = [];
+// sideKey|class -> [[impliedSpeed or -1, moving, outside, trueSpeed],...]
+ITW_CLASH_KnowledgeTruthSamples = createHashMap;
 ITW_CLASH_KnowledgeSummaryAt = 0;
+
+// Min, median, 90th percentile and max of a list of numbers, to 0.1.
+ITW_CLASH_Knowledge_fnc_Spread = {
+    params [["_values",[]]];
+    if (_values isEqualTo []) exitWith {[]};
+    private _sorted = +_values;
+    _sorted sort true;
+    private _last = (count _sorted) - 1;
+    private _at = {
+        params ["_q"];
+        _sorted select ((floor (_q * _last)) max 0 min _last)
+    };
+    [_sorted#0,[0.5] call _at,[0.9] call _at,_sorted#_last] apply {(round (_x * 10)) / 10}
+};
 
 ITW_CLASH_Knowledge_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -197,6 +241,27 @@ ITW_CLASH_Knowledge_fnc_ReadReport = {
     // is not on the time clock. Counted and logged, never used.
     if (_lastSeen < 0 || {_lastSeen > (time + 1)}) exitWith {
         ITW_CLASH_KnowledgeClockAnomalies = ITW_CLASH_KnowledgeClockAnomalies + 1;
+        if (count ITW_CLASH_KnowledgeClockSamples < ITW_CLASH_KnowledgeClockSampleCap) then {
+            // Diagnostic only: would another of the group's own men have given
+            // a usable report? Nothing reads this back.
+            private _recoverable = (units group _observer) findIf {
+                _x isNotEqualTo _observer && {alive _x} && {
+                    private _other = _x targetKnowledge _target;
+                    _other isEqualType [] && {count _other >= 7} && {(_other#1) isEqualTo true} && {
+                        private _otherSeen = _other#2;
+                        _otherSeen isEqualType 0 && {_otherSeen >= 0} && {_otherSeen <= (time + 1)}
+                    }
+                }
+            };
+            ITW_CLASH_KnowledgeClockSamples pushBack [
+                _lastSeen,
+                _lastSeen - time,
+                _lastSeen - serverTime,
+                _lastSeen - diag_tickTime,
+                _byUnit isEqualTo true,
+                _recoverable >= 0
+            ];
+        };
         []
     };
     if !(_position isEqualType [] && {count _position >= 2}) exitWith {[]};
@@ -209,7 +274,7 @@ ITW_CLASH_Knowledge_fnc_Uncertainty = {
     if (count _record == 0) exitWith {1e10};
     private _speed = [_record getOrDefault ["class",""]] call ITW_CLASH_Knowledge_fnc_Speed;
     private _age = (time - (_record getOrDefault ["seenAt",-1e10])) max 0;
-    (_record getOrDefault ["error",0]) + _speed * (_age + (_ahead max 0))
+    ((_record getOrDefault ["error",0]) + _speed * (_age + (_ahead max 0))) max ITW_CLASH_KnowledgeMinUncertainty
 };
 
 ITW_CLASH_Knowledge_fnc_Status = {
@@ -444,8 +509,24 @@ ITW_CLASH_Knowledge_fnc_TruthSample = {
     _stats set [0,(_stats#0) + 1];
     _stats set [1,(_stats#1) + _actual];
     _stats set [2,(_stats#2) + (_record get "error")];
-    _stats set [3,(_stats#3) + ((time - (_record get "seenAt")) max 0)];
-    if (_actual > _r) then {_stats set [4,(_stats#4) + 1]};
+    private _age = (time - (_record get "seenAt")) max 0;
+    _stats set [3,(_stats#3) + _age];
+    private _outside = _actual > _r;
+    if (_outside) then {_stats set [4,(_stats#4) + 1]};
+    // Per sample, for calibration: how fast the target must have moved to be
+    // where it is, and how fast it really moves now. Read-only, like the rest.
+    private _samples = ITW_CLASH_KnowledgeTruthSamples getOrDefault [_bucket,[],true];
+    if (count _samples < ITW_CLASH_KnowledgeTruthSampleCap) then {
+        private _implied = if (_age >= ITW_CLASH_KnowledgeTruthMinAge) then {
+            ((_actual - (_record get "error")) max 0) / _age
+        } else {-1};
+        _samples pushBack [
+            _implied,
+            _record getOrDefault ["moving",false],
+            _outside,
+            (speed _entity) / 3.6
+        ];
+    };
     true
 };
 
@@ -676,9 +757,59 @@ ITW_CLASH_Knowledge_fnc_Summary = {
     } forEach ITW_CLASH_KnowledgeTruth;
     ITW_CLASH_KnowledgeTruth = createHashMap;
 
+    /*
+        The calibration line, per side and class: samples, how many were of a
+        moving contact, how many fell outside the envelope moving and settled,
+        then spreads (min, median, p90, max) of the speed the target must have
+        had to be where it was (all, and moving only) and of its true speed,
+        in m/s. A 95% envelope needs an allowance near the p90 of the implied
+        speed, not its mean.
+    */
+    {
+        private _samples = _y;
+        if (_samples isEqualTo []) then {continue};
+        private _moving = _samples select {_x#1};
+        private _implied = (_samples select {(_x#0) >= 0}) apply {_x#0};
+        private _impliedMoving = (_moving select {(_x#0) >= 0}) apply {_x#0};
+        ["truth-speed",[
+            _x,
+            count _samples,
+            count _moving,
+            {_x#2} count _moving,
+            {(_x#2) && {!(_x#1)}} count _samples,
+            [_implied] call ITW_CLASH_Knowledge_fnc_Spread,
+            [_impliedMoving] call ITW_CLASH_Knowledge_fnc_Spread,
+            [_samples apply {_x#3}] call ITW_CLASH_Knowledge_fnc_Spread
+        ]] call ITW_CLASH_Knowledge_fnc_Log;
+    } forEach ITW_CLASH_KnowledgeTruthSamples;
+    ITW_CLASH_KnowledgeTruthSamples = createHashMap;
+
+    /*
+        Rejected reports, by kind: a negative lastSeen (raw values) and one
+        from the future (against time, serverTime and diag_tickTime, so the
+        clock it is really on shows as the one near zero), then how many of
+        the rejections the observer itself saw, and how many a groupmate
+        could have reported instead. The last field is the three clocks now.
+    */
     if (ITW_CLASH_KnowledgeClockAnomalies > 0) then {
-        ["clock-anomaly",[ITW_CLASH_KnowledgeClockAnomalies]] call ITW_CLASH_Knowledge_fnc_Log;
+        private _samples = ITW_CLASH_KnowledgeClockSamples;
+        private _negative = _samples select {(_x#0) < 0};
+        private _future = _samples select {(_x#0) >= 0};
+        ["clock-anomaly",[
+            ITW_CLASH_KnowledgeClockAnomalies,
+            count _samples,
+            count _negative,
+            count _future,
+            [_negative apply {_x#0}] call ITW_CLASH_Knowledge_fnc_Spread,
+            [_future apply {_x#1}] call ITW_CLASH_Knowledge_fnc_Spread,
+            [_future apply {_x#2}] call ITW_CLASH_Knowledge_fnc_Spread,
+            [_future apply {_x#3}] call ITW_CLASH_Knowledge_fnc_Spread,
+            {_x#4} count _samples,
+            {_x#5} count _samples,
+            [round time,round serverTime,round diag_tickTime]
+        ]] call ITW_CLASH_Knowledge_fnc_Log;
         ITW_CLASH_KnowledgeClockAnomalies = 0;
+        ITW_CLASH_KnowledgeClockSamples = [];
     };
     true
 };
@@ -712,7 +843,7 @@ ITW_CLASH_Knowledge_fnc_Summary = {
 
 ITW_CLASH_KnowledgeReady = true;
 diag_log format [
-    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
+    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 minUncertainty=%16 truthSpeeds=true clockSamples=true hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
     ITW_CLASH_KnowledgeVersion,
     ITW_CLASH_KnowledgePoll,
     ITW_CLASH_KnowledgeSpeedStatic,
@@ -727,6 +858,7 @@ diag_log format [
     ITW_CLASH_KnowledgeExistenceZero,
     ITW_CLASH_KnowledgeClearedWindow,
     ITW_CLASH_KnowledgeTruthDiagnostic,
-    ITW_CLASH_KnowledgePresenceFloor
+    ITW_CLASH_KnowledgePresenceFloor,
+    ITW_CLASH_KnowledgeMinUncertainty
 ];
 true
