@@ -154,7 +154,10 @@ def test_admission_reserves_money_lane_and_cooldowns_unscheduled():
 def test_money_is_spent_only_on_delivery_or_loss():
     settle = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_Settle")
     assert 'private _refund = _state in ["REVOKED","BREAKOFF"];' in settle
-    assert '_ledger set ["cash",(_ledger get "cash") + _price]' in settle
+    # Refunded in full up to the ceiling; what would cross it is clipped and logged.
+    assert "private _after = (_before + _price) min ((call ITW_CLASH_Supports_fnc_Cap) max _before);" in settle
+    assert "_clipped = (_before + _price) - _after;" in settle
+    assert "round _clipped" in settle
     # The lane is released only by its own holder.
     assert 'if ((_lanes getOrDefault [_lane,""]) isEqualTo _id) then {_lanes set [_lane,""]};' in settle
     # A lost UAV costs its side the next launch for a while.
@@ -188,9 +191,11 @@ def test_targets_come_from_the_knowledge_layer_only():
     target_now = function_body(core, "ITW_CLASH_Supports_fnc_TargetNow")
     assert "call ITW_CLASH_Knowledge_fnc_Record" in target_now
     assert "getPos" not in target_now
-    # The only position read in the core is our own people's, for danger close.
-    assert core.count("getPosATL") == 1
+    # The only positions read in the core are our own people's: for danger
+    # close, and for which of our formations an enemy is threatening.
+    assert core.count("getPosATL") == 2
     assert "private _position = getPosATL _veh;" in function_body(core, "ITW_CLASH_Supports_fnc_Friendlies")
+    assert "private _position = getPosATL _veh;" in function_body(core, "ITW_CLASH_Supports_fnc_Committed")
 
 
 def test_unguided_flavors_never_bomb_a_guess_guided_is_exempt():
@@ -248,20 +253,59 @@ def test_the_only_hal_write_is_the_airborne_native_order():
 # --------------------------------------------------------------------- strike
 
 
-def test_unguided_release_is_by_fall_time_and_re_aimed_once():
+def test_unguided_release_is_by_fall_time_from_the_drop_height():
     strike = code("ITW_CLASH_SupportsStrike.sqf")
+    fall = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_FallTime")
+    assert "(_vz + sqrt ((_vz * _vz) + (2 * 9.81 * (_height max 1)))) / 9.81" in fall
     lead = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_Lead")
-    assert "(_vz + sqrt ((_vz * _vz) + (2 * 9.81 * _height))) / 9.81" in lead
-    unguided = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_UnguidedPass")
-    assert "([_side,_keys,0] call ITW_CLASH_Supports_fnc_TargetNow)" in unguided
-    assert "_aim = _now;" in unguided
-    assert unguided.count("_checked = true;") == 1
+    assert "- ITW_CLASH_SupportsStrikeDropOffset - (getTerrainHeightASL _aim)" in lead
+    assert '"ITW_CLASH_SupportsStrikeReleaseBias",0]' in strike
 
 
-def test_bombs_are_credited_to_the_aircraft():
+def test_the_jet_is_steered_onto_the_report_never_the_bombs():
+    unguided = function_body(code("ITW_CLASH_SupportsStrike.sqf"), "ITW_CLASH_SupportsStrike_fnc_UnguidedPass")
+    approach = unguided.index("_along <= ITW_CLASH_SupportsStrikeApproachUpdate")
+    line_up = unguided.index("[_group,_aim,_heading] call ITW_CLASH_SupportsStrike_fnc_LineUp;")
+    check = unguided.index("_along <= (_lead - _first + ITW_CLASH_SupportsStrikeCheckLead)")
+    assert approach < line_up < check
+    # What is left off the line at the final check is a miss or a break-off.
+    assert 'if (_wide > ITW_CLASH_SupportsStrikeCrossLimit) exitWith {_result = ["BREAKOFF","passed-wide"]};' in unguided
+    # The pass itself never creates a bomb: only the per-frame release does.
+    assert "fnc_DropBomb" not in unguided
+
+
+def test_bombs_leave_the_aircraft_with_its_velocity_credited_to_it():
     drop = function_body(code("ITW_CLASH_SupportsStrike.sqf"), "ITW_CLASH_SupportsStrike_fnc_DropBomb")
     assert "_bomb setShotParents [_veh,driver _veh];" in drop
-    assert "_bomb setVelocity (velocity _veh);" in drop
+    assert "private _velocity = velocity _veh;" in drop
+    assert "_bomb setVelocity _velocity;" in drop
+    # Created at the aircraft: its own position, its lateral slot, the drop offset.
+    assert "private _position = (getPosASL _veh)" in drop
+
+
+def test_release_runs_every_frame_and_skips_rather_than_conjures():
+    strike = code("ITW_CLASH_SupportsStrike.sqf")
+    unguided = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_UnguidedPass")
+    assert 'addMissionEventHandler ["EachFrame",ITW_CLASH_SupportsStrike_fnc_ReleaseFrame,[_state]]' in unguided
+    # Removing the handler is unscheduled, so it cannot race the handler.
+    removal = unguided[unguided.index("isNil {"):]
+    assert 'removeMissionEventHandler ["EachFrame",_handler];' in removal[:300]
+    frame = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_ReleaseFrame")
+    assert "if (_overshoot > ITW_CLASH_SupportsStrikeSkipDistance) then {" in frame
+    assert "[_veh,_lateral,_state,_next,_overshoot] call ITW_CLASH_SupportsStrike_fnc_DropBomb;" in frame
+    assert frame.count('removeMissionEventHandler ["EachFrame",_thisEventHandler];') == 3
+
+
+def test_every_bomb_is_measured_against_the_model_and_the_pattern():
+    strike = code("ITW_CLASH_SupportsStrike.sqf")
+    drop = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_DropBomb")
+    assert '_bomb addEventHandler ["Explode",ITW_CLASH_SupportsStrike_fnc_Impact];' in drop
+    assert "(productVersion param [2,0]) >= 210" in drop
+    impact = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_Impact")
+    assert '([_predicted,_position,_track] call _split) params ["_modelAlong","_modelCross"];' in impact
+    assert '([_intended,_position,_heading] call _split) params ["_aimAlong","_aimCross"];' in impact
+    # The bomb's ballistic config is logged at boot, beside the impacts.
+    assert 'getNumber (_bombConfig >> "airFriction")' in strike
 
 
 def test_the_guided_pass_acquires_on_site_and_breaks_off_empty():
@@ -273,9 +317,31 @@ def test_the_guided_pass_acquires_on_site_and_breaks_off_empty():
     assert "private _canSteer = (productVersion param [2,0]) >= 210;" in guided
 
 
+def test_the_guided_pass_fires_only_inside_the_envelope_at_each_launch():
+    strike = code("ITW_CLASH_SupportsStrike.sqf")
+    envelope = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_Envelope")
+    for needle in ('"TOO_CLOSE"', '"TOO_FAR"', '"OFF_NOSE"', '"NO_LINE_OF_SIGHT"', "_veh getRelDir _target"):
+        assert needle in envelope, needle
+    ammo_range = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_AmmoRange")
+    assert '"missileLockMinDistance"' in ammo_range and '"missileLockMaxDistance"' in ammo_range
+    guided = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_GuidedPass")
+    loop = guided[guided.index('for "_shot" from 1 to ITW_CLASH_SupportsStrikeShots do {'):]
+    assert loop.index("fnc_Envelope") < loop.index("fireAtTarget")
+    assert 'if (_along < _minRange) exitWith {_ended = "inside-min-range"};' in guided
+
+
+def test_a_test_pass_never_touches_the_ledger():
+    test_pass = function_body(code("ITW_CLASH_SupportsStrike.sqf"), "ITW_CLASH_SupportsStrike_fnc_TestPass")
+    assert "if (!isServer) exitWith" in test_pass
+    for forbidden in ("fnc_Admit", "fnc_Settle", "fnc_Ledger", "fnc_Run;"):
+        assert forbidden not in test_pass.replace("ITW_CLASH_SupportsStrike_fnc_Run;", ""), forbidden
+    assert '["test",true]' in test_pass
+
+
 def test_a_strike_lost_before_release_is_lost_not_refunded():
     unguided = function_body(code("ITW_CLASH_SupportsStrike.sqf"), "ITW_CLASH_SupportsStrike_fnc_UnguidedPass")
-    assert '} else {["LOST","aircraft-lost"]};' in unguided
+    assert 'exitWith {_result = ["LOST","aircraft-lost"]};' in unguided
+    assert 'case (_released == 0 && {_done isEqualTo "lost"}): {["LOST","aircraft-lost"]};' in unguided
 
 
 # ------------------------------------------------------------------------ uav
@@ -390,3 +456,143 @@ def test_every_denial_used_is_in_the_vocabulary():
         used |= set(re.findall(r'_support set \["denied","([A-Z_]+)"\]', source))
     missing = sorted(used - vocabulary)
     assert not missing, missing
+
+
+# ------------------------------------------------------------ v2: knowledge
+
+
+def test_losing_the_position_is_not_losing_the_enemy():
+    source = code("ITW_CLASH_Knowledge.sqf")
+    assert "ITW_CLASH_KnowledgeVersion = 2;" in source
+    held = function_body(source, "ITW_CLASH_Knowledge_fnc_Held")
+    assert "([_y] call ITW_CLASH_Knowledge_fnc_Existence) > 0" in held
+    census = function_body(source, "ITW_CLASH_Knowledge_fnc_Census")
+    assert "forEach ([_side] call ITW_CLASH_Knowledge_fnc_Held);" in census
+    assert "< ITW_CLASH_KnowledgePresenceFloor) then {continue};" in census
+    strength = function_body(source, "ITW_CLASH_Knowledge_fnc_ReportedStrength")
+    assert "forEach ([_side] call ITW_CLASH_Knowledge_fnc_Held);" in strength
+    assert "call ITW_CLASH_Knowledge_fnc_Presence;" in strength
+    # Targeting still never sees a LOST record.
+    contacts = function_body(source, "ITW_CLASH_Knowledge_fnc_Contacts")
+    assert 'if (_status isNotEqualTo "LOST") then' in contacts
+
+
+def test_presence_is_existence_times_the_share_of_where_it_could_be():
+    source = code("ITW_CLASH_Knowledge.sqf")
+    presence = function_body(source, "ITW_CLASH_Knowledge_fnc_Presence")
+    assert "/ (pi * _r * _r);" in presence
+    assert "_existence * ((_share max 0) min 1)" in presence
+    overlap = function_body(source, "ITW_CLASH_Knowledge_fnc_CircleOverlap")
+    # SQF acos is in degrees; the segment formula needs radians.
+    assert "(acos _a) * pi / 180" in overlap and "(acos _b) * pi / 180" in overlap
+
+
+def test_the_best_report_is_the_most_certain_now_not_the_newest():
+    update = function_body(code("ITW_CLASH_Knowledge.sqf"), "ITW_CLASH_Knowledge_fnc_Update")
+    assert "if (_bestR <= _heldR) then {" in update
+    assert "_seenAt > (_record get \"seenAt\")}) then {" not in update
+    # Any sighting still proves it exists, and that is what forgetting reads.
+    assert '_record set ["confirmedAt",_seenAt max' in update
+    assert '(_now - (_record getOrDefault ["confirmedAt",_record get "seenAt"])) > ITW_CLASH_KnowledgeForgetAfter' in update
+    existence = function_body(code("ITW_CLASH_Knowledge.sqf"), "ITW_CLASH_Knowledge_fnc_Existence")
+    assert '_record getOrDefault ["confirmedAt"' in existence
+
+
+def test_cleared_needs_our_people_on_the_ground_inside_the_objective():
+    update = function_body(code("ITW_CLASH_Knowledge.sqf"), "ITW_CLASH_Knowledge_fnc_Update")
+    assert '!((vehicle _x) isKindOf "Air")' in update
+    assert '"ITW_CLASH_ColossusObjectiveRadius",500]' in update
+    assert '"ITW_CLASH_AirPictureObservedRadius"' not in update
+
+
+def test_a_look_is_only_refreshed_by_the_same_kind_of_look():
+    stamp = function_body(code("ITW_CLASH_Knowledge.sqf"), "ITW_CLASH_Knowledge_fnc_StampLook")
+    assert "&& {(_x#3) isEqualTo _source}" in stamp
+
+
+# ----------------------------------------------------- v2: objective influence
+
+
+def test_the_objective_biases_targets_rather_than_deciding_them():
+    core = code("ITW_CLASH_Supports.sqf")
+    assert '"ITW_CLASH_SupportsInfluenceRadius",2000]' in core
+    assert '"ITW_CLASH_SupportsInfluenceEdge",0.3]' in core
+    assert '"ITW_CLASH_SupportsThreatProximity",1000]' in core
+    weight = function_body(core, "ITW_CLASH_Supports_fnc_DistanceWeight")
+    assert "1 - ((1 - ITW_CLASH_SupportsInfluenceEdge) * (_distance - _inner)" in weight
+    assert "if (_distance > ITW_CLASH_SupportsInfluenceRadius) exitWith {0};" in weight
+    strike = function_body(core, "ITW_CLASH_Supports_fnc_StrikeCandidates")
+    assert "[_side,_centers,ITW_CLASH_SupportsInfluenceRadius] call ITW_CLASH_Supports_fnc_Clusters" in strike
+    assert "if (_threat) then {_falloff = 1};" in strike
+    # One entry per cluster and flavor, at its best objective.
+    assert "if (_weight > _bestWeight) then {" in strike
+
+
+def test_threat_proximity_counts_only_formations_committed_to_that_objective():
+    committed = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_Committed")
+    assert '"ITW_CLASH_ColossusCommittedRadius",900]' in committed
+    assert 'if (_veh isKindOf "Air") then {continue};' in committed
+    for pool in ("RydHQ_SupportG", "RydHQ_SpecForG", "RydHQ_ArtG", "RydHQ_CargoOnly", "RydHQ_Exhausted"):
+        assert pool in committed, pool
+
+
+def test_pressure_on_a_held_point_is_its_own_and_covers_its_influence():
+    core = code("ITW_CLASH_Supports.sqf")
+    pressure = function_body(core, "ITW_CLASH_Supports_fnc_Pressure")
+    assert "forEach ([_side] call ITW_CLASH_Knowledge_fnc_Held);" in pressure
+    assert "[_record,_center,ITW_CLASH_SupportsInfluenceRadius] call ITW_CLASH_Knowledge_fnc_Presence" in pressure
+    assess = function_body(core, "ITW_CLASH_Supports_fnc_Assess")
+    assert "ITW_CLASH_Supports_fnc_Pressure;" in assess
+    assert '_entry getOrDefault ["enemyReported",-1]' not in assess
+
+
+def test_every_candidate_is_affordable_before_the_roll():
+    core = code("ITW_CLASH_Supports.sqf")
+    strike = function_body(core, "ITW_CLASH_Supports_fnc_StrikeCandidates")
+    assert '(_ledger get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)' in strike
+    drop = function_body(core, "ITW_CLASH_Supports_fnc_DropCandidates")
+    assert '< ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)) then {' in drop
+    assess = function_body(core, "ITW_CLASH_Supports_fnc_Assess")
+    assert '(["UAV","TAKE"] call ITW_CLASH_Supports_fnc_Price)' in assess
+
+
+def test_the_uav_goes_where_uncertainty_blocks_a_decision():
+    core = code("ITW_CLASH_Supports.sqf")
+    task = function_body(core, "ITW_CLASH_Supports_fnc_UAVTask")
+    assert 'if (_planIntel isEqualTo "STALE_CONTACT") exitWith {[_planPos,_planObjective,"stale-plan"]};' in task
+    assess = function_body(core, "ITW_CLASH_Supports_fnc_Assess")
+    assert 'case "unobserved-plan";\n                        case "stale-plan": {3};' in assess
+
+
+def test_the_spawn_is_always_the_full_run_in_and_on_the_map():
+    spawn = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_SpawnPoint")
+    assert "+_origin" not in spawn
+    assert "private _limit = worldSize - _margin;" in spawn
+    assert "forEach [0,15,-15,30,-30,45,-45,60,-60,75,-75,90,-90];" in spawn
+
+
+def test_egress_flies_on_turns_on_the_colder_side_and_goes_home():
+    egress = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_Egress")
+    assert "_from getPos [ITW_CLASH_SupportsEgressSeparation,_heading]" in egress
+    assert "[120,-120] apply {" in egress
+    assert 'private _rank = ["COLD","UNKNOWN","CONTESTED","HOT","AIR_DENIED"];' in egress
+    # Shot down on the way out: left where it falls.
+    assert "if (!alive _veh) exitWith {false};" in egress
+    for name in ("ITW_CLASH_SupportsStrike.sqf", "ITW_CLASH_SupportsAirborne.sqf"):
+        assert re.search(r"4000,300,_support\s*\] spawn ITW_CLASH_Supports_fnc_Egress;", code(name)), name
+
+
+def test_only_decisions_are_spoken_aloud():
+    core = code("ITW_CLASH_Supports.sqf")
+    log = function_body(core, "ITW_CLASH_Supports_fnc_Log")
+    assert "_event in ITW_CLASH_SupportsLoudEvents" in log
+    loud = core[core.index("ITW_CLASH_SupportsLoudEvents = ["):]
+    loud = loud[:loud.index("];")]
+    assert '"pool"' not in loud and '"ledger"' not in loud
+
+
+def test_preflight_knows_the_five_modules():
+    manifest = code("ITW_CLASH_DebugPreflight.sqf")
+    for prefix in ("ITW_CLASH_Knowledge", "ITW_CLASH_Supports", "ITW_CLASH_SupportsStrike",
+                   "ITW_CLASH_SupportsUAV", "ITW_CLASH_SupportsAirborne"):
+        assert f'["{prefix}",' in manifest, prefix

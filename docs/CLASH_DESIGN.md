@@ -345,7 +345,11 @@ After its order, each assessment COLOSSUS hands its picture, posture and plan to
 supports layer builds one weighted pool (recon UAV, bomb pass, guided pass,
 carpet, helicopter or C-130 airborne, and saving) against targets it reads from
 **`Knowledge`**, which holds what each side's own people have reported, with an
-uncertainty that grows with age, and never where the enemy really is. Admission
+uncertainty that grows with age, and never where the enemy really is; a contact
+whose position is lost still counts toward strength and keeps a place from
+reading as cleared while it is believed to exist. Targets are searched across a
+2 km influence area around each target objective, weighted down with distance
+and back up near our committed troops. Admission
 takes money, lane and cooldowns in one unscheduled block; money is spent only on
 delivery or loss. Every support flies on an aircraft that exists only for it and
 never enters a HAL pool; the one HAL write is an airborne squad's single native
@@ -590,11 +594,11 @@ its own, usually because a parent loads and reports it.
 | module | v | lines | ready flag | what it does (its own words) |
 |---|---|---|---|---|
 | `Colossus` | 5 | 850 | `colossus-ready` | COLOSSUS - the strategy layer. |
-| `Knowledge` | 1 | 635 | `knowledge-ready` | What each side's own people have reported, and how sure it can be. Observation only. |
-| `Supports` | 1 | 1589 | `supports-ready` | Commander supports: the core. COLOSSUS proposes; this decides, admits and owns the money. |
-| `SupportsStrike` | 1 | 443 | `supports-strike-ready` | The strike pass: bomb pass, guided pass with on-site scan, carpet. |
+| `Knowledge` | 2 | 732 | `knowledge-ready` | What each side's own people have reported, and how sure it can be. Observation only. Losing a position is not losing the enemy. |
+| `Supports` | 2 | 1860 | `supports-ready` | Commander supports: the core. COLOSSUS proposes; this decides, admits and owns the money. The objective biases targets; it does not decide them. |
+| `SupportsStrike` | 2 | 770 | `supports-strike-ready` | The strike pass: bomb pass, guided pass with on-site scan, carpet. Per-frame release, impact log. |
 | `SupportsUAV` | 1 | 238 | `supports-uav-ready` | The recon UAV: unarmed, one per side, a sensor like any squad. |
-| `SupportsAirborne` | 1 | 496 | `supports-airborne-ready` | The airborne insertion: Impasse's squads, Impasse's jump, one native order at hand-off. |
+| `SupportsAirborne` | 1 | 497 | `supports-airborne-ready` | The airborne insertion: Impasse's squads, Impasse's jump, one native order at hand-off. |
 | `HALFront` | 2 | 266 | `hal-front-ready` | HAL front for both commanders. |
 | `HALReconLatch` | 1 | 193 | `hal-recon-latch-ready` | RydHQ_ReconDone, latched. |
 | `HALWaypointGuardFix` | 1 | 160 | `hal-waypoint-guard-ready` | HAL drops a capture waypoint when _wp0 is not defined. |
@@ -765,6 +769,8 @@ of these in `description.ext` `class Params` or the mission namespace.
 | `ITW_CLASH_Supports<Flavor>Enabled` | per flavor: `UAV`, `Bomb`, `Guided`, `Carpet` (on), `AirborneHeli`, `AirbornePlane`, `VehicleDrop` (off) |
 | `ITW_CLASH_KnowledgeEnabled = false` | the reported picture stops updating; supports then find no targets |
 | `ITW_CLASH_ColossusReportedPositions = true` | COLOSSUS's verdict reads reported strength instead of live, and ranks unobserved objectives down |
+| `ITW_CLASH_SupportsInfluenceRadius` | how far from a target objective supports look for targets (2000 m); set it to the objective radius to confine them to the point |
+| `ITW_CLASH_SupportsStrikeReleaseBias` | metres added to the bomb release lead; stays 0 until the impact log has measured drag |
 | `ITW_CLASH_RearBaseCRAMEnabled = false` | no rear-base air defence |
 | `ITW_CLASH_RearBaseCRAMRespawn = 0` | a rear base cleared of air defence stays cleared |
 | `ITW_CLASH_ResupplyGFRHold = false` | claimed vehicle groups withdraw to a rally (v1 behaviour) instead of holding |

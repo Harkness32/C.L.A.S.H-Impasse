@@ -99,6 +99,12 @@ For each candidate, each observing group's leader gives one report from
 are never merged. Each is projected on its own (4.3) and the contact keeps the
 single best one.
 
+Where a contact is placed and when it was last confirmed are kept apart. The
+position is the report with the smallest uncertainty **now**, which is not
+always the newest: a newer but sloppier sighting does not move it. Any newer
+sighting still confirms the contact exists (`confirmedAt`), and existence
+confidence and forgetting read that.
+
 A read-only truth diagnostic logs reported against actual positions, never fed
 back into any decision. It also confirms that `lastSeen` runs on the `time`
 clock; a report whose `lastSeen` lies in the future or below zero is discarded.
@@ -128,8 +134,30 @@ have gone, not where it probably went.
 | Lost | Anything else | Not enough to act on |
 
 **Existence confidence** scales a contact's worth: full for 120 s after the last
-sighting, falling to zero at 900 s. A fixed MG nest still draws a coordinate
+confirmation, falling to zero at 900 s. A fixed MG nest still draws a coordinate
 strike for a while, at a falling value.
+
+**Losing the position is not losing the enemy.** Two questions are answered
+from two lists:
+
+| Question | Reads | Stale contacts |
+|---|---|---|
+| Can I hit this position? | `fnc_Contacts`: never a LOST record | Only while the uncertainty meets the weapon's limit |
+| Could the enemy still be here? | `fnc_Held`: every record still believed to exist | Counted by presence |
+
+**Presence** of a contact in a place is its existence confidence times the share
+of its uncertainty circle (radius R around its reported position) that lies
+inside the place: the exact two-circle overlap. Reported strength sums class
+worth times presence. A LOST record with presence of at least 0.1 counts as a
+lead for the intelligence state, so the place reads Stale contact, never cleared.
+One sighting at an objective's centre, error 15 m:
+
+| | 60 s | 120 s | 180 s | 300 s | 450 s |
+|---|---|---|---|---|---|
+| Armor: strength (of 3) | 3.00 | 0.79 | 0.33 | 0.10 | 0.03 |
+| Armor: intel | Stale | Stale | Stale | Unobserved | Unobserved |
+| Infantry: strength (of 1) | 1.00 | 1.00 | 0.92 | 0.51 | 0.17 |
+| Infantry: intel | Stale | Stale | Stale | Stale | Stale |
 
 **Moving:** a contact whose reported position moved more than 30 m between
 reports.
@@ -142,13 +170,15 @@ Measured inside `ITW_CLASH_ColossusObjectiveRadius`.
 |---|---|
 | Unobserved | No observed, fixed or lead contact inside, and nobody has looked recently |
 | Recent contact | At least one observed or fixed contact inside |
-| Stale contact | Leads only |
+| Stale contact | Leads only, including LOST records still present there (4.4) |
 | Recently cleared | Looked at within 300 s and nothing found |
 
-A "look" is stamped per objective and side by friendly units within
-`ITW_CLASH_AirPictureObservedRadius` and by the UAV's footprint.
-`ITW_CLASH_AirPicture_fnc_Observed` reads the stamp, so a place the UAV looked at
-and found empty counts as observed.
+Recently cleared needs **positive evidence**: an empty contact list never clears
+a place. A "look" is stamped per objective and side by our people **on the
+ground inside the objective radius** (aircraft overhead and anyone under canopy
+do not count) and by the UAV on station. Looks are kept per source, so a friendly
+look never refreshes a UAV look. `ITW_CLASH_AirPicture_fnc_Observed` reads only
+UAV looks.
 
 ### 4.6 COLOSSUS on the layer
 
@@ -186,8 +216,7 @@ flavor cooldown, footprint radius, its weights (6.3) and its enable switch.
 - Smoke screen (a flavor air defence cannot stop).
 - UAV laser designation for laser-guided bombs.
 - The on-site scan for the bomb pass.
-- An outer shaping ring for overwatch positions and reinforcements.
-- Strikes on formations away from the plan objective.
+- Strikes on formations beyond the 2 km influence area (6.2).
 - Players flying or marking supports through the employment system.
 
 ## 6. Decision: the weighted pool
@@ -204,9 +233,15 @@ One roll, at most one proposal.
    static 0.5), each times its existence confidence. Its aim point is the
    worth-weighted mean of the members' reported positions, and its class for the
    weight table is its dominant composition.
-2. **Where.** Clusters inside the objective radius of:
+2. **Where.** The objective biases where supports go; it does not decide which
+   enemies exist. Clusters anywhere inside the **influence area** (2000 m) of a
+   target objective:
    - the plan objective, when posture is PUSH;
    - any held objective under pressure, in any posture.
+
+   One clustering covers the union of the target objectives' influence areas,
+   so a cluster near two objectives is one cluster and enters the pool once per
+   flavor, at the objective that values it most.
 3. **Candidates.**
    - One strike candidate per eligible flavor and cluster.
    - The UAV launch, when the recon lane is free.
@@ -215,8 +250,11 @@ One roll, at most one proposal.
 4. **Gates first.** Every hard gate (7.1) runs before the roll. Excluded
    candidates are logged with their reason and never enter the pool.
 
-A held objective is **under pressure** when it has known enemy inside and our
-ratio there is below VULNERABLE.
+A held objective is **under pressure** when our ratio there is below VULNERABLE
+against its **pressure**: every enemy still believed to exist, at class worth
+times its presence in the point's influence area times the distance falloff at
+its reported position. Pressure is computed per objective: one tank threatening
+two points is pressure on both, though it enters the pool once.
 
 ### 6.3 Strike weights
 
@@ -230,6 +268,21 @@ Coarse 0 to 3. Zero means physically impossible, nothing else.
 | Infantry moving | 2 | 0 (nothing to lock) | 3 |
 | Leads only | 0 (needs observed or fixed) | 1 for vehicles, else 0 | 2 |
 
+**Distance falloff.** Each strike weight is multiplied by
+
+> W(d) = 1 inside the objective radius (500 m), 1 − 0.7 × (d − 500) ÷ 1500 out to
+> 2000 m, nothing beyond
+
+where d is the cluster's distance from the objective. **Threat proximity:** a
+cluster within 1000 m of one of our ground formations committed to that
+objective is weighted 1 wherever it stands. Committed follows COLOSSUS's own
+rule: the commander's groups, less support, special forces, artillery, naval,
+cargo-only, static and exhausted pools, with the leader on the ground within
+900 m of the objective. Being that close to our people makes the enemy relevant;
+it does not prove it is firing. The 2 km cutoff is hard; the pool line logs how
+many contacts crossed it since the last assessment, and a hysteresis band is the
+fix if that flaps.
+
 **Uncertainty multiplier.** Each strike weight is multiplied by
 `min(1, footprint ÷ R)`, with R projected to release (4.3). Footprints: bomb pass
 50 m, carpet 60 m. A cluster whose R exceeds 300 m is excluded
@@ -240,7 +293,7 @@ site (9.3).
 
 | Candidate | Weight |
 |---|---|
-| UAV launch | 3 if the plan objective is Unobserved; 1 if it or a held point is Stale contact; 0.5 otherwise |
+| UAV launch | 3 if the plan objective is Unobserved or Stale contact (uncertainty is blocking a decision there); 1 for another objective with Stale contact; 0.5 otherwise |
 | Airborne | Base 1. +1 if the push is short by more than the best strike could remove. +1 if our nearest available ground force is more than 1500 m out. 3 for a held point under pressure with no anchor |
 | Save | 3 with the bank below a third of its cap, 2 below two thirds, 1 below full, 0.5 at the cap |
 
@@ -281,7 +334,7 @@ Under CONSOLIDATE only candidates at held points enter the pool.
 | ETB overlap | Target not already tasked to a busy ETB responder of the side (`ITW_CLASH_Supports_fnc_ETBAnswering` reads `ITW_CLASH_ThreatCoverageTarget` on the commander's groups) | `ETB_ANSWERING` |
 | Lane | Recon lane: one UAV. Commitment lane: one strike or drop in flight | `LANE_BUSY` |
 | Cooldown | Per flavor and per objective | `COOLDOWN` |
-| Budget | Price affordable | `INSUFFICIENT_FUNDS` |
+| Budget | The candidate's own price (taking or holding) affordable, checked before the roll so an unaffordable option never wins it | `INSUFFICIENT_FUNDS` |
 | Capability | The faction has the aircraft: UAV class (vanilla fallback), an attack plane, a guided anti-armor weapon on it, a transport helicopter, a transport plane | `NO_AIRCRAFT`, `NO_GUIDED_WEAPON` |
 | Airfield | Fixed-wing flavors need an owned airfield (`ITW_ObjOwnedAirports`) | `NO_AIRFIELD` |
 | Headcount | Airborne only: Impasse's live count of the side plus the squads stays under its cap | `NO_HEADROOM` |
@@ -337,12 +390,14 @@ transition is a `supports-state` line.
 | State | When | Money |
 |---|---|---|
 | `DONE` | Delivered: bombs released (all or part), missiles fired, the UAV's loiter served, troops jumped | Spent |
-| `REVOKED` | Pre-run check failed, or the executor could not start (no aircraft, no drop zone, no squads, spawn failed, no executor); nothing flew | Refunded |
-| `BREAKOFF` | Aircraft alive and nothing delivered: no target found, too uncertain or danger close at release, passed wide, never reached the task | Refunded |
+| `REVOKED` | Pre-run check failed, or the executor could not start (no aircraft, no drop zone, no squads, spawn failed, no executor); nothing flew | Refunded, up to the ceiling |
+| `BREAKOFF` | Aircraft alive and nothing delivered: no target found, too uncertain or danger close at release, passed wide, never reached the task, every bomb skipped | Refunded, up to the ceiling |
 | `LOST` | Aircraft destroyed or unable to fly before delivering | Spent |
 | `DRY_RUN` | Shadow mode | Spent (shadow) |
 
-The cooldown stands whatever the outcome.
+A refund never lifts the wallet past its ceiling (one big support banked, never
+two); the clipped amount is logged on the outcome line. The cooldown stands
+whatever the outcome.
 
 The setup delay is varied per request (45 to 120 s) and never announced.
 
@@ -373,9 +428,13 @@ The setup delay is varied per request (45 to 120 s) and never announced.
 
 ### 9.1 Common flight rules
 
-- Aircraft spawn **after** the setup delay, in flight, on the line from the
-  side's origin to the task, at most 4 km (jets) or 5 km (helicopters, transport
-  planes) short of it. Origins: the rear air base for helicopters and the UAV,
+- Aircraft spawn **after** the setup delay, in flight, on the bearing from the
+  side's origin to the task, always the full 4 km (jets) or 5 km (helicopters,
+  transport planes) short of it, so a strike has its run-in even when our
+  airfield is next to the target. That point lies beyond our airfield, in our own
+  airspace. If it would fall off the map, the bearing turns in 15 degree steps up
+  to 90 either way, and only then is the point clamped 500 m inside the edge. A
+  strike's spawn is computed from its target cluster, not the objective centre. Origins: the rear air base for helicopters and the UAV,
   an owned airfield for fixed-wing.
 - Crewed aircraft come from Impasse's own factory (`ITW_AtkSpawnVeh`), so the
   crew is the faction's. The UAV is created with its own AI crew, joined to a
@@ -384,9 +443,12 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   and `flyInHeightASL` as a floor for fixed-wing.
 - Air-to-air missiles removed from strike aircraft, so a support jet never reads
   as a fighter to the other side and never engages aircraft.
-- After the task: flares, egress, despawn at distance or by timeout. A
-  shot-down aircraft is never deleted: it falls where it was hit, and the
-  engine's own clean-up takes the wreck.
+- After the task: flares, then egress. Strike and drop aircraft fly on 2 km past
+  the task, turn 120 degrees to whichever side the corridor classifier rates
+  colder from the turn point to home (a mirror-image tie is a coin toss), and fly
+  home; never an about-face over the target. Despawn 4 km from the task or by
+  timeout. A shot-down aircraft is never deleted: it falls where it was hit, and
+  the engine's own clean-up takes the wreck.
 
 ### 9.2 Orbit: recon UAV
 
@@ -414,10 +476,27 @@ The setup delay is varied per request (45 to 120 s) and never announced.
 
 - The jet flies a line through the aim point (bomb pass 250 m, carpet 400 m,
   guided 600 m above it). Unguided release is timed by ballistic fall time from
-  the jet's height and speed, with no drag. About 600 m before the first
-  release the target is re-read once from the knowledge layer: the aim moves to
-  the latest report, and the uncertainty limit and danger close are checked
-  again.
+  where the bomb leaves (5 m under the jet) and the jet's speed, with no drag.
+  Every bomb leaves with the jet's velocity and arcs forward like a real stick.
+- **Line-up**, about 3 km out: the latest report is read, the uncertainty limit
+  and danger close are checked, and the jet's line is pointed through the new
+  aim. The aircraft is steered onto the target; bombs are never moved onto it.
+- **Final check**, about 600 m before the first release: the report is read
+  once more for timing along the line only. Whatever the jet could not fix by
+  then is a physical miss, and more than 250 m off the line is a break-off.
+- **Release** runs every frame in a mission event handler, outside the
+  scheduler, so server load can no longer make a stick late. A bomb whose point
+  the jet has already passed by more than 30 m is not dropped. Model: centred
+  within 2 to 10 m from 50 down to 8 server FPS, every bomb in the footprint.
+- **Impact log.** Each bomb's explosion is logged against where the no-drag
+  model said it would land (drag and model error only) and against the pattern
+  point it was meant for (that, plus lateness and line error), with release
+  height, speed and how late it left. The bomb's ballistic config
+  (`simulation`, `airFriction` and the rest) is logged at boot.
+  `ITW_CLASH_SupportsStrikeReleaseBias` stays 0 until those logs have separated
+  drag from timing. `ITW_CLASH_SupportsStrike_fnc_TestPass` flies a strike from
+  the debug console at a chosen height, heading and speed, outside the economy,
+  for controlled calibration runs.
 - **Bomb pass:** four unguided bombs, scripted under the aircraft at release with
   its velocity (class tunable, `Bo_Mk82` for both sides).
 - **Guided pass, with on-site scan:**
@@ -425,15 +504,20 @@ The setup delay is varied per request (45 to 120 s) and never announced.
      `getSensorTargets` and its crew's known targets for enemy ground vehicles
      inside the scan radius around the reported position. Scan radius = R
      projected to arrival, capped at 500 m.
-  2. **Valid:** alive, a vehicle, terrain line of sight from the jet, clear of
+  2. **Valid:** alive, a vehicle, inside the launch envelope (4), clear of
      danger close, not tasked to an ETB responder. Pick the nearest to the
      report.
   3. **Fire** two shots from the jet's own guided anti-armor weapon:
      `fireAtTarget`, and if that returns false, the weapon's missile spawned at
      the jet and given the target with `setMissileTarget`. That fallback is
      legitimate only because the jet acquired the target itself.
-  4. **Nothing valid** within a 20 s window: `BREAKOFF`, egress, despawn,
-     refund.
+  4. **Launch envelope**, checked when a target is found and again at the
+     instant of each shot: range between the missile's own lock distances
+     (`missileLockMinDistance` and `missileLockMaxDistance`, 800 and 5000 m when
+     its config has none), within 40 degrees of the nose, terrain line of sight.
+     The scan ends once the report is inside minimum range.
+  5. **Nothing valid** within a 20 s window, or before minimum range:
+     `BREAKOFF`, egress, despawn, refund.
 - **Carpet:** 21 bombs, Antistasi's layout centred on the aim point: 15 m
   apart along the line, in five lanes 40 m apart across it.
 - **Every bomb:** released only while the aircraft is alive, and given the
@@ -496,17 +580,26 @@ AttackRestore skips support groups.
 
 ## 10. Telemetry
 
-Every line goes through `ITW_CLASH_DualHAL_fnc_Log` (and the loud debugger).
-Prefixes: `supports-` for the core, `supports-strike-`, `supports-uav-`,
-`supports-airborne-` for the executors, `knowledge-` for the layer.
+Every line goes through `ITW_CLASH_DualHAL_fnc_Log`, which adds its own
+`dual-hal-` prefix in the RPT. Prefixes after that: `supports-` for the core,
+`supports-strike-`, `supports-uav-`, `supports-airborne-` for the executors,
+`knowledge-` for the layer. Only decision-level events (admission, outcome,
+releases, hand-offs, the UAV on station and ending, test outcomes) are spoken by
+the loud debugger; the pool and ledger lines are too long for chat.
 
 | Line | Content |
 |---|---|
-| `supports-pool` | Side, posture, plan objective; every candidate in stable order with family, flavor, objective, target key, class, status and weight; every exclusion with its reason; draw value; pick |
+| `supports-pool` | Side, posture, plan objective; every candidate in stable order with family, flavor, objective, target key, class, status and weight; every exclusion with its reason (objective -1 for a gate that does not depend on one); draw value; pick; cash; the target objectives with reason, urgency and pressure; influence-cutoff crossings since the last assessment |
 | `supports-admission` | Proposal, gate results, reservation or denial reason |
 | `supports-state` | Each lifecycle transition |
-| `supports-outcome` | Id, flavor, objective, reason, terminal state, detail, refunded or spent, price, cash after, seconds from reservation |
-| `supports-strike-released`, `-guided-fired`, `-scan-empty`, `-effect` | What each pass did, and how many of the target's entities died after it (log only) |
+| `supports-outcome` | Id, flavor, objective, reason, terminal state, detail, refunded or spent, price, cash after, seconds from reservation, refund clipped at the ceiling |
+| `supports-egress` | Id, the corridor state of the chosen turn, run heading |
+| `supports-strike-lined-up`, `-release-check` | How far the report moved at the 3 km line-up and the final check |
+| `supports-strike-released`, `-guided-fired`, `-scan-empty`, `-effect` | What each pass did (bombs released and skipped, mean lateness in metres; shots, fallbacks, envelope refusal; why a scan ended), and how many of the target's entities died after it (log only) |
+| `supports-strike-impact` | Per bomb: error against the no-drag model (along, across), error against its pattern point (along, across), release height, speed, lateness in metres |
+| `supports-strike-impact-summary` | Per pass: the four mean errors |
+| `supports-strike-ammo` | Boot: the bomb class's simulation, air friction, side air friction, max speed, thrust, thrust time, time to live |
+| `supports-strike-test-started`, `-test-outcome` | A console test pass |
 | `supports-uav-launched`, `-on-station`, `-retasked`, `-ended` | The UAV's life: looks stamped, peak contacts in one sweep, retasks |
 | `supports-airborne-boarded`, `-released`, `-handoff`, `-vehicle-*` | The drop: squads and men, release geometry, who took each squad and which order it got |
 | `supports-ledger` | Periodic: cash, cap, income, lanes |
@@ -543,13 +636,22 @@ class goes without that flavor.
 5. A C-130 drop height that clears terrain and survives.
 6. Whether `EntityKilled` fires for the UAV's AI crew, so its loss is attributed
    to a side.
-7. How often an unguided pass on vehicles survives the uncertainty limit. With
+7. Bomb drag: read `supports-strike-ammo` and the impact lines from test passes
+   at two or three heights and speeds, on a quiet server and a loaded one. The
+   model error isolates drag; the pattern error adds timing and line error. Fit
+   `ITW_CLASH_SupportsStrikeReleaseBias` only after that split.
+8. Whether a bomb created 5 m under the jet ever strikes the airframe; whether
+   `netId` returns "0:0" in single player (contact keys would collide); whether a
+   laser-guided bomb is counted as a guided weapon.
+9. How often an unguided pass on vehicles survives the uncertainty limit. With
    vehicles at 8 m/s and about 36 s from spawn to release, a vehicle's R is
    already near 300 m at a fresh report: in practice a bomb pass or carpet on
    vehicles needs the target under continuous observation, and the guided pass
    (exempt) carries vehicle strikes.
-8. `moveInCargo` into an aircraft already in flight, the UAV AI on a `LOITER`
+10. `moveInCargo` into an aircraft already in flight, the UAV AI on a `LOITER`
    waypoint, and `ITW_AtkUnloadAirplane` called with no crew group.
+11. The `Explode` projectile event handler on the game version in use (the impact
+   log needs 2.10 or later), and `addMissionEventHandler` with arguments.
 
 ## 14. Tunables
 
@@ -589,8 +691,32 @@ All placeholders.
 | Squads per drop | Helicopter 2, C-130 3 |
 | Airborne far-force threshold | 1500 m |
 | Hand-off settle | 10 s, after up to 90 s waiting for the squad to be on its feet |
+| Presence floor (stale contact counts toward intel) | 0.1 |
+| Influence radius, edge weight | 2000 m, 0.3 |
+| Threat proximity (to committed formations) | 1000 m |
+| Spawn map margin | 500 m |
+| Egress separation, turn | 2000 m, 2000 m at 120 degrees |
+| Strike line-up, final check | 3000 m out; 600 m before the first release |
+| Release skip distance, drop offset, bias | 30 m, 5 m, 0 m |
+| Guided envelope fallbacks, cone | 800 to 5000 m, 40 degrees off the nose |
 
-## 15. Implementation
+## 15. Open decisions
+
+From the audit, waiting on a design call; nothing in the build presumes them:
+
+- **Carpet tempo.** In the economy model the carpet almost never happens (0 an
+  hour in the dry run, 0.03 live): its price is the wallet's ceiling, and the
+  cheaper flavors spend the money first. A bounded savings goal (expires,
+  cancels when its target stops qualifying, never blocks a held point in
+  trouble) fixes it, once the wanted tempo is set.
+- **Carpet width.** Five lanes 160 m wide from one aircraft is the one place
+  bombs still appear well off the airframe (up to 80 m). Keep it, narrow it to a
+  stick one jet could lay, or fly two or three bombers.
+- **Parked vehicles.** At 8 m/s a vehicle never passes the 300 m limit for a bomb
+  pass or carpet; guided passes carry all vehicle strikes. A lower allowance for
+  vehicles that have not moved for 60 s would make them bombable.
+
+## 16. Implementation
 
 | File | Owns |
 |---|---|
@@ -601,10 +727,12 @@ All placeholders.
 | `ITW_CLASH_SupportsUAV.sqf` | The recon UAV |
 | `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
 | `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
+| `ITW_CLASH_DebugPreflight.sqf` | Lists the five modules |
 | `ITW_CLASH_AttackRestore.sqf` | Skips groups carrying `ITW_CLASH_SupportAsset` |
 
 Boot (`init.sqf`): Knowledge, then COLOSSUS, then the core and its three
 executors; the core needs Knowledge and COLOSSUS, and an executor that is
 missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
-`tests/test_commander_supports.py`. Nothing here has run in engine yet: section
-13 is the list to verify.
+`tests/test_commander_supports.py`. The pure math (pick, overlap, presence,
+falloff, spawn point, release timing, economy) is cross-checked in a Python
+model; nothing here has run in engine yet. Section 13 is the list to verify.
