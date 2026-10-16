@@ -512,8 +512,10 @@ The setup delay is varied per request (45 to 120 s) and never announced.
 
 ### 9.2 Orbit: recon UAV
 
-- **Class:** the side's UAV list, air classes only, falling back to the side's
-  vanilla UAV. Weapons removed.
+- **Class:** the side's UAV list, air classes only, fixed-wing first, falling
+  back to the side's vanilla UAV. A rotary UAV only when the faction has no
+  fixed-wing one: on 2026-10-16 A drew an AR-2 Darter at random from its list
+  and sent it 5 km out to loiter at 500 m. Weapons removed.
 - **Loiter:** 500 m AGL, inside MANPAD reach and above small arms.
 - **Each poll (5 s):** reveals to the HQ group what its sensors
   (`getSensorTargets`) and crew have seen in the last 30 s, at 1.5, so HAL
