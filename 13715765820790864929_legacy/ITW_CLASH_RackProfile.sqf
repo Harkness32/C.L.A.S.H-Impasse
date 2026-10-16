@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_RackProfileStarted",false]) exitWith {true};
 
 ITW_CLASH_RackProfileStarted = true;
-ITW_CLASH_RackProfileVersion = 3;
+ITW_CLASH_RackProfileVersion = 4;
 ITW_CLASH_RackProfileReady = false;
 
 /*
@@ -33,7 +33,11 @@ ITW_CLASH_RackProfileReady = false;
         config's way of keeping a mode for players and are ignored.
       - lock: how it guides. An IR or laser seeker with no manual control
         cannot be fired at infantry: men give no IR return and nobody is
-        lasing for a HAL aircraft.
+        lasing for a HAL aircraft. Only missiles, rockets and submunition
+        carriers guide; a bullet or shell is NONE whatever its config says.
+        v3 read airLock on bullets as an air-to-air seeker, so the Pawnee's
+        M134 and the Blackfoot's 20 mm did not count against infantry
+        (2026-10-16): airLock on a gun only means it may shoot at aircraft.
       - aim: FIXED (a pylon, or a gun on the pilot's seat: the airframe has
         to point at the target) or TURRET (a gunner who aims on his own).
 
@@ -147,7 +151,9 @@ ITW_CLASH_Rack_fnc_Ammo = {
             default {64 + 128};
         };
     };
+    private _guides = _simulation in ["shotmissile","shotrocket","shotsubmunitions"];
     private _lock = switch (true) do {
+        case (!_guides): {"NONE"};
         case (getNumber (_config >> "manualControl") > 0): {"MANUAL"};
         case (getNumber (_config >> "ace_missileguidance" >> "enabled") > 0): {"ACE"};
         case (getNumber (_config >> "irLock") > 0 && {getNumber (_config >> "laserLock") > 0}): {"IR_LASER"};
@@ -396,7 +402,7 @@ ITW_CLASH_Rack_fnc_IsGuidedAntiArmour = {
 
 ITW_CLASH_RackProfileReady = true;
 diag_log format [
-    "CLASH BOOT | rack-profile-ready | version=%1 aiModeMinReach=%2 turretMinSpan=%3 radius=%4-%5 margin=%6 pointGuided=%7 pointUnguided=%8 modes=ORBIT,POINT warheadFlags=true liveLoadout=true observeOnly=true",
+    "CLASH BOOT | rack-profile-ready | version=%1 aiModeMinReach=%2 turretMinSpan=%3 radius=%4-%5 margin=%6 pointGuided=%7 pointUnguided=%8 modes=ORBIT,POINT warheadFlags=true gunsUnguided=true liveLoadout=true observeOnly=true",
     ITW_CLASH_RackProfileVersion,
     ITW_CLASH_RackAIModeMinReach,
     ITW_CLASH_RackTurretMinSpan,

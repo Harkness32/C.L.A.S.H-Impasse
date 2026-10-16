@@ -67,7 +67,7 @@ def test_flags_are_the_missile_and_its_warhead_together():
     sub = function_body(source, "ITW_CLASH_Rack_fnc_Submunition")
     assert "if (isText _entry) exitWith {getText _entry};" in sub
     assert "(getArray _entry) select {_x isEqualType \"\"}" in sub
-    assert "ITW_CLASH_RackProfileVersion = 3;" in (MISSION / "ITW_CLASH_RackProfile.sqf").read_text()
+    assert "ITW_CLASH_RackProfileVersion = 4;" in (MISSION / "ITW_CLASH_RackProfile.sqf").read_text()
 
 
 def union(a, b):
@@ -119,6 +119,34 @@ def test_entries_come_from_the_live_rack_and_skip_countermeasures():
     cm = function_body(rack(), "ITW_CLASH_Rack_fnc_IsCountermeasure")
     for kind in ['"CMFlareLauncher"', '"SmokeLauncher"', '"Laserdesignator_mounted"']:
         assert kind in cm
+
+
+def test_only_missiles_rockets_and_carriers_guide():
+    """v4. A bullet's airLock means it may shoot at aircraft, not that it has
+    a seeker. v3 read it as AIR, so the Pawnee's M134 (flags 448) and the
+    Blackfoot's 20 mm (192) did not count against infantry (2026-10-16)."""
+    ammo = function_body(rack(), "ITW_CLASH_Rack_fnc_Ammo")
+    assert 'private _guides = _simulation in ["shotmissile","shotrocket","shotsubmunitions"];' in ammo
+    lock = ammo[ammo.index("private _lock = switch (true) do {"):]
+    assert lock.index('case (!_guides): {"NONE"};') < lock.index('"manualControl"')
+    assert "gunsUnguided=true" in rack()
+
+
+def gun(flags, bands, aim="FIXED"):
+    return {"flags": flags, "lock": "NONE", "aim": aim, "bands": bands}
+
+
+def test_the_guns_now_count_against_infantry():
+    m134 = gun(448, [(0, 300), (100, 600), (300, 800), (800, 1500)])
+    dar = {"flags": 192, "lock": "NONE", "aim": "FIXED", "bands": [(1000, 3200), (400, 1200)]}
+    # The Pawnee: both weapons against infantry, pointing from 1 km.
+    assert [e for e in [m134, dar] if usable(e, "INFANTRY")] == [m134, dar]
+    assert standoff([m134, dar]) == 1000
+    assert orbit([m134, dar])[1] == "POINT"
+    # The Blackfoot's chin gun is a turret: it orbits against infantry too.
+    gatling = gun(192, [(0, 400), (200, 1000), (800, 1800), (1400, 2500)], aim="TURRET")
+    assert usable(gatling, "INFANTRY")
+    assert orbit([gatling])[1] == "ORBIT"
 
 
 def test_seekers_cannot_be_used_on_infantry():
