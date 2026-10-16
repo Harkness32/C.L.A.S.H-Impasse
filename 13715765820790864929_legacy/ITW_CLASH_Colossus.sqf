@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ColossusStarted",false]) exitWith {true};
 
 ITW_CLASH_ColossusStarted = true;
-ITW_CLASH_ColossusVersion = 5;
+ITW_CLASH_ColossusVersion = 6;
 ITW_CLASH_ColossusReady = false;
 
 /*
@@ -180,6 +180,29 @@ ITW_CLASH_ColossusUnobservedPenalty = missionNamespace getVariable [
     "ITW_CLASH_ColossusUnobservedPenalty",500
 ];
 
+/*
+    Ownership (v6).
+
+    The picture covers every active objective, ours included, and v5 ranked all
+    of them for the push. Ground we already hold reads EMPTY whenever no enemy
+    is known near it, which is the lowest score there is, so in the 2026-10-15
+    run commander B planned to push its own objective 8 in every one of 16
+    assessments while the enemy-held 23 and 28 sat further down the list. Its
+    supports pool, which already told TAKE from HOLD by real ownership, then
+    had nothing to take at all.
+
+    A push is for ground the commander does not hold. Held ground is still in
+    the picture: the supports layer reads it for pressure, and CONSOLIDATE
+    still rallies on it. This is the one predicate both layers use.
+*/
+ITW_CLASH_Colossus_fnc_HeldBy = {
+    params ["_side","_index"];
+    if (isNil "ITW_ObjContestedOwnerIsFriendly" || {isNil "ITW_PlayerSide"}) exitWith {false};
+    private _friendlyOwns = [_index] call ITW_ObjContestedOwnerIsFriendly;
+    if (_side isEqualTo ITW_PlayerSide) exitWith {_friendlyOwns};
+    !_friendlyOwns
+};
+
 ITW_CLASH_ColossusPictures = createHashMap;
 // side key -> the last plan, so the mirror writers can ask what this
 // commander wants without recomputing the picture on their own clock.
@@ -339,6 +362,7 @@ ITW_CLASH_Colossus_fnc_Picture = {
             ["enemyReported",_enemyReported],
             ["enemyReportedCount",_enemyReportedCount],
             ["intel",_intel],
+            ["held",[side _hq,_index] call ITW_CLASH_Colossus_fnc_HeldBy],
             ["at",time]
         ];
     } forEach (call ITW_CLASH_Generation_fnc_ActiveObjectiveIds);
@@ -458,8 +482,32 @@ ITW_CLASH_Colossus_fnc_Recommend = {
         _plan
     };
 
+    // Only ground the enemy holds is a push (v6). When we hold every active
+    // objective there is nothing to take: the plan says so, carries no
+    // objective, and is not feasible, so the order is DEFEND and the supports
+    // layer works the held points under pressure only.
+    private _candidates = _picture select {!(_x getOrDefault ["held",false])};
+    if (_candidates isEqualTo []) exitWith {
+        ["no-push-candidate",[
+            _hq getVariable ["RydHQ_CodeSign","?"],
+            _picture apply {_x get "objective"}
+        ]] call ITW_CLASH_Colossus_fnc_Log;
+        createHashMapFromArray [
+            ["posture","PUSH"],
+            ["objective",-1],
+            ["verdict",""],
+            ["enemy",0],
+            ["committed",0],
+            ["wanted",0],
+            ["available",0],
+            ["feasible",false],
+            ["reason","no-push-candidate"],
+            ["at",time]
+        ]
+    };
+
     // The softest objective we could actually mass against, not the nearest.
-    private _ranked = [_picture,[],{
+    private _ranked = [_candidates,[],{
         private _entry = _x;
         private _score = _entry get "enemy";
         if !(_entry get "sufficient") then {_score = _score + 1000};
@@ -708,6 +756,7 @@ ITW_CLASH_Colossus_fnc_Concentrate = {
     };
 
     if (count _plan == 0) exitWith {["no-picture"] call _decline};
+    if ((_plan getOrDefault ["objective",-1]) < 0) exitWith {["no-push-candidate"] call _decline};
     if ((_plan getOrDefault ["posture","PUSH"]) isEqualTo "CONSOLIDATE") exitWith {
         ["consolidating"] call _decline
     };
@@ -828,7 +877,7 @@ ITW_CLASH_Colossus_fnc_Assess = {
 
 ITW_CLASH_ColossusReady = true;
 diag_log format [
-    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 requireAnchored=%16 reportedPositions=%17 supportsProposeOnly=true halPoolsUntouched=true",
+    "CLASH BOOT | colossus-ready | version=%1 advisoryOnly=%2 poll=%3 objectiveRadius=%4 pushRatio=%5 weights=inf%6/armor%7/veh%8/static%9 consolidateAt=%10 releaseAt=%11 postures=PUSH,CONSOLIDATE ordersIssued=%12 orderDwell=%13 concentrate=%14/%15 requireAnchored=%16 reportedPositions=%17 pushSkipsHeld=true supportsProposeOnly=true halPoolsUntouched=true",
     ITW_CLASH_ColossusVersion,
     ITW_CLASH_ColossusAdvisoryOnly,
     ITW_CLASH_ColossusPoll,

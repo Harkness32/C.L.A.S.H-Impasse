@@ -79,7 +79,7 @@ def test_only_the_truth_diagnostic_reads_where_an_enemy_really_is():
 
 def test_uncertainty_is_error_plus_speed_times_age_and_time_ahead():
     uncertainty = function_body(code("ITW_CLASH_Knowledge.sqf"), "ITW_CLASH_Knowledge_fnc_Uncertainty")
-    assert '(_record getOrDefault ["error",0]) + _speed * (_age + (_ahead max 0))' in uncertainty
+    assert '((_record getOrDefault ["error",0]) + _speed * (_age + (_ahead max 0))) max ITW_CLASH_KnowledgeMinUncertainty' in uncertainty
 
 
 def test_clock_anomalies_are_discarded_not_used():
@@ -97,7 +97,7 @@ def test_the_air_picture_counts_only_uav_looks_as_eyes():
 
 def test_colossus_proposes_once_after_its_own_order():
     source = code("ITW_CLASH_Colossus.sqf")
-    assert "ITW_CLASH_ColossusVersion = 5;" in source
+    assert "ITW_CLASH_ColossusVersion = 6;" in source
     assess = function_body(source, "ITW_CLASH_Colossus_fnc_Assess")
     commit = assess.index("call ITW_CLASH_Colossus_fnc_Commit;")
     propose = assess.index("call ITW_CLASH_Supports_fnc_Assess;")
@@ -463,7 +463,7 @@ def test_every_denial_used_is_in_the_vocabulary():
 
 def test_losing_the_position_is_not_losing_the_enemy():
     source = code("ITW_CLASH_Knowledge.sqf")
-    assert "ITW_CLASH_KnowledgeVersion = 2;" in source
+    assert "ITW_CLASH_KnowledgeVersion = 3;" in source
     held = function_body(source, "ITW_CLASH_Knowledge_fnc_Held")
     assert "([_y] call ITW_CLASH_Knowledge_fnc_Existence) > 0" in held
     census = function_body(source, "ITW_CLASH_Knowledge_fnc_Census")

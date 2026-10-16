@@ -366,8 +366,13 @@ ITW_CLASH_Supports_fnc_ObjectiveRadius = {
     missionNamespace getVariable ["ITW_CLASH_ColossusObjectiveRadius",500]
 };
 
+// One ownership rule for both layers: COLOSSUS owns it since its v6, and this
+// keeps the old body only for a boot where COLOSSUS is missing.
 ITW_CLASH_Supports_fnc_HeldBy = {
     params ["_side","_index"];
+    if (!isNil "ITW_CLASH_Colossus_fnc_HeldBy") exitWith {
+        [_side,_index] call ITW_CLASH_Colossus_fnc_HeldBy
+    };
     if (isNil "ITW_ObjContestedOwnerIsFriendly" || {isNil "ITW_PlayerSide"}) exitWith {false};
     private _friendlyOwns = [_index] call ITW_ObjContestedOwnerIsFriendly;
     if (_side isEqualTo ITW_PlayerSide) exitWith {_friendlyOwns};

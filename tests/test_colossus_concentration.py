@@ -180,7 +180,7 @@ def test_the_plan_is_stored_per_side_with_its_posture():
 
 def test_version_and_boot_line_report_concentration():
     source = colossus()
-    assert "ITW_CLASH_ColossusVersion = 5;" in source
+    assert "ITW_CLASH_ColossusVersion = 6;" in source
     assert "concentrate=%14/%15" in source
     assert '"ITW_CLASH_ColossusConcentrateMax",1' in source
 
