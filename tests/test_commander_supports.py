@@ -120,9 +120,9 @@ def test_reported_positions_start_off_and_are_logged_beside_live():
 
 def test_every_support_is_live_by_default():
     # v3 (Hark, 2026-10-16): unlock all of them. Shadow mode stays one
-    # variable away, and each flavor keeps its own switch.
+    # variable away, and each flavor keeps its own switch. v4 keeps that.
     core = code("ITW_CLASH_Supports.sqf")
-    assert "ITW_CLASH_SupportsVersion = 3;" in core
+    assert "ITW_CLASH_SupportsVersion = 4;" in core
     assert '["ITW_CLASH_SupportsDryRun",false]' in core
     for flavor in ["UAV", "Bomb", "Guided", "Carpet", "AirborneHeli", "AirbornePlane", "VehicleDrop"]:
         assert f'["ITW_CLASH_Supports{flavor}Enabled",true]' in core, flavor
@@ -200,9 +200,15 @@ def test_targets_come_from_the_knowledge_layer_only():
     assert "private _position = getPosATL _veh;" in function_body(core, "ITW_CLASH_Supports_fnc_Committed")
 
 
-def test_unguided_flavors_never_bomb_a_guess_guided_is_exempt():
-    strike = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_StrikeCandidates")
-    assert 'if (_flavor isNotEqualTo "GUIDED") then {' in strike
+def test_unguided_flavors_never_bomb_a_guess_the_acquiring_ones_are_exempt():
+    # v4: the bomb pass acquires on site like the guided pass, so both skip
+    # the assessment's uncertainty gate. The bomb's report fallback is still
+    # held to the limit at release (test_bomb_acquisition.py); carpet is not
+    # exempt at all.
+    core = code("ITW_CLASH_Supports.sqf")
+    assert 'ITW_CLASH_SupportsAcquireFlavors = ["BOMB","GUIDED"];' in core
+    strike = function_body(core, "ITW_CLASH_Supports_fnc_StrikeCandidates")
+    assert "if !(_flavor in ITW_CLASH_SupportsAcquireFlavors) then {" in strike
     assert "if (_r > ITW_CLASH_SupportsUncertaintyLimit) exitWith {_multiplier = -1};" in strike
     assert "_multiplier = (_footprint / (_r max 1)) min 1;" in strike
 

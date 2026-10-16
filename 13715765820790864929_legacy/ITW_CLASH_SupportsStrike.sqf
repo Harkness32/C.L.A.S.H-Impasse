@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsStrikeStarted = true;
-ITW_CLASH_SupportsStrikeVersion = 3;
+ITW_CLASH_SupportsStrikeVersion = 4;
 ITW_CLASH_SupportsStrikeReady = false;
 
 /*
@@ -46,6 +46,20 @@ ITW_CLASH_SupportsStrikeReady = false;
     in the scan: it breaks off, egresses, and the money comes back.
     setMissileTarget is used only as the fallback when fireAtTarget will not
     fire, and only at a target the jet itself acquired, inside the envelope.
+
+    v4: the bomb pass acquires on site too. From the moment it spawns the
+    bomber looks, once a second, for something it has acquired itself near
+    the report: a track on its own sensors, or a sighting by its own crew
+    since the pass began. The ground's contacts are revealed to the crew so
+    they know where to look, but a reveal is never a sighting: targetKnowledge
+    gives a revealed, unseen target no sighting time, and only a sighting
+    time after the pass began counts. The best one by the bomb's class
+    weights becomes the aim, led by its own estimated velocity to the moment
+    the bombs arrive, and the jet is re-lined onto it while it has run left
+    to turn. The release itself is unchanged. Nothing acquired by the final
+    check: the report is bombed if it is still good enough (the 300 m limit),
+    otherwise the jet breaks off and the money comes back. Carpet and console
+    test passes fly the report exactly as before.
 */
 
 ITW_CLASH_SupportsStrikeBombClass = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeBombClass","Bo_Mk82"];
@@ -87,6 +101,21 @@ ITW_CLASH_SupportsStrikeMaxRange = missionNamespace getVariable ["ITW_CLASH_Supp
 ITW_CLASH_SupportsStrikeFireCone = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeFireCone",40];
 // How long after release the effect is measured, for the log only.
 ITW_CLASH_SupportsStrikeEffectDelay = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeEffectDelay",15];
+
+// v4, the bomb pass's own acquisition.
+// How strongly the ground's contacts are revealed to the bomber's crew.
+ITW_CLASH_SupportsStrikeRevealValue = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRevealValue",1.5];
+// Seconds between looks.
+ITW_CLASH_SupportsStrikeBombScanInterval = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeBombScanInterval",1];
+// The jet is re-lined onto an acquired target only with this much run left,
+// metres to the aim, and only when the aim moved more than the shift.
+ITW_CLASH_SupportsStrikeRelineMin = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRelineMin",1800];
+ITW_CLASH_SupportsStrikeRelineShift = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRelineShift",25];
+// Velocity from two fixes at least the sample apart and inside the window,
+// seconds; the lead never moves the aim further than the cap, metres.
+ITW_CLASH_SupportsStrikeLeadSample = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeLeadSample",4];
+ITW_CLASH_SupportsStrikeLeadWindow = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeLeadWindow",10];
+ITW_CLASH_SupportsStrikeLeadCap = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeLeadCap",250];
 
 ITW_CLASH_SupportsStrikeGuidedClasses = createHashMap;
 // support id -> [bombs, sum model along, sum model cross, sum aim along, sum aim cross]
@@ -370,6 +399,131 @@ ITW_CLASH_SupportsStrike_fnc_ReleaseFrame = {
     };
 };
 
+/*
+    v4. The crew's own most recent sighting of _object since _since, as
+    [position, when, error], or []. Known of is not seen: a target that was
+    only revealed to them has no sighting time, so it never passes.
+*/
+ITW_CLASH_SupportsStrike_fnc_CrewSighting = {
+    params ["_veh","_object","_since"];
+    private _best = [];
+    {
+        private _intel = _x targetKnowledge _object;
+        if !(_intel isEqualType [] && {count _intel >= 7}) then {continue};
+        _intel params ["","","_seen","","","_error","_position"];
+        if !(_seen isEqualType 0 && {_seen >= _since} && {_seen <= (time + 1)}) then {continue};
+        if !(_position isEqualType [] && {count _position >= 2}) then {continue};
+        if (_best isEqualTo [] || {_seen > (_best#1)}) then {
+            _best = [[_position#0,_position#1,0],_seen,if (_error isEqualType 0) then {_error max 0} else {0}];
+        };
+    } forEach ((crew _veh) select {alive _x});
+    _best
+};
+
+/*
+    v4. Where the bomber has _object now, by its own means: [position, when,
+    how, error], or []. A track on the jet's own sensors is its measurement
+    of the object, so it reads the object; a crew sighting is where the crew
+    last saw it, with the engine's own error. A live track wins, being fresher.
+*/
+ITW_CLASH_SupportsStrike_fnc_BombFix = {
+    params ["_veh","_object","_since"];
+    if (isNull _object || {!alive _object}) exitWith {[]};
+    private _tracked = ((getSensorTargets _veh) findIf {
+        ((_x param [0,objNull]) isEqualTo _object) && {(_x param [2,""]) isEqualTo "enemy"}
+    }) >= 0;
+    if (_tracked) exitWith {
+        private _position = getPosATL _object;
+        [[_position#0,_position#1,0],time,"SENSOR",0]
+    };
+    private _sight = [_veh,_object,_since] call ITW_CLASH_SupportsStrike_fnc_CrewSighting;
+    if (_sight isEqualTo []) exitWith {[]};
+    [_sight#0,_sight#1,"SIGHT",_sight#2]
+};
+
+/*
+    v4. One look: the best target the bomber has acquired itself near the
+    report. Candidates are its sensor tracks and its crew's known enemies;
+    each must have a fix of its own (fnc_BombFix), lie inside the scan, be
+    clear of our own people and not already answered by an ETB responder.
+    Ranked by the bomb's class weights (vehicles and statics above infantry),
+    then the ground's own contacts first, then nearest the report.
+    Returns [object or objNull, fix, class, candidates looked at].
+*/
+ITW_CLASH_SupportsStrike_fnc_BombScan = {
+    params ["_veh","_hq","_report","_radius","_since","_wanted","_friendlies","_footprint"];
+    private _pool = [];
+    {
+        _x params [["_object",objNull],"",["_relationship",""]];
+        if (!isNull _object && {_relationship isEqualTo "enemy"}) then {_pool pushBackUnique _object};
+    } forEach (getSensorTargets _veh);
+    private _reach = (_veh distance2D _report) + _radius + 500;
+    // A man in a vehicle is the vehicle, as the knowledge layer keys it.
+    {
+        {_pool pushBackUnique (vehicle _x)} forEach (_x targets [true,_reach]);
+    } forEach ((crew _veh) select {alive _x});
+    private _weights = (["BOMB"] call ITW_CLASH_Supports_fnc_Row) getOrDefault ["weights",createHashMap];
+    private _ranked = [];
+    {
+        private _object = _x;
+        if (!alive _object) then {continue};
+        private _class = [_object] call ITW_CLASH_Knowledge_fnc_Class;
+        if (_class in ["","AIR"]) then {continue};
+        private _fix = [_veh,_object,_since] call ITW_CLASH_SupportsStrike_fnc_BombFix;
+        if (_fix isEqualTo []) then {continue};
+        if (((_fix#0) distance2D _report) > _radius) then {continue};
+        if ([_friendlies,_fix#0,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) then {continue};
+        if ([_hq,[_object]] call ITW_CLASH_Supports_fnc_ETBAnswering) then {continue};
+        // The bomb's own table, read at rest for anything with wheels or
+        // tracks; infantry as moving, so a vehicle or a static outranks it.
+        private _bucket = switch (_class) do {
+            case "INFANTRY": {"INF_MOVING"};
+            case "STATIC": {"STATIC_DUG"};
+            default {"VEH_PARKED"};
+        };
+        private _weight = _weights getOrDefault [_bucket,0];
+        if (_weight <= 0) then {continue};
+        _ranked pushBack [_weight,[1,0] select (_object in _wanted),(_fix#0) distance2D _report,_object,_fix,_class];
+    } forEach _pool;
+    if (_ranked isEqualTo []) exitWith {[objNull,[],"",count _pool]};
+    private _best = ([_ranked,[],{((-(_x#0)) * 1e7) + ((_x#1) * 1e5) + (_x#2)},"ASCEND"] call BIS_fnc_sortBy)#0;
+    [_best#3,_best#4,_best#5,count _pool]
+};
+
+/*
+    v4. The aim for an acquired target: its latest fix, moved on by its own
+    estimated velocity until the bombs arrive. The velocity comes from two of
+    the jet's own fixes at least the lead sample apart, clamped to the class's
+    speed allowance in the knowledge layer, so a jumpy fix cannot fling the
+    aim. The bombs travel forward at the jet's ground speed, so they arrive
+    when the jet would have flown the run left: _along over that speed, plus
+    the age of the fix. Returns [aim, lead metres, estimated speed].
+*/
+ITW_CLASH_SupportsStrike_fnc_BombAim = {
+    params ["_veh","_fix","_base","_class","_along"];
+    private _position = +(_fix#0);
+    private _velocity = [0,0,0];
+    private _dt = (_fix#1) - (_base#1);
+    if (_dt >= ITW_CLASH_SupportsStrikeLeadSample) then {
+        _velocity = (_position vectorDiff (_base#0)) vectorMultiply (1 / _dt);
+        _velocity set [2,0];
+        private _cap = [_class] call ITW_CLASH_Knowledge_fnc_Speed;
+        private _speed = vectorMagnitude _velocity;
+        if (_speed > _cap) then {_velocity = _velocity vectorMultiply (_cap / (_speed max 0.001))};
+    };
+    private _ground = velocity _veh;
+    private _groundSpeed = vectorMagnitude [_ground#0,_ground#1,0];
+    private _until = ((time - (_fix#1)) max 0) + ((_along max 0) / (_groundSpeed max 1));
+    private _shift = _velocity vectorMultiply _until;
+    private _length = vectorMagnitude _shift;
+    if (_length > ITW_CLASH_SupportsStrikeLeadCap) then {
+        _shift = _shift vectorMultiply (ITW_CLASH_SupportsStrikeLeadCap / _length);
+    };
+    private _aim = _position vectorAdd _shift;
+    _aim set [2,0];
+    [_aim,vectorMagnitude _shift,vectorMagnitude _velocity]
+};
+
 ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
     params ["_support","_veh","_group","_heading"];
     private _side = _support get "side";
@@ -386,6 +540,40 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
     private _result = [];
     private _deadline = time + ITW_CLASH_SupportsStrikeRunTimeout;
 
+    // v4: the bomb pass acquires on site. Carpet and console test passes fly
+    // the report as before.
+    private _acquire = (_flavor in ITW_CLASH_SupportsAcquireFlavors) && {!_test};
+    private _hq = _support getOrDefault ["hq",grpNull];
+    private _report = +_aim;
+    private _scanRadius = ((_support getOrDefault ["uncertainty",0]) max ITW_CLASH_SupportsStrikeScanMin)
+        min ITW_CLASH_SupportsStrikeScanCap;
+    private _since = time;
+    private _wanted = [];
+    private _target = objNull;
+    private _targetClass = "";
+    private _fixes = [];
+    private _nextLook = 0;
+    private _looks = 0;
+    private _seen = 0;
+    private _lastLine = -1e10;
+    if (_acquire) then {
+        _veh setVehicleRadar 1;
+        {
+            private _entity = ([_side,_x] call ITW_CLASH_Knowledge_fnc_Record) getOrDefault ["entity",objNull];
+            if (!isNull _entity && {alive _entity}) then {_wanted pushBackUnique _entity};
+        } forEach _keys;
+        // Where to look. A reveal is never a sighting, so it acquires nothing.
+        {_group reveal [_x,ITW_CLASH_SupportsStrikeRevealValue]} forEach _wanted;
+        // Let the crew watch for what they were not told about as well. The
+        // group stays CARELESS and BLUE: it looks, it never engages.
+        {_x enableAI "AUTOTARGET"} forEach (units _group);
+        // A sighting must come after the reveal, never from it.
+        _since = time + 1;
+        ["bomb-scan-start",[
+            _support get "id",_support get "sign",count _wanted,round _scanRadius,round (_veh distance2D _report)
+        ]] call ITW_CLASH_SupportsStrike_fnc_Log;
+    };
+
     // The approach, on the scheduler: line up, then the final check.
     while {_result isEqualTo [] && {!_armed}} do {
         sleep 0.1;
@@ -395,15 +583,26 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
         private _lead = ([_veh,_aim] call ITW_CLASH_SupportsStrike_fnc_Lead) + ITW_CLASH_SupportsStrikeReleaseBias;
 
         // About 3 km out: the latest report, and the aircraft's line pointed
-        // through it. The jet is steered; the bombs are never moved.
+        // through it. The jet is steered; the bombs are never moved. With a
+        // target already acquired, the line goes through that instead, and the
+        // report is only where the jet was told to look.
         if (!_lined && {_along <= ITW_CLASH_SupportsStrikeApproachUpdate}) then {
             _lined = true;
             if (_test) exitWith {};
             private _ahead = _along / (((speed _veh) / 3.6) max 1);
-            ([_side,_keys,_ahead] call ITW_CLASH_Supports_fnc_TargetNow) params ["_now","_r","_alive"];
+            ([_side,_keys,_ahead,_acquire] call ITW_CLASH_Supports_fnc_TargetNow) params ["_now","_r","_alive"];
+            private _how = "report";
+            if (_acquire && {!isNull _target} && {alive _target}) then {
+                private _fix = _fixes select ((count _fixes) - 1);
+                _now = ([_veh,_fix,_fixes#0,_targetClass,_along] call ITW_CLASH_SupportsStrike_fnc_BombAim)#0;
+                _r = _fix#3;
+                _alive = 1;
+                _how = _fix#2;
+            };
             switch (true) do {
                 case (_alive == 0): {_result = ["BREAKOFF","TARGET_GONE"]};
-                case (_r > ITW_CLASH_SupportsUncertaintyLimit): {_result = ["BREAKOFF","TOO_UNCERTAIN"]};
+                // A pass that looks for itself does not need the report tight yet.
+                case (!_acquire && {_r > ITW_CLASH_SupportsUncertaintyLimit}): {_result = ["BREAKOFF","TOO_UNCERTAIN"]};
                 case ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint] call ITW_CLASH_Supports_fnc_DangerClose): {
                     _result = ["BREAKOFF","DANGER_CLOSE"];
                 };
@@ -414,12 +613,71 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
                     [_group,_aim,_heading] call ITW_CLASH_SupportsStrike_fnc_LineUp;
                     _support set ["aim",+_aim];
                     _support set ["heading",_heading];
-                    ["lined-up",[_support get "id",_flavor,round _shift,round _r,_alive]] call
+                    _lastLine = time;
+                    ["lined-up",[_support get "id",_flavor,round _shift,round _r,_alive,_how]] call
                         ITW_CLASH_SupportsStrike_fnc_Log;
                 };
             };
         };
         if (_result isNotEqualTo []) exitWith {};
+
+        // v4: the bomber's own look, once a scan interval. What it acquires is
+        // tracked from then on; while there is run left to turn, the jet is
+        // re-lined onto it.
+        if (_acquire && {time >= _nextLook}) then {
+            _nextLook = time + ITW_CLASH_SupportsStrikeBombScanInterval;
+            if (!isNull _target && {!alive _target}) then {
+                ["bomb-target-lost",[_support get "id",typeOf _target,round _along]] call ITW_CLASH_SupportsStrike_fnc_Log;
+                _target = objNull;
+                _fixes = [];
+            };
+            if (isNull _target) then {
+                _looks = _looks + 1;
+                ([
+                    _veh,_hq,_report,_scanRadius,_since,_wanted,
+                    [_side] call ITW_CLASH_Supports_fnc_Friendlies,_footprint
+                ] call ITW_CLASH_SupportsStrike_fnc_BombScan) params ["_found","_fix","_class","_pool"];
+                _seen = _seen max _pool;
+                if (!isNull _found) then {
+                    _target = _found;
+                    _targetClass = _class;
+                    _fixes = [_fix];
+                    ["bomb-acquired",[
+                        _support get "id",_support get "sign",typeOf _found,_class,_fix#2,
+                        round ((_fix#0) distance2D _report),round _scanRadius,round _along,
+                        round (time - _since),_looks,_found in _wanted,_pool
+                    ]] call ITW_CLASH_SupportsStrike_fnc_Log;
+                };
+            } else {
+                private _fix = [_veh,_target,_since] call ITW_CLASH_SupportsStrike_fnc_BombFix;
+                private _last = _fixes select ((count _fixes) - 1);
+                if (_fix isNotEqualTo [] && {(_fix#1) > (_last#1)}) then {
+                    _fixes pushBack _fix;
+                    private _latest = _fix#1;
+                    _fixes = _fixes select {(_latest - (_x#1)) <= ITW_CLASH_SupportsStrikeLeadWindow};
+                };
+            };
+            if (
+                !isNull _target
+                && {_lined}
+                && {_along > ITW_CLASH_SupportsStrikeRelineMin}
+                && {(time - _lastLine) >= 3}
+            ) then {
+                private _fix = _fixes select ((count _fixes) - 1);
+                private _toward = ([_veh,_fix,_fixes#0,_targetClass,_along] call ITW_CLASH_SupportsStrike_fnc_BombAim)#0;
+                private _moved = _toward distance2D _aim;
+                if (_moved > ITW_CLASH_SupportsStrikeRelineShift) then {
+                    _aim = _toward;
+                    _heading = (getPosATL _veh) getDir _aim;
+                    [_group,_aim,_heading] call ITW_CLASH_SupportsStrike_fnc_LineUp;
+                    _support set ["aim",+_aim];
+                    _support set ["heading",_heading];
+                    _lastLine = time;
+                    ["bomb-relined",[_support get "id",round _moved,round _along,_fix#2]] call
+                        ITW_CLASH_SupportsStrike_fnc_Log;
+                };
+            };
+        };
 
         // A few seconds before the first bomb: the latest report once more and
         // danger close against our people now. The aircraft keeps its line,
@@ -427,19 +685,49 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
         // a physical miss, and more than the cross limit is no pass at all.
         if (_along <= (_lead - _first + ITW_CLASH_SupportsStrikeCheckLead)) then {
             if (!_test) then {
-                ([_side,_keys,0] call ITW_CLASH_Supports_fnc_TargetNow) params ["_now","_r","_alive","_targets"];
-                switch (true) do {
-                    case (_alive == 0): {_result = ["BREAKOFF","TARGET_GONE"]};
-                    case (_r > ITW_CLASH_SupportsUncertaintyLimit): {_result = ["BREAKOFF","TOO_UNCERTAIN"]};
-                    case ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint] call ITW_CLASH_Supports_fnc_DangerClose): {
+                if (!isNull _target && {!alive _target}) then {_target = objNull};
+                if (_acquire && {!isNull _target}) then {
+                    // The acquired target, where the jet has it now, led to impact.
+                    private _fix = _fixes select ((count _fixes) - 1);
+                    ([_veh,_fix,_fixes#0,_targetClass,_along] call ITW_CLASH_SupportsStrike_fnc_BombAim) params ["_now","_shift","_speed"];
+                    if ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) exitWith {
                         _result = ["BREAKOFF","DANGER_CLOSE"];
                     };
-                    default {
-                        ["release-check",[
-                            _support get "id",_flavor,round (_aim distance2D _now),round _r,_alive
+                    ["release-check",[
+                        _support get "id",_flavor,round (_aim distance2D _now),round (_fix#3),1,_fix#2
+                    ]] call ITW_CLASH_SupportsStrike_fnc_Log;
+                    ["bomb-release-fix",[
+                        _support get "id",typeOf _target,_targetClass,_fix#2,round (time - (_fix#1)),count _fixes,
+                        round _shift,(round (_speed * 10)) / 10,round (_now distance2D _report)
+                    ]] call ITW_CLASH_SupportsStrike_fnc_Log;
+                    _aim = _now;
+                    _entities = [_target];
+                } else {
+                    ([_side,_keys,0] call ITW_CLASH_Supports_fnc_TargetNow) params ["_now","_r","_alive","_targets"];
+                    // Nothing acquired: the report, only if it is still good
+                    // enough to drop on. Otherwise no pass, and a refund.
+                    if (_acquire) then {
+                        private _usable = _alive > 0 && {_r <= ITW_CLASH_SupportsUncertaintyLimit};
+                        ["scan-empty",[
+                            _support get "id",_support get "sign",round _scanRadius,_seen,
+                            if (_usable) then {"bomb-report"} else {"bomb-breakoff"},_looks,round _r
                         ]] call ITW_CLASH_SupportsStrike_fnc_Log;
-                        _aim = _now;
-                        _entities = _targets;
+                        if (!_usable) then {_result = ["BREAKOFF","no-target-found"]};
+                    };
+                    if (_result isNotEqualTo []) exitWith {};
+                    switch (true) do {
+                        case (_alive == 0): {_result = ["BREAKOFF","TARGET_GONE"]};
+                        case (_r > ITW_CLASH_SupportsUncertaintyLimit): {_result = ["BREAKOFF","TOO_UNCERTAIN"]};
+                        case ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint] call ITW_CLASH_Supports_fnc_DangerClose): {
+                            _result = ["BREAKOFF","DANGER_CLOSE"];
+                        };
+                        default {
+                            ["release-check",[
+                                _support get "id",_flavor,round (_aim distance2D _now),round _r,_alive,"report"
+                            ]] call ITW_CLASH_SupportsStrike_fnc_Log;
+                            _aim = _now;
+                            _entities = _targets;
+                        };
                     };
                 };
             };
@@ -450,6 +738,8 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
             _armed = true;
         };
     };
+    // Looking is over, hit or miss: back to a crew that watches nothing.
+    if (_acquire) then {{_x disableAI "AUTOTARGET"} forEach (units _group)};
     if (_result isNotEqualTo []) exitWith {_result};
 
     // The release itself, every frame.
@@ -756,7 +1046,7 @@ private _bombConfig = configFile >> "CfgAmmo" >> ITW_CLASH_SupportsStrikeBombCla
 
 ITW_CLASH_SupportsStrikeReady = true;
 diag_log format [
-    "CLASH BOOT | supports-strike-ready | version=%1 bomb=%2x%3 spacing=%4m heights=%5/%6/%7 carpet=21x%8m/%9m lanes crossLimit=%10 scan=%11m cap=%12m window=%13s shots=%14 lineUpAt=%15m skip=%16m bias=%17m fireCone=%18 releaseByFallTime=true releaseEachFrame=true bombsAlwaysAtJet=true impactLog=%19",
+    "CLASH BOOT | supports-strike-ready | version=%1 bomb=%2x%3 spacing=%4m heights=%5/%6/%7 carpet=21x%8m/%9m lanes crossLimit=%10 scan=%11m cap=%12m window=%13s shots=%14 lineUpAt=%15m skip=%16m bias=%17m fireCone=%18 releaseByFallTime=true releaseEachFrame=true bombsAlwaysAtJet=true impactLog=%19 bombAcquires=%20 reveal=%21 reline=%22m/%23m lead=%24s/%25s/%26m",
     ITW_CLASH_SupportsStrikeVersion,
     ITW_CLASH_SupportsStrikeBombClass,
     ITW_CLASH_SupportsStrikeBombCount,
@@ -775,6 +1065,13 @@ diag_log format [
     ITW_CLASH_SupportsStrikeSkipDistance,
     ITW_CLASH_SupportsStrikeReleaseBias,
     ITW_CLASH_SupportsStrikeFireCone,
-    ITW_CLASH_SupportsStrikeImpactLog
+    ITW_CLASH_SupportsStrikeImpactLog,
+    "BOMB" in ITW_CLASH_SupportsAcquireFlavors,
+    ITW_CLASH_SupportsStrikeRevealValue,
+    ITW_CLASH_SupportsStrikeRelineMin,
+    ITW_CLASH_SupportsStrikeRelineShift,
+    ITW_CLASH_SupportsStrikeLeadSample,
+    ITW_CLASH_SupportsStrikeLeadWindow,
+    ITW_CLASH_SupportsStrikeLeadCap
 ];
 true

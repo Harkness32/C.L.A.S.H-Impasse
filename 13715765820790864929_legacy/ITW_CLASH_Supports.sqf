@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 3;
+ITW_CLASH_SupportsVersion = 4;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -40,6 +40,15 @@ ITW_CLASH_SupportsReady = false;
     each target objective, weighted down with distance from the point, and a
     cluster within reach of our own formations at that objective is weighted
     as if it stood on it. A cluster near two objectives enters the pool once.
+
+    v4: the bomb pass acquires on site, like the guided pass. The ground's
+    report brings the jet to the area; the jet's own sensors and crew pick
+    what it bombs. A lone vehicle, a lone tank or a pair of riflemen is now
+    worth a bomb (its own floor, 1.5), and so is a static once its gunner is
+    tracked as a contact too; one rifleman is not.
+    Carpet stays for clusters: three contacts or more. BOMB and GUIDED pass
+    the pre-spawn check on a contact still believed to exist even after its
+    position has gone stale, because they look for it themselves.
 
     Every number below is a placeholder for calibration.
 */
@@ -94,11 +103,19 @@ ITW_CLASH_SupportsObjectiveCooldown = missionNamespace getVariable ["ITW_CLASH_S
 // ---------------------------------------------------------------- targeting
 
 ITW_CLASH_SupportsValueFloor = missionNamespace getVariable ["ITW_CLASH_SupportsValueFloor",2];
+// v4: the bomb's own floor. COLOSSUS weights: rifleman 1, vehicle 1.5,
+// tank 3, static 0.5. At 1.5 a lone vehicle or tank qualifies, so do two
+// riflemen, or a static whose gunner is tracked as well; one rifleman does not.
+ITW_CLASH_SupportsValueFloorBomb = missionNamespace getVariable ["ITW_CLASH_SupportsValueFloorBomb",1.5];
+// v4: carpet is for clusters. Fewer contacts than this and it is not offered.
+ITW_CLASH_SupportsCarpetMinContacts = missionNamespace getVariable ["ITW_CLASH_SupportsCarpetMinContacts",3];
 ITW_CLASH_SupportsClusterRadius = missionNamespace getVariable ["ITW_CLASH_SupportsClusterRadius",150];
 ITW_CLASH_SupportsFootprintBomb = missionNamespace getVariable ["ITW_CLASH_SupportsFootprintBomb",50];
 ITW_CLASH_SupportsFootprintCarpet = missionNamespace getVariable ["ITW_CLASH_SupportsFootprintCarpet",60];
 ITW_CLASH_SupportsFootprintGuided = missionNamespace getVariable ["ITW_CLASH_SupportsFootprintGuided",50];
 // Never bomb a guess: a target whose projected uncertainty exceeds this is out.
+// For the flavors that acquire on site it gates only what they would drop on
+// the report itself; their own acquisition is not a guess.
 ITW_CLASH_SupportsUncertaintyLimit = missionNamespace getVariable ["ITW_CLASH_SupportsUncertaintyLimit",300];
 ITW_CLASH_SupportsDangerMargin = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMargin",300];
 ITW_CLASH_SupportsDangerMarginPlayer = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginPlayer",500];
@@ -210,6 +227,9 @@ ITW_CLASH_SupportsRegistry = createHashMapFromArray [
     ]]
 ];
 ITW_CLASH_SupportsStrikeFlavors = ["BOMB","GUIDED","CARPET"];
+// v4: the strike flavors whose jet acquires its own target on site. The
+// report brings them to the area and sizes the scan; it is not the aim.
+ITW_CLASH_SupportsAcquireFlavors = ["BOMB","GUIDED"];
 ITW_CLASH_SupportsDropFlavors = ["AIRBORNE_HELI","AIRBORNE_PLANE"];
 
 // The one vocabulary every denial uses, so a run reads end to end.
@@ -218,7 +238,7 @@ ITW_CLASH_SupportsDenials = [
     "NO_GUIDED_WEAPON","NO_AIRFIELD","NO_ORIGIN","NO_CONTACT","TOO_UNCERTAIN",
     "BELOW_FLOOR","ETB_ANSWERING","DANGER_CLOSE","AIR_DENIED","OBJECTIVE_FROZEN",
     "DZ_UNASSESSED","NO_HEADROOM","TARGET_GONE","NO_EXECUTOR","SPAWN_FAILED",
-    "CONSOLIDATING","NO_DZ","NO_SQUADS"
+    "CONSOLIDATING","NO_DZ","NO_SQUADS","NOT_CLUSTERED"
 ];
 
 ITW_CLASH_SupportsLedgers = createHashMap;
@@ -653,9 +673,14 @@ ITW_CLASH_Supports_fnc_Cluster = {
     The target as the knowledge layer has it NOW: aim point and uncertainty
     projected _ahead seconds, from the members still not lost. Used at the
     pre-run check and again at release.
+
+    v4: with _held, a member whose position has gone stale (LOST) still counts
+    while it is believed to exist. That is for the passes that acquire on
+    site: they go and look, so a stale position is where to start looking,
+    not a reason to stay home.
 */
 ITW_CLASH_Supports_fnc_TargetNow = {
-    params ["_side","_keys",["_ahead",0]];
+    params ["_side","_keys",["_ahead",0],["_held",false]];
     private _sx = 0;
     private _sy = 0;
     private _weightSum = 0;
@@ -665,7 +690,11 @@ ITW_CLASH_Supports_fnc_TargetNow = {
     {
         private _record = [_side,_x] call ITW_CLASH_Knowledge_fnc_Record;
         if (count _record == 0) then {continue};
-        if (([_record] call ITW_CLASH_Knowledge_fnc_Status) isEqualTo "LOST") then {continue};
+        if (_held) then {
+            if (([_record] call ITW_CLASH_Knowledge_fnc_Existence) <= 0) then {continue};
+        } else {
+            if (([_record] call ITW_CLASH_Knowledge_fnc_Status) isEqualTo "LOST") then {continue};
+        };
         private _weight = ([_record] call ITW_CLASH_Knowledge_fnc_Worth) max 0.01;
         private _position = _record get "position";
         _sx = _sx + (_position#0) * _weight;
@@ -995,7 +1024,12 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                 [_context,_flavor,-1,_targetKey,"NO_CONTACT"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
-            if ((_cluster get "worth") < ITW_CLASH_SupportsValueFloor) then {
+            if (_flavor isEqualTo "CARPET" && {(_cluster get "count") < ITW_CLASH_SupportsCarpetMinContacts}) then {
+                [_context,_flavor,-1,_targetKey,"NOT_CLUSTERED"] call ITW_CLASH_Supports_fnc_Exclude;
+                continue
+            };
+            private _floor = if (_flavor isEqualTo "BOMB") then {ITW_CLASH_SupportsValueFloorBomb} else {ITW_CLASH_SupportsValueFloor};
+            if ((_cluster get "worth") < _floor) then {
                 [_context,_flavor,-1,_targetKey,"BELOW_FLOOR"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
@@ -1007,8 +1041,9 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
             private _r = [_side,_cluster,_ahead] call ITW_CLASH_Supports_fnc_ClusterUncertainty;
             private _footprint = [_flavor,"footprint",50] call ITW_CLASH_Supports_fnc_RowNumber;
             private _multiplier = 1;
-            // The guided pass acquires on site; uncertainty only sizes its scan.
-            if (_flavor isNotEqualTo "GUIDED") then {
+            // The bomb and guided passes acquire on site; uncertainty only
+            // sizes their scan.
+            if !(_flavor in ITW_CLASH_SupportsAcquireFlavors) then {
                 if (_r > ITW_CLASH_SupportsUncertaintyLimit) exitWith {_multiplier = -1};
                 _multiplier = (_footprint / (_r max 1)) min 1;
             };
@@ -1483,10 +1518,13 @@ ITW_CLASH_Supports_fnc_PreRun = {
         "OBJECTIVE_FROZEN"
     };
     if (_routine isEqualTo "STRIKE") then {
-        ([_side,(_support get "target") getOrDefault ["keys",[]],_support get "ahead"] call
+        // A pass that acquires on site goes while the target is believed to
+        // exist; the others need a position still good enough to drop on.
+        private _acquires = (_support get "flavor") in ITW_CLASH_SupportsAcquireFlavors;
+        ([_side,(_support get "target") getOrDefault ["keys",[]],_support get "ahead",_acquires] call
             ITW_CLASH_Supports_fnc_TargetNow) params ["_aim","_r","_alive"];
         if (_alive == 0) exitWith {_support set ["denied","TARGET_GONE"]};
-        if ((_support get "flavor") isNotEqualTo "GUIDED" && {_r > ITW_CLASH_SupportsUncertaintyLimit}) exitWith {
+        if (!_acquires && {_r > ITW_CLASH_SupportsUncertaintyLimit}) exitWith {
             _support set ["denied","TOO_UNCERTAIN"]
         };
         private _footprint = [_support get "flavor","footprint",50] call ITW_CLASH_Supports_fnc_RowNumber;
@@ -1850,7 +1888,7 @@ ITW_CLASH_SupportsAirbornePlaneSquads = missionNamespace getVariable ["ITW_CLASH
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 bombFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -1871,6 +1909,9 @@ diag_log format [
     ITW_CLASH_SupportsDelayMax,
     ITW_CLASH_SupportsInfluenceRadius,
     ITW_CLASH_SupportsInfluenceEdge,
-    ITW_CLASH_SupportsThreatProximity
+    ITW_CLASH_SupportsThreatProximity,
+    ITW_CLASH_SupportsValueFloorBomb,
+    ITW_CLASH_SupportsCarpetMinContacts,
+    ITW_CLASH_SupportsAcquireFlavors joinString "/"
 ];
 true
