@@ -454,7 +454,7 @@ autonomous (`isUav` 1), whose air picture class profile says it has an
 anti-air gun (`airLock` above 1, unguided) and no anti-air missile, so a SAM
 site never counts. In vanilla that is the Praetorian 1C; a mod's C-RAM passes
 the same test without being named. The game's config is scanned once, radar
-pieces first, and the list is logged as `rear-cram-classes`.
+pieces first, and the list is logged as `rear-cram-cram-classes`.
 
 The order:
 
@@ -475,9 +475,24 @@ The group is kept out of HAL's lists (`RydHQ_No*`) and set COMBAT and RED. The
 recrew, replacement and adoption guards are unchanged. `rear-cram-placed` says
 whether the piece is a C-RAM.
 
-**Not yet seen in engine.** If `rear-cram-classes` comes back empty in a modset
-that has a C-RAM, its ammunition does not read as anti-air in the class profile
-(`airLock` 1); the override names it directly.
+**v5, after the first v4 run** (Hark: the same Cheetah and Titan as before). v4
+found no C-RAM. It took a gun as anti-air only when its round's `airLock` is 2,
+which the engine reads as "air only"; a CIWS round that may also be fired at the
+ground is 1 ("air and ground"), so the Praetorian failed and the v3 ladder ran.
+Lowering the bar alone would let in the autonomous HMG and GMG turrets, whose
+rounds can also be fired at aircraft. A C-RAM is now
+(`ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy`):
+
+- a public, autonomous static weapon, not artillery, with no anti-air missile;
+- whose unguided gun can engage aircraft (`airLock` 1 or 2);
+- and that is built for air: an air-only round, a radar of its own, or filed by
+  its maker as anti-air (`EdSubcat_AAs`). An HMG turret is none of these.
+
+The scan says once, for every autonomous ground piece the game has, whether it
+was taken and if not why (`rear-cram-cram-scan`: class, `cram` or the reason,
+the gun's `airLock`, its editor subcategory). If the Praetorian is still not
+taken, that line names the test it failed. The override still names a class
+directly.
 
 ## COLOSSUS v2: CONSOLIDATE, still advisory
 

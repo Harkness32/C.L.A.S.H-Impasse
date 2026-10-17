@@ -68,7 +68,7 @@ def test_versions():
     assert "ITW_CLASH_SupportsVersion = 7;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsAirborneVersion = 2;" in raw("ITW_CLASH_SupportsAirborne.sqf")
     assert "ITW_CLASH_SupportsDebugVersion = 1;" in raw("ITW_CLASH_SupportsDebug.sqf")
-    assert "ITW_CLASH_RearBaseCRAMVersion = 4;" in raw("ITW_CLASH_RearBaseCRAM.sqf")
+    assert "ITW_CLASH_RearBaseCRAMVersion = 5;" in raw("ITW_CLASH_RearBaseCRAM.sqf")
 
 
 def test_three_families_three_lanes_one_drop_wallet():
@@ -398,8 +398,13 @@ def test_the_core_still_reads_no_enemy_position():
 
 def test_a_c_ram_is_an_autonomous_static_gun_not_a_sam():
     body = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_IsCRAM")
-    assert 'if (!(_class isKindOf "StaticWeapon") || {getNumber (_config >> "isUav") != 1}) exitWith {false};' in body
-    assert '(_profile get "antiAirGun") && {!(_profile get "antiAirMissile")}' in body
+    assert '([_class] call ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy) isEqualTo ""' in body
+    why = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy")
+    order = [
+        'exitWith {"not-public"}', 'exitWith {"not-autonomous"}', 'exitWith {"not-static"}',
+        'exitWith {"artillery"}', 'exitWith {"missile"}', 'exitWith {"no-air-gun"}',
+    ]
+    assert [why.index(x) for x in order] == sorted(why.index(x) for x in order)
     classes = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_CRAMClasses")
     assert 'if (!isNil "ITW_CLASH_RearBaseCRAMClassesFound") exitWith {ITW_CLASH_RearBaseCRAMClassesFound};' in classes
     assert "ITW_CLASH_RearBaseCRAMClassesFound = _radar + (_found - _radar);" in classes
@@ -425,3 +430,41 @@ def test_an_autonomous_piece_is_crewed_by_its_own_ai_on_our_side():
     assert "_crew joinSilent _group;" in auto
     assert '_veh setVariable ["ITW_CLASH_ForcedSide",_side,true];' in auto
     assert "cram-then-faction-static-aa-then-faction-aa-vehicle" in raw("ITW_CLASH_RearBaseCRAM.sqf")
+
+
+def test_v5_a_ciws_round_that_also_hits_ground_still_counts():
+    # v4 needed airLock 2; the first run found no C-RAM and fell back.
+    lock = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_GunAirLock")
+    assert "[_ammo] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided" in lock
+    assert '_lock = _lock max (getNumber (configFile >> "CfgAmmo" >> _ammo >> "airLock"));' in lock
+    why = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy")
+    assert 'if (_lock < 1) exitWith {"no-air-gun"};' in why
+    assert 'if (_lock >= 2) exitWith {""};' in why
+    assert 'if (_profile get "radar") exitWith {""};' in why
+    assert '"edsubcat_aas"' in why
+    assert why.rstrip().rstrip("}").rstrip().endswith('"not-built-for-air"')
+
+
+def test_v5_model_keeps_hmg_turrets_out_and_takes_a_ciws():
+    def why(lock, radar=False, subcat="", missile=False, artillery=False, static=True, uav=True):
+        if not uav: return "not-autonomous"
+        if not static: return "not-static"
+        if artillery: return "artillery"
+        if missile: return "missile"
+        if lock < 1: return "no-air-gun"
+        if lock >= 2 or radar or subcat.lower() == "edsubcat_aas": return ""
+        return "not-built-for-air"
+    assert why(1, subcat="EdSubcat_AAs") == ""          # a CIWS filed as anti-air
+    assert why(1, radar=True) == ""                     # a CIWS with its own radar
+    assert why(2) == ""                                 # an air-only round
+    assert why(1, subcat="EdSubcat_Turrets") == "not-built-for-air"   # autonomous HMG
+    assert why(0, subcat="EdSubcat_Turrets") == "no-air-gun"          # autonomous GMG
+    assert why(2, missile=True, subcat="EdSubcat_AAs") == "missile"   # a SAM site
+    assert why(0, artillery=True) == "artillery"                      # a naval gun
+
+
+def test_v5_the_scan_says_why_once():
+    classes = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_CRAMClasses")
+    assert '["cram-scan",[count _candidates,_scan]] call ITW_CLASH_RearBaseCRAM_fnc_Log;' in classes
+    assert classes.index("cram-scan") < classes.index("ITW_CLASH_RearBaseCRAMClassesFound = _radar")
+    assert '_candidates = _candidates select {!(_x isKindOf "Air")};' in classes

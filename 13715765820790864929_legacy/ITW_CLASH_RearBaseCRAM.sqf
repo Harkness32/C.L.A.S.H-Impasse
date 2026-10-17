@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") exitWith {
 };
 
 ITW_CLASH_RearBaseCRAMStarted = true;
-ITW_CLASH_RearBaseCRAMVersion = 4;
+ITW_CLASH_RearBaseCRAMVersion = 5;
 ITW_CLASH_RearBaseCRAMReady = false;
 
 /*
@@ -47,6 +47,17 @@ ITW_CLASH_RearBaseCRAMReady = false;
     for the faction's own equipment side. The old ladder stays as the fallback
     for a modset with none at all. An autonomous piece is crewed by its own
     AI joined to a group of the side, the way the support UAVs are.
+
+    v5 (Hark, 2026-10-17, the first v4 run: the same Cheetah and Titan as
+    before): v4 found no C-RAM at all. It counted a gun as anti-air only when
+    its round's airLock is 2 ("air only"); a CIWS round that may also be fired
+    at ground targets is 1 ("air and ground"), so it failed. A C-RAM is now an
+    autonomous static, not artillery, with no anti-air missile, whose unguided
+    gun can engage aircraft (airLock 1 or 2), and which is built for air: an
+    air-only round, its own radar, or filed by its maker as anti-air. The last
+    part is what keeps the autonomous HMG and GMG turrets out: their guns can
+    also be fired at aircraft. The scan says once, per candidate, why each
+    autonomous piece was or was not taken (rear-cram-cram-scan).
 */
 
 ITW_CLASH_RearBaseCRAMEnabled = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnabled",true];
@@ -98,26 +109,74 @@ ITW_CLASH_RearBaseCRAM_fnc_Log = {
     site), then anything that can shoot at aircraft.
 */
 /*
-    v4. A C-RAM, by what it is rather than what it is called: a public static
-    weapon that is autonomous (isUav), carries an anti-air gun and no
-    anti-air missile (so not a SAM site), read through the air picture's own
-    class profile.
+    v5. What the class's own guns can do against aircraft: the highest airLock
+    among its unguided rounds (0 cannot, 1 air and ground, 2 air only).
 */
-ITW_CLASH_RearBaseCRAM_fnc_IsCRAM = {
+ITW_CLASH_RearBaseCRAM_fnc_GunAirLock = {
     params ["_class"];
-    if (!(_class isEqualType "") || {!isClass (configFile >> "CfgVehicles" >> _class)}) exitWith {false};
-    private _config = configFile >> "CfgVehicles" >> _class;
-    if (getNumber (_config >> "scope") < 2) exitWith {false};
-    if (!(_class isKindOf "StaticWeapon") || {getNumber (_config >> "isUav") != 1}) exitWith {false};
-    private _profile = [_class] call ITW_CLASH_AirPicture_fnc_ClassProfile;
-    (_profile get "antiAirGun") && {!(_profile get "antiAirMissile")}
+    private _lock = 0;
+    {
+        private _ammo = getText (configFile >> "CfgMagazines" >> _x >> "ammo");
+        if (_ammo isEqualTo "" || {[_ammo] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided}) then {continue};
+        _lock = _lock max (getNumber (configFile >> "CfgAmmo" >> _ammo >> "airLock"));
+    } forEach ([_class] call ITW_CLASH_AirPicture_fnc_ConfigMagazines);
+    _lock
 };
 
-// v4. Every C-RAM the game has, radar pieces first. Scanned once.
+/*
+    v5. A C-RAM, by what it is rather than what it is called. "" when it is
+    one, else why not:
+      a public static weapon, autonomous (isUav), not artillery, with no
+      anti-air missile (so not a SAM site), whose unguided gun can engage
+      aircraft, and that is built for air: an air-only round (airLock 2), a
+      radar of its own, or filed by its maker as anti-air (EdSubcat_AAs).
+    The last test is what leaves out the autonomous HMG and GMG turrets.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy = {
+    params ["_class"];
+    if (!(_class isEqualType "") || {!isClass (configFile >> "CfgVehicles" >> _class)}) exitWith {"no-class"};
+    private _config = configFile >> "CfgVehicles" >> _class;
+    if (getNumber (_config >> "scope") < 2) exitWith {"not-public"};
+    if (getNumber (_config >> "isUav") != 1) exitWith {"not-autonomous"};
+    if !(_class isKindOf "StaticWeapon") exitWith {"not-static"};
+    if (getNumber (_config >> "artilleryScanner") == 1) exitWith {"artillery"};
+    private _profile = [_class] call ITW_CLASH_AirPicture_fnc_ClassProfile;
+    if (_profile get "antiAirMissile") exitWith {"missile"};
+    private _lock = [_class] call ITW_CLASH_RearBaseCRAM_fnc_GunAirLock;
+    if (_lock < 1) exitWith {"no-air-gun"};
+    if (_lock >= 2) exitWith {""};
+    if (_profile get "radar") exitWith {""};
+    if ((toLowerANSI getText (_config >> "editorSubcategory")) isEqualTo "edsubcat_aas") exitWith {""};
+    "not-built-for-air"
+};
+
+ITW_CLASH_RearBaseCRAM_fnc_IsCRAM = {
+    params ["_class"];
+    ([_class] call ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy) isEqualTo ""
+};
+
+/*
+    v4. Every C-RAM the game has, radar pieces first. Scanned once.
+    v5: says why each autonomous ground piece was or was not taken.
+*/
 ITW_CLASH_RearBaseCRAM_fnc_CRAMClasses = {
     if (!isNil "ITW_CLASH_RearBaseCRAMClassesFound") exitWith {ITW_CLASH_RearBaseCRAMClassesFound};
-    private _found = ("getNumber (_x >> 'scope') >= 2 && {getNumber (_x >> 'isUav') == 1}" configClasses (configFile >> "CfgVehicles")) apply {configName _x};
-    _found = _found select {[_x] call ITW_CLASH_RearBaseCRAM_fnc_IsCRAM};
+    private _candidates = ("getNumber (_x >> 'scope') >= 2 && {getNumber (_x >> 'isUav') == 1}" configClasses (configFile >> "CfgVehicles")) apply {configName _x};
+    _candidates = _candidates select {!(_x isKindOf "Air")};
+    private _found = [];
+    private _scan = [];
+    {
+        private _why = [_x] call ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy;
+        if (_why isEqualTo "") then {_found pushBack _x};
+        if ((count _scan) < 40) then {
+            _scan pushBack [
+                _x,if (_why isEqualTo "") then {"cram"} else {_why},
+                if (_why in ["no-class","not-public","not-autonomous","not-static"]) then {-1} else {[_x] call ITW_CLASH_RearBaseCRAM_fnc_GunAirLock},
+                getText (configFile >> "CfgVehicles" >> _x >> "editorSubcategory")
+            ];
+        };
+    } forEach _candidates;
+    ["cram-scan",[count _candidates,_scan]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
     private _radar = _found select {([_x] call ITW_CLASH_AirPicture_fnc_ClassProfile) get "radar"};
     ITW_CLASH_RearBaseCRAMClassesFound = _radar + (_found - _radar);
     ["cram-classes",[ITW_CLASH_RearBaseCRAMClassesFound]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
