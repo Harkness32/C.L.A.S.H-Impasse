@@ -682,8 +682,10 @@ ITW_CLASH_HeliAttack_fnc_Aim = {
         private _err = abs ([vehicle leader _group,_pos] call ITW_CLASH_HeliAttack_fnc_HeadingError);
         if (_err <= ITW_CLASH_HeliAttackPointAlign && {_onAt < 0}) then {_onAt = time};
         if (_shotAt < 0 && {(call _shotsNow) > _before}) then {_shotAt = time};
-        // v5 evidence: how well the lead's current weapon is laid on it.
-        _peakAim = _peakAim max ((vehicle leader _group) aimedAtTarget [_tgt]);
+        // v5 evidence: how well the lead's current weapon is laid on it,
+        // the weapon named so the two-argument form is used.
+        private _leadVeh = vehicle leader _group;
+        _peakAim = _peakAim max (_leadVeh aimedAtTarget [_tgt,currentWeapon _leadVeh]);
         // The nose has not come round on its own: turn it.
         if (!_assisted && {_onAt < 0} && {(time - _start) >= ITW_CLASH_HeliAttackPointAssistAfter}) then {
             _assisted = true;

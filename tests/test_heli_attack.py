@@ -646,7 +646,7 @@ def test_v5_the_crews_own_pick_is_read_not_set():
 
 def test_v5_a_point_at_logs_what_the_crew_had():
     body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Aim")
-    assert "_peakAim = _peakAim max ((vehicle leader _group) aimedAtTarget [_tgt]);" in body
+    assert "_peakAim = _peakAim max (_leadVeh aimedAtTarget [_tgt,currentWeapon _leadVeh]);" in body
     assert "private _seenAt = [_flight,_tgt] call ITW_CLASH_HeliAttack_fnc_CrewSeenAt;" in body
     assert "private _crewPick = [vehicle leader _group] call ITW_CLASH_HeliAttack_fnc_CrewPick;" in body
     tail = body[body.index("private _seenAt"):]
