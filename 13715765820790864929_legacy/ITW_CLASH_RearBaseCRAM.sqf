@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") exitWith {
 };
 
 ITW_CLASH_RearBaseCRAMStarted = true;
-ITW_CLASH_RearBaseCRAMVersion = 3;
+ITW_CLASH_RearBaseCRAMVersion = 4;
 ITW_CLASH_RearBaseCRAMReady = false;
 
 /*
@@ -37,6 +37,16 @@ ITW_CLASH_RearBaseCRAMReady = false;
         static-AA scan (VehicleArrays.sqf: va_pStaticAAClasses /
         va_eStaticAAClasses), preferring a radar piece. No hard-coded class, so
         a modded faction gets its own.
+
+    v4 (Hark, 2026-10-17: "actually implement the actual cram... cram for both
+    of us"): neither faction lists a C-RAM, so every run fell back, BLUFOR to a
+    Cheetah and GUER to a Titan static. The class is now a real C-RAM first:
+    an autonomous static gun, radar-guided, firing guns and no missiles (the
+    Praetorian 1C in vanilla; any mod's by the same test), from the side's own
+    statics if it has one, else from the game's config, preferring one built
+    for the faction's own equipment side. The old ladder stays as the fallback
+    for a modset with none at all. An autonomous piece is crewed by its own
+    AI joined to a group of the side, the way the support UAVs are.
 */
 
 ITW_CLASH_RearBaseCRAMEnabled = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnabled",true];
@@ -59,6 +69,10 @@ ITW_CLASH_RearBaseCRAMOffset = missionNamespace getVariable ["ITW_CLASH_RearBase
 // discover it from the faction.
 ITW_CLASH_RearBaseCRAMPlayerClass = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMPlayerClass",""];
 ITW_CLASH_RearBaseCRAMEnemyClass = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnemyClass",""];
+// v4: a real C-RAM before any other piece. False goes back to the v3 ladder.
+ITW_CLASH_RearBaseCRAMPreferCRAM = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMPreferCRAM",true];
+// v4: the game's C-RAM classes, found once.
+ITW_CLASH_RearBaseCRAMClassesFound = nil;
 
 // sideKey -> [vehicle, group, destroyedAt, position, recrews]
 // Sides already told they have nothing to emplace.
@@ -83,6 +97,58 @@ ITW_CLASH_RearBaseCRAM_fnc_Log = {
     exists rather than a new class list: a radar piece first (a real C-RAM or SAM
     site), then anything that can shoot at aircraft.
 */
+/*
+    v4. A C-RAM, by what it is rather than what it is called: a public static
+    weapon that is autonomous (isUav), carries an anti-air gun and no
+    anti-air missile (so not a SAM site), read through the air picture's own
+    class profile.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_IsCRAM = {
+    params ["_class"];
+    if (!(_class isEqualType "") || {!isClass (configFile >> "CfgVehicles" >> _class)}) exitWith {false};
+    private _config = configFile >> "CfgVehicles" >> _class;
+    if (getNumber (_config >> "scope") < 2) exitWith {false};
+    if (!(_class isKindOf "StaticWeapon") || {getNumber (_config >> "isUav") != 1}) exitWith {false};
+    private _profile = [_class] call ITW_CLASH_AirPicture_fnc_ClassProfile;
+    (_profile get "antiAirGun") && {!(_profile get "antiAirMissile")}
+};
+
+// v4. Every C-RAM the game has, radar pieces first. Scanned once.
+ITW_CLASH_RearBaseCRAM_fnc_CRAMClasses = {
+    if (!isNil "ITW_CLASH_RearBaseCRAMClassesFound") exitWith {ITW_CLASH_RearBaseCRAMClassesFound};
+    private _found = ("getNumber (_x >> 'scope') >= 2 && {getNumber (_x >> 'isUav') == 1}" configClasses (configFile >> "CfgVehicles")) apply {configName _x};
+    _found = _found select {[_x] call ITW_CLASH_RearBaseCRAM_fnc_IsCRAM};
+    private _radar = _found select {([_x] call ITW_CLASH_AirPicture_fnc_ClassProfile) get "radar"};
+    ITW_CLASH_RearBaseCRAMClassesFound = _radar + (_found - _radar);
+    ["cram-classes",[ITW_CLASH_RearBaseCRAMClassesFound]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+    ITW_CLASH_RearBaseCRAMClassesFound
+};
+
+/*
+    v4. The side's C-RAM: one of its own statics if it fields one; else one
+    built for the side its faction's equipment comes from (GUER here is
+    equipped as NATO, so it gets NATO's); else any. "" when the game has none.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_SelectCRAM = {
+    params ["_side","_friendly"];
+    private _own = (missionNamespace getVariable [if (_friendly) then {"va_pStaticAAClasses"} else {"va_eStaticAAClasses"},[]]) apply {
+        [_x] call ITW_CLASH_Generation_fnc_NormalizeClass
+    };
+    _own = _own select {[_x] call ITW_CLASH_RearBaseCRAM_fnc_IsCRAM};
+    if (_own isNotEqualTo []) exitWith {_own#0};
+    private _all = call ITW_CLASH_RearBaseCRAM_fnc_CRAMClasses;
+    if (_all isEqualTo []) exitWith {""};
+    private _crewTypes = if (isNil "ITW_CLASH_Checkbook_fnc_GetCrewTypes") then {[]} else {
+        ([_side] call ITW_CLASH_Checkbook_fnc_GetCrewTypes) param [0,[]]
+    };
+    private _equipmentSide = if (_crewTypes isEqualTo []) then {-1} else {
+        getNumber (configFile >> "CfgVehicles" >> (_crewTypes#0) >> "side")
+    };
+    private _matching = _all select {getNumber (configFile >> "CfgVehicles" >> _x >> "side") == _equipmentSide};
+    if (_matching isNotEqualTo []) exitWith {_matching#0};
+    _all#0
+};
+
 ITW_CLASH_RearBaseCRAM_fnc_SelectClass = {
     params ["_side"];
     private _friendly = !isNil "ITW_PlayerSide" && {_side == ITW_PlayerSide};
@@ -94,6 +160,10 @@ ITW_CLASH_RearBaseCRAM_fnc_SelectClass = {
     if (_override isNotEqualTo "" && {isClass (configFile >> "CfgVehicles" >> _override)}) exitWith {
         _override
     };
+    private _cram = if (ITW_CLASH_RearBaseCRAMPreferCRAM) then {
+        [_side,_friendly] call ITW_CLASH_RearBaseCRAM_fnc_SelectCRAM
+    } else {""};
+    if (_cram isNotEqualTo "") exitWith {_cram};
 
     private _usable = {
         params ["_pool"];
@@ -232,9 +302,57 @@ ITW_CLASH_RearBaseCRAM_fnc_GunnerType = {
     _crewTypes#0
 };
 
+/*
+    v4. An autonomous piece (a C-RAM) has no seat a soldier can take: its own
+    AI crew is created and joined to a group of this side, as the support
+    UAVs are (ITW_CLASH_Supports_fnc_SpawnAircraft). The group then becomes
+    what the soldier's group was: ours, never HAL's.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_CrewAutonomous = {
+    params ["_side","_veh"];
+    createVehicleCrew _veh;
+    private _crew = (crew _veh) select {alive _x};
+    if (_crew isEqualTo []) exitWith {
+        ["no-crew",[toUpperANSI str _side,typeOf _veh]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+        []
+    };
+    private _native = group (_crew#0);
+    private _group = createGroup [_side,true];
+    _crew joinSilent _group;
+    if (!isNull _native && {_native isNotEqualTo _group} && {(units _native) isEqualTo []}) then {deleteGroup _native};
+    _veh setVariable ["ITW_CLASH_ForcedSide",_side,true];
+    if (isNull (gunner _veh)) exitWith {
+        {deleteVehicle _x} forEach _crew;
+        deleteGroup _group;
+        ["no-gunner-seat",[toUpperANSI str _side,typeOf _veh]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+        []
+    };
+    [_side,_group] call ITW_CLASH_RearBaseCRAM_fnc_Settle;
+    [_group]
+};
+
+// The crew's group: on watch, and on the commander's never-send lists.
+ITW_CLASH_RearBaseCRAM_fnc_Settle = {
+    params ["_side","_group"];
+    _group setVariable ["ITW_CLASH_RearBaseCRAM",true];
+    _group setBehaviour "COMBAT";
+    _group setCombatMode "RED";
+    private _hq = if (isNil "ITW_CLASH_fnc_GetCommanderForSide") then {grpNull} else {
+        [_side] call ITW_CLASH_fnc_GetCommanderForSide
+    };
+    if (!isNull _hq) then {
+        {
+            private _arr = +(_hq getVariable [_x,[]]);
+            _arr pushBackUnique _group;
+            _hq setVariable [_x,_arr];
+        } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
+    };
+};
+
 ITW_CLASH_RearBaseCRAM_fnc_Crew = {
     params ["_side","_veh"];
     if (isNull _veh || {!alive _veh}) exitWith {[]};
+    if (getNumber (configOf _veh >> "isUav") == 1) exitWith {[_side,_veh] call ITW_CLASH_RearBaseCRAM_fnc_CrewAutonomous};
 
     private _crewTypes = [];
     if (!isNil "ITW_CLASH_Checkbook_fnc_GetCrewTypes") then {
@@ -267,21 +385,8 @@ ITW_CLASH_RearBaseCRAM_fnc_Crew = {
         []
     };
 
-    _group setVariable ["ITW_CLASH_RearBaseCRAM",true];
-    _group setBehaviour "COMBAT";
-    _group setCombatMode "RED";
     {_gunner disableAI _x} forEach ["PATH","FSM"];
-
-    private _hq = if (isNil "ITW_CLASH_fnc_GetCommanderForSide") then {grpNull} else {
-        [_side] call ITW_CLASH_fnc_GetCommanderForSide
-    };
-    if (!isNull _hq) then {
-        {
-            private _arr = +(_hq getVariable [_x,[]]);
-            _arr pushBackUnique _group;
-            _hq setVariable [_x,_arr];
-        } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
-    };
+    [_side,_group] call ITW_CLASH_RearBaseCRAM_fnc_Settle;
     [_group]
 };
 
@@ -324,7 +429,8 @@ ITW_CLASH_RearBaseCRAM_fnc_Spawn = {
 
     ["placed",[
         toUpperANSI str _side,_class,_position apply {round _x},
-        ([_class] call ITW_CLASH_AirPicture_fnc_ClassProfile) get "radar"
+        ([_class] call ITW_CLASH_AirPicture_fnc_ClassProfile) get "radar",
+        [_class] call ITW_CLASH_RearBaseCRAM_fnc_IsCRAM
     ]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
     [_veh,_crewed#0,0,_position,0]
 };
@@ -426,11 +532,12 @@ ITW_CLASH_RearBaseCRAM_fnc_Maintain = {
 
 ITW_CLASH_RearBaseCRAMReady = true;
 diag_log format [
-    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=faction-static-aa-then-faction-aa-vehicle halRegistered=false impasseBilled=false vehDefStamped=false gunnerOnly=true maxRecrews=%5 crewLossRecrews=true replaceAtOriginalPosition=true",
+    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=%6 autonomousCrewJoined=true halRegistered=false impasseBilled=false vehDefStamped=false gunnerOnly=true maxRecrews=%5 crewLossRecrews=true replaceAtOriginalPosition=true",
     ITW_CLASH_RearBaseCRAMVersion,
     ITW_CLASH_RearBaseCRAMRespawn,
     ITW_CLASH_RearBaseCRAMOffset,
     ITW_CLASH_RearBaseCRAMPoll,
-    ITW_CLASH_RearBaseCRAMMaxRecrews
+    ITW_CLASH_RearBaseCRAMMaxRecrews,
+    if (ITW_CLASH_RearBaseCRAMPreferCRAM) then {"cram-then-faction-static-aa-then-faction-aa-vehicle"} else {"faction-static-aa-then-faction-aa-vehicle"}
 ];
 true

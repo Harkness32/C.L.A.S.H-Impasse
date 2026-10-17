@@ -60,7 +60,7 @@ def margin(flavor: str, player: bool) -> int:
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 6;" in raw("ITW_CLASH_Supports.sqf")
+    assert "ITW_CLASH_SupportsVersion = 7;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsUAVVersion = 4;" in raw("ITW_CLASH_SupportsUAV.sqf")
     assert "ITW_CLASH_KnowledgeVersion = 6;" in raw("ITW_CLASH_Knowledge.sqf")
 
@@ -141,7 +141,7 @@ def test_supports_boot_line_reports_the_guided_margins():
     source = raw("ITW_CLASH_Supports.sqf")
     assert "danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true" in source
     tail = source[source.index("CLASH BOOT | supports-ready"):]
-    assert "ITW_CLASH_SupportsDangerMarginGuided,\n    ITW_CLASH_SupportsDangerMarginGuidedPlayer\n];" in tail
+    assert "ITW_CLASH_SupportsDangerMarginGuided,\n    ITW_CLASH_SupportsDangerMarginGuidedPlayer," in tail
 
 
 # --------------------------------------------------------- UAV footprint

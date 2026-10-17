@@ -122,7 +122,7 @@ def test_every_support_is_live_by_default():
     # v3 (Hark, 2026-10-16): unlock all of them. Shadow mode stays one
     # variable away, and each flavor keeps its own switch. v4 keeps that.
     core = code("ITW_CLASH_Supports.sqf")
-    assert "ITW_CLASH_SupportsVersion = 6;" in core
+    assert "ITW_CLASH_SupportsVersion = 7;" in core
     assert '["ITW_CLASH_SupportsDryRun",false]' in core
     for flavor in ["UAV", "Bomb", "Guided", "Carpet", "AirborneHeli", "AirbornePlane", "VehicleDrop"]:
         assert f'["ITW_CLASH_Supports{flavor}Enabled",true]' in core, flavor
@@ -146,7 +146,8 @@ def test_admission_reserves_money_lane_and_cooldowns_unscheduled():
         '_denied = "LANE_BUSY"',
         '_denied = "COOLDOWN"',
         '_denied = "INSUFFICIENT_FUNDS"',
-        '_ledger set ["cash",(_ledger get "cash") - _price];',
+        # v7: from the pick's own wallet; a test's wallet is never charged.
+        '_ledger set [_cashKey,(_ledger getOrDefault [_cashKey,0]) - _price];',
         "_lanes set [_lane,_id];",
         '_cooldowns set ["flavor:" + _flavor',
     ):
@@ -157,7 +158,9 @@ def test_money_is_spent_only_on_delivery_or_loss():
     settle = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_Settle")
     assert 'private _refund = _state in ["REVOKED","BREAKOFF"];' in settle
     # Refunded in full up to the ceiling; what would cross it is clipped and logged.
-    assert "private _after = (_before + _price) min ((call ITW_CLASH_Supports_fnc_Cap) max _before);" in settle
+    # v7: back into the wallet it came from, against that wallet's cap.
+    assert "private _after = (_before + _price) min (([_wallet] call ITW_CLASH_Supports_fnc_WalletCap) max _before);" in settle
+    assert 'if (_refund && {_wallet isNotEqualTo "TEST"}) then {' in settle
     assert "_clipped = (_before + _price) - _after;" in settle
     assert "round _clipped" in settle
     # The lane is released only by its own holder.
@@ -166,17 +169,23 @@ def test_money_is_spent_only_on_delivery_or_loss():
     assert '_lane isEqualTo "RECON" && {_state isEqualTo "LOST"}' in settle
 
 
-def test_two_lanes_so_the_uav_never_blocks_a_strike():
+def test_lanes_so_nothing_blocks_another_family():
+    # v7: the UAV, the strikes, the paradrops, deliveries, and the bite-back
+    # wave's two parts each hold a lane of their own.
     core = code("ITW_CLASH_Supports.sqf")
-    assert '["lanes",createHashMapFromArray [["RECON",""],["COMMIT",""]]]' in core
+    assert ('["RECON",""],["COMMIT",""],["DROP",""],["VEHICLE",""],["BITE_DROP",""],["BITE_VEHICLE",""]') in core
     assert core.count('["lane","RECON"]') == 1
-    assert core.count('["lane","COMMIT"]') == 5
+    assert core.count('["lane","COMMIT"]') == 3
+    assert core.count('["lane","DROP"]') == 2
+    assert core.count('["lane","VEHICLE"]') == 1
 
 
 def test_save_is_an_option_in_the_same_pool():
     assess = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_Assess")
     assert '_pool pushBack (["SAVE","SAVE",-1,"",[],_saveWeight' in assess
-    assert "([_pool] call ITW_CLASH_Supports_fnc_Pick)" in assess
+    assert '[_context,_posture,_planObjective,_pool,"pool"] call ITW_CLASH_Supports_fnc_Decide;' in assess
+    decide = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_Decide")
+    assert "([_pool] call ITW_CLASH_Supports_fnc_Pick)" in decide
 
 
 def test_the_pick_is_logged_with_its_draw_in_a_stable_order():

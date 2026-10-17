@@ -1,6 +1,6 @@
 # C.L.A.S.H. Commander Supports Model
 
-Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed; v6 gives the guided missile its own danger margin, and the recon UAV (v4) reports everything in its footprint that no building covers.** Phase 0 (per-side air-loss closures, hard-kill
+Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed; v6 gives the guided missile its own danger margin, and the recon UAV (v4) reports everything in its footprint that no building covers; v7 splits the drops into their own families and wallet, makes vehicle delivery its own support carried by a Blackfish, adds bite-back waves for points being lost, and console tests for all of it.** Phase 0 (per-side air-loss closures, hard-kill
 fighter denial) shipped in `448324b`; see `COMMANDER_SUPPORTS_PHASE0.md`.
 
 Every number in this document is a placeholder for calibration, not a decision.
@@ -293,12 +293,13 @@ UAV looks.
 | Hit a point | Bomb pass | Strike pass | Observed or fixed | On |
 | Hit a point | Guided pass | Strike pass with on-site scan | A vehicle that is observed, fixed or a lead | On |
 | Hit an area | Carpet | Strike pass (bomber) | Any status but lost | On |
-| Land | Helicopter airborne | Drop run | Drop zone Recent contact or Recently cleared | Off |
-| Land | C-130 troops | Drop run | As above | Off |
-| Land | Vehicle drop (add-on to C-130) | Drop run | As above | Off |
+| Land | Helicopter airborne | Drop run | Drop zone Recent contact or Recently cleared | On |
+| Land | Plane troops | Drop run | As above | On |
+| Deliver | Vehicle delivery (v7: its own support, carried inside a Blackfish) | Delivery run | As above | On |
 
-Three delivery routines carry seven flavors. A new flavor is a registry row plus,
-where needed, a payload function.
+Three delivery routines carry seven flavors, in three families since v7: strikes
+and the UAV; paradrops; vehicle delivery (6.7). A new flavor is a registry row
+plus, where needed, a payload function.
 
 ### 5.2 Registry row
 
@@ -417,6 +418,59 @@ assessment. It never orders ATTACK on a strike that has not landed.
 
 Under CONSOLIDATE only candidates at held points enter the pool.
 
+### 6.7 Three families, three picks (v7)
+
+Hark, 2026-10-17: "I don't want the commander to have to pick between the two."
+No drop had ever been bought: the helicopter drop cost 36, the C-130 with its
+vehicle add-on the whole 90 cap, and both shared the bank, the pick and the
+commitment lane with the strikes, which spent the money first.
+
+Each assessment now makes up to three picks, each with its own SAVE:
+
+| Family | Flavors | Lane | Wallet | Pool line |
+|---|---|---|---|---|
+| Strikes and the UAV | UAV, bomb, guided, carpet | RECON, COMMIT | Main bank | `supports-pool` |
+| Paradrops | Helicopter, plane | DROP | Drop wallet | `supports-drop-pool` |
+| Vehicle delivery | Vehicle drop | VEHICLE | Drop wallet | `supports-vehicle-pool` |
+
+A strike never waits on a drop, and a paradrop never on a vehicle. The two drop
+families share the drop wallet, which holds one paradrop and one vehicle at its
+cap, so they compete only for its money, never in a roll. A drop pool with
+nothing offered and nothing refused is not logged.
+
+### 6.8 Bite-back (v7)
+
+Hark: "when a point he owns is threatened or getting capped, he has a small
+budget to send paradrop and vehicle drop waves." After the three picks, each
+point the side holds (and that is not capture-frozen) is read for why it wants
+a wave:
+
+| Why | Rule | Rank |
+|---|---|---|
+| `enemy-flag-up` | The enemy's flag is going up on a point still counted as ours (Impasse flips the flag before it flips the ownership) | 5 |
+| `flag-falling` | Our flag is lower than at the last assessment | 4.5 |
+| `flag-down` | Our flag is below 0.9 and not rising (the first look, or stuck) | 4 |
+| `unanchored` | Under pressure with none of our formations on it (urgency 3) | 3 |
+| `outnumbered` | Under pressure, defenders below the contested ratio (urgency 2.5) | 2.5 |
+
+The flag is Impasse's own (`ITW_FlagIsPlayer`, `ITW_FlagPhase`), the bar every
+player sees on screen, so reading it is no omniscience. A rising flag below 0.9
+(the side retaking it) wakes nothing on its own.
+
+The most urgent point gets one wave, if all of these hold, else it says once
+why not (`supports-biteback-held`): the pot holds a wave; both wave lanes are
+free; the point was not answered in the last 20 minutes; it is not Impasse's
+defend-phase point while the defend phase runs (Impasse's own counterattack;
+the two do not stack).
+
+A wave is a helicopter drop of two squads (each cut so both fit the aircraft)
+and one vehicle delivery, both to hold the point, out after a 15 to 45 s
+scramble, in lanes of their own (BITE_DROP, BITE_VEHICLE). The pot counts waves:
+it holds one, starts full and earns one back in 20 minutes. A wave costs one,
+split between the parts that go; a part the side cannot fly stays home and costs
+nothing, and the refund rules are the drops' own. Headroom is checked for the
+whole wave.
+
 ## 7. Admission and commitment
 
 ### 7.1 Hard gates
@@ -448,12 +502,16 @@ happen.
 
 ### 7.2 Lanes
 
-Two lanes per side, one shared budget:
+Six lanes per side (v7; two before):
 
 - **Recon lane:** one UAV on station or relaunching.
-- **Commitment lane:** one strike or drop from reservation until done.
+- **Commitment lane:** one strike from reservation until done.
+- **Drop lane:** one paradrop (v7).
+- **Vehicle lane:** one vehicle delivery (v7).
+- **Bite-back lanes:** a wave's paradrop and its vehicle (v7).
 
-A loitering UAV never blocks strikes or drops.
+A loitering UAV never blocks strikes or drops; since v7 no family blocks
+another. A console test holds a lane of its own (`TEST-...`) and blocks nothing.
 
 ### 7.3 The transaction
 
@@ -510,8 +568,14 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   ETB.
 - **Income:** flat over time, the ETB's formula with its own scale, identical for
   both sides. Nothing is earned from kills or captures.
-- **Cap:** the price of the most expensive enabled flavor. Income stops at the
-  cap.
+- **Cap:** the price of the most expensive enabled flavor that spends from the
+  bank. Income stops at the cap. Since v7 that is the carpet (24); it was the
+  C-130 with its vehicle (90).
+- **Drop wallet (v7):** a second ledger entry, `dropCash`, with its own income
+  (the bank's times `ITW_CLASH_SupportsDropIncomeScale`, 1), starting empty, and
+  a cap of one paradrop plus one vehicle (48 at 1.2 a minute).
+- **Bite-back pot (v7):** `biteCash`, counted in waves: holds 1, starts full,
+  earns one back in 20 minutes.
 - **Prices:** set from the intended cadence. Price = income per minute times the
   intended interval:
 
@@ -520,8 +584,9 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   | UAV | Every 4 minutes |
   | Bomb pass, guided pass | Every 10 minutes (v5; was 20) |
   | Carpet | Every 20 minutes (v5; was 40) |
-  | Helicopter airborne | Every 30 minutes |
-  | C-130 troops | Every 50 minutes |
+  | Helicopter airborne | Every 15 minutes of the drop wallet (v7; was 30 of the bank) |
+  | Plane troops | Every 25 minutes of the drop wallet (v7; was 50, times 1.5 with the vehicle) |
+  | Vehicle delivery | Every 15 minutes of the drop wallet (v7; its own support) |
 
 - **Holding discount:** supports at a held point cost 0.75 of the price.
 - **v5 tempo** (Hark, 2026-10-17: "supports are just crazy rare"). In 33
@@ -760,10 +825,29 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   no point, so it touches no waypoint and every man goes out through
   `ITW_AtkParachute` at once; then `doFollow`, as every other paradrop caller
   does.
-- **C-130:** CARELESS with a `flyInHeightASL` floor at 250 m above the drop zone.
-  Same jump.
-- **Vehicle add-on:** a crewed light vehicle built at the moment of release with
-  `ITW_AtkSpawnVeh` and dropped 80 m past the zone through `ITW_FncVehicleHalo`.
+- **Plane:** CARELESS with a `flyInHeightASL` floor at 250 m above the drop zone.
+  Same jump. No vehicle add-on since v7.
+- **Vehicle delivery (airborne v2, its own support):**
+  - **Carrier:** the side's own aircraft that carry vehicles inside (config
+    `VehicleTransport >> Carrier`), `ITW_CLASH_SupportsVehicleCarrierClasses`
+    first (the Blackfish, `B_T_VTOL_01_vehicle_F`), else the strongest lifter,
+    else a preferred class the side does not list (Hark: "both sides have it
+    right now"). From the rear air base: a VTOL needs no runway.
+  - **Vehicle:** one of the side's own armed or dual-role cars, in a random
+    order, built crewed by `ITW_AtkSpawnVeh` at the origin and loaded with
+    `setVehicleCargo`; the first of up to four that fits goes, one that does not
+    fit is removed with its crew. Locked and undamageable until it is down.
+    None fits: `NO_VEHICLE_FIT`, refunded.
+  - **Run:** one straight line through the zone at 200 m. The vehicle goes 2.5 s
+    of flight short of the zone (about 175 m at 70 m/s) with
+    `objNull setVehicleCargo`. The engine gives a vehicle unloaded in the air
+    its own cargo parachute; if a second later nothing holds it, Impasse's
+    vehicle parachute does, from where it is (`ITW_FncVehicleHalo`).
+  - **Ends:** delivered or lost is spent; passed wide, never reached or failed
+    to unload is refunded and the vehicle, never down, removed. A carrier lost
+    with the vehicle alive inside lets it go; whatever lands is handed on.
+  - **Hand-off:** down (or 180 s), a settle, damage and the lock back, then the
+    crew to HAL as below (step 6).
 - **Abort before anyone jumps** (passed wide, never reached): the squads never
   touched the ground and are deleted, the aircraft egresses, and the money comes
   back.
@@ -819,12 +903,18 @@ the loud debugger; the pool and ledger lines are too long for chat.
 | `supports-strike-breakoff-geometry` | v5: id, flavor, reason, metres to the aim along the line, metres off it, line heading, track heading, missiles that came at it during the pass, height, speed |
 | `supports-uav-killbox` | v5: side, where a UAV died within a minute of arriving, how long the area is closed |
 | `supports-danger-close` | v6: side, flavor, target key (assessment) or support id (pre-run), where (`assess` or `pre-run`), and the friendly deepest inside its line: [metres, player, line] |
+| `supports-drop-pool`, `supports-vehicle-pool` | v7: as `supports-pool`, for the paradrops and for delivery, with the drop wallet's cash |
+| `supports-biteback-wave` | v7: side, objective, why, flag phase, pressure, wave id, [flavor, support id] for each part that went, refused parts, pot after, `live` or `test` |
+| `supports-biteback-held`, `-refused` | v7: a point that wants a wave and may not have one (why, phase, pressure, the hold: `DEFEND_PHASE`, `COOLDOWN`, `INSUFFICIENT_FUNDS`, `LANE_BUSY`, `REFUSED`; pot), said once per change; a wave nothing could fly |
+| `supports-airborne-vehicle-loaded`, `-released`, `-handoff`, `-unfit`, `-unload-failed`, `-lost` | v7: the delivery: carrier, vehicle, crew, zone, how many classes were tried; release speed, height, distance, whose parachute (`engine` or `impasse`); where it landed from the point |
+| `supports-test-launched`, `-test-filled` | v7: a console test: side, flavor, objective, reason, support id, aircraft; a wallet filled |
 | `supports-strike-impact-summary` | Per pass: the four mean errors |
 | `supports-strike-ammo` | Boot: the bomb class's simulation, air friction, side air friction, max speed, thrust, thrust time, time to live |
 | `supports-strike-test-started`, `-test-outcome` | A console test pass |
 | `supports-uav-launched`, `-on-station`, `-retasked`, `-ended` | The UAV's life: looks stamped, peak contacts in one sweep, retasks; v4 adds the footprint's peak, the most it found covered in one poll, and footprint reports made |
 | `supports-airborne-boarded`, `-released`, `-handoff`, `-vehicle-*` | The drop: squads and men, release geometry, who took each squad and which order it got |
-| `supports-ledger` | Periodic: cash, cap, income, lanes |
+| `supports-ledger` | Periodic: cash, cap, income, lanes; v7 adds the drop wallet, its cap and its two lanes, the bite-back pot and its two lanes |
+| `supports-admission`, `-outcome` | v7 add the wallet and lane (admission) and the wallet and wave (outcome); `test` beside `live` and `dry-run` |
 | `knowledge-objective` | Periodic per objective: intelligence state, observed, fixed, leads, oldest report |
 | `knowledge-truth` | Diagnostic: reported against actual error, by class |
 | `knowledge-truth-speed` | Diagnostic, per bucket: samples, moving, outside while moving, outside while settled, implied speed spread, implied speed spread while moving, real speed spread (each spread min, median, p90, max) |
@@ -835,6 +925,10 @@ the loud debugger; the pool and ledger lines are too long for chat.
 | `supports-ready`, `knowledge-ready` | Boot: version, dry run, every switch |
 
 ## 11. Rollout
+
+- **Supports v7 / Airborne v2 / console tests** (2026-10-17, Hark): three
+  families and the drop wallet, vehicle delivery by Blackfish, bite-back, the
+  console tests (section 17). Not yet run in engine; no drop has ever flown.
 
 - **Supports v6 / UAV v4 / Knowledge v6** (2026-10-17, second run, Hark): the
   guided missile's danger margin is 100 m (200 m for players); every
@@ -939,6 +1033,17 @@ class goes without that flavor.
    whether the Greyhawk's own `getSensorTargets` then sees the ground.
 24. v6 danger close: `supports-danger-close` distances, and how many were
    players; whether guided passes now run where bombs are still refused.
+25. v7, every drop, first by console test (section 17): boarding, the run, the
+   jump, the hand-off and HAL's order (`supports-airborne-*`).
+26. v7 delivery: whether `setVehicleCargo` loads a crewed car into a Blackfish in
+   flight; whether `objNull setVehicleCargo` lets it go in the air and the
+   engine's parachute takes it (`vehicle-released` says `engine` or `impasse`);
+   where it lands from the point; whether the crew stays aboard while carried.
+27. v7 drop tempo: drop and vehicle pools per side per hour, and drops bought,
+   now that they have their own wallet.
+28. v7 bite-back: waves per hour, by why; whether `enemy-flag-up` or
+   `flag-falling` comes first on a point being taken; how often a wave saves
+   the point; and `biteback-held` reasons.
 
 ## 14. Tunables
 
@@ -970,6 +1075,10 @@ All placeholders.
 | UAV killbox | Lost within 60 s of arriving; 1.5 km; 15 min |
 | UAV altitude, loiter, relaunch | 2000 m AGL (rotary 500 m), 15 min, 300 s |
 | UAV footprint | 1200 m under it; cover ray 40 m, buildings only; report error 10 m; 80 a poll; camera on the station |
+| Drop wallet | Income 1 times the bank's; starts empty; cap one paradrop plus one vehicle |
+| Drop cadences | Helicopter 15 min, plane 25 min, vehicle 15 min; cooldowns 600, 900, 600 s |
+| Vehicle delivery | Carrier `B_T_VTOL_01_vehicle_F` first; 200 m; 70 m/s; release 2.5 s short; 4 vehicles tried; crew counted 3 |
+| Bite-back | Pot of 1 wave, starts full, 20 min a wave; 20 min a point; flag floor 0.9; 2 squads and a vehicle; 15 to 45 s scramble |
 | Guided scan | Within 3 km, radius cap 500 m, window 20 s |
 | Bomb acquisition | Reveal 1.5; a look every 1 s from spawn; scan radius R, 150 to 500 m; re-line with 10 s or more to the final check when the aim moved over 25 m; velocity from fixes 4 to 10 s apart; lead cap 250 m |
 | Bomb pass speed, release scale | 550 km/h; lead times 1.08 |
@@ -1020,11 +1129,12 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 | `ITW_CLASH_Knowledge.sqf` (v6) | Reports (a groupmate's sighting when the leader has none; the UAV's footprint reports), uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
 | `ITW_CLASH_Colossus.sqf` (v7) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held; concentration gated on anchored holdings |
 | `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
-| `ITW_CLASH_Supports.sqf` (v6) | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors, the guided danger margin |
+| `ITW_CLASH_Supports.sqf` (v7) | Registry, ledger and its three wallets, the three pools and picks, bite-back, direct picks, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors, the guided danger margin |
+| `ITW_CLASH_SupportsDebug.sqf` (v1) | Console tests: a drop, a delivery, a wave, the wallets, filling a wallet (section 17) |
 | `ITW_CLASH_SupportsStrike.sqf` (v5) | Bomb pass with on-site acquisition, guided pass with the on-site scan, carpet; the break-off turn and its geometry |
 | `ITW_CLASH_SupportsUAV.sqf` (v4) | The recon UAV; marks a killbox on a quick loss; the footprint, its cover test and its reports; the camera |
 | `ITW_CLASH_DualHALCheckbook.sqf` | The players' commander's Info Markers |
-| `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
+| `ITW_CLASH_SupportsAirborne.sqf` (v2) | Helicopter and plane drops, vehicle delivery carried inside its aircraft, the hand-offs |
 | `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
 | `ITW_CLASH_DebugPreflight.sqf` | Lists the five modules |
 | `ITW_CLASH_AttackRestore.sqf` | Skips groups carrying `ITW_CLASH_SupportAsset` |
@@ -1032,6 +1142,36 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 Boot (`init.sqf`): the rack profile, then Knowledge, then COLOSSUS, then the
 core and its three executors; the core needs Knowledge and COLOSSUS, and an executor that is
 missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
-`tests/test_commander_supports.py`, `tests/test_bomb_acquisition.py` (v4), `tests/test_supports_v5.py` (v5) and `tests/test_supports_v6.py` (v6). The pure math (pick, overlap, presence,
+`tests/test_commander_supports.py`, `tests/test_bomb_acquisition.py` (v4), `tests/test_supports_v5.py` (v5) and `tests/test_supports_v6.py` (v6), `tests/test_supports_v7.py` (v7, the console tests and the rear-base C-RAM). The pure math (pick, overlap, presence,
 falloff, spawn point, release timing, economy) is cross-checked in a Python
 model. The dry run has run in engine (2026-10-16); no live support has yet. Section 13 is the list to verify.
+
+## 17. Console tests (v7)
+
+`ITW_CLASH_SupportsDebug.sqf`. From the debug console with **Server Exec** (on a
+hosted game Local Exec is the server too). Each flies the real thing through
+the real executor, with every normal log line, and says what it did in chat. A
+test pays nothing, holds a lane of its own so it never blocks a commander, and
+skips the map's gates (a frozen point, the drop zone's intelligence, headroom, a
+denied corridor). The aircraft, its route and the squads are found exactly as a
+commander's would be.
+
+Where: an objective index, a position, an object, or nothing for the objective
+nearest the first player. Side: `west`, `independent`, `east`; nothing for the
+players' side.
+
+```sqf
+["AIRBORNE_HELI"] call ITW_CLASH_SupportsDebug_fnc_Drop;                  // helicopter drop, nearest objective
+["AIRBORNE_PLANE",23] call ITW_CLASH_SupportsDebug_fnc_Drop;              // plane drop on objective 23
+["VEHICLE_DROP",player,independent] call ITW_CLASH_SupportsDebug_fnc_Drop; // the enemy's Blackfish delivery
+["AIRBORNE_HELI",23,west,"TAKE"] call ITW_CLASH_SupportsDebug_fnc_Drop;    // force TAKE or HOLD
+[] call ITW_CLASH_SupportsDebug_fnc_BiteBack;                              // a wave to your side's nearest held point
+[23,independent] call ITW_CLASH_SupportsDebug_fnc_BiteBack;
+[] call ITW_CLASH_SupportsDebug_fnc_Status;                                // wallets, lanes, held points' flags
+[west,"DROP"] call ITW_CLASH_SupportsDebug_fnc_Fill;                       // fill a wallet: the commander's own next pick
+```
+
+`Fill` is the test of the real decision: the next assessment's drop and vehicle
+pools can afford everything, so what the commander picks, and why the rest is
+refused, shows in `supports-drop-pool` and `supports-vehicle-pool`. The strike
+pass keeps its own test (`ITW_CLASH_SupportsStrike_fnc_TestPass`).

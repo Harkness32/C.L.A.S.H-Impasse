@@ -234,7 +234,8 @@ if (isServer) then {
                     } forEach [
                         "ITW_CLASH_SupportsStrike.sqf",
                         "ITW_CLASH_SupportsUAV.sqf",
-                        "ITW_CLASH_SupportsAirborne.sqf"
+                        "ITW_CLASH_SupportsAirborne.sqf",
+                        "ITW_CLASH_SupportsDebug.sqf"
                     ];
                 };
             } else {

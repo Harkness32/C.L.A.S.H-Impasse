@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 6;
+ITW_CLASH_SupportsVersion = 7;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -73,6 +73,30 @@ ITW_CLASH_SupportsReady = false;
       - Every DANGER_CLOSE says how close the nearest friendly was, whether
         it was a player, and the line it crossed (supports-danger-close).
 
+    v7 (Hark, 2026-10-17: "I don't want the commander to have to pick
+    between the two"): no drop had ever been bought. The helicopter drop
+    cost 36, the C-130 with its vehicle add-on the whole 90 cap, and both
+    shared the bank, the pick and the commitment lane with the strikes.
+      - Three families, three picks per assessment: strikes and the UAV from
+        the main bank as before; paradrops (helicopter, plane) in their own
+        DROP lane; vehicle delivery as its own support (VEHICLE_DROP) in its
+        own VEHICLE lane, carried inside the aircraft and dropped from it
+        (the Blackfish by default, ITW_CLASH_SupportsVehicleCarrierClasses).
+        A strike never waits on a drop, and a paradrop never on a vehicle.
+      - The two drop families spend a wallet of their own (dropCash), with
+        its own income and a cap of one paradrop and one vehicle banked.
+        Cadences: helicopter drop 15 minutes, plane drop 25, vehicle 15.
+        The main bank's cap falls to its own dearest flavor (carpet), since
+        the C-130 no longer sits in it.
+      - Bite-back (fnc_BiteBack): when a point a side holds is being taken
+        (its Impasse flag is coming down, or the enemy's is going up on it)
+        or its defenders are outnumbered, the commander sends a wave from a
+        small pot of its own: a helicopter drop of two squads and a vehicle.
+        The pot holds one wave and refills in 20 minutes; a point is answered
+        once per 20 minutes; never on Impasse's defend-phase point while the
+        defend phase runs, so the two counterattacks do not stack.
+      - Console tests for every drop and for a wave (ITW_CLASH_SupportsDebug.sqf).
+
     Every number below is a placeholder for calibration.
 */
 
@@ -97,6 +121,8 @@ ITW_CLASH_SupportsCarpetEnabled = missionNamespace getVariable ["ITW_CLASH_Suppo
 ITW_CLASH_SupportsAirborneHeliEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliEnabled",true];
 ITW_CLASH_SupportsAirbornePlaneEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneEnabled",true];
 ITW_CLASH_SupportsVehicleDropEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropEnabled",true];
+// v7: the commander's counterattack waves on points it is losing.
+ITW_CLASH_SupportsBiteBackEnabled = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackEnabled",true];
 
 // ------------------------------------------------------------------- economy
 
@@ -108,8 +134,14 @@ ITW_CLASH_SupportsUAVCadence = missionNamespace getVariable ["ITW_CLASH_Supports
 ITW_CLASH_SupportsBombCadence = missionNamespace getVariable ["ITW_CLASH_SupportsBombCadence",10];
 ITW_CLASH_SupportsGuidedCadence = missionNamespace getVariable ["ITW_CLASH_SupportsGuidedCadence",10];
 ITW_CLASH_SupportsCarpetCadence = missionNamespace getVariable ["ITW_CLASH_SupportsCarpetCadence",20];
-ITW_CLASH_SupportsAirborneHeliCadence = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliCadence",30];
-ITW_CLASH_SupportsAirbornePlaneCadence = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneCadence",50];
+// v7: the drop families' cadences, in minutes of the drop wallet's own
+// income (were 30 and 50 from the main bank, the plane with the vehicle on
+// top at 1.5 times: never once affordable).
+ITW_CLASH_SupportsAirborneHeliCadence = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliCadence",15];
+ITW_CLASH_SupportsAirbornePlaneCadence = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneCadence",25];
+ITW_CLASH_SupportsVehicleDropCadence = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropCadence",15];
+// v7: the drop wallet's income against the main bank's.
+ITW_CLASH_SupportsDropIncomeScale = missionNamespace getVariable ["ITW_CLASH_SupportsDropIncomeScale",1];
 // Holding costs less than taking: the side losing ground holds more.
 ITW_CLASH_SupportsHoldingDiscount = missionNamespace getVariable ["ITW_CLASH_SupportsHoldingDiscount",0.75];
 // v5: how hard SAVE pulls in the pick, against its 3/2/1/0.5 by bank fill.
@@ -123,6 +155,7 @@ ITW_CLASH_SupportsGuidedCooldown = missionNamespace getVariable ["ITW_CLASH_Supp
 ITW_CLASH_SupportsCarpetCooldown = missionNamespace getVariable ["ITW_CLASH_SupportsCarpetCooldown",600];
 ITW_CLASH_SupportsAirborneHeliCooldown = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliCooldown",600];
 ITW_CLASH_SupportsAirbornePlaneCooldown = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneCooldown",900];
+ITW_CLASH_SupportsVehicleDropCooldown = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropCooldown",600];
 // One objective is not struck twice inside this, whichever flavor.
 ITW_CLASH_SupportsObjectiveCooldown = missionNamespace getVariable ["ITW_CLASH_SupportsObjectiveCooldown",180];
 
@@ -153,6 +186,31 @@ ITW_CLASH_SupportsDangerMarginGuidedPlayer = missionNamespace getVariable ["ITW_
 ITW_CLASH_SupportsDangerAirHeight = missionNamespace getVariable ["ITW_CLASH_SupportsDangerAirHeight",300];
 ITW_CLASH_SupportsCorridorPenalty = missionNamespace getVariable ["ITW_CLASH_SupportsCorridorPenalty",0.5];
 ITW_CLASH_SupportsAirborneFarForce = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneFarForce",1500];
+/*
+    v7. Vehicle delivery: the aircraft that carry a vehicle inside, the
+    side's own first, these classes preferred among them, and these classes
+    when the side lists none (Hark: "let's use the blackfish as the vehicle
+    dropper, both sides have it right now"). A carrier is any aircraft whose
+    config can carry vehicles (VehicleTransport >> Carrier). The men a
+    delivered vehicle brings, for the headroom check.
+*/
+ITW_CLASH_SupportsVehicleCarrierClasses = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleCarrierClasses",["B_T_VTOL_01_vehicle_F"]];
+ITW_CLASH_SupportsVehicleDropCrew = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropCrew",3];
+/*
+    v7. Bite-back. The pot is counted in waves: it holds Cap of them and
+    earns one back every Refill minutes. A point it answered is not answered
+    again within Cooldown seconds. A flag of ours below FlagFloor counts as
+    coming down even on the first look. A wave goes out after a short
+    scramble (DelayMin to DelayMax s) with Squads squads by helicopter and
+    one vehicle.
+*/
+ITW_CLASH_SupportsBiteBackCap = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackCap",1];
+ITW_CLASH_SupportsBiteBackRefill = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackRefill",20];
+ITW_CLASH_SupportsBiteBackCooldown = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackCooldown",1200];
+ITW_CLASH_SupportsBiteBackFlagFloor = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackFlagFloor",0.9];
+ITW_CLASH_SupportsBiteBackDelayMin = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackDelayMin",15];
+ITW_CLASH_SupportsBiteBackDelayMax = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackDelayMax",45];
+ITW_CLASH_SupportsBiteBackSquads = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackSquads",2];
 /*
     Objective influence (v2). Full weight inside the objective radius, falling
     linearly to the edge weight at the influence radius, nothing beyond it:
@@ -253,7 +311,7 @@ ITW_CLASH_SupportsRegistry = createHashMapFromArray [
         ]]
     ]],
     ["AIRBORNE_HELI",createHashMapFromArray [
-        ["verb","LAND"],["routine","DROP"],["lane","COMMIT"],["aircraft","HELI"],
+        ["verb","LAND"],["routine","DROP"],["lane","DROP"],["wallet","DROP"],["aircraft","HELI"],
         ["switch","ITW_CLASH_SupportsAirborneHeliEnabled"],
         ["cadence","ITW_CLASH_SupportsAirborneHeliCadence"],
         ["cooldown","ITW_CLASH_SupportsAirborneHeliCooldown"],
@@ -261,11 +319,21 @@ ITW_CLASH_SupportsRegistry = createHashMapFromArray [
         ["nominal",240],["weights",createHashMap]
     ]],
     ["AIRBORNE_PLANE",createHashMapFromArray [
-        ["verb","LAND"],["routine","DROP"],["lane","COMMIT"],["aircraft","PLANE"],
+        ["verb","LAND"],["routine","DROP"],["lane","DROP"],["wallet","DROP"],["aircraft","PLANE"],
         ["switch","ITW_CLASH_SupportsAirbornePlaneEnabled"],
         ["cadence","ITW_CLASH_SupportsAirbornePlaneCadence"],
         ["cooldown","ITW_CLASH_SupportsAirbornePlaneCooldown"],
         ["fighterRule","ANY_AA_MISSILE"],["airfield",true],["footprint",0],
+        ["nominal",300],["weights",createHashMap]
+    ]],
+    // v7: a vehicle, carried inside a VTOL or helicopter and dropped from it.
+    // From the rear air base like a helicopter: a VTOL needs no runway.
+    ["VEHICLE_DROP",createHashMapFromArray [
+        ["verb","DELIVER"],["routine","DROP"],["lane","VEHICLE"],["wallet","DROP"],["aircraft","VIV"],
+        ["switch","ITW_CLASH_SupportsVehicleDropEnabled"],
+        ["cadence","ITW_CLASH_SupportsVehicleDropCadence"],
+        ["cooldown","ITW_CLASH_SupportsVehicleDropCooldown"],
+        ["fighterRule","ANY_AA_MISSILE"],["airfield",false],["footprint",0],
         ["nominal",300],["weights",createHashMap]
     ]]
 ];
@@ -274,6 +342,8 @@ ITW_CLASH_SupportsStrikeFlavors = ["BOMB","GUIDED","CARPET"];
 // report brings them to the area and sizes the scan; it is not the aim.
 ITW_CLASH_SupportsAcquireFlavors = ["BOMB","GUIDED"];
 ITW_CLASH_SupportsDropFlavors = ["AIRBORNE_HELI","AIRBORNE_PLANE"];
+// v7: delivery is its own family, with its own lane and its own pick.
+ITW_CLASH_SupportsVehicleFlavors = ["VEHICLE_DROP"];
 
 // The one vocabulary every denial uses, so a run reads end to end.
 ITW_CLASH_SupportsDenials = [
@@ -281,7 +351,8 @@ ITW_CLASH_SupportsDenials = [
     "NO_GUIDED_WEAPON","NO_AIRFIELD","NO_ORIGIN","NO_CONTACT","TOO_UNCERTAIN",
     "BELOW_FLOOR","ETB_ANSWERING","DANGER_CLOSE","AIR_DENIED","OBJECTIVE_FROZEN",
     "DZ_UNASSESSED","NO_HEADROOM","TARGET_GONE","NO_EXECUTOR","SPAWN_FAILED",
-    "CONSOLIDATING","NO_DZ","NO_SQUADS","NOT_CLUSTERED","UAV_KILLBOX"
+    "CONSOLIDATING","NO_DZ","NO_SQUADS","NOT_CLUSTERED","UAV_KILLBOX",
+    "NO_VEHICLE_FIT","DEFEND_PHASE","REFUSED","ADMISSION"
 ];
 
 ITW_CLASH_SupportsLedgers = createHashMap;
@@ -293,12 +364,15 @@ ITW_CLASH_SupportsInfluenceLast = createHashMap;
 ITW_CLASH_SupportsLoudEvents = [
     "admission","outcome","uav-on-station","uav-ended",
     "strike-released","strike-guided-fired","strike-scan-empty","strike-test-outcome",
-    "airborne-released","airborne-handoff","airborne-vehicle-handoff"
+    "airborne-released","airborne-handoff","airborne-vehicle-handoff",
+    "airborne-vehicle-released","biteback-wave","test-launched"
 ];
 // sideKey -> [position,objective,reason]: where the UAV should be, refreshed
 // every assessment without a roll.
 ITW_CLASH_SupportsUAVTasks = createHashMap;
 ITW_CLASH_SupportsSerial = 0;
+// v7: bite-back waves, numbered apart from supports.
+ITW_CLASH_SupportsWaveSerial = 0;
 ITW_CLASH_SupportsLedgerAt = 0;
 
 // ------------------------------------------------------------------ plumbing
@@ -357,27 +431,77 @@ ITW_CLASH_Supports_fnc_IncomeRate = {
     TICKETS_PER_MIN * _adjustment * ((_aiCount + 70) / 100) * ITW_CLASH_SupportsIncomeScale
 };
 
+// v7: the drop wallet's income, on the main bank's scale.
+ITW_CLASH_Supports_fnc_DropIncomeRate = {
+    (call ITW_CLASH_Supports_fnc_IncomeRate) * ITW_CLASH_SupportsDropIncomeScale
+};
+
+// v7: which wallet a flavor spends from: MAIN, DROP (paradrops and delivery).
+ITW_CLASH_Supports_fnc_WalletOf = {
+    params ["_flavor"];
+    ([_flavor] call ITW_CLASH_Supports_fnc_Row) getOrDefault ["wallet","MAIN"]
+};
+
+// v7: where a wallet's money sits in the ledger. BITE is the bite-back pot,
+// counted in waves; TEST is a console test's, which never runs out.
+ITW_CLASH_Supports_fnc_WalletKey = {
+    params ["_wallet"];
+    switch (_wallet) do {
+        case "DROP": {"dropCash"};
+        case "BITE": {"biteCash"};
+        default {"cash"};
+    }
+};
+
+ITW_CLASH_Supports_fnc_WalletCash = {
+    params ["_ledger","_wallet"];
+    if (_wallet isEqualTo "TEST") exitWith {1e10};
+    _ledger getOrDefault [[_wallet] call ITW_CLASH_Supports_fnc_WalletKey,0]
+};
+
+ITW_CLASH_Supports_fnc_WalletCap = {
+    params ["_wallet"];
+    switch (_wallet) do {
+        case "DROP": {call ITW_CLASH_Supports_fnc_DropCap};
+        case "BITE": {ITW_CLASH_SupportsBiteBackCap};
+        case "TEST": {1e10};
+        default {call ITW_CLASH_Supports_fnc_Cap};
+    }
+};
+
 ITW_CLASH_Supports_fnc_Price = {
     params ["_flavor",["_reason","TAKE"]];
-    private _price = (call ITW_CLASH_Supports_fnc_IncomeRate)
-        * ([_flavor,"cadence",10] call ITW_CLASH_Supports_fnc_RowNumber);
-    // The C-130 carries the vehicle add-on when it is on, and pays for it.
-    if (_flavor isEqualTo "AIRBORNE_PLANE" && {ITW_CLASH_SupportsVehicleDropEnabled}) then {
-        _price = _price * 1.5;
-    };
+    private _rate = if (([_flavor] call ITW_CLASH_Supports_fnc_WalletOf) isEqualTo "DROP") then {
+        call ITW_CLASH_Supports_fnc_DropIncomeRate
+    } else {call ITW_CLASH_Supports_fnc_IncomeRate};
+    private _price = _rate * ([_flavor,"cadence",10] call ITW_CLASH_Supports_fnc_RowNumber);
     if (_reason isEqualTo "HOLD") then {_price = _price * ITW_CLASH_SupportsHoldingDiscount};
     _price
 };
 
-// One big support in the bank, never two: the most expensive enabled flavor.
+// One big support in the bank, never two: the most expensive enabled flavor
+// that spends from it (v7: the main bank's own; the drops have theirs).
 ITW_CLASH_Supports_fnc_Cap = {
     private _cap = 0;
     {
-        if ([_x] call ITW_CLASH_Supports_fnc_Enabled) then {
+        if (([_x] call ITW_CLASH_Supports_fnc_WalletOf) isEqualTo "MAIN" && {[_x] call ITW_CLASH_Supports_fnc_Enabled}) then {
             _cap = _cap max ([_x] call ITW_CLASH_Supports_fnc_Price);
         };
     } forEach (keys ITW_CLASH_SupportsRegistry);
     _cap max ([("UAV")] call ITW_CLASH_Supports_fnc_Price)
+};
+
+// v7: the drop wallet holds one paradrop and one vehicle, never more.
+ITW_CLASH_Supports_fnc_DropCap = {
+    private _paradrop = 0;
+    {
+        if ([_x] call ITW_CLASH_Supports_fnc_Enabled) then {_paradrop = _paradrop max ([_x] call ITW_CLASH_Supports_fnc_Price)};
+    } forEach ITW_CLASH_SupportsDropFlavors;
+    private _vehicle = 0;
+    {
+        if ([_x] call ITW_CLASH_Supports_fnc_Enabled) then {_vehicle = _vehicle max ([_x] call ITW_CLASH_Supports_fnc_Price)};
+    } forEach ITW_CLASH_SupportsVehicleFlavors;
+    (_paradrop + _vehicle) max 1
 };
 
 ITW_CLASH_Supports_fnc_Ledger = {
@@ -388,11 +512,20 @@ ITW_CLASH_Supports_fnc_Ledger = {
         _ledger = createHashMapFromArray [
             ["side",_side],
             ["cash",["UAV"] call ITW_CLASH_Supports_fnc_Price],
+            // v7: the drop wallet starts empty; the bite-back pot full.
+            ["dropCash",0],
+            ["biteCash",ITW_CLASH_SupportsBiteBackCap],
             ["accruedAt",time],
-            ["lanes",createHashMapFromArray [["RECON",""],["COMMIT",""]]],
+            ["lanes",createHashMapFromArray [
+                ["RECON",""],["COMMIT",""],["DROP",""],["VEHICLE",""],["BITE_DROP",""],["BITE_VEHICLE",""]
+            ]],
             ["reconBlockedUntil",0],
             ["cooldowns",createHashMap],
-            ["supports",createHashMap]
+            ["supports",createHashMap],
+            // v7, bite-back: objective -> [flag ours, phase] at the last look;
+            // what it last said per objective, so a held wave is one line.
+            ["bitePhases",createHashMap],
+            ["biteSaid",createHashMap]
         ];
         ITW_CLASH_SupportsLedgers set [_key,_ledger];
         ["ledger-opened",[
@@ -403,17 +536,23 @@ ITW_CLASH_Supports_fnc_Ledger = {
     _ledger
 };
 
-// Income stops at the cap: one big support banked, never two.
+// Income stops at the cap: one big support banked, never two. v7: each
+// wallet earns on its own and stops at its own cap.
 ITW_CLASH_Supports_fnc_Accrue = {
     params ["_side"];
     private _ledger = [_side] call ITW_CLASH_Supports_fnc_Ledger;
     private _elapsed = time - (_ledger get "accruedAt");
     if (_elapsed <= 0) exitWith {false};
     _ledger set ["accruedAt",time];
-    private _cap = call ITW_CLASH_Supports_fnc_Cap;
-    private _cash = _ledger get "cash";
-    if (_cash >= _cap) exitWith {false};
-    _ledger set ["cash",(_cash + (call ITW_CLASH_Supports_fnc_IncomeRate) * (_elapsed / 60)) min _cap];
+    {
+        _x params ["_key","_cap","_perMinute"];
+        private _cash = _ledger getOrDefault [_key,0];
+        if (_cash < _cap) then {_ledger set [_key,(_cash + _perMinute * (_elapsed / 60)) min _cap]};
+    } forEach [
+        ["cash",call ITW_CLASH_Supports_fnc_Cap,call ITW_CLASH_Supports_fnc_IncomeRate],
+        ["dropCash",call ITW_CLASH_Supports_fnc_DropCap,call ITW_CLASH_Supports_fnc_DropIncomeRate],
+        ["biteCash",ITW_CLASH_SupportsBiteBackCap,1 / (ITW_CLASH_SupportsBiteBackRefill max 1)]
+    ];
     true
 };
 
@@ -458,6 +597,8 @@ ITW_CLASH_Supports_fnc_Classes = {
         case "PLANE": {[_prefix + "PlaneClassesTransport"]};
         case "UAV": {[_prefix + "UavClasses"]};
         case "CAR": {[_prefix + "CarClassesAttack",_prefix + "CarClassesDual"]};
+        // v7: whatever the side flies that carries vehicles inside.
+        case "VIV": {[_prefix + "PlaneClassesTransport",_prefix + "HeliClassesTransport"]};
         default {[]};
     };
     private _classes = [];
@@ -484,8 +625,21 @@ ITW_CLASH_Supports_fnc_Classes = {
             }
         };
         case "CAR": {_classes select {_x isKindOf "LandVehicle"}};
+        case "VIV": {_classes select {[_x] call ITW_CLASH_Supports_fnc_IsCarrier}};
         default {[]};
     }
+};
+
+// v7: an aircraft whose config carries vehicles inside (Vehicle in Vehicle).
+ITW_CLASH_Supports_fnc_IsCarrier = {
+    params ["_class"];
+    _class isKindOf "Air"
+    && {isClass (configFile >> "CfgVehicles" >> _class >> "VehicleTransport" >> "Carrier")}
+};
+
+ITW_CLASH_Supports_fnc_CarrierLoad = {
+    params ["_class"];
+    getNumber (configFile >> "CfgVehicles" >> _class >> "VehicleTransport" >> "Carrier" >> "maxLoadMass")
 };
 
 // Cargo seats a class offers troops.
@@ -535,6 +689,24 @@ ITW_CLASH_Supports_fnc_PickClass = {
                 [selectRandom _guided,""]
             };
             [selectRandom _classes,""]
+        };
+        /*
+            v7. The side's own carriers, the preferred classes first in their
+            order; else the one that lifts most; else a preferred class the
+            side does not list but the game has (both sides fly the
+            Blackfish here, Hark 2026-10-17).
+        */
+        case "VIV": {
+            private _preferred = ITW_CLASH_SupportsVehicleCarrierClasses select {
+                _x isEqualType "" && {isClass (configFile >> "CfgVehicles" >> _x)} && {[_x] call ITW_CLASH_Supports_fnc_IsCarrier}
+            };
+            private _own = _preferred select {_x in _classes};
+            if (_own isNotEqualTo []) exitWith {[_own#0,""]};
+            if (_classes isNotEqualTo []) exitWith {
+                [([_classes,[],{[_x] call ITW_CLASH_Supports_fnc_CarrierLoad},"DESCEND"] call BIS_fnc_sortBy)#0,""]
+            };
+            if (_preferred isNotEqualTo []) exitWith {[_preferred#0,""]};
+            ["","NO_AIRCRAFT"]
         };
         case "HELI";
         case "PLANE": {
@@ -608,6 +780,7 @@ ITW_CLASH_Supports_fnc_ProjectionSpeed = {
     params ["_flavor"];
     switch (([_flavor] call ITW_CLASH_Supports_fnc_Row) getOrDefault ["aircraft",""]) do {
         case "JET": {ITW_CLASH_SupportsSpeedJet};
+        case "VIV";
         case "PLANE": {ITW_CLASH_SupportsSpeedPlane};
         default {ITW_CLASH_SupportsSpeedHeli};
     }
@@ -982,7 +1155,7 @@ ITW_CLASH_Supports_fnc_FlavorGate = {
         case (((_ledger get "lanes") getOrDefault [_row get "lane",""]) isNotEqualTo ""): {"LANE_BUSY"};
         case ((_row get "lane") isEqualTo "RECON" && {time < (_ledger get "reconBlockedUntil")}): {"RELAUNCH"};
         case ([_ledger,"flavor:" + _flavor] call ITW_CLASH_Supports_fnc_OnCooldown): {"COOLDOWN"};
-        case ((_ledger get "cash") < ([_flavor,"HOLD"] call ITW_CLASH_Supports_fnc_Price)): {"INSUFFICIENT_FUNDS"};
+        case (([_ledger,[_flavor] call ITW_CLASH_Supports_fnc_WalletOf] call ITW_CLASH_Supports_fnc_WalletCash) < ([_flavor,"HOLD"] call ITW_CLASH_Supports_fnc_Price)): {"INSUFFICIENT_FUNDS"};
         default {""};
     };
     if (_reason isEqualTo "") then {
@@ -1193,8 +1366,13 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
     than a drop can carry, or our ground force is far away. Holding: urgency
     does the work, and a held point with no anchor is the strongest case.
 */
+/*
+    Drop candidates for one objective. v7: for the flavors asked for (the
+    paradrops, or delivery), each from its own wallet; a delivery carries no
+    squads, only the vehicle's crew.
+*/
 ITW_CLASH_Supports_fnc_DropCandidates = {
-    params ["_context","_objective","_reason","_urgency","_entry"];
+    params ["_context","_objective","_reason","_urgency","_entry",["_flavors",ITW_CLASH_SupportsDropFlavors]];
     private _side = _context get "side";
     private _hq = _context get "hq";
     private _center = [_objective] call ITW_CLASH_Supports_fnc_ObjectivePos;
@@ -1213,24 +1391,31 @@ ITW_CLASH_Supports_fnc_DropCandidates = {
             continue
         };
         private _class = (_context get "classes") getOrDefault [_flavor,""];
-        private _seats = [_class] call ITW_CLASH_Supports_fnc_CargoSeats;
-        private _template = _context get "template";
-        if (_template isEqualTo []) then {
-            _template = [_side,_hq] call ITW_CLASH_Supports_fnc_Template;
-            _context set ["template",_template];
+        private _delivery = _flavor in ITW_CLASH_SupportsVehicleFlavors;
+        private _template = [];
+        private _squadSize = 0;
+        private _squads = 0;
+        if (!_delivery) then {
+            private _seats = [_class] call ITW_CLASH_Supports_fnc_CargoSeats;
+            _template = _context get "template";
+            if (_template isEqualTo []) then {
+                _template = [_side,_hq] call ITW_CLASH_Supports_fnc_Template;
+                _context set ["template",_template];
+            };
+            _squadSize = (count _template) min _seats;
+            private _cap = if (_flavor isEqualTo "AIRBORNE_PLANE") then {ITW_CLASH_SupportsAirbornePlaneSquads} else {ITW_CLASH_SupportsAirborneHeliSquads};
+            _squads = ((floor (_seats / ((count _template) max 1))) max 1) min _cap;
         };
-        private _squadSize = (count _template) min _seats;
-        private _cap = if (_flavor isEqualTo "AIRBORNE_PLANE") then {ITW_CLASH_SupportsAirbornePlaneSquads} else {ITW_CLASH_SupportsAirborneHeliSquads};
-        private _squads = ((floor (_seats / ((count _template) max 1))) max 1) min _cap;
-        if (_squadSize < 4) then {
+        if (!_delivery && {_squadSize < 4}) then {
             [_context,_flavor,_objective,"","NO_AIRCRAFT"] call ITW_CLASH_Supports_fnc_Exclude;
             continue
         };
-        if (((_context get "ledger") get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)) then {
+        if (([_context get "ledger",[_flavor] call ITW_CLASH_Supports_fnc_WalletOf] call ITW_CLASH_Supports_fnc_WalletCash) < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)) then {
             [_context,_flavor,_objective,"","INSUFFICIENT_FUNDS"] call ITW_CLASH_Supports_fnc_Exclude;
             continue
         };
-        if (([_side] call ITW_CLASH_Supports_fnc_Headroom) < (_squads * _squadSize)) then {
+        private _need = if (_delivery) then {ITW_CLASH_SupportsVehicleDropCrew} else {_squads * _squadSize};
+        if (([_side] call ITW_CLASH_Supports_fnc_Headroom) < _need) then {
             [_context,_flavor,_objective,"","NO_HEADROOM"] call ITW_CLASH_Supports_fnc_Exclude;
             continue
         };
@@ -1271,14 +1456,281 @@ ITW_CLASH_Supports_fnc_DropCandidates = {
         _weight = _weight * _urgency * ([_route#0] call ITW_CLASH_Supports_fnc_CorridorFactor);
 
         _result pushBack ([
-            "LAND",_flavor,_objective,_reason,_center,_weight,_route,createHashMap,
+            if (_delivery) then {"DELIVER"} else {"LAND"},_flavor,_objective,_reason,_center,_weight,_route,createHashMap,
             createHashMapFromArray [
-                ["squads",_squads],["squadSize",_squadSize],["template",+_template],
+                ["squads",_squads],["squadSize",_squadSize],["template",+_template],["need",_need],
                 ["ahead",((_route#2) distance2D _center) / ([_flavor] call ITW_CLASH_Supports_fnc_ProjectionSpeed)]
             ]
         ] call ITW_CLASH_Supports_fnc_Candidate);
-    } forEach ITW_CLASH_SupportsDropFlavors;
+    } forEach _flavors;
     _result
+};
+
+// ------------------------------------------------------------- v7: direct
+
+/*
+    v7. A context for a decision made outside an assessment (a console test).
+    The same fields an assessment's has, as far as admission needs them.
+*/
+ITW_CLASH_Supports_fnc_MakeContext = {
+    params ["_side"];
+    private _hq = if (isNil "ITW_CLASH_fnc_GetCommanderForSide") then {grpNull} else {
+        [_side] call ITW_CLASH_fnc_GetCommanderForSide
+    };
+    if (isNull _hq) exitWith {createHashMap};
+    [_side] call ITW_CLASH_Supports_fnc_Accrue;
+    createHashMapFromArray [
+        ["side",_side],["hq",_hq],["sign",_hq getVariable ["RydHQ_CodeSign","?"]],
+        ["ledger",[_side] call ITW_CLASH_Supports_fnc_Ledger],
+        ["friendlies",[_side] call ITW_CLASH_Supports_fnc_Friendlies],
+        ["flavorGates",createHashMap],["classes",createHashMap],["routes",createHashMap],
+        ["exclusions",[]],["unanchored",[]],["template",[]]
+    ]
+};
+
+/*
+    v7. A pick made directly, without a pool: a bite-back wave's part, or a
+    console test's. Every physical question a pool asks (the aircraft, its
+    origin and route, the squads it can carry), none of the economic ones:
+    the caller sets wallet, lane, price and delay. _squads above 0 asks for
+    that many squads, each cut to fit. Returns [pick, ""] or [[], reason].
+*/
+ITW_CLASH_Supports_fnc_DirectPick = {
+    params ["_context","_flavor","_objective","_reason",["_squads",-1]];
+    private _side = _context get "side";
+    private _hq = _context get "hq";
+    if !([_flavor] call ITW_CLASH_Supports_fnc_Enabled) exitWith {[[],"DISABLED"]};
+    private _center = [_objective] call ITW_CLASH_Supports_fnc_ObjectivePos;
+    if (_center isEqualTo []) exitWith {[[],"NO_ORIGIN"]};
+    ([_side,_flavor] call ITW_CLASH_Supports_fnc_PickClass) params ["_class","_why"];
+    if (_class isEqualTo "") exitWith {[[],_why]};
+    (_context get "classes") set [_flavor,_class];
+    private _route = [_context,_flavor,_objective,_center] call ITW_CLASH_Supports_fnc_Route;
+    if ((_route#0) isEqualTo "") exitWith {[[],_route#1]};
+
+    private _extra = createHashMapFromArray [
+        ["ahead",((_route#2) distance2D _center) / ([_flavor] call ITW_CLASH_Supports_fnc_ProjectionSpeed)]
+    ];
+    private _failed = "";
+    if (_flavor in ITW_CLASH_SupportsVehicleFlavors) then {
+        _extra set ["need",ITW_CLASH_SupportsVehicleDropCrew];
+        _extra set ["squads",0];
+        _extra set ["squadSize",0];
+    } else {
+        private _template = [_side,_hq] call ITW_CLASH_Supports_fnc_Template;
+        private _seats = [_class] call ITW_CLASH_Supports_fnc_CargoSeats;
+        private _count = if (_squads > 0) then {_squads} else {
+            private _cap = if (_flavor isEqualTo "AIRBORNE_PLANE") then {ITW_CLASH_SupportsAirbornePlaneSquads} else {ITW_CLASH_SupportsAirborneHeliSquads};
+            ((floor (_seats / ((count _template) max 1))) max 1) min _cap
+        };
+        // Asked for more squads than fit whole: each is cut so all of them fit.
+        private _squadSize = (count _template) min (floor (_seats / (_count max 1)));
+        if (_squadSize < ITW_CLASH_SupportsAirborneMinSquadCore) then {_failed = "NO_SQUADS"};
+        _extra set ["squads",_count];
+        _extra set ["squadSize",_squadSize];
+        _extra set ["template",+_template];
+        _extra set ["need",_count * _squadSize];
+    };
+    if (_failed isNotEqualTo "") exitWith {[[],_failed]};
+    [([
+        if (_flavor in ITW_CLASH_SupportsVehicleFlavors) then {"DELIVER"} else {"LAND"},
+        _flavor,_objective,_reason,_center,1,_route,createHashMap,_extra
+    ] call ITW_CLASH_Supports_fnc_Candidate),""]
+};
+
+// ---------------------------------------------------------- v7: bite-back
+
+/*
+    A point's Impasse flag as this side sees it: [ours, phase]. The flag and
+    its bar are what every player sees on screen, so reading them is no
+    omniscience. A flag Impasse has not set up yet says nothing: [true, 1].
+*/
+ITW_CLASH_Supports_fnc_FlagState = {
+    params ["_side","_index"];
+    if (isNil "ITW_Objectives" || {isNil "ITW_PlayerSide"} || {_index < 0} || {_index >= count ITW_Objectives}) exitWith {[true,1]};
+    private _entry = ITW_Objectives#_index;
+    if (count _entry <= ITW_OBJ_FLAG) exitWith {[true,1]};
+    private _flag = _entry#ITW_OBJ_FLAG;
+    if (!(_flag isEqualType objNull) || {isNull _flag}) exitWith {[true,1]};
+    private _playerFlag = _flag getVariable "ITW_FlagIsPlayer";
+    if (isNil "_playerFlag" || {!(_playerFlag isEqualType true)}) exitWith {[true,1]};
+    private _phase = _flag getVariable ["ITW_FlagPhase",1];
+    if !(_phase isEqualType 0) then {_phase = 1};
+    [_playerFlag isEqualTo (_side isEqualTo ITW_PlayerSide),_phase]
+};
+
+/*
+    Why a held point wants a wave now, or "". Reads its flag against the
+    last look (kept in the ledger) and its pressure from this assessment:
+      enemy-flag-up  the enemy's flag is going up on a point we still hold
+      flag-falling   ours is lower than last time
+      flag-down      ours is below FlagFloor and not rising
+      unanchored     under pressure with nobody of ours on it
+      outnumbered    under pressure, defenders below the contested ratio
+    Returns [why, rank, phase, pressure].
+*/
+ITW_CLASH_Supports_fnc_BiteBackWhy = {
+    params ["_context","_index","_targets"];
+    private _side = _context get "side";
+    private _phases = (_context get "ledger") get "bitePhases";
+    ([_side,_index] call ITW_CLASH_Supports_fnc_FlagState) params ["_ours","_phase"];
+    private _key = str _index;
+    private _was = _phases getOrDefault [_key,[]];
+    _phases set [_key,[_ours,_phase]];
+    private _wasOurs = _was isNotEqualTo [] && {_was#0};
+    private _flagWhy = switch (true) do {
+        case (!_ours): {"enemy-flag-up"};
+        case (_wasOurs && {_phase < ((_was#1) - 0.001)}): {"flag-falling"};
+        case (_phase < ITW_CLASH_SupportsBiteBackFlagFloor && {!_wasOurs || {_phase <= ((_was#1) + 0.001)}}): {"flag-down"};
+        default {""};
+    };
+    private _t = _targets findIf {(_x#0) isEqualTo _index && {(_x#1) isEqualTo "HOLD"}};
+    private _urgency = if (_t < 0) then {0} else {(_targets#_t)#2};
+    private _pressure = if (_t < 0) then {0} else {(_targets#_t)#4};
+    private _why = switch (true) do {
+        case (_flagWhy isNotEqualTo ""): {_flagWhy};
+        case (_urgency >= 3): {"unanchored"};
+        case (_urgency >= 2.5): {"outnumbered"};
+        default {""};
+    };
+    private _rank = switch (_why) do {
+        case "enemy-flag-up": {5};
+        case "flag-falling": {4.5};
+        case "flag-down": {4};
+        default {_urgency};
+    };
+    [_why,_rank,_phase,_pressure]
+};
+
+/*
+    One wave for the most urgent point this side holds that wants one and
+    may have it: the pot holds a wave, its lanes are free, the point was not
+    answered within Cooldown, and it is not Impasse's defend-phase point
+    while the defend phase runs. A point that wants a wave and may not have
+    one says why once, not every assessment.
+*/
+ITW_CLASH_Supports_fnc_BiteBack = {
+    params ["_context","_targets",["_picture",[]]];
+    if (!ITW_CLASH_SupportsBiteBackEnabled) exitWith {false};
+    private _side = _context get "side";
+    private _sign = _context get "sign";
+    private _ledger = _context get "ledger";
+    private _said = _ledger get "biteSaid";
+    if (_picture isEqualTo []) then {_picture = _context getOrDefault ["picture",[]]};
+    private _defendFocus = if (isNil "ITW_CLASH_fnc_DefendPhaseObjective") then {-1} else {call ITW_CLASH_fnc_DefendPhaseObjective};
+    private _defendRunning = (missionNamespace getVariable ["ITW_defendRunning",false]) isEqualTo true;
+
+    private _wants = [];
+    {
+        private _index = _x get "objective";
+        if (_index < 0 || {!([_side,_index] call ITW_CLASH_Supports_fnc_HeldBy)}) then {continue};
+        if (!isNil "ITW_CLASH_fnc_ObjectiveFrozen" && {[_index] call ITW_CLASH_fnc_ObjectiveFrozen}) then {continue};
+        ([_context,_index,_targets] call ITW_CLASH_Supports_fnc_BiteBackWhy) params ["_why","_rank","_phase","_pressure"];
+        if (_why isEqualTo "") then {
+            if ((_said getOrDefault [str _index,""]) isNotEqualTo "") then {_said set [str _index,""]};
+            continue
+        };
+        _wants pushBack [_rank,_index,_why,_phase,_pressure];
+    } forEach _picture;
+    if (_wants isEqualTo []) exitWith {false};
+    _wants = [_wants,[],{-(_x#0)},"ASCEND"] call BIS_fnc_sortBy;
+
+    private _launched = false;
+    {
+        _x params ["","_index","_why","_phase","_pressure"];
+        private _lanes = _ledger get "lanes";
+        private _hold = switch (true) do {
+            case (_defendRunning && {_index isEqualTo _defendFocus}): {"DEFEND_PHASE"};
+            case ([_ledger,"bite:" + str _index] call ITW_CLASH_Supports_fnc_OnCooldown): {"COOLDOWN"};
+            case ((_ledger getOrDefault ["biteCash",0]) < 1): {"INSUFFICIENT_FUNDS"};
+            case ((_lanes getOrDefault ["BITE_DROP",""]) isNotEqualTo "" || {(_lanes getOrDefault ["BITE_VEHICLE",""]) isNotEqualTo ""}): {"LANE_BUSY"};
+            default {""};
+        };
+        if (_hold isEqualTo "") then {
+            _launched = [_context,_index,_why,_phase,_pressure] call ITW_CLASH_Supports_fnc_LaunchWave;
+            if (!_launched) then {_hold = "REFUSED"};
+        };
+        if (_launched) exitWith {_said set [str _index,""]};
+        private _line = _why + "|" + _hold;
+        if ((_said getOrDefault [str _index,""]) isNotEqualTo _line) then {
+            _said set [str _index,_line];
+            ["biteback-held",[
+                _sign,_index,_why,(round (_phase * 100)) / 100,(round (_pressure * 10)) / 10,_hold,
+                (round ((_ledger getOrDefault ["biteCash",0]) * 100)) / 100
+            ]] call ITW_CLASH_Supports_fnc_Log;
+        };
+    } forEach _wants;
+    _launched
+};
+
+/*
+    The wave itself: a helicopter drop of BiteBackSquads squads and one
+    vehicle, both to hold the point, out after a short scramble. The pot pays
+    one wave, split between the parts that go; a part the side cannot fly
+    stays home and costs nothing. A console test (_test) takes no money and
+    no cooldown, uses lanes of its own, and skips the map's gates.
+*/
+ITW_CLASH_Supports_fnc_LaunchWave = {
+    params ["_context","_index","_why",["_phase",1],["_pressure",0],["_test",false]];
+    private _side = _context get "side";
+    private _sign = _context get "sign";
+    private _ledger = _context get "ledger";
+    ITW_CLASH_SupportsWaveSerial = ITW_CLASH_SupportsWaveSerial + 1;
+    private _wave = format ["BB-%1-%2",[_side] call ITW_CLASH_Supports_fnc_SideKey,ITW_CLASH_SupportsWaveSerial];
+
+    private _parts = [];
+    private _refused = [];
+    {
+        _x params ["_flavor","_lane"];
+        private _squads = if (_flavor in ITW_CLASH_SupportsVehicleFlavors) then {-1} else {ITW_CLASH_SupportsBiteBackSquads};
+        ([_context,_flavor,_index,"HOLD",_squads] call ITW_CLASH_Supports_fnc_DirectPick) params ["_pick","_whyNot"];
+        if (_pick isEqualTo []) then {
+            _refused pushBack [_flavor,_whyNot];
+        } else {
+            _parts pushBack [_pick,_lane];
+        };
+    } forEach [["AIRBORNE_HELI","BITE_DROP"],["VEHICLE_DROP","BITE_VEHICLE"]];
+    if (_parts isEqualTo []) exitWith {
+        ["biteback-refused",[_sign,_index,_why,_wave,_refused]] call ITW_CLASH_Supports_fnc_Log;
+        false
+    };
+    private _need = 0;
+    {_need = _need + ((_x#0) getOrDefault ["need",0])} forEach _parts;
+    if (!_test && {([_side] call ITW_CLASH_Supports_fnc_Headroom) < _need}) exitWith {
+        ["biteback-refused",[_sign,_index,_why,_wave,[["WAVE","NO_HEADROOM"]]]] call ITW_CLASH_Supports_fnc_Log;
+        false
+    };
+
+    private _share = 1 / (count _parts);
+    private _ids = [];
+    {
+        _x params ["_pick","_lane"];
+        _pick set ["lane",if (_test) then {format ["TEST-%1-%2",_wave,_forEachIndex]} else {_lane}];
+        _pick set ["wallet",if (_test) then {"TEST"} else {"BITE"}];
+        _pick set ["price",if (_test) then {0} else {_share}];
+        _pick set ["delay",ITW_CLASH_SupportsBiteBackDelayMin + random ((ITW_CLASH_SupportsBiteBackDelayMax - ITW_CLASH_SupportsBiteBackDelayMin) max 0)];
+        _pick set ["wave",_wave];
+        if (_test) then {_pick set ["test",true]};
+        _context set ["admitted",""];
+        if ([_context,_pick] call ITW_CLASH_Supports_fnc_Admit) then {
+            _ids pushBack [_pick get "flavor",_context getOrDefault ["admitted",""]];
+        } else {
+            _refused pushBack [_pick get "flavor","ADMISSION"];
+        };
+    } forEach _parts;
+    if (_ids isEqualTo []) exitWith {
+        ["biteback-refused",[_sign,_index,_why,_wave,_refused]] call ITW_CLASH_Supports_fnc_Log;
+        false
+    };
+    if (!_test) then {
+        (_ledger get "cooldowns") set ["bite:" + str _index,time + ITW_CLASH_SupportsBiteBackCooldown];
+    };
+    ["biteback-wave",[
+        _sign,_index,_why,(round (_phase * 100)) / 100,(round (_pressure * 10)) / 10,_wave,_ids,_refused,
+        (round ((_ledger getOrDefault ["biteCash",0]) * 100)) / 100,
+        if (_test) then {"test"} else {"live"}
+    ]] call ITW_CLASH_Supports_fnc_Log;
+    true
 };
 
 /*
@@ -1418,10 +1870,6 @@ ITW_CLASH_Supports_fnc_Assess = {
         [_x#0,_x#1,_x#2,(round ((_x#4) * 10)) / 10]
     }];
     _pool append ([_context,_active] call ITW_CLASH_Supports_fnc_StrikeCandidates);
-    {
-        _x params ["_index","_reason","_urgency","_entry"];
-        _pool append ([_context,_index,_reason,_urgency,_entry] call ITW_CLASH_Supports_fnc_DropCandidates);
-    } forEach _active;
 
     // The UAV: where it should be is decided every time; launching it is a
     // candidate like any other.
@@ -1466,22 +1914,57 @@ ITW_CLASH_Supports_fnc_Assess = {
     };
 
     // Save is an option of its own: one roll decides whether and what.
-    private _cap = (call ITW_CLASH_Supports_fnc_Cap) max 1;
-    private _fill = (_ledger get "cash") / _cap;
-    private _saveWeight = ITW_CLASH_SupportsSaveScale * (switch (true) do {
+    private _saveWeight = [_ledger,"MAIN"] call ITW_CLASH_Supports_fnc_SaveWeight;
+    _pool pushBack (["SAVE","SAVE",-1,"",[],_saveWeight,["",[],[]]] call ITW_CLASH_Supports_fnc_Candidate);
+    [_context,_posture,_planObjective,_pool,"pool"] call ITW_CLASH_Supports_fnc_Decide;
+
+    /*
+        v7. The drops decide on their own: a bite-back wave for a point being
+        lost first (its own pot and lanes), then one pick among the paradrops
+        and one among deliveries, each with its own SAVE, from the drop
+        wallet. None of them waits on a strike, or on each other.
+    */
+    [_context,_targets,_picture] call ITW_CLASH_Supports_fnc_BiteBack;
+    {
+        _x params ["_flavors","_event"];
+        _context set ["exclusions",[]];
+        private _drops = [];
+        {
+            _x params ["_index","_reason","_urgency","_entry"];
+            _drops append ([_context,_index,_reason,_urgency,_entry,_flavors] call ITW_CLASH_Supports_fnc_DropCandidates);
+        } forEach _active;
+        // Nothing offered and nothing refused: nothing to say.
+        if (_drops isEqualTo [] && {(_context get "exclusions") isEqualTo []}) then {continue};
+        _drops pushBack (["SAVE","SAVE",-1,"",[],[_ledger,"DROP"] call ITW_CLASH_Supports_fnc_SaveWeight,["",[],[]]] call
+            ITW_CLASH_Supports_fnc_Candidate);
+        [_context,_posture,_planObjective,_drops,_event] call ITW_CLASH_Supports_fnc_Decide;
+    } forEach [
+        [ITW_CLASH_SupportsDropFlavors,"drop-pool"],
+        [ITW_CLASH_SupportsVehicleFlavors,"vehicle-pool"]
+    ];
+    true
+};
+
+// SAVE's pull, by how full the wallet is: 3, 2, 1 and 0.5, times SaveScale.
+ITW_CLASH_Supports_fnc_SaveWeight = {
+    params ["_ledger","_wallet"];
+    private _cap = ([_wallet] call ITW_CLASH_Supports_fnc_WalletCap) max 1;
+    private _fill = ([_ledger,_wallet] call ITW_CLASH_Supports_fnc_WalletCash) / _cap;
+    ITW_CLASH_SupportsSaveScale * (switch (true) do {
         case (_fill < (1 / 3)): {3};
         case (_fill < (2 / 3)): {2};
         case (_fill < 1): {1};
         default {0.5};
-    });
-    _pool pushBack (["SAVE","SAVE",-1,"",[],_saveWeight,["",[],[]]] call ITW_CLASH_Supports_fnc_Candidate);
+    })
+};
 
+// One pool, one roll, one line; a pick that is not SAVE goes to admission.
+ITW_CLASH_Supports_fnc_Decide = {
+    params ["_context","_posture","_planObjective","_pool",["_event","pool"]];
     ([_pool] call ITW_CLASH_Supports_fnc_Pick) params ["_pick","_draw","_total"];
-    [_context,_posture,_planObjective,_pool,_pick,_draw,_total] call ITW_CLASH_Supports_fnc_LogPool;
-
-    if (isNil "_pick" || {(_pick get "family") isEqualTo "SAVE"}) exitWith {true};
-    [_context,_pick] call ITW_CLASH_Supports_fnc_Admit;
-    true
+    [_context,_posture,_planObjective,_pool,_pick,_draw,_total,_event] call ITW_CLASH_Supports_fnc_LogPool;
+    if (isNil "_pick" || {(_pick get "family") isEqualTo "SAVE"}) exitWith {false};
+    [_context,_pick] call ITW_CLASH_Supports_fnc_Admit
 };
 
 /*
@@ -1506,7 +1989,7 @@ ITW_CLASH_Supports_fnc_Pick = {
 };
 
 ITW_CLASH_Supports_fnc_LogPool = {
-    params ["_context","_posture","_planObjective","_pool","_pick","_draw","_total"];
+    params ["_context","_posture","_planObjective","_pool","_pick","_draw","_total",["_event","pool"]];
     private _ordered = [_pool,[],{_x get "key"},"ASCEND"] call BIS_fnc_sortBy;
     private _entries = _ordered apply {
         private _target = _x get "target";
@@ -1520,11 +2003,13 @@ ITW_CLASH_Supports_fnc_LogPool = {
     private _exclusions = _context get "exclusions";
     private _shown = _exclusions select [0,ITW_CLASH_SupportsLogExclusions];
     private _picked = if (isNil "_pick") then {"none"} else {(_pick get "flavor") + "@" + str (_pick get "objective")};
-    ["pool",[
+    // v7: the drop pools report the drop wallet.
+    private _wallet = if (_event isEqualTo "pool") then {"MAIN"} else {"DROP"};
+    [_event,[
         _context get "sign",_posture,_planObjective,
         _picked,(round (_draw * 1000)) / 1000,(round (_total * 1000)) / 1000,
         _entries,_shown,(count _exclusions) - (count _shown),
-        round ((_context get "ledger") get "cash"),
+        round ([_context get "ledger",_wallet] call ITW_CLASH_Supports_fnc_WalletCash),
         _context getOrDefault ["targets",[]],
         _context getOrDefault ["crossings",0]
     ]] call ITW_CLASH_Supports_fnc_Log;
@@ -1537,14 +2022,23 @@ ITW_CLASH_Supports_fnc_LogPool = {
     cooldowns are taken in one unscheduled block: nothing can interleave, so
     two proposals in the same frame can never spend the same cash.
 */
+/*
+    v7: a pick can carry its own wallet, lane, price, setup delay and test
+    flag (a bite-back wave, a console test). Without them it is the flavor's
+    row, as before. A pick that brings its own lane is not the flavor's
+    ordinary use, so the flavor's cooldown is neither checked nor started.
+*/
 ITW_CLASH_Supports_fnc_Admit = {
     params ["_context","_pick"];
     private _side = _context get "side";
     private _flavor = _pick get "flavor";
     private _reason = _pick get "reason";
     private _row = [_flavor] call ITW_CLASH_Supports_fnc_Row;
-    private _lane = _row get "lane";
-    private _price = [_flavor,_reason] call ITW_CLASH_Supports_fnc_Price;
+    private _ownLane = "lane" in _pick;
+    private _lane = _pick getOrDefault ["lane",_row get "lane"];
+    private _wallet = _pick getOrDefault ["wallet",[_flavor] call ITW_CLASH_Supports_fnc_WalletOf];
+    private _price = _pick getOrDefault ["price",[_flavor,_reason] call ITW_CLASH_Supports_fnc_Price];
+    private _cashKey = [_wallet] call ITW_CLASH_Supports_fnc_WalletKey;
     private _id = "";
     private _denied = "";
 
@@ -1553,15 +2047,19 @@ ITW_CLASH_Supports_fnc_Admit = {
         private _lanes = _ledger get "lanes";
         switch (true) do {
             case ((_lanes getOrDefault [_lane,""]) isNotEqualTo ""): {_denied = "LANE_BUSY"};
-            case ([_ledger,"flavor:" + _flavor] call ITW_CLASH_Supports_fnc_OnCooldown): {_denied = "COOLDOWN"};
-            case ((_ledger get "cash") < _price): {_denied = "INSUFFICIENT_FUNDS"};
+            case (!_ownLane && {[_ledger,"flavor:" + _flavor] call ITW_CLASH_Supports_fnc_OnCooldown}): {_denied = "COOLDOWN"};
+            case (([_ledger,_wallet] call ITW_CLASH_Supports_fnc_WalletCash) < _price): {_denied = "INSUFFICIENT_FUNDS"};
             default {
                 ITW_CLASH_SupportsSerial = ITW_CLASH_SupportsSerial + 1;
                 _id = format ["SUP-%1-%2",[_side] call ITW_CLASH_Supports_fnc_SideKey,ITW_CLASH_SupportsSerial];
-                _ledger set ["cash",(_ledger get "cash") - _price];
+                if (_wallet isNotEqualTo "TEST") then {
+                    _ledger set [_cashKey,(_ledger getOrDefault [_cashKey,0]) - _price];
+                };
                 _lanes set [_lane,_id];
                 private _cooldowns = _ledger get "cooldowns";
-                _cooldowns set ["flavor:" + _flavor,time + ([_flavor,"cooldown",0] call ITW_CLASH_Supports_fnc_RowNumber)];
+                if (!_ownLane) then {
+                    _cooldowns set ["flavor:" + _flavor,time + ([_flavor,"cooldown",0] call ITW_CLASH_Supports_fnc_RowNumber)];
+                };
                 if ((_pick get "objective") >= 0 && {_lane isEqualTo "COMMIT"}) then {
                     _cooldowns set ["objective:" + str (_pick get "objective"),time + ITW_CLASH_SupportsObjectiveCooldown];
                 };
@@ -1574,6 +2072,8 @@ ITW_CLASH_Supports_fnc_Admit = {
             ITW_CLASH_Supports_fnc_Log;
         false
     };
+    // v7: who asked can read back what it got.
+    _context set ["admitted",_id];
 
     private _support = createHashMapFromArray [
         ["id",_id],["side",_side],["hq",_context get "hq"],["sign",_context get "sign"],
@@ -1583,23 +2083,31 @@ ITW_CLASH_Supports_fnc_Admit = {
         ["origin",_pick get "origin"],["spawn",_pick get "spawn"],
         ["corridor",_pick get "corridor"],
         ["class",(_context get "classes") getOrDefault [_flavor,""]],
-        ["price",_price],["state","RESERVED"],["reservedAt",time],
-        ["delay",ITW_CLASH_SupportsDelayMin + random ((ITW_CLASH_SupportsDelayMax - ITW_CLASH_SupportsDelayMin) max 0)],
+        ["price",_price],["wallet",_wallet],["state","RESERVED"],["reservedAt",time],
+        ["delay",_pick getOrDefault ["delay",ITW_CLASH_SupportsDelayMin + random ((ITW_CLASH_SupportsDelayMax - ITW_CLASH_SupportsDelayMin) max 0)]],
         ["nominal",[_flavor,"nominal",120] call ITW_CLASH_Supports_fnc_RowNumber],
         ["ahead",_pick getOrDefault ["ahead",0]],
         ["squads",_pick getOrDefault ["squads",0]],
         ["squadSize",_pick getOrDefault ["squadSize",0]],
         ["template",_pick getOrDefault ["template",[]]],
+        ["need",_pick getOrDefault ["need",0]],
         ["assets",[]],["groups",[]],["delivered",false],["detail",""],
-        ["dryRun",ITW_CLASH_SupportsDryRun]
+        ["test",_pick getOrDefault ["test",false]],
+        ["wave",_pick getOrDefault ["wave",""]],
+        ["dryRun",ITW_CLASH_SupportsDryRun && {!(_pick getOrDefault ["test",false])}]
     ];
     (([_side] call ITW_CLASH_Supports_fnc_Ledger) get "supports") set [_id,_support];
 
     ["admission",[
         _context get "sign",_flavor,_pick get "objective","RESERVED",_id,
-        round _price,round (([_side] call ITW_CLASH_Supports_fnc_Ledger) get "cash"),
+        (round (_price * 10)) / 10,round ([[_side] call ITW_CLASH_Supports_fnc_Ledger,_wallet] call ITW_CLASH_Supports_fnc_WalletCash),
         round (_support get "delay"),_pick get "corridor",
-        if (ITW_CLASH_SupportsDryRun) then {"dry-run"} else {"live"}
+        switch (true) do {
+            case (_support get "test"): {"test"};
+            case (_support get "dryRun"): {"dry-run"};
+            default {"live"};
+        },
+        _wallet,_lane
     ]] call ITW_CLASH_Supports_fnc_Log;
 
     [_support] spawn ITW_CLASH_Supports_fnc_Run;
@@ -1626,7 +2134,9 @@ ITW_CLASH_Supports_fnc_PreRun = {
     private _side = _support get "side";
     private _objective = _support get "objective";
     private _routine = _support get "routine";
-    if (!isNil "ITW_CLASH_fnc_ObjectiveFrozen" && {_objective >= 0} && {[_objective] call ITW_CLASH_fnc_ObjectiveFrozen}) exitWith {
+    // v7: a console test flies whatever the map's state; it is a test.
+    private _test = _support getOrDefault ["test",false];
+    if (!_test && {!isNil "ITW_CLASH_fnc_ObjectiveFrozen"} && {_objective >= 0} && {[_objective] call ITW_CLASH_fnc_ObjectiveFrozen}) exitWith {
         "OBJECTIVE_FROZEN"
     };
     if (_routine isEqualTo "STRIKE") then {
@@ -1651,8 +2161,10 @@ ITW_CLASH_Supports_fnc_PreRun = {
         _support set ["aim",_aim];
         _support set ["uncertainty",_r];
     };
-    if (_routine isEqualTo "DROP") then {
-        if (([_side] call ITW_CLASH_Supports_fnc_Headroom) < ((_support get "squads") * (_support get "squadSize"))) exitWith {
+    if (_routine isEqualTo "DROP" && {!_test}) then {
+        private _need = _support getOrDefault ["need",0];
+        if (_need <= 0) then {_need = (_support get "squads") * (_support get "squadSize")};
+        if (([_side] call ITW_CLASH_Supports_fnc_Headroom) < _need) exitWith {
             _support set ["denied","NO_HEADROOM"]
         };
         if !(([_side,_support get "aim"] call ITW_CLASH_Knowledge_fnc_IntelState) in ["RECENT_CONTACT","RECENTLY_CLEARED"]) exitWith {
@@ -1662,7 +2174,7 @@ ITW_CLASH_Supports_fnc_PreRun = {
     if ((_support getOrDefault ["denied",""]) isNotEqualTo "") exitWith {_support get "denied"};
     private _rule = ([_support get "flavor"] call ITW_CLASH_Supports_fnc_Row) getOrDefault ["fighterRule","HARD_KILL"];
     private _corridor = [_support get "hq",_support get "spawn",_support get "aim",_rule] call ITW_CLASH_Supports_fnc_Corridor;
-    if ((_corridor getOrDefault ["state","COLD"]) isEqualTo "AIR_DENIED") exitWith {"AIR_DENIED"};
+    if (!_test && {(_corridor getOrDefault ["state","COLD"]) isEqualTo "AIR_DENIED"}) exitWith {"AIR_DENIED"};
     _support set ["corridor",_corridor getOrDefault ["state","COLD"]];
     ""
 };
@@ -1708,8 +2220,13 @@ ITW_CLASH_Supports_fnc_Run = {
 };
 
 // Airborne goes through its own executor; kept as a seam so it can be swapped.
+// v7: a delivery is its own run.
 ITW_CLASH_Supports_fnc_RunDrop = {
     params ["_support"];
+    if ((_support get "flavor") in ITW_CLASH_SupportsVehicleFlavors) exitWith {
+        if (isNil "ITW_CLASH_SupportsAirborne_fnc_RunVehicle") exitWith {["REVOKED","NO_EXECUTOR"]};
+        [_support] call ITW_CLASH_SupportsAirborne_fnc_RunVehicle
+    };
     [_support] call ITW_CLASH_SupportsAirborne_fnc_Run
 };
 
@@ -1729,13 +2246,16 @@ ITW_CLASH_Supports_fnc_Settle = {
     private _lane = _support get "lane";
     private _cash = 0;
     private _clipped = 0;
+    // v7: back to the wallet it came from, up to that wallet's cap.
+    private _wallet = _support getOrDefault ["wallet","MAIN"];
+    private _cashKey = [_wallet] call ITW_CLASH_Supports_fnc_WalletKey;
     isNil {
         private _ledger = [_side] call ITW_CLASH_Supports_fnc_Ledger;
-        if (_refund) then {
-            private _before = _ledger get "cash";
-            private _after = (_before + _price) min ((call ITW_CLASH_Supports_fnc_Cap) max _before);
+        if (_refund && {_wallet isNotEqualTo "TEST"}) then {
+            private _before = _ledger getOrDefault [_cashKey,0];
+            private _after = (_before + _price) min (([_wallet] call ITW_CLASH_Supports_fnc_WalletCap) max _before);
             _clipped = (_before + _price) - _after;
-            _ledger set ["cash",_after];
+            _ledger set [_cashKey,_after];
         };
         private _lanes = _ledger get "lanes";
         if ((_lanes getOrDefault [_lane,""]) isEqualTo _id) then {_lanes set [_lane,""]};
@@ -1743,16 +2263,17 @@ ITW_CLASH_Supports_fnc_Settle = {
             _ledger set ["reconBlockedUntil",time + ITW_CLASH_SupportsUAVRelaunch];
         };
         (_ledger get "supports") deleteAt _id;
-        _cash = _ledger get "cash";
+        _cash = [_ledger,_wallet] call ITW_CLASH_Supports_fnc_WalletCash;
     };
     [_support,_state,_detail] call ITW_CLASH_Supports_fnc_SetState;
     ["outcome",[
         _id,_support get "sign",_support get "flavor",_support get "objective",
         _support get "reason",_state,_detail,
         if (_refund) then {"refunded"} else {"spent"},
-        round _price,round _cash,
+        (round (_price * 10)) / 10,round _cash,
         round (time - (_support get "reservedAt")),
-        round _clipped
+        round _clipped,
+        _wallet,_support getOrDefault ["wave",""]
     ]] call ITW_CLASH_Supports_fnc_Log;
     true
 };
@@ -1975,7 +2496,15 @@ ITW_CLASH_Supports_fnc_LedgerLog = {
             (round ((call ITW_CLASH_Supports_fnc_IncomeRate) * 100)) / 100,
             _lanes getOrDefault ["RECON",""],
             _lanes getOrDefault ["COMMIT",""],
-            round (((_ledger get "reconBlockedUntil") - time) max 0)
+            round (((_ledger get "reconBlockedUntil") - time) max 0),
+            // v7: the drop wallet and its lanes, then the bite-back pot (waves).
+            round (_ledger getOrDefault ["dropCash",0]),
+            round (call ITW_CLASH_Supports_fnc_DropCap),
+            _lanes getOrDefault ["DROP",""],
+            _lanes getOrDefault ["VEHICLE",""],
+            (round ((_ledger getOrDefault ["biteCash",0]) * 100)) / 100,
+            _lanes getOrDefault ["BITE_DROP",""],
+            _lanes getOrDefault ["BITE_VEHICLE",""]
         ]] call ITW_CLASH_Supports_fnc_Log;
     } forEach _this;
 };
@@ -1984,6 +2513,8 @@ ITW_CLASH_Supports_fnc_LedgerLog = {
 ITW_CLASH_SupportsUAVRelaunch = missionNamespace getVariable ["ITW_CLASH_SupportsUAVRelaunch",300];
 ITW_CLASH_SupportsAirborneHeliSquads = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliSquads",2];
 ITW_CLASH_SupportsAirbornePlaneSquads = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneSquads",3];
+// The executor's own floor for a squad (ITW_CLASH_SupportsAirborneMinSquad), read by a direct pick.
+ITW_CLASH_SupportsAirborneMinSquadCore = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneMinSquad",4];
 
 [] spawn {
     scriptName "ITW_CLASH_SupportsLedger";
@@ -2005,7 +2536,7 @@ ITW_CLASH_SupportsAirbornePlaneSquads = missionNamespace getVariable ["ITW_CLASH
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true dropWallet=%35/min dropCap=%36 dropCadence=%37/%38/%39min carrier=%40 biteBack=%41 biteBackPot=%42wave/%43min biteBackCooldown=%44s biteBackSquads=%45 lanes=RECON,COMMIT,DROP,VEHICLE,BITE_DROP,BITE_VEHICLE picks=strike,drop,vehicle delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -2039,6 +2570,17 @@ diag_log format [
     ITW_CLASH_SupportsUAVKillboxRadius,
     ITW_CLASH_SupportsUAVKillboxDuration,
     ITW_CLASH_SupportsDangerMarginGuided,
-    ITW_CLASH_SupportsDangerMarginGuidedPlayer
+    ITW_CLASH_SupportsDangerMarginGuidedPlayer,
+    (round ((call ITW_CLASH_Supports_fnc_DropIncomeRate) * 100)) / 100,
+    round (call ITW_CLASH_Supports_fnc_DropCap),
+    ITW_CLASH_SupportsAirborneHeliCadence,
+    ITW_CLASH_SupportsAirbornePlaneCadence,
+    ITW_CLASH_SupportsVehicleDropCadence,
+    ITW_CLASH_SupportsVehicleCarrierClasses joinString "/",
+    ITW_CLASH_SupportsBiteBackEnabled,
+    ITW_CLASH_SupportsBiteBackCap,
+    ITW_CLASH_SupportsBiteBackRefill,
+    ITW_CLASH_SupportsBiteBackCooldown,
+    ITW_CLASH_SupportsBiteBackSquads
 ];
 true

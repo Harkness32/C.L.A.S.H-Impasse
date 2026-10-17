@@ -60,19 +60,22 @@ UAV = code("ITW_CLASH_SupportsUAV.sqf")
 def test_strikes_cost_half_what_they_did():
     for flavor, minutes in (("Bomb", 10), ("Guided", 10), ("Carpet", 20)):
         assert f'["ITW_CLASH_Supports{flavor}Cadence",{minutes}]' in CORE, flavor
-    # Drops and the UAV are unchanged.
-    assert '["ITW_CLASH_SupportsAirborneHeliCadence",30]' in CORE
-    assert '["ITW_CLASH_SupportsAirbornePlaneCadence",50]' in CORE
+    # The UAV is unchanged; the drops moved to their own wallet in v7.
+    assert '["ITW_CLASH_SupportsAirborneHeliCadence",15]' in CORE
+    assert '["ITW_CLASH_SupportsAirbornePlaneCadence",25]' in CORE
     assert '["ITW_CLASH_SupportsUAVCadence",4]' in CORE
     # A price is still income times cadence, so the tempo is in minutes.
     price = function_body(CORE, "ITW_CLASH_Supports_fnc_Price")
-    assert '* ([_flavor,"cadence",10] call ITW_CLASH_Supports_fnc_RowNumber);' in price
+    assert 'private _price = _rate * ([_flavor,"cadence",10] call ITW_CLASH_Supports_fnc_RowNumber);' in price
 
 
 def test_save_pulls_half_as_hard():
     assert '["ITW_CLASH_SupportsSaveScale",0.5]' in CORE
+    # v7: one SAVE rule for every wallet.
+    weight = function_body(CORE, "ITW_CLASH_Supports_fnc_SaveWeight")
+    assert "ITW_CLASH_SupportsSaveScale * (switch (true) do {" in weight
     assess = function_body(CORE, "ITW_CLASH_Supports_fnc_Assess")
-    assert "private _saveWeight = ITW_CLASH_SupportsSaveScale * (switch (true) do {" in assess
+    assert 'private _saveWeight = [_ledger,"MAIN"] call ITW_CLASH_Supports_fnc_SaveWeight;' in assess
 
 
 def save_weight(fill, scale=0.5):
@@ -188,7 +191,7 @@ def test_a_break_off_turns_away_and_says_why():
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 6;" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
+    assert "ITW_CLASH_SupportsVersion = 7;" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
     assert "ITW_CLASH_SupportsStrikeVersion = 5;" in (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text()
 
 

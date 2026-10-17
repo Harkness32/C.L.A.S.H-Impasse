@@ -8,15 +8,15 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsAirborneStarted = true;
-ITW_CLASH_SupportsAirborneVersion = 1;
+ITW_CLASH_SupportsAirborneVersion = 2;
 ITW_CLASH_SupportsAirborneReady = false;
 
 /*
     Commander supports: the airborne insertion. A helicopter or a transport
-    plane, and on the plane an optional vehicle.
+    plane with squads, and (v2) a vehicle delivered by its own carrier.
 
-    Off by default (the core's switches). With the switches off nothing in
-    this file ever runs.
+    Each has its own switch in the core. With a switch off nothing on its
+    path in this file runs.
 
     The squads are the faction's own: a living squad's archetype, built with
     Impasse's own unit factory at the aircraft's origin and moved aboard. They
@@ -40,6 +40,13 @@ ITW_CLASH_SupportsAirborneReady = false;
     Money: delivered is spent; lost with the aircraft is spent; a run that
     breaks off with the aircraft alive is refunded, and its squads, which
     never touched the ground, are removed.
+
+    v2 (2026-10-17): the vehicle is no longer the plane drop's add-on built
+    out of thin air at release; it is its own support (fnc_RunVehicle),
+    carried inside the aircraft that drops it, the Blackfish by default.
+    Neither has flown in a game yet: no drop was ever affordable before the
+    core's v7, so read the airborne lines of the first runs and the console
+    tests (ITW_CLASH_SupportsDebug.sqf) as the first evidence.
 
     Every number below is a placeholder for calibration.
 */
@@ -65,8 +72,17 @@ ITW_CLASH_SupportsAirborneMinSquad = missionNamespace getVariable ["ITW_CLASH_Su
 // Bound on waiting for a squad to be on its feet; a 45 m drop lands in 10-22 s.
 ITW_CLASH_SupportsAirborneLandWait = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneLandWait",90];
 ITW_CLASH_SupportsAirborneSettle = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneSettle",10];
-// The vehicle add-on leaves this far past the zone along the run.
-ITW_CLASH_SupportsAirborneVehicleOffset = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneVehicleOffset",80];
+/*
+    v2, vehicle delivery: the carrier's height over the zone and its speed
+    on the spawn (m/s); the vehicle goes this many seconds of flight short
+    of the zone, for the carry under its parachute; how many of the side's
+    cars are tried for a fit; how long a falling vehicle is waited for.
+*/
+ITW_CLASH_SupportsVehicleDropHeight = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropHeight",200];
+ITW_CLASH_SupportsVehicleDropSpeed = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropSpeed",70];
+ITW_CLASH_SupportsVehicleDropLeadSeconds = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropLeadSeconds",2.5];
+ITW_CLASH_SupportsVehicleDropTries = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropTries",4];
+ITW_CLASH_SupportsVehicleDropFallWait = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropFallWait",180];
 
 ITW_CLASH_SupportsAirborne_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -288,76 +304,213 @@ ITW_CLASH_SupportsAirborne_fnc_HandOff = {
 };
 
 /*
-    The vehicle add-on. Built at the moment of release with Impasse's own
-    vehicle factory and dropped under Impasse's own vehicle parachute, just
-    past the zone. Its crew goes to HAL once the vehicle is down; HAL tasks
-    its own vehicles, so it gets no order from here.
+    v2. A delivered vehicle on the ground, handed on once: down, settled,
+    unlocked and damageable again, then its crew goes to HAL. HAL tasks its
+    own vehicles, so it gets no order from here.
 */
-ITW_CLASH_SupportsAirborne_fnc_VehicleDrop = {
-    params ["_support","_plane","_dz","_heading"];
-    if (
-        !ITW_CLASH_SupportsVehicleDropEnabled
-        || {isNil "ITW_AtkSpawnVeh"}
-        || {isNil "ITW_FncVehicleHalo"}
-        || {isNil "ITW_CLASH_Checkbook_fnc_GetCrewTypes"}
-    ) exitWith {false};
-    private _side = _support get "side";
-    private _classes = [_side,"CAR"] call ITW_CLASH_Supports_fnc_Classes;
-    if (_classes isEqualTo []) exitWith {
-        ["vehicle-skipped",[_support get "id",_support get "sign","no-class"]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+ITW_CLASH_SupportsAirborne_fnc_VehicleHandOff = {
+    params ["_support","_car","_crew",["_how","landed"]];
+    scriptName "ITW_CLASH_SupportsAirborne_VehicleHandOff";
+    private _deadline = time + ITW_CLASH_SupportsVehicleDropFallWait;
+    sleep 3;
+    waitUntil {
+        sleep 1;
+        !alive _car || {isTouchingGround _car} || {((getPos _car)#2) < 2} || {time > _deadline}
+    };
+    if (!alive _car || {isNull _crew}) exitWith {
+        ["vehicle-lost",[_support get "id",_support get "sign",_how]] call ITW_CLASH_SupportsAirborne_fnc_Log;
         false
     };
+    // A parachute restores damage a second after touchdown.
+    sleep (ITW_CLASH_SupportsAirborneSettle max 3);
+    if (!alive _car) exitWith {false};
+    _car allowDamage true;
+    _car lock 0;
+    _crew setVariable ["ITW_CLASH_ReconstitutionTransit",nil];
+    _crew setVariable ["itwInitGrp",nil,true];
+    _crew setVariable ["ITW_CLASH_SupportAsset",nil];
+    _crew setVariable ["ITW_CLASH_SupportDelivered",_support get "id"];
+    VAR_SET_OBJ_IDX(_crew,_support get "objective");
+    private _registered = !isNil "ITW_CLASH_DualHAL_fnc_RegisterGroup"
+        && {[_crew,"support-airborne-vehicle"] call ITW_CLASH_DualHAL_fnc_RegisterGroup};
+    if (_registered) then {
+        if (!isNil "ITW_CLASH_DualHAL_fnc_MarkVehicleCrew") then {
+            [_crew,_car,"support-airborne"] call ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
+        };
+        if (!isNil "ITW_CLASH_DualHAL_fnc_TrackAsset") then {
+            [_car,[],"support-airborne"] call ITW_CLASH_DualHAL_fnc_TrackAsset;
+        };
+        _car setVariable ["ITW_CLASH_DualHALManaged",true];
+    };
+    ["vehicle-handoff",[
+        _support get "id",_support get "sign",typeOf _car,
+        round (_car distance2D (_support get "aim")),_registered,_how
+    ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+    true
+};
+
+/*
+    v2. The vehicle, inside the carrier. One of the side's own cars at a
+    time, in a random order, built crewed by Impasse's own factory at the
+    origin and loaded into the carrier in flight (setVehicleCargo); the first
+    that fits goes, up to VehicleDropTries, and one that does not fit is
+    removed with its crew. Locked and undamageable until it is down, so
+    nobody gets out on the way and a hard landing does not wreck it.
+    Returns [vehicle, crew group, classes tried].
+*/
+ITW_CLASH_SupportsAirborne_fnc_LoadVehicle = {
+    params ["_support","_carrier","_cars"];
+    private _side = _support get "side";
     ([_side] call ITW_CLASH_Checkbook_fnc_GetCrewTypes) params [["_crewTypes",[]],["_unitTypes",[]]];
     private _origin = _support get "origin";
-    private _height = (((getPosATL _plane)#2) - 30) max 150;
-    [_support,_classes,_crewTypes,_unitTypes,_side,[_origin#0,_origin#1,0],_dz getPos [ITW_CLASH_SupportsAirborneVehicleOffset,_heading],_height] spawn {
-        params ["_support","_classes","_crewTypes","_unitTypes","_side","_ground","_drop","_height"];
-        scriptName "ITW_CLASH_SupportsAirborne_Vehicle";
-        private _car = [[selectRandom _classes],_crewTypes,_unitTypes,_side,_ground,-1] call ITW_AtkSpawnVeh;
-        if (isNull _car) exitWith {
-            ["vehicle-skipped",[_support get "id",_support get "sign","spawn-failed"]] call ITW_CLASH_SupportsAirborne_fnc_Log;
-        };
-        private _crew = group (driver _car);
+    private _ground = [_origin#0,_origin#1,0];
+    private _tried = [];
+    private _car = objNull;
+    {
+        if ((count _tried) >= ITW_CLASH_SupportsVehicleDropTries) exitWith {};
+        private _carClass = _x;
+        _tried pushBack _carClass;
+        private _candidate = [[_carClass],_crewTypes,_unitTypes,_side,_ground,-1] call ITW_AtkSpawnVeh;
+        if (isNull _candidate) then {continue};
+        private _fits = (_carrier canVehicleCargo _candidate) param [0,false];
+        if (_fits && {_carrier setVehicleCargo _candidate}) exitWith {_car = _candidate};
+        {deleteVehicle _x} forEach (crew _candidate);
+        deleteVehicle _candidate;
+    } forEach (_cars call BIS_fnc_arrayShuffle);
+    if (isNull _car) exitWith {[objNull,grpNull,_tried]};
+    private _crew = group (driver _car);
+    if (isNull _crew) then {_crew = group ((crew _car) param [0,objNull])};
+    _car allowDamage false;
+    _car lock 2;
+    _car setVariable ["ITW_CLASH_SupportAsset",_support get "id",true];
+    if (!isNull _crew) then {
         _crew setVariable ["ITW_CLASH_SupportAsset",_support get "id"];
         _crew setVariable ["ITW_CLASH_ReconstitutionTransit",true];
         _crew setVariable ["itwInitGrp",true,true];
-        [_car,[_drop#0,_drop#1,_height]] spawn ITW_FncVehicleHalo;
-        ["vehicle-dropped",[_support get "id",_support get "sign",typeOf _car,count (units _crew)]] call
-            ITW_CLASH_SupportsAirborne_fnc_Log;
-
-        private _deadline = time + 180;
-        sleep 3;
-        waitUntil {
-            sleep 1;
-            !alive _car || {isTouchingGround _car} || {((getPos _car)#2) < 2} || {time > _deadline}
-        };
-        if (!alive _car || {isNull _crew}) exitWith {
-            ["vehicle-lost",[_support get "id",_support get "sign"]] call ITW_CLASH_SupportsAirborne_fnc_Log;
-        };
-        // The vehicle parachute restores damage a second after touchdown.
-        sleep (ITW_CLASH_SupportsAirborneSettle max 3);
-        _crew setVariable ["ITW_CLASH_ReconstitutionTransit",nil];
-        _crew setVariable ["itwInitGrp",nil,true];
-        _crew setVariable ["ITW_CLASH_SupportAsset",nil];
-        _crew setVariable ["ITW_CLASH_SupportDelivered",_support get "id"];
-        VAR_SET_OBJ_IDX(_crew,_support get "objective");
-        private _registered = !isNil "ITW_CLASH_DualHAL_fnc_RegisterGroup"
-            && {[_crew,"support-airborne-vehicle"] call ITW_CLASH_DualHAL_fnc_RegisterGroup};
-        if (_registered) then {
-            if (!isNil "ITW_CLASH_DualHAL_fnc_MarkVehicleCrew") then {
-                [_crew,_car,"support-airborne"] call ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
-            };
-            if (!isNil "ITW_CLASH_DualHAL_fnc_TrackAsset") then {
-                [_car,[],"support-airborne"] call ITW_CLASH_DualHAL_fnc_TrackAsset;
-            };
-            _car setVariable ["ITW_CLASH_DualHALManaged",true];
-        };
-        ["vehicle-handoff",[
-            _support get "id",_support get "sign",typeOf _car,
-            round (_car distance2D (_support get "aim")),_registered
-        ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
     };
-    true
+    (_support get "assets") pushBack _car;
+    [_car,_crew,_tried]
+};
+
+/*
+    v2. Vehicle delivery, a support of its own (the core's VEHICLE_DROP). The
+    carrier (the Blackfish by default) spawns on the run-in with the vehicle
+    already inside it, flies one straight line through the zone at
+    VehicleDropHeight, and lets the vehicle go VehicleDropLeadSeconds of
+    flight short of the zone (objNull setVehicleCargo). A vehicle unloaded
+    in the air gets the engine's own cargo parachute; if a second later
+    nothing holds it, Impasse's vehicle parachute does, from where it is
+    (ITW_FncVehicleHalo). Down and settled, its crew goes to HAL.
+
+    Money as the drops: delivered or lost is spent, a run that breaks off
+    with the carrier alive is refunded and its vehicle, never down, removed.
+*/
+ITW_CLASH_SupportsAirborne_fnc_RunVehicle = {
+    params ["_support"];
+    private _side = _support get "side";
+    private _id = _support get "id";
+    private _sign = _support get "sign";
+    if (isNil "ITW_AtkSpawnVeh" || {isNil "ITW_CLASH_Checkbook_fnc_GetCrewTypes"}) exitWith {["REVOKED","NO_EXECUTOR"]};
+    private _class = _support get "class";
+    if (_class isEqualTo "") then {
+        _class = ([_side,"VEHICLE_DROP"] call ITW_CLASH_Supports_fnc_PickClass) param [0,""];
+    };
+    if (_class isEqualTo "") exitWith {["REVOKED","NO_AIRCRAFT"]};
+    private _dz = [_support] call ITW_CLASH_SupportsAirborne_fnc_DropZone;
+    if (_dz isEqualTo []) exitWith {["REVOKED","NO_DZ"]};
+    private _spawn = _support get "spawn";
+    if (_spawn isEqualTo [] || {(_support get "origin") isEqualTo []}) exitWith {["REVOKED","NO_ORIGIN"]};
+    private _cars = [_side,"CAR"] call ITW_CLASH_Supports_fnc_Classes;
+    if (_cars isEqualTo []) exitWith {["REVOKED","NO_VEHICLE_FIT"]};
+
+    private _heading = _spawn getDir _dz;
+    private _height = ITW_CLASH_SupportsVehicleDropHeight;
+    ([_support,_class,[_spawn#0,_spawn#1,_height],_heading,ITW_CLASH_SupportsVehicleDropSpeed] call
+        ITW_CLASH_Supports_fnc_SpawnAircraft) params ["_veh","_group"];
+    if (isNull _veh) exitWith {["REVOKED","SPAWN_FAILED"]};
+    [_veh] call ITW_CLASH_Supports_fnc_StripAirToAir;
+    ([_support,_veh,_cars] call ITW_CLASH_SupportsAirborne_fnc_LoadVehicle) params ["_car","_crew","_tried"];
+    if (isNull _car) exitWith {
+        ["vehicle-unfit",[_id,_sign,_class,_tried]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+        [_veh,_group] call ITW_CLASH_Supports_fnc_Despawn;
+        ["REVOKED","NO_VEHICLE_FIT"]
+    };
+    ["vehicle-loaded",[
+        _id,_sign,_class,typeOf _car,{alive _x} count (crew _car),_dz apply {round _x},
+        round (_spawn distance2D _dz),round ((_support get "aim") distance2D _dz),count _tried
+    ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+
+    // One straight line through the zone and on past it.
+    _veh flyInHeight _height;
+    {deleteWaypoint _x} forEachReversed (waypoints _group);
+    private _wp = _group addWaypoint [_dz getPos [1000,_heading],0];
+    _wp setWaypointType "MOVE";
+    _wp setWaypointSpeed "FULL";
+    _wp setWaypointBehaviour "CARELESS";
+    _wp setWaypointCombatMode "BLUE";
+    _wp setWaypointCompletionRadius 200;
+
+    private _deadline = time + ITW_CLASH_SupportsAirborneRunTimeout;
+    private _flared = false;
+    private _result = [];
+    while {_result isEqualTo []} do {
+        sleep 0.1;
+        if (!alive _veh || {!canMove _veh} || {isNull driver _veh}) exitWith {_result = ["LOST","aircraft-lost"]};
+        if (!alive _car) exitWith {_result = ["LOST","cargo-lost"]};
+        if (time > _deadline) exitWith {_result = ["BREAKOFF","never-reached"]};
+        ([getPosATL _veh,_dz,_heading] call ITW_CLASH_Supports_fnc_AlongCross) params ["_along","_cross"];
+        if (!_flared && {_along <= ITW_CLASH_SupportsAirborneFlareRange}) then {
+            _flared = true;
+            [_veh,30,1] call ITW_CLASH_Supports_fnc_Flares;
+        };
+        private _lead = ((speed _veh) / 3.6) * ITW_CLASH_SupportsVehicleDropLeadSeconds;
+        if (_along <= _lead) exitWith {
+            _result = if (_cross > ITW_CLASH_SupportsAirborneCrossLimit) then {["BREAKOFF","passed-wide"]} else {
+                ["RELEASE",format ["along-%1-cross-%2",round _along,round _cross]]
+            };
+        };
+    };
+
+    switch (_result#0) do {
+        case "RELEASE": {
+            private _unloaded = objNull setVehicleCargo _car;
+            if (!_unloaded) exitWith {
+                ["vehicle-unload-failed",[_id,_sign,_class,typeOf _car]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+                {deleteVehicle _x} forEach (crew _car);
+                deleteVehicle _car;
+                _result = ["BREAKOFF","unload-failed"];
+            };
+            sleep 1;
+            private _chute = "engine";
+            if (alive _car && {isNull (attachedTo _car)} && {((getPos _car)#2) > 20}) then {
+                [_car] spawn ITW_FncVehicleHalo;
+                _chute = "impasse";
+            };
+            ["vehicle-released",[
+                _id,_sign,_class,typeOf _car,round speed _veh,round ((getPosATL _veh)#2),
+                round (_veh distance2D _dz),_chute,_result#1
+            ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+            [_support,_car,_crew,"landed"] spawn ITW_CLASH_SupportsAirborne_fnc_VehicleHandOff;
+            _result = ["DONE",format ["delivered-%1",typeOf _car]];
+        };
+        case "LOST": {
+            // Whatever lives through the carrier is ours on the ground.
+            if (alive _car) then {
+                objNull setVehicleCargo _car;
+                if (isNull (attachedTo _car) && {((getPos _car)#2) > 20} && {!isNil "ITW_FncVehicleHalo"}) then {[_car] spawn ITW_FncVehicleHalo};
+                [_support,_car,_crew,"survived-loss"] spawn ITW_CLASH_SupportsAirborne_fnc_VehicleHandOff;
+            };
+        };
+        default {
+            // Never down, never anyone else's.
+            if (!isNull _car) then {
+                {deleteVehicle _x} forEach (crew _car);
+                deleteVehicle _car;
+            };
+        };
+    };
+    [_veh,_group,_dz,_heading,4000,300,_support] spawn ITW_CLASH_Supports_fnc_Egress;
+    _result
 };
 
 ITW_CLASH_SupportsAirborne_fnc_Run = {
@@ -464,7 +617,6 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
                 _id,_sign,_flavor,count _squads,_jumped,round speed _veh,
                 round ((getPosATL _veh)#2),round (_veh distance2D _dz),_result#1
             ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
-            if (_plane) then {[_support,_veh,_dz,_heading] call ITW_CLASH_SupportsAirborne_fnc_VehicleDrop};
             {[_support,_x,"landed"] spawn ITW_CLASH_SupportsAirborne_fnc_HandOff} forEach _squads;
             _result = ["DONE",format ["dropped-%1x%2",count _squads,_jumped]];
         };
@@ -484,7 +636,7 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
 
 ITW_CLASH_SupportsAirborneReady = true;
 diag_log format [
-    "CLASH BOOT | supports-airborne-ready | version=%1 heli=%2m plane=%3m dzOffset=%4 crossLimit=%5 minSquad=%6 landWait=%7s vehicleDrop=%8 impasseJump=true oneNativeOrder=true",
+    "CLASH BOOT | supports-airborne-ready | version=%1 heli=%2m plane=%3m dzOffset=%4 crossLimit=%5 minSquad=%6 landWait=%7s vehicleDrop=%8 vehicleHeight=%9m vehicleSpeed=%10 vehicleLead=%11s vehicleTries=%12 vehicleCarried=true vehicleOwnSupport=true impasseJump=true oneNativeOrder=true",
     ITW_CLASH_SupportsAirborneVersion,
     ITW_CLASH_SupportsAirborneHeliHeight,
     ITW_CLASH_SupportsAirbornePlaneHeight,
@@ -492,6 +644,10 @@ diag_log format [
     ITW_CLASH_SupportsAirborneCrossLimit,
     ITW_CLASH_SupportsAirborneMinSquad,
     ITW_CLASH_SupportsAirborneLandWait,
-    ITW_CLASH_SupportsVehicleDropEnabled
+    ITW_CLASH_SupportsVehicleDropEnabled,
+    ITW_CLASH_SupportsVehicleDropHeight,
+    ITW_CLASH_SupportsVehicleDropSpeed,
+    ITW_CLASH_SupportsVehicleDropLeadSeconds,
+    ITW_CLASH_SupportsVehicleDropTries
 ];
 true

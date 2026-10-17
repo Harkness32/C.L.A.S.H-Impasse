@@ -52,8 +52,12 @@ def test_hal_is_never_told_about_it():
     # Held out of the dispatch pools defensively in case something else adopts
     # it. Set in fnc_Crew since v2, so a re-crewed piece is held out too - a
     # replacement crew that HAL could dispatch would walk the gun off its base.
-    body = function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_Crew")
-    assert '"RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"' in body
+    # v4: both crewing paths (a soldier in the seat, an autonomous piece's
+    # own AI) end in the same settle, which holds the group out.
+    settle = function_body(cram(), "ITW_CLASH_RearBaseCRAM_fnc_Settle")
+    assert '"RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"' in settle
+    for name in ["ITW_CLASH_RearBaseCRAM_fnc_Crew", "ITW_CLASH_RearBaseCRAM_fnc_CrewAutonomous"]:
+        assert "[_side,_group] call ITW_CLASH_RearBaseCRAM_fnc_Settle;" in function_body(cram(), name), name
     for pool in ["RydHQ_AttackAv", "RydHQ_FlankAv", "RydHQ_Garrison"]:
         assert pool not in source, pool
 

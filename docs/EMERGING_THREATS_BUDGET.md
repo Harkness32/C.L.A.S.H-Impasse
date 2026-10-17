@@ -442,6 +442,43 @@ transiently.
 Having nothing to emplace is now said **once per side**. The class pools do not
 change mid-mission, so neither does the answer.
 
+## Rear-base C-RAM v4: a real C-RAM first
+
+Hark, 2026-10-17: "we've been falling back to a weird static for GUER and
+mobile AA for BLUFOR, C-RAM for both of us." Neither faction lists a C-RAM, so
+the v3 ladder always fell through: BLUFOR to its Cheetah, GUER to a Titan static.
+
+A C-RAM is now found by what it is, not by its name
+(`ITW_CLASH_RearBaseCRAM_fnc_IsCRAM`): a public (`scope` 2) static weapon that is
+autonomous (`isUav` 1), whose air picture class profile says it has an
+anti-air gun (`airLock` above 1, unguided) and no anti-air missile, so a SAM
+site never counts. In vanilla that is the Praetorian 1C; a mod's C-RAM passes
+the same test without being named. The game's config is scanned once, radar
+pieces first, and the list is logged as `rear-cram-classes`.
+
+The order:
+
+1. A host override (`ITW_CLASH_RearBaseCRAMPlayerClass` / `EnemyClass`).
+2. A C-RAM among the side's own statics (`va_*StaticAAClasses`).
+3. A C-RAM built for the side the faction's own crewmen belong to in config
+   (GUER fielding NATO crewmen gets NATO's).
+4. Any C-RAM the game has. Both sides get the Praetorian in vanilla.
+5. The v3 ladder (faction static AA, then its own AA vehicle), only for a
+   modset with no C-RAM at all.
+
+`ITW_CLASH_RearBaseCRAMPreferCRAM false` goes back to the v3 ladder.
+
+An autonomous piece has no seat for a soldier. It is crewed the way the support
+UAVs are: `createVehicleCrew` makes its own AI, which joins a group of the side
+(`joinSilent`), so a Praetorian built for NATO shoots for GUER when GUER owns it.
+The group is kept out of HAL's lists (`RydHQ_No*`) and set COMBAT and RED. The
+recrew, replacement and adoption guards are unchanged. `rear-cram-placed` says
+whether the piece is a C-RAM.
+
+**Not yet seen in engine.** If `rear-cram-classes` comes back empty in a modset
+that has a C-RAM, its ammunition does not read as anti-air in the class profile
+(`airLock` 1); the override names it directly.
+
 ## COLOSSUS v2: CONSOLIDATE, still advisory
 
 A commander that is drastically outnumbered should not be naming the next
