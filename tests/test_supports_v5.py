@@ -200,7 +200,9 @@ def test_versions():
 
 def test_only_the_players_commander_draws_info_markers():
     dual = code("ITW_CLASH_DualHALCheckbook.sqf")
-    assert '["ITW_CLASH_PlayerInfoMarkers",true]' in dual
+    # Off by default since Impasse's own markers read HAL's list
+    # (test_map_knowledge.py); the switch still drives HAL's.
+    assert '["ITW_CLASH_PlayerInfoMarkers",false]' in dual
     configure = function_body(dual, "ITW_CLASH_DualHAL_fnc_ConfigureBLUFORGlobals")
     assert "RydHQB_InfoMarkers = ITW_CLASH_PlayerInfoMarkers;" in configure
     # HAL's markers are global: the enemy commander's would show the players

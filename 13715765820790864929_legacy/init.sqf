@@ -260,6 +260,13 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | counter-battery-missing | shelling never reveals a firing position";
             };
+            // The players' map: Impasse's markers for the enemy groups their
+            // HAL commander knows of (HAL's own Info Markers are off).
+            if (fileExists "ITW_CLASH_MapKnowledge.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_MapKnowledge.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | map-knowledge-missing | the map shows the enemies Impasse's own side knowledge has";
+            };
             if (fileExists "ITW_CLASH_ArtilleryScoot.sqf") then {
                 call compile preprocessFileLineNumbers "ITW_CLASH_ArtilleryScoot.sqf";
             } else {

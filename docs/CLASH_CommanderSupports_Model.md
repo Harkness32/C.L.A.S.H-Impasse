@@ -676,10 +676,16 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   player is connected to the UAV.
 - **What players see:** a UAV's reveals go to its HQ group, which is how HAL
   learns them; they never reached the players. Since 2026-10-17 the players'
-  own commander draws HAL's Info Markers (`ITW_CLASH_PlayerInfoMarkers`,
-  `RydHQB_InfoMarkers`): its groups and every enemy group it knows of, as NATO
-  symbols on the map, so what a UAV finds shows up there once HAL takes it in.
-  The enemy commander's stay off, because HAL's markers are global.
+  map shows every enemy group their HAL commander knows of
+  (`RydHQ_KnEnemiesG`), so what a UAV finds shows up there once HAL takes it
+  in. First HAL's own Info Markers drew it (`ITW_CLASH_PlayerInfoMarkers`,
+  `RydHQB_InfoMarkers`); later the same day (Hark: "untick HAL's ... and leave
+  Impasse's by default on, but ... wire HAL's knows about to Impasse's") those
+  went off by default and Impasse's own group markers read HAL's list instead
+  of the side's `knowsAbout` (`ITW_CLASH_MapKnowledge.sqf` publishes it every
+  5 s as `ITW_CLASH_MapKnownEnemyGroups`; an empty read is held 15 s, since HAL
+  empties the list at the start of each cycle). The enemy commander's
+  knowledge is never shown.
 
 ### 9.3 Strike pass
 

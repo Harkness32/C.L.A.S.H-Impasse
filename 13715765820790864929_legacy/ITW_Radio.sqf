@@ -1000,7 +1000,12 @@ ITW_RadioShowFriendlies = {
                     };
                     private _veh = vehicle _leader;
                     if (_veh isKindOf "ParachuteBase") then {continue};
-                    if (!_isFriendly && {ITW_ParamShowEnemyOnMap == 0 || {_playerSide knowsAbout _veh < 1}}) then {continue};
+                    // C.L.A.S.H.: an enemy group is drawn when the players' HAL
+                    // commander knows of it (ITW_CLASH_MapKnowledge.sqf publishes
+                    // RydHQ_KnEnemiesG); Impasse's own knowsAbout test without it.
+                    if (!_isFriendly && {ITW_ParamShowEnemyOnMap == 0 || {
+                        if (isNil "ITW_CLASH_MapKnownEnemyGroups") then {_playerSide knowsAbout _veh < 1} else {!(_group in ITW_CLASH_MapKnownEnemyGroups)}
+                    }}) then {continue};
                     if (_group getVariable ["itw_hideOnMap",false]) then {continue};
                     private _inVeh = _leader != _veh;
                     if (_inVeh && {group driver _veh != _group && {! isNull (driver _veh)}}) then {continue}; // don't show transport groups

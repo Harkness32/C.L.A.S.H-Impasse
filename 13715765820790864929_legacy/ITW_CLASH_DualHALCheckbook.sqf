@@ -445,7 +445,14 @@ ITW_CLASH_SupportRTB = missionNamespace getVariable ["ITW_CLASH_SupportRTB",true
     them. HQSitRep copies the global every cycle, so it can be changed from
     the console.
 */
-ITW_CLASH_PlayerInfoMarkers = missionNamespace getVariable ["ITW_CLASH_PlayerInfoMarkers",true];
+/*
+    Off by default since the same day (Hark: "untick HAL's ... and leave
+    Impasse's by default on, but ... wire HAL's knows about to Impasse's"):
+    Impasse's own map markers now draw the groups this commander knows of
+    (ITW_CLASH_MapKnowledge.sqf), so HAL's second set is not needed. True
+    brings HAL's back, with its group ids and ordnance drops.
+*/
+ITW_CLASH_PlayerInfoMarkers = missionNamespace getVariable ["ITW_CLASH_PlayerInfoMarkers",false];
 
 ITW_CLASH_DualHAL_fnc_ConfigureBLUFORGlobals = {
     RydHQB_SupportRTB = ITW_CLASH_SupportRTB;
