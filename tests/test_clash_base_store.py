@@ -388,6 +388,39 @@ def test_preview_is_a_local_scene_and_never_server_side() -> None:
     assert "call ITW_CLASH_Store_fnc_PreviewClose" in client
 
 
+def test_vehicle_preview_is_a_real_object_so_pylons_render() -> None:
+    client = source("ITW_CLASH_StoreClient.sqf")
+
+    select = section(
+        client,
+        "ITW_CLASH_Store_fnc_PreviewSelect = {",
+        "ITW_CLASH_Store_fnc_PreviewControl = {",
+    )
+
+    # A simple object has no simulation, so TransportPylonsComponent never
+    # initialises and dynamic-loadout aircraft render with bare hardpoints.
+    assert "createVehicleLocal" in select, "vehicles must be real local objects"
+
+    vehicle_branch = section(
+        select,
+        'if (_kind isEqualTo "vehicle") then {',
+        "} else {\n                    /*  Everything that is not a vehicle",
+    )
+    assert "createSimpleObject" not in vehicle_branch
+
+    # Load-bearing order: default pylon attachments are applied during vehicle
+    # init, so simulation may only be switched off after that has happened.
+    assert vehicle_branch.index("createVehicleLocal") < vehicle_branch.index(
+        "enableSimulation false"
+    )
+    assert vehicle_branch.index("allowDamage false") < vehicle_branch.index(
+        "enableSimulation false"
+    )
+
+    # Gear keeps the cheaper path; it has no simulation to gain.
+    assert "createSimpleObject" in select
+
+
 # -------------------------------------------------------------- protocol ----
 
 

@@ -275,41 +275,75 @@ ITW_CLASH_Store_fnc_PreviewSelect = {
                     _status = "Does not fit your current primary weapon. Use Equipment to inspect it.";
                 };
             } else {
-                private _path = getText (_cfg >> "model");
-                if (_category in ["vests", "headgear"]) then {
-                    _path = getText (_cfg >> "ItemInfo" >> "uniformModel");
-                };
-                if (_path isNotEqualTo "" && { (toLowerANSI (_path select [(count _path - 4) max 0])) isNotEqualTo ".p3d" }) then {
-                    _path = _path + ".p3d";
-                };
+                if (_kind isEqualTo "vehicle") then {
+                    /*  Vehicles are created as REAL local objects, not simple
+                        objects. A simple object has no simulation, so
+                        TransportPylonsComponent never initialises and every
+                        dynamic-loadout aircraft renders with bare hardpoints --
+                        no missiles, no pods, no rotor or light state either.
 
-                if (_path isNotEqualTo "" && { fileExists _path }) then {
-                    private _model = createSimpleObject [
-                        [_path, _class] select (_root isEqualTo "CfgVehicles"),
-                        _state get "position",
-                        true
-                    ];
+                        Order matters. The config's default pylon attachments
+                        are applied while the vehicle initialises, so simulation
+                        is only switched off once that has happened. Disabling
+                        it first leaves the pylons empty again. */
+                    private _vehicle = _class createVehicleLocal (_state get "position");
 
-                    /*  A raw weapon model still carries its muzzle-flash
-                        proxies; without simulation nothing hides them. */
-                    private _flash = toLowerANSI getText (_cfg >> "selectionFireAnim");
-                    {
-                        private _name = toLowerANSI _x;
-                        if (
-                            _name isEqualTo _flash ||
-                            { (_name find "zasleh") >= 0 } ||
-                            { (_name find "muzzle_flash") >= 0 }
-                        ) then {
-                            _model hideSelection [_x, true];
-                        };
-                    } forEach (selectionNames _model);
+                    if (isNull _vehicle) then {
+                        _status = "This vehicle could not be previewed.";
+                    } else {
+                        _vehicle setPosASL (_state get "position");
+                        _vehicle setVectorUp [0, 0, 1];
+                        _vehicle setDir 180;
+                        _vehicle allowDamage false;
+                        _vehicle enableSimulation false;
 
-                    _model setDir 180;
-                    _state set ["model", _model];
-                    _state set ["subject", _model];
-                    _man hideObject true;
+                        _state set ["model", _vehicle];
+                        _state set ["subject", _vehicle];
+                        _man hideObject true;
+                    };
                 } else {
-                    _status = "This item has no standalone preview model. Character view is available for wearable gear.";
+                    /*  Everything that is not a vehicle is a simple object
+                        built from its model path: gear has no simulation to
+                        gain, and a simple object is cheaper and needs no
+                        teardown beyond deleteVehicle. */
+                    private _path = getText (_cfg >> "model");
+                    if (_category in ["vests", "headgear"]) then {
+                        _path = getText (_cfg >> "ItemInfo" >> "uniformModel");
+                    };
+                    if (_path isNotEqualTo "" && { (toLowerANSI (_path select [(count _path - 4) max 0])) isNotEqualTo ".p3d" }) then {
+                        _path = _path + ".p3d";
+                    };
+
+                    if (_path isNotEqualTo "" && { fileExists _path }) then {
+                        /*  Backpacks are the only CfgVehicles entries still
+                            reaching here, and they build from the classname. */
+                        private _model = createSimpleObject [
+                            [_path, _class] select (_root isEqualTo "CfgVehicles"),
+                            _state get "position",
+                            true
+                        ];
+
+                        /*  A raw weapon model still carries its muzzle-flash
+                            proxies; without simulation nothing hides them. */
+                        private _flash = toLowerANSI getText (_cfg >> "selectionFireAnim");
+                        {
+                            private _name = toLowerANSI _x;
+                            if (
+                                _name isEqualTo _flash ||
+                                { (_name find "zasleh") >= 0 } ||
+                                { (_name find "muzzle_flash") >= 0 }
+                            ) then {
+                                _model hideSelection [_x, true];
+                            };
+                        } forEach (selectionNames _model);
+
+                        _model setDir 180;
+                        _state set ["model", _model];
+                        _state set ["subject", _model];
+                        _man hideObject true;
+                    } else {
+                        _status = "This item has no standalone preview model. Character view is available for wearable gear.";
+                    };
                 };
             };
         } else {

@@ -34,6 +34,17 @@ a gap where `#previewViewport` sits. A real camera, mannequin and light are
 created locally behind the page and framed to that gap, so the 3D preview is
 the game engine seen through a hole in the UI, not anything the page draws.
 
+**Vehicles are previewed as real local objects, gear as simple objects.** This
+is not an arbitrary split. A simple object has no simulation, so
+`TransportPylonsComponent` never initialises and every dynamic-loadout aircraft
+renders with bare hardpoints — no missiles, no pods, no rotor or light state.
+FLO's store has this bug; previewing vehicles with `createVehicleLocal` fixes
+it. The ordering in `ITW_CLASH_Store_fnc_PreviewSelect` is load-bearing: the
+config's default pylon attachments are applied while the vehicle initialises,
+so simulation is switched off only afterwards. Disable it first and the pylons
+are empty again. Gear keeps the cheaper simple-object path, having no
+simulation to gain.
+
 A useful side effect of the asset loader: with `A3API` absent it falls back to
 ordinary relative `<link>`/`<script>` tags, so **`ui/html/store.html` opens in a
 desktop browser** and the layout can be worked on without launching Arma. Only
