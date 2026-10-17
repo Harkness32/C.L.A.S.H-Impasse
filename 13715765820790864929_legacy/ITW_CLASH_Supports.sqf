@@ -113,6 +113,13 @@ ITW_CLASH_SupportsReady = false;
       - The plane drop: a side that lists no troop plane flies the preferred
         one (ITW_CLASH_SupportsPlaneTroopClasses, the Blackfish's infantry
         variant) (Hark: 3A).
+      - Console strike tests (Hark: "can we build debugs for strike and
+        guided as well?"): a context marked test asks the pool's own
+        questions without the economic ones. StrikeCandidates takes a point
+        in place of an objective's centre and the flavors to ask about, and
+        with test skips the price, the denied corridor and the crossing
+        count; FlavorGate skips lane, relaunch, cooldown and funds. Danger
+        close is asked as always (Hark: 2A). The live path is unchanged.
 
     Every number below is a placeholder for calibration.
 */
@@ -1220,14 +1227,16 @@ ITW_CLASH_Supports_fnc_FlavorGate = {
     private _side = _context get "side";
     private _ledger = _context get "ledger";
     private _row = [_flavor] call ITW_CLASH_Supports_fnc_Row;
+    // v8: a console test asks none of the economic questions.
+    private _test = _context getOrDefault ["test",false];
     private _reason = switch (true) do {
         case !([_flavor] call ITW_CLASH_Supports_fnc_Enabled): {"DISABLED"};
-        case (((_ledger get "lanes") getOrDefault [_row get "lane",""]) isNotEqualTo ""): {"LANE_BUSY"};
-        case ((_row get "lane") isEqualTo "RECON" && {time < (_ledger get "reconBlockedUntil")}): {"RELAUNCH"};
-        case ([_ledger,"flavor:" + _flavor] call ITW_CLASH_Supports_fnc_OnCooldown): {"COOLDOWN"};
+        case (!_test && {((_ledger get "lanes") getOrDefault [_row get "lane",""]) isNotEqualTo ""}): {"LANE_BUSY"};
+        case (!_test && {(_row get "lane") isEqualTo "RECON"} && {time < (_ledger get "reconBlockedUntil")}): {"RELAUNCH"};
+        case (!_test && {[_ledger,"flavor:" + _flavor] call ITW_CLASH_Supports_fnc_OnCooldown}): {"COOLDOWN"};
         // v8: nothing this side has can be carried, so there is nothing to deliver.
         case ((_row getOrDefault ["aircraft",""]) isEqualTo "VIV" && {([_side,"DELIVERY"] call ITW_CLASH_Supports_fnc_Classes) isEqualTo []}): {"NO_VEHICLE_FIT"};
-        case (([_ledger,[_flavor] call ITW_CLASH_Supports_fnc_WalletOf] call ITW_CLASH_Supports_fnc_WalletCash) < ([_flavor,"HOLD"] call ITW_CLASH_Supports_fnc_Price)): {"INSUFFICIENT_FUNDS"};
+        case (!_test && {([_ledger,[_flavor] call ITW_CLASH_Supports_fnc_WalletOf] call ITW_CLASH_Supports_fnc_WalletCash) < ([_flavor,"HOLD"] call ITW_CLASH_Supports_fnc_Price)}): {"INSUFFICIENT_FUNDS"};
         default {""};
     };
     if (_reason isEqualTo "") then {
@@ -1294,17 +1303,24 @@ ITW_CLASH_Supports_fnc_Candidate = {
     on an objective (class, contact, floor, uncertainty, ETB, danger close) are
     applied once. Its run-in is computed from the cluster itself, not from the
     objective's centre.
+
+    v8: a console test (a context marked test) may give a point of its own
+    for an objective's centre (a fourth element) and the flavors to ask
+    about, and asks none of the economic questions: no price, no denied
+    corridor, and the crossing count, which is the assessments' own record,
+    is left alone.
 */
 ITW_CLASH_Supports_fnc_StrikeCandidates = {
-    params ["_context","_targets"];
+    params ["_context","_targets",["_flavors",ITW_CLASH_SupportsStrikeFlavors]];
     private _side = _context get "side";
     private _hq = _context get "hq";
     private _ledger = _context get "ledger";
+    private _test = _context getOrDefault ["test",false];
     private _objectives = [];
     private _centers = [];
     {
-        _x params ["_index","_reason","_urgency"];
-        private _center = [_index] call ITW_CLASH_Supports_fnc_ObjectivePos;
+        _x params ["_index","_reason","_urgency",["_at",[]]];
+        private _center = if (_at isNotEqualTo []) then {[_at#0,_at#1,0]} else {[_index] call ITW_CLASH_Supports_fnc_ObjectivePos};
         if (_center isEqualTo []) then {continue};
         _objectives pushBack [_index,_reason,_urgency,_center,[_hq,_center] call ITW_CLASH_Supports_fnc_Committed];
         _centers pushBack _center;
@@ -1312,7 +1328,7 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
     if (_objectives isEqualTo []) exitWith {[]};
 
     private _clusters = [_side,_centers,ITW_CLASH_SupportsInfluenceRadius] call ITW_CLASH_Supports_fnc_Clusters;
-    [_context,_clusters] call ITW_CLASH_Supports_fnc_CountCrossings;
+    if (!_test) then {[_context,_clusters] call ITW_CLASH_Supports_fnc_CountCrossings};
     private _result = [];
     {
         private _cluster = _x;
@@ -1392,7 +1408,7 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                 _x params ["_index","_reason","_urgency","_center","_committed"];
                 private _distance = _aim distance2D _center;
                 if (_distance > ITW_CLASH_SupportsInfluenceRadius) then {continue};
-                if ((_ledger get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)) then {
+                if (!_test && {(_ledger get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)}) then {
                     [_context,_flavor,_index,"","INSUFFICIENT_FUNDS"] call ITW_CLASH_Supports_fnc_Exclude;
                     continue
                 };
@@ -1401,7 +1417,7 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                     [_context,_flavor,_index,"",_route#1] call ITW_CLASH_Supports_fnc_Exclude;
                     continue
                 };
-                if ((_route#0) isEqualTo "AIR_DENIED") then {
+                if (!_test && {(_route#0) isEqualTo "AIR_DENIED"}) then {
                     [_context,_flavor,_index,"","AIR_DENIED"] call ITW_CLASH_Supports_fnc_Exclude;
                     continue
                 };
@@ -1428,7 +1444,7 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                     ["distance",round _bestDistance],["threat",_bestThreat]
                 ]
             ] call ITW_CLASH_Supports_fnc_Candidate);
-        } forEach ITW_CLASH_SupportsStrikeFlavors;
+        } forEach _flavors;
     } forEach _clusters;
     _result
 };

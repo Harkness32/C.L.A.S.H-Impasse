@@ -67,7 +67,7 @@ def row(flavor: str) -> str:
 def test_versions():
     assert "ITW_CLASH_SupportsVersion = 8;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsAirborneVersion = 3;" in raw("ITW_CLASH_SupportsAirborne.sqf")
-    assert "ITW_CLASH_SupportsDebugVersion = 1;" in raw("ITW_CLASH_SupportsDebug.sqf")
+    assert "ITW_CLASH_SupportsDebugVersion = 2;" in raw("ITW_CLASH_SupportsDebug.sqf")
     assert "ITW_CLASH_RearBaseCRAMVersion = 5;" in raw("ITW_CLASH_RearBaseCRAM.sqf")
 
 

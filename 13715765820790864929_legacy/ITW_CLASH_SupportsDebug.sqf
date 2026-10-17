@@ -8,10 +8,11 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsDebugStarted = true;
-ITW_CLASH_SupportsDebugVersion = 1;
+ITW_CLASH_SupportsDebugVersion = 2;
 
 /*
-    Console tests for the commander's drops and bite-back waves (supports v7).
+    Console tests for the commander's drops and bite-back waves (supports v7),
+    and (v2) for his strikes.
 
     Run them from the debug console with "Server Exec" (on a hosted game
     "Local Exec" is the server too). Each one flies the real thing through
@@ -23,7 +24,8 @@ ITW_CLASH_SupportsDebugVersion = 1;
 
     Where: an objective index, a position, an object, or nothing for the
     objective nearest to the first player. Side: west, independent, east;
-    nothing for the players' side.
+    nothing for the players' side; "BOTH" (v2) runs it once for each side,
+    each with its own commander (Hark: "for parity reasons").
 
       ["AIRBORNE_HELI"] call ITW_CLASH_SupportsDebug_fnc_Drop;
       ["AIRBORNE_PLANE",23] call ITW_CLASH_SupportsDebug_fnc_Drop;
@@ -41,6 +43,22 @@ ITW_CLASH_SupportsDebugVersion = 1;
       [west,"DROP"] call ITW_CLASH_SupportsDebug_fnc_Fill;
           Fills a wallet (MAIN, DROP or BITE) to its cap, so the commander's
           own next assessment can buy from it: the real decision path.
+
+      ["BOMB"] call ITW_CLASH_SupportsDebug_fnc_Strike;
+      ["GUIDED",player,independent] call ITW_CLASH_SupportsDebug_fnc_Strike;
+      ["CARPET",23,"BOTH"] call ITW_CLASH_SupportsDebug_fnc_Strike;
+          v2. A bomb pass, a guided pass, a carpet, at the commander's own
+          pick (Hark: 1A): the best enemy group his side knows within the
+          influence radius of the point, scored as the pool scores it, with
+          every gate a real strike meets except the economic ones and the
+          denied corridor. Danger close is asked as always (Hark: 2A): a test
+          that would hit its own side's men is refused, and says so. A side
+          that knows of nothing there says what it was refused on.
+
+      ["AIRBORNE_HELI",nil,"BOTH"] call ITW_CLASH_SupportsDebug_fnc_Drop;
+      [nil,"BOTH"] call ITW_CLASH_SupportsDebug_fnc_BiteBack;
+      ["BOTH","DROP"] call ITW_CLASH_SupportsDebug_fnc_Fill;
+          v2. Any test for both sides at once.
 */
 
 ITW_CLASH_SupportsDebugDelay = missionNamespace getVariable ["ITW_CLASH_SupportsDebugDelay",5];
@@ -57,6 +75,33 @@ ITW_CLASH_SupportsDebug_fnc_Side = {
     if (_side isEqualType sideUnknown && {_side isNotEqualTo sideUnknown}) exitWith {_side};
     if (isNil "ITW_PlayerSide") exitWith {sideUnknown};
     ITW_PlayerSide
+};
+
+// v2. "BOTH" asks for each side in turn; anything else is one side.
+ITW_CLASH_SupportsDebug_fnc_IsBoth = {
+    params [["_side",sideUnknown]];
+    _side isEqualType "" && {(toUpperANSI _side) isEqualTo "BOTH"}
+};
+
+ITW_CLASH_SupportsDebug_fnc_BothSides = {
+    [missionNamespace getVariable ["ITW_PlayerSide",sideUnknown],missionNamespace getVariable ["ITW_EnemySide",sideUnknown]] select {
+        _x isNotEqualTo sideUnknown
+    }
+};
+
+// v2. A point: an objective's centre, an object's position, a position, or
+// nothing for the first player's.
+ITW_CLASH_SupportsDebug_fnc_Point = {
+    params [["_where",objNull]];
+    switch (true) do {
+        case (_where isEqualType 0): {[_where] call ITW_CLASH_Supports_fnc_ObjectivePos};
+        case (_where isEqualType objNull && {!isNull _where}): {getPosATL _where};
+        case (_where isEqualType [] && {count _where >= 2}): {[_where#0,_where#1,0]};
+        default {
+            private _players = allPlayers - (entities "HeadlessClient_F");
+            if (_players isEqualTo []) then {[]} else {getPosATL (_players#0)}
+        };
+    }
 };
 
 /*
@@ -99,6 +144,9 @@ ITW_CLASH_SupportsDebug_fnc_Objective = {
 
 ITW_CLASH_SupportsDebug_fnc_Drop = {
     params [["_flavor","AIRBORNE_HELI"],["_where",objNull],["_side",sideUnknown],["_reason",""]];
+    if ([_side] call ITW_CLASH_SupportsDebug_fnc_IsBoth) exitWith {
+        (call ITW_CLASH_SupportsDebug_fnc_BothSides) apply {[_flavor,_where,_x,_reason] call ITW_CLASH_SupportsDebug_fnc_Drop}
+    };
     _side = [_side] call ITW_CLASH_SupportsDebug_fnc_Side;
     if !(_flavor in (ITW_CLASH_SupportsDropFlavors + ITW_CLASH_SupportsVehicleFlavors)) exitWith {
         [format ["%1 is not a drop: AIRBORNE_HELI, AIRBORNE_PLANE or VEHICLE_DROP",_flavor]] call ITW_CLASH_SupportsDebug_fnc_Say;
@@ -138,6 +186,9 @@ ITW_CLASH_SupportsDebug_fnc_Drop = {
 
 ITW_CLASH_SupportsDebug_fnc_BiteBack = {
     params [["_where",objNull],["_side",sideUnknown]];
+    if ([_side] call ITW_CLASH_SupportsDebug_fnc_IsBoth) exitWith {
+        (call ITW_CLASH_SupportsDebug_fnc_BothSides) apply {[_where,_x] call ITW_CLASH_SupportsDebug_fnc_BiteBack}
+    };
     _side = [_side] call ITW_CLASH_SupportsDebug_fnc_Side;
     private _objective = [_where,_side] call ITW_CLASH_SupportsDebug_fnc_Objective;
     if (_objective < 0) exitWith {[format ["%1 holds no objective to answer",_side]] call ITW_CLASH_SupportsDebug_fnc_Say; false};
@@ -156,7 +207,7 @@ ITW_CLASH_SupportsDebug_fnc_BiteBack = {
 ITW_CLASH_SupportsDebug_fnc_Status = {
     params [["_side",sideUnknown]];
     private _sides = if (_side isEqualType sideUnknown && {_side isNotEqualTo sideUnknown}) then {[_side]} else {
-        [missionNamespace getVariable ["ITW_PlayerSide",sideUnknown],missionNamespace getVariable ["ITW_EnemySide",sideUnknown]] select {_x isNotEqualTo sideUnknown}
+        call ITW_CLASH_SupportsDebug_fnc_BothSides
     };
     private _lines = [];
     {
@@ -191,6 +242,9 @@ ITW_CLASH_SupportsDebug_fnc_Status = {
 
 ITW_CLASH_SupportsDebug_fnc_Fill = {
     params [["_side",sideUnknown],["_wallet","DROP"]];
+    if ([_side] call ITW_CLASH_SupportsDebug_fnc_IsBoth) exitWith {
+        (call ITW_CLASH_SupportsDebug_fnc_BothSides) apply {[_x,_wallet] call ITW_CLASH_SupportsDebug_fnc_Fill}
+    };
     _side = [_side] call ITW_CLASH_SupportsDebug_fnc_Side;
     if !(_wallet in ["MAIN","DROP","BITE"]) exitWith {[format ["%1 is not a wallet: MAIN, DROP or BITE",_wallet]] call ITW_CLASH_SupportsDebug_fnc_Say; false};
     private _ledger = [_side] call ITW_CLASH_Supports_fnc_Ledger;
@@ -202,8 +256,80 @@ ITW_CLASH_SupportsDebug_fnc_Fill = {
     true
 };
 
+/*
+    v2. A strike at the commander's own pick near the point (Hark: 1A): the
+    pool's own clustering and scoring, centred on the point, for this one
+    flavor, with the economic gates and the denied corridor left out and
+    everything else asked, danger close included (Hark: 2A). The best
+    candidate goes, free, in a test lane of its own, through the real
+    admission, pre-run, executor and settlement. Refused: the reasons the
+    pool gave, counted.
+*/
+ITW_CLASH_SupportsDebug_fnc_Strike = {
+    params [["_flavor","BOMB"],["_where",objNull],["_side",sideUnknown]];
+    if ([_side] call ITW_CLASH_SupportsDebug_fnc_IsBoth) exitWith {
+        (call ITW_CLASH_SupportsDebug_fnc_BothSides) apply {[_flavor,_where,_x] call ITW_CLASH_SupportsDebug_fnc_Strike}
+    };
+    _side = [_side] call ITW_CLASH_SupportsDebug_fnc_Side;
+    if !(_flavor in ITW_CLASH_SupportsStrikeFlavors) exitWith {
+        [format ["%1 is not a strike: %2",_flavor,ITW_CLASH_SupportsStrikeFlavors joinString ", "]] call ITW_CLASH_SupportsDebug_fnc_Say;
+        ""
+    };
+    private _point = [_where] call ITW_CLASH_SupportsDebug_fnc_Point;
+    if (_point isEqualTo []) exitWith {["no point to strike near"] call ITW_CLASH_SupportsDebug_fnc_Say; ""};
+    private _objective = [_point] call ITW_CLASH_SupportsDebug_fnc_Objective;
+    private _context = [_side] call ITW_CLASH_Supports_fnc_MakeContext;
+    if (count _context == 0) exitWith {[format ["no commander for %1",_side]] call ITW_CLASH_SupportsDebug_fnc_Say; ""};
+    _context set ["test",true];
+    private _reason = if (_objective >= 0 && {[_side,_objective] call ITW_CLASH_Supports_fnc_HeldBy}) then {"HOLD"} else {"TAKE"};
+    private _candidates = [_context,[[_objective,_reason,1,_point]],[_flavor]] call ITW_CLASH_Supports_fnc_StrikeCandidates;
+    if (_candidates isEqualTo []) exitWith {
+        private _counts = createHashMap;
+        {
+            _x params ["_excluded","","","_why"];
+            if (_excluded isEqualTo _flavor) then {_counts set [_why,(_counts getOrDefault [_why,0]) + 1]};
+        } forEach (_context get "exclusions");
+        private _known = {((_x#1) get "position") distance2D _point <= ITW_CLASH_SupportsInfluenceRadius} count ([_side] call ITW_CLASH_Knowledge_fnc_Contacts);
+        private _why = (keys _counts) apply {[_x,_counts get _x]};
+        ["test-refused",[_context get "sign",_flavor,_point apply {round _x},_known,_why]] call ITW_CLASH_Supports_fnc_Log;
+        [format [
+            "%1 %2 near %3 refused: %4 contacts known within %5 m; %6",
+            _context get "sign",_flavor,_point apply {round _x},_known,ITW_CLASH_SupportsInfluenceRadius,
+            if (_why isEqualTo []) then {"nothing it could strike"} else {(_why apply {format ["%1 x%2",_x#0,_x#1]}) joinString ", "}
+        ]] call ITW_CLASH_SupportsDebug_fnc_Say;
+        ""
+    };
+    private _pick = ([_candidates,[],{_x get "weight"},"DESCEND"] call BIS_fnc_sortBy)#0;
+    private _target = _pick get "target";
+    _pick set ["lane",format ["TEST-%1",ITW_CLASH_SupportsSerial + 1]];
+    _pick set ["wallet","TEST"];
+    _pick set ["price",0];
+    _pick set ["delay",ITW_CLASH_SupportsDebugDelay];
+    _pick set ["test",true];
+    _context set ["admitted",""];
+    if !([_context,_pick] call ITW_CLASH_Supports_fnc_Admit) exitWith {
+        [format ["%1 %2 near %3: admission refused",_context get "sign",_flavor,_point apply {round _x}]] call ITW_CLASH_SupportsDebug_fnc_Say;
+        ""
+    };
+    private _id = _context getOrDefault ["admitted",""];
+    private _class = (_context get "classes") getOrDefault [_flavor,""];
+    private _aim = _pick get "aim";
+    ["test-launched",[
+        _context get "sign",_flavor,_pick get "objective",_pick get "reason",_id,_class,
+        _target getOrDefault ["key",""],_target getOrDefault ["class",""],_target getOrDefault ["count",0],
+        (round ((_target getOrDefault ["worth",0]) * 10)) / 10,_aim apply {round _x},round (_aim distance2D _point),
+        count _candidates,(round ((_pick get "weight") * 100)) / 100
+    ]] call ITW_CLASH_Supports_fnc_Log;
+    [format [
+        "%1 %2 (%3) at %4 contacts (%5, %6) %7 m from the point, best of %8: %9, wheels up in %10 s",
+        _context get "sign",_flavor,_class,_target getOrDefault ["count",0],_target getOrDefault ["class",""],
+        _target getOrDefault ["best",""],round (_aim distance2D _point),count _candidates,_id,ITW_CLASH_SupportsDebugDelay
+    ]] call ITW_CLASH_SupportsDebug_fnc_Say;
+    _id
+};
+
 diag_log format [
-    "CLASH BOOT | supports-debug-ready | version=%1 delay=%2s commands=Drop,BiteBack,Status,Fill free=true ownLanes=true skipsMapGates=true",
+    "CLASH BOOT | supports-debug-ready | version=%1 delay=%2s commands=Drop,Strike,BiteBack,Status,Fill sides=one-or-BOTH strikeTarget=commanders-own-pick strikeDangerClose=asked free=true ownLanes=true skipsMapGates=true",
     ITW_CLASH_SupportsDebugVersion,
     ITW_CLASH_SupportsDebugDelay
 ];

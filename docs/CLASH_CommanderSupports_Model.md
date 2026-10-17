@@ -1191,7 +1191,8 @@ commander's would be.
 
 Where: an objective index, a position, an object, or nothing for the objective
 nearest the first player. Side: `west`, `independent`, `east`; nothing for the
-players' side.
+players' side; `"BOTH"` (v8) runs the test once for each side, each with its own
+commander (Hark: "for parity reasons").
 
 ```sqf
 ["AIRBORNE_HELI"] call ITW_CLASH_SupportsDebug_fnc_Drop;                  // helicopter drop, nearest objective
@@ -1202,7 +1203,27 @@ players' side.
 [23,independent] call ITW_CLASH_SupportsDebug_fnc_BiteBack;
 [] call ITW_CLASH_SupportsDebug_fnc_Status;                                // wallets, lanes, held points' flags
 [west,"DROP"] call ITW_CLASH_SupportsDebug_fnc_Fill;                       // fill a wallet: the commander's own next pick
+["BOMB"] call ITW_CLASH_SupportsDebug_fnc_Strike;                          // v8: a bomb pass near the first player
+["GUIDED",player,independent] call ITW_CLASH_SupportsDebug_fnc_Strike;     // GUER's guided pass near you
+["CARPET",23,"BOTH"] call ITW_CLASH_SupportsDebug_fnc_Strike;              // each side's carpet near objective 23
+["AIRBORNE_HELI",nil,"BOTH"] call ITW_CLASH_SupportsDebug_fnc_Drop;        // any test, both sides
 ```
+
+**Strike tests (v8).** Hark: "can we build debugs for strike and guided as
+well?", then 1A and 2A. The target is the commander's own pick: the pool's own
+clustering and scoring (`StrikeCandidates`) centred on the point instead of an
+objective, for that one flavor, and the best candidate goes. A context marked
+`test` skips only the economic questions (lane, relaunch, cooldown, funds, the
+price at each objective, the crossing count) and the denied corridor. Every
+other gate is asked as it is of a real strike: the bomb's sighting, carpet's
+cluster, the floors, uncertainty, an ETB answer, and danger close, at the pool
+and again before the run. A test that would hit its own side's men is refused
+and says so; a side that knows of nothing there says what it was refused on
+(`supports-test-refused`: point, contacts known within the influence radius,
+reasons counted). `supports-test-launched` names the target: its key, class,
+size, worth, aim and distance from the point, how many candidates there were,
+and the weight. Only the striking side's troops count as friendlies, so a GUER
+test near you can hit you.
 
 `Fill` is the test of the real decision: the next assessment's drop and vehicle
 pools can afford everything, so what the commander picks, and why the rest is

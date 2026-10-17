@@ -170,3 +170,69 @@ def test_boarding_never_overfills():
     assert "_x moveInCargo _veh;" in board
     assert "deleteVehicle _x;" in board
     assert "< ITW_CLASH_SupportsAirborneMinSquad) then {" in board
+
+
+# ------------------------------------- console strike tests, both sides (v8)
+
+DEBUG = code_text(raw("ITW_CLASH_SupportsDebug.sqf"))
+
+
+def test_debug_version_and_commands():
+    source = raw("ITW_CLASH_SupportsDebug.sqf")
+    assert "ITW_CLASH_SupportsDebugVersion = 2;" in source
+    assert "commands=Drop,Strike,BiteBack,Status,Fill sides=one-or-BOTH" in source
+
+
+def test_a_test_strike_is_the_commanders_own_pick_near_the_point():
+    # Hark 1A: the pool's own clustering and scoring, centred on the point.
+    strike = function_body(DEBUG, "ITW_CLASH_SupportsDebug_fnc_Strike")
+    assert '_context set ["test",true];' in strike
+    assert "[_context,[[_objective,_reason,1,_point]],[_flavor]] call ITW_CLASH_Supports_fnc_StrikeCandidates;" in strike
+    assert '([_candidates,[],{_x get "weight"},"DESCEND"] call BIS_fnc_sortBy)#0' in strike
+    for needle in ['_pick set ["wallet","TEST"];', '_pick set ["price",0];', '_pick set ["test",true];',
+                   "[_context,_pick] call ITW_CLASH_Supports_fnc_Admit"]:
+        assert needle in strike, needle
+    assert '"test-launched"' in strike and '"test-refused"' in strike
+    # A refusal says what the pool refused it on.
+    assert '_x params ["_excluded","","","_why"];' in strike
+
+
+def test_the_strike_pool_takes_a_point_and_flavors_and_a_test_skips_only_the_economy():
+    body = function_body(CORE, "ITW_CLASH_Supports_fnc_StrikeCandidates")
+    assert 'params ["_context","_targets",["_flavors",ITW_CLASH_SupportsStrikeFlavors]];' in body
+    assert '_x params ["_index","_reason","_urgency",["_at",[]]];' in body
+    assert "} forEach _flavors;" in body
+    assert "if (!_test) then {[_context,_clusters] call ITW_CLASH_Supports_fnc_CountCrossings};" in body
+    assert 'if (!_test && {(_ledger get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)}) then {' in body
+    assert 'if (!_test && {(_route#0) isEqualTo "AIR_DENIED"}) then {' in body
+    # Hark 2A: danger close is asked of a test exactly as of a real strike.
+    assert '[_context,_flavor,-1,_targetKey,"DANGER_CLOSE"] call ITW_CLASH_Supports_fnc_Exclude;' in body
+    assert "_test" not in body[body.index('"DANGER_CLOSE"') - 400:body.index('"DANGER_CLOSE"')]
+    gate = function_body(CORE, "ITW_CLASH_Supports_fnc_FlavorGate")
+    for reason in ["LANE_BUSY", "RELAUNCH", "COOLDOWN", "INSUFFICIENT_FUNDS"]:
+        line = [l for l in gate.splitlines() if '{"%s"}' % reason in l][0]
+        assert "!_test" in line, reason
+    disabled = [l for l in gate.splitlines() if '{"DISABLED"}' in l][0]
+    assert "_test" not in disabled
+    # The pre-run asks danger close of every strike, test or not.
+    prerun = function_body(CORE, "ITW_CLASH_Supports_fnc_PreRun")
+    strike = prerun[prerun.index('if (_routine isEqualTo "STRIKE") then {'):prerun.index('if (_routine isEqualTo "DROP"')]
+    assert "_test" not in strike and '"DANGER_CLOSE"' in strike
+
+
+def test_every_test_runs_for_both_sides_on_request():
+    # Hark: "we should build supports debugs for both faction though for
+    # parity reasons."
+    both = function_body(DEBUG, "ITW_CLASH_SupportsDebug_fnc_IsBoth")
+    assert '(toUpperANSI _side) isEqualTo "BOTH"' in both
+    for name, call in [
+        ("ITW_CLASH_SupportsDebug_fnc_Drop", "[_flavor,_where,_x,_reason] call ITW_CLASH_SupportsDebug_fnc_Drop"),
+        ("ITW_CLASH_SupportsDebug_fnc_Strike", "[_flavor,_where,_x] call ITW_CLASH_SupportsDebug_fnc_Strike"),
+        ("ITW_CLASH_SupportsDebug_fnc_BiteBack", "[_where,_x] call ITW_CLASH_SupportsDebug_fnc_BiteBack"),
+        ("ITW_CLASH_SupportsDebug_fnc_Fill", "[_x,_wallet] call ITW_CLASH_SupportsDebug_fnc_Fill"),
+    ]:
+        body = function_body(DEBUG, name)
+        assert "if ([_side] call ITW_CLASH_SupportsDebug_fnc_IsBoth) exitWith {" in body, name
+        assert "(call ITW_CLASH_SupportsDebug_fnc_BothSides) apply {" + call + "}" in body, name
+    status = function_body(DEBUG, "ITW_CLASH_SupportsDebug_fnc_Status")
+    assert "call ITW_CLASH_SupportsDebug_fnc_BothSides" in status
