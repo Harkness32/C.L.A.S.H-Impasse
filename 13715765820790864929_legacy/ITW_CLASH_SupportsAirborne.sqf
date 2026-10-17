@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsAirborneStarted = true;
-ITW_CLASH_SupportsAirborneVersion = 2;
+ITW_CLASH_SupportsAirborneVersion = 3;
 ITW_CLASH_SupportsAirborneReady = false;
 
 /*
@@ -47,6 +47,19 @@ ITW_CLASH_SupportsAirborneReady = false;
     Neither has flown in a game yet: no drop was ever affordable before the
     core's v7, so read the airborne lines of the first runs and the console
     tests (ITW_CLASH_SupportsDebug.sqf) as the first evidence.
+
+    v3 (Hark, 2026-10-17, the first console test of a helicopter drop: "the
+    huron lands, drops two dudes off and then goes forward into the zone"):
+      - Nobody leaves before the jump. The squads ride CARELESS with their
+        own combat reaction off, the aircraft does not unload in combat, and
+        a passenger anyone unassigns on the way is put back at once: an AI
+        pilot lands for a passenger of another group who has been told to
+        get out. Each says once who it was and what his group had been told
+        (passenger-reassigned), any man out before the jump is named
+        (passenger-out-early), and so is the aircraft touching the ground
+        before it (touched-down). Their own behaviour comes back at the jump.
+      - Delivery tries the side's cars, then its APCs, then its tanks, in a
+        random order within each (the core's DeliveryTiers).
 
     Every number below is a placeholder for calibration.
 */
@@ -161,6 +174,76 @@ ITW_CLASH_SupportsAirborne_fnc_CreateSquads = {
         _squads pushBack _group;
     };
     _squads
+};
+
+/*
+    v3. The squads ride without a will of their own, and get it back at the
+    jump. CARELESS with AUTOCOMBAT off, so a squad that sees the enemy from
+    the cabin does not decide to get out; the aircraft set not to unload in
+    combat. _hold false gives back AWARE and the combat reaction.
+*/
+ITW_CLASH_SupportsAirborne_fnc_HoldCargo = {
+    params ["_veh","_squads","_hold"];
+    if (_hold && {!isNull _veh}) then {_veh setUnloadInCombat [false,false]};
+    {
+        private _group = _x;
+        if (isNull _group) then {continue};
+        {
+            if (_hold) then {_x disableAI "AUTOCOMBAT"} else {_x enableAI "AUTOCOMBAT"};
+        } forEach (units _group);
+        if (_hold) then {_group setBehaviourStrong "CARELESS"} else {_group setBehaviour "AWARE"};
+    } forEach _squads;
+};
+
+/*
+    v3. Keeps everyone aboard until the jump: a passenger who has been
+    unassigned is assigned back (an AI pilot lands for a passenger of
+    another group who wants out). Says once per man who was unassigned and
+    what his group had been told, once per man who is out early, and once
+    if the aircraft touches the ground. _state: [reassigned, out early,
+    touched down].
+*/
+ITW_CLASH_SupportsAirborne_fnc_KeepAboard = {
+    params ["_support","_veh","_men","_dz","_state"];
+    _state params ["_reassigned","_early","_touched"];
+    {
+        private _unit = _x;
+        if (!alive _unit) then {continue};
+        private _group = group _unit;
+        if (vehicle _unit == _veh) then {
+            if ((assignedVehicle _unit) isNotEqualTo _veh) then {
+                _unit assignAsCargo _veh;
+                [_unit] orderGetIn true;
+                if !(_unit in _reassigned) then {
+                    _reassigned pushBack _unit;
+                    ["passenger-reassigned",[
+                        _support get "id",_support get "sign",typeOf _unit,str _group,
+                        count (waypoints _group),waypointType [_group,currentWaypoint _group],
+                        behaviour _unit,round ((getPos _veh)#2),round (_veh distance2D _dz)
+                    ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+                };
+            };
+        } else {
+            if !(_unit in _early) then {
+                _early pushBack _unit;
+                ["passenger-out-early",[
+                    _support get "id",_support get "sign",typeOf _unit,str _group,
+                    round ((getPos _veh)#2),round (_veh distance2D _dz),round speed _veh,
+                    isTouchingGround _veh,count (waypoints _group),
+                    waypointType [_group,currentWaypoint _group]
+                ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+            };
+        };
+    } forEach _men;
+    if (!_touched && {isTouchingGround _veh || {((getPos _veh)#2) < 3}}) then {
+        _state set [2,true];
+        private _crewGroup = group (driver _veh);
+        ["touched-down",[
+            _support get "id",_support get "sign",typeOf _veh,round (_veh distance2D _dz),round speed _veh,
+            {alive _x && {vehicle _x == _veh}} count _men,count _early,count _reassigned,
+            count (waypoints _crewGroup),waypointType [_crewGroup,currentWaypoint _crewGroup]
+        ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+    };
 };
 
 // Aboard, every man who fits; a squad left under strength stays behind.
@@ -351,7 +434,7 @@ ITW_CLASH_SupportsAirborne_fnc_VehicleHandOff = {
 
 /*
     v2. The vehicle, inside the carrier. One of the side's own cars at a
-    time, in a random order, built crewed by Impasse's own factory at the
+    time, in the order given (v3: cars, then APCs, then tanks), built crewed by Impasse's own factory at the
     origin and loaded into the carrier in flight (setVehicleCargo); the first
     that fits goes, up to VehicleDropTries, and one that does not fit is
     removed with its crew. Locked and undamageable until it is down, so
@@ -376,7 +459,7 @@ ITW_CLASH_SupportsAirborne_fnc_LoadVehicle = {
         if (_fits && {_carrier setVehicleCargo _candidate}) exitWith {_car = _candidate};
         {deleteVehicle _x} forEach (crew _candidate);
         deleteVehicle _candidate;
-    } forEach (_cars call BIS_fnc_arrayShuffle);
+    } forEach _cars;
     if (isNull _car) exitWith {[objNull,grpNull,_tried]};
     private _crew = group (driver _car);
     if (isNull _crew) then {_crew = group ((crew _car) param [0,objNull])};
@@ -420,7 +503,9 @@ ITW_CLASH_SupportsAirborne_fnc_RunVehicle = {
     if (_dz isEqualTo []) exitWith {["REVOKED","NO_DZ"]};
     private _spawn = _support get "spawn";
     if (_spawn isEqualTo [] || {(_support get "origin") isEqualTo []}) exitWith {["REVOKED","NO_ORIGIN"]};
-    private _cars = [_side,"CAR"] call ITW_CLASH_Supports_fnc_Classes;
+    // v3: cars, then APCs, then tanks, in a random order within each.
+    private _cars = [];
+    {_cars append (_x call BIS_fnc_arrayShuffle)} forEach ([_side] call ITW_CLASH_Supports_fnc_DeliveryTiers);
     if (_cars isEqualTo []) exitWith {["REVOKED","NO_VEHICLE_FIT"]};
 
     private _heading = _spawn getDir _dz;
@@ -560,6 +645,11 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
         _id,_sign,_flavor,_class,count _squads,_men,_dz apply {round _x},
         round (_spawn distance2D _dz),round ((_support get "aim") distance2D _dz)
     ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
+    // v3: nobody leaves before the jump.
+    [_veh,_squads,true] call ITW_CLASH_SupportsAirborne_fnc_HoldCargo;
+    private _aboard = [];
+    {_aboard append ((units _x) select {alive _x})} forEach _squads;
+    private _keep = [[],[],false];
 
     // One straight line through the zone and on past it.
     _veh flyInHeight _height;
@@ -582,6 +672,7 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
         sleep 0.1;
         if (!alive _veh || {!canMove _veh} || {isNull driver _veh}) exitWith {_result = ["LOST","aircraft-lost"]};
         if (time > _deadline) exitWith {_result = ["BREAKOFF","never-reached"]};
+        [_support,_veh,_aboard,_dz,_keep] call ITW_CLASH_SupportsAirborne_fnc_KeepAboard;
         ([getPosATL _veh,_dz,_heading] call ITW_CLASH_Supports_fnc_AlongCross) params ["_along","_cross"];
         if (!_flared && {_along <= ITW_CLASH_SupportsAirborneFlareRange}) then {
             _flared = true;
@@ -606,6 +697,7 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
             // Impasse's own jump: no crew group and no point, so it touches no
             // waypoint and jumps everyone in these squads now.
             [_veh,grpNull,_squads,[]] call ITW_AtkUnloadAirplane;
+            [_veh,_squads,false] call ITW_CLASH_SupportsAirborne_fnc_HoldCargo;
             {
                 if (!isNull _x && {!isNull leader _x}) then {
                     [units _x,leader _x] remoteExec ["doFollow",leader _x];
@@ -615,13 +707,15 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
             {_jumped = _jumped + ({alive _x && {vehicle _x != _veh}} count (units _x))} forEach _squads;
             ["released",[
                 _id,_sign,_flavor,count _squads,_jumped,round speed _veh,
-                round ((getPosATL _veh)#2),round (_veh distance2D _dz),_result#1
+                round ((getPosATL _veh)#2),round (_veh distance2D _dz),_result#1,
+                count (_keep#1),count (_keep#0),_keep#2
             ]] call ITW_CLASH_SupportsAirborne_fnc_Log;
             {[_support,_x,"landed"] spawn ITW_CLASH_SupportsAirborne_fnc_HandOff} forEach _squads;
             _result = ["DONE",format ["dropped-%1x%2",count _squads,_jumped]];
         };
         case "LOST": {
             // Whoever lives through the aircraft is ours on the ground.
+            [_veh,_squads,false] call ITW_CLASH_SupportsAirborne_fnc_HoldCargo;
             {[_support,_x,"survived-loss"] spawn ITW_CLASH_SupportsAirborne_fnc_HandOff} forEach _squads;
         };
         default {
@@ -636,7 +730,7 @@ ITW_CLASH_SupportsAirborne_fnc_Run = {
 
 ITW_CLASH_SupportsAirborneReady = true;
 diag_log format [
-    "CLASH BOOT | supports-airborne-ready | version=%1 heli=%2m plane=%3m dzOffset=%4 crossLimit=%5 minSquad=%6 landWait=%7s vehicleDrop=%8 vehicleHeight=%9m vehicleSpeed=%10 vehicleLead=%11s vehicleTries=%12 vehicleCarried=true vehicleOwnSupport=true impasseJump=true oneNativeOrder=true",
+    "CLASH BOOT | supports-airborne-ready | version=%1 heli=%2m plane=%3m dzOffset=%4 crossLimit=%5 minSquad=%6 landWait=%7s vehicleDrop=%8 vehicleHeight=%9m vehicleSpeed=%10 vehicleLead=%11s vehicleTries=%12 vehicleCarried=true vehicleOwnSupport=true impasseJump=true oneNativeOrder=true cargoHeld=careless-noautocombat-nounload keepAboard=reassign deliveryTiers=car,apc,tank",
     ITW_CLASH_SupportsAirborneVersion,
     ITW_CLASH_SupportsAirborneHeliHeight,
     ITW_CLASH_SupportsAirbornePlaneHeight,

@@ -1,6 +1,6 @@
 # C.L.A.S.H. Commander Supports Model
 
-Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed; v6 gives the guided missile its own danger margin, and the recon UAV (v4) reports everything in its footprint that no building covers; v7 splits the drops into their own families and wallet, makes vehicle delivery its own support carried by a Blackfish, adds bite-back waves for points being lost, and console tests for all of it.** Phase 0 (per-side air-loss closures, hard-kill
+Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed; v6 gives the guided missile its own danger margin, and the recon UAV (v4) reports everything in its footprint that no building covers; v7 splits the drops into their own families and wallet, makes vehicle delivery its own support carried by a Blackfish, adds bite-back waves for points being lost, and console tests for all of it; v8 fixes what the first console tests showed (the carrier, what is delivered, the troop plane, passengers leaving early).** Phase 0 (per-side air-loss closures, hard-kill
 fighter denial) shipped in `448324b`; see `COMMANDER_SUPPORTS_PHASE0.md`.
 
 Every number in this document is a placeholder for calibration, not a decision.
@@ -825,19 +825,41 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   no point, so it touches no waypoint and every man goes out through
   `ITW_AtkParachute` at once; then `doFollow`, as every other paradrop caller
   does.
+- **Aboard until the jump (airborne v3):** Hark, the first helicopter test: "the
+  huron lands, drops two dudes off and then goes forward into the zone". An AI
+  pilot lands for a passenger of another group who has been told to get out, so
+  from boarding to the jump the squads ride CARELESS with their own combat
+  reaction off, the aircraft does not unload in combat, and a passenger anyone
+  unassigns is assigned back at once. Each is said once: `passenger-reassigned`
+  (who, his group's waypoints and behaviour), `passenger-out-early` (who, the
+  aircraft's height, distance, speed, whether it was on the ground),
+  `touched-down` (the aircraft on the ground before the jump, and the crew's
+  waypoint). Their behaviour comes back at the jump; `released` carries the
+  three counts. Boarding cannot overfill: a man without a seat is deleted at the
+  base.
 - **Plane:** CARELESS with a `flyInHeightASL` floor at 250 m above the drop zone.
-  Same jump. No vehicle add-on since v7.
+  Same jump. No vehicle add-on since v7. A side that lists no troop plane flies
+  `ITW_CLASH_SupportsPlaneTroopClasses` (v8, Hark 3A: the Blackfish's infantry
+  variant, `B_T_VTOL_01_infantry_F`); neither side here lists one.
 - **Vehicle delivery (airborne v2, its own support):**
-  - **Carrier:** the side's own aircraft that carry vehicles inside (config
-    `VehicleTransport >> Carrier`), `ITW_CLASH_SupportsVehicleCarrierClasses`
-    first (the Blackfish, `B_T_VTOL_01_vehicle_F`), else the strongest lifter,
-    else a preferred class the side does not list (Hark: "both sides have it
-    right now"). From the rear air base: a VTOL needs no runway.
-  - **Vehicle:** one of the side's own armed or dual-role cars, in a random
-    order, built crewed by `ITW_AtkSpawnVeh` at the origin and loaded with
-    `setVehicleCargo`; the first of up to four that fits goes, one that does not
-    fit is removed with its crew. Locked and undamageable until it is down.
-    None fits: `NO_VEHICLE_FIT`, refunded.
+  - **Carrier:** `ITW_CLASH_SupportsVehicleCarrierClasses` first (the
+    Blackfish, `B_T_VTOL_01_vehicle_F`) for both sides, whether or not the side
+    lists it (v8, Hark 1A); else the side's own aircraft that carry vehicles
+    inside (config `VehicleTransport >> Carrier`), the strongest lifter. Neither
+    side lists the Blackfish, so v7 flew GUER's Ghost Hawk and would have flown
+    WEST's Huron. An empty list goes back to the side's own. From the rear air
+    base: a VTOL needs no runway.
+  - **Vehicle (v8, Hark 2B):** the side's armed and dual-role cars, then its
+    APCs, then its tanks, in a random order within each, each only if the
+    engine can carry it at all (`VehicleTransport >> Cargo >>
+    canBeTransported`). Built crewed by `ITW_AtkSpawnVeh` at the origin and
+    loaded with `setVehicleCargo`; the first of up to four that fits goes, one
+    that does not fit is removed with its crew. Locked and undamageable until it
+    is down. A side with nothing that can be carried is never offered a delivery
+    (`NO_VEHICLE_FIT` at the gate and on a direct pick); in v7 GUER, which
+    fields no cars, was refused all four console tests before anything spawned,
+    and its commander would have picked, been refused and refunded on every
+    assessment.
   - **Run:** one straight line through the zone at 200 m. The vehicle goes 2.5 s
     of flight short of the zone (about 175 m at 70 m/s) with
     `objNull setVehicleCargo`. The engine gives a vehicle unloaded in the air
@@ -912,6 +934,7 @@ the loud debugger; the pool and ledger lines are too long for chat.
 | `supports-strike-ammo` | Boot: the bomb class's simulation, air friction, side air friction, max speed, thrust, thrust time, time to live |
 | `supports-strike-test-started`, `-test-outcome` | A console test pass |
 | `supports-uav-launched`, `-on-station`, `-retasked`, `-ended` | The UAV's life: looks stamped, peak contacts in one sweep, retasks; v4 adds the footprint's peak, the most it found covered in one poll, and footprint reports made |
+| `supports-airborne-passenger-reassigned`, `-passenger-out-early`, `-touched-down` | v8: anyone leaving before the jump, said once each (above) |
 | `supports-airborne-boarded`, `-released`, `-handoff`, `-vehicle-*` | The drop: squads and men, release geometry, who took each squad and which order it got |
 | `supports-ledger` | Periodic: cash, cap, income, lanes; v7 adds the drop wallet, its cap and its two lanes, the bite-back pot and its two lanes |
 | `supports-admission`, `-outcome` | v7 add the wallet and lane (admission) and the wallet and wave (outcome); `test` beside `live` and `dry-run` |
@@ -926,6 +949,10 @@ the loud debugger; the pool and ledger lines are too long for chat.
 
 ## 11. Rollout
 
+- **Supports v8 / Airborne v3** (2026-10-17, Hark, after the first console
+  tests): the Blackfish first, cars then APCs then tanks, the Blackfish's
+  infantry variant for a side without a troop plane, and passengers held aboard
+  until the jump.
 - **Supports v7 / Airborne v2 / console tests** (2026-10-17, Hark): three
   families and the drop wallet, vehicle delivery by Blackfish, bite-back, the
   console tests (section 17). Not yet run in engine; no drop has ever flown.
@@ -1044,6 +1071,11 @@ class goes without that flavor.
 28. v7 bite-back: waves per hour, by why; whether `enemy-flag-up` or
    `flag-falling` comes first on a point being taken; how often a wave saves
    the point; and `biteback-held` reasons.
+29. v8: whether any `passenger-reassigned`, `passenger-out-early` or
+   `touched-down` appears, and if so whose order it was (the group's waypoint
+   and behaviour); `released` should show every man boarded jumping.
+30. v8: WEST's delivery carrier is the Blackfish (`vehicle-loaded`), and GUER's
+   delivery is `NO_VEHICLE_FIT` at the gate, never launched.
 
 ## 14. Tunables
 
@@ -1077,7 +1109,8 @@ All placeholders.
 | UAV footprint | 1200 m under it; cover ray 40 m, buildings only; report error 10 m; 80 a poll; camera on the station |
 | Drop wallet | Income 1 times the bank's; starts empty; cap one paradrop plus one vehicle |
 | Drop cadences | Helicopter 15 min, plane 25 min, vehicle 15 min; cooldowns 600, 900, 600 s |
-| Vehicle delivery | Carrier `B_T_VTOL_01_vehicle_F` first; 200 m; 70 m/s; release 2.5 s short; 4 vehicles tried; crew counted 3 |
+| Vehicle delivery | Carrier `B_T_VTOL_01_vehicle_F` first for both sides; cars, APCs, tanks that can be carried; 200 m; 70 m/s; release 2.5 s short; 4 vehicles tried; crew counted 3 |
+| Troop plane | `B_T_VTOL_01_infantry_F` for a side that lists none |
 | Bite-back | Pot of 1 wave, starts full, 20 min a wave; 20 min a point; flag floor 0.9; 2 squads and a vehicle; 15 to 45 s scramble |
 | Guided scan | Within 3 km, radius cap 500 m, window 20 s |
 | Bomb acquisition | Reveal 1.5; a look every 1 s from spawn; scan radius R, 150 to 500 m; re-line with 10 s or more to the final check when the aim moved over 25 m; velocity from fixes 4 to 10 s apart; lead cap 250 m |
@@ -1129,12 +1162,12 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 | `ITW_CLASH_Knowledge.sqf` (v6) | Reports (a groupmate's sighting when the leader has none; the UAV's footprint reports), uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
 | `ITW_CLASH_Colossus.sqf` (v7) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held; concentration gated on anchored holdings |
 | `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
-| `ITW_CLASH_Supports.sqf` (v7) | Registry, ledger and its three wallets, the three pools and picks, bite-back, direct picks, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors, the guided danger margin |
+| `ITW_CLASH_Supports.sqf` (v8) | Registry, ledger and its three wallets, the three pools and picks, bite-back, direct picks, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors, the guided danger margin |
 | `ITW_CLASH_SupportsDebug.sqf` (v1) | Console tests: a drop, a delivery, a wave, the wallets, filling a wallet (section 17) |
 | `ITW_CLASH_SupportsStrike.sqf` (v5) | Bomb pass with on-site acquisition, guided pass with the on-site scan, carpet; the break-off turn and its geometry |
 | `ITW_CLASH_SupportsUAV.sqf` (v4) | The recon UAV; marks a killbox on a quick loss; the footprint, its cover test and its reports; the camera |
 | `ITW_CLASH_DualHALCheckbook.sqf` | The players' commander's Info Markers |
-| `ITW_CLASH_SupportsAirborne.sqf` (v2) | Helicopter and plane drops, vehicle delivery carried inside its aircraft, the hand-offs |
+| `ITW_CLASH_SupportsAirborne.sqf` (v3) | Helicopter and plane drops, passengers held aboard until the jump, vehicle delivery carried inside its aircraft, the hand-offs |
 | `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
 | `ITW_CLASH_DebugPreflight.sqf` | Lists the five modules |
 | `ITW_CLASH_AttackRestore.sqf` | Skips groups carrying `ITW_CLASH_SupportAsset` |
@@ -1142,7 +1175,7 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 Boot (`init.sqf`): the rack profile, then Knowledge, then COLOSSUS, then the
 core and its three executors; the core needs Knowledge and COLOSSUS, and an executor that is
 missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
-`tests/test_commander_supports.py`, `tests/test_bomb_acquisition.py` (v4), `tests/test_supports_v5.py` (v5) and `tests/test_supports_v6.py` (v6), `tests/test_supports_v7.py` (v7, the console tests and the rear-base C-RAM). The pure math (pick, overlap, presence,
+`tests/test_commander_supports.py`, `tests/test_bomb_acquisition.py` (v4), `tests/test_supports_v5.py` (v5) and `tests/test_supports_v6.py` (v6), `tests/test_supports_v7.py` (v7, the console tests and the rear-base C-RAM), `tests/test_supports_v8.py` (v8). The pure math (pick, overlap, presence,
 falloff, spawn point, release timing, economy) is cross-checked in a Python
 model. The dry run has run in engine (2026-10-16); no live support has yet. Section 13 is the list to verify.
 

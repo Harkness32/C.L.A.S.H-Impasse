@@ -191,7 +191,7 @@ def test_a_break_off_turns_away_and_says_why():
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 7;" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
+    assert "ITW_CLASH_SupportsVersion = 8;" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
     assert "ITW_CLASH_SupportsStrikeVersion = 5;" in (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text()
 
 

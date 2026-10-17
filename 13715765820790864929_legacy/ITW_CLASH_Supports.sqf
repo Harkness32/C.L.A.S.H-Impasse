@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 7;
+ITW_CLASH_SupportsVersion = 8;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -96,6 +96,23 @@ ITW_CLASH_SupportsReady = false;
         once per 20 minutes; never on Impasse's defend-phase point while the
         defend phase runs, so the two counterattacks do not stack.
       - Console tests for every drop and for a wave (ITW_CLASH_SupportsDebug.sqf).
+
+    v8 (Hark, 2026-10-17, the first console tests): no delivery flew. GUER
+    fields no cars, so every test was refused NO_VEHICLE_FIT before it
+    spawned, and it would have flown its Ghost Hawk (WEST its Huron): the
+    side's own carriers came before the Blackfish, which neither side lists.
+    The plane drop was NO_AIRCRAFT: neither side lists a troop plane.
+      - The carrier: the preferred classes first for both sides, then the
+        side's own (Hark: 1A).
+      - What is delivered: the side's armed and dual-role cars, then its
+        APCs, then its tanks, each only if the engine can carry it at all
+        (VehicleTransport >> Cargo >> canBeTransported); the loading itself
+        decides the rest (Hark: 2B). A side with nothing that can be carried
+        is never offered a delivery (NO_VEHICLE_FIT at the gate), where it
+        used to be picked, refused and refunded on every assessment.
+      - The plane drop: a side that lists no troop plane flies the preferred
+        one (ITW_CLASH_SupportsPlaneTroopClasses, the Blackfish's infantry
+        variant) (Hark: 3A).
 
     Every number below is a placeholder for calibration.
 */
@@ -195,6 +212,8 @@ ITW_CLASH_SupportsAirborneFarForce = missionNamespace getVariable ["ITW_CLASH_Su
     delivered vehicle brings, for the headroom check.
 */
 ITW_CLASH_SupportsVehicleCarrierClasses = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleCarrierClasses",["B_T_VTOL_01_vehicle_F"]];
+// v8: the troop plane for a side that lists none of its own.
+ITW_CLASH_SupportsPlaneTroopClasses = missionNamespace getVariable ["ITW_CLASH_SupportsPlaneTroopClasses",["B_T_VTOL_01_infantry_F"]];
 ITW_CLASH_SupportsVehicleDropCrew = missionNamespace getVariable ["ITW_CLASH_SupportsVehicleDropCrew",3];
 /*
     v7. Bite-back. The pot is counted in waves: it holds Cap of them and
@@ -589,6 +608,11 @@ ITW_CLASH_Supports_fnc_HeldBy = {
 // The faction's own classes for a kind of support aircraft.
 ITW_CLASH_Supports_fnc_Classes = {
     params ["_side","_kind"];
+    if (_kind isEqualTo "DELIVERY") exitWith {
+        private _all = [];
+        {_all append _x} forEach ([_side] call ITW_CLASH_Supports_fnc_DeliveryTiers);
+        _all
+    };
     private _friendly = !isNil "ITW_PlayerSide" && {_side isEqualTo ITW_PlayerSide};
     private _prefix = if (_friendly) then {"va_p"} else {"va_e"};
     private _names = switch (_kind) do {
@@ -627,6 +651,39 @@ ITW_CLASH_Supports_fnc_Classes = {
         case "CAR": {_classes select {_x isKindOf "LandVehicle"}};
         case "VIV": {_classes select {[_x] call ITW_CLASH_Supports_fnc_IsCarrier}};
         default {[]};
+    }
+};
+
+/*
+    v8. What a side can deliver, in the order it is tried: its armed and
+    dual-role cars, then its APCs, then its tanks (Hark: "let the loading
+    test decide"). Each only if the engine can carry it at all: Vehicle in
+    Vehicle needs VehicleTransport >> Cargo >> canBeTransported on the
+    cargo, so a class without it would only be spawned to be deleted.
+    Returns [cars, APCs, tanks].
+*/
+ITW_CLASH_Supports_fnc_DeliveryTiers = {
+    params ["_side"];
+    private _friendly = !isNil "ITW_PlayerSide" && {_side isEqualTo ITW_PlayerSide};
+    private _prefix = if (_friendly) then {"va_p"} else {"va_e"};
+    ["Car","Apc","Tank"] apply {
+        private _kind = _x;
+        private _tier = [];
+        {
+            private _list = missionNamespace getVariable [_prefix + _kind + _x,[]];
+            if !(_list isEqualType []) then {continue};
+            {
+                private _class = if (_x isEqualType []) then {_x param [0,""]} else {_x};
+                if (
+                    _class isEqualType ""
+                    && {_class isNotEqualTo ""}
+                    && {isClass (configFile >> "CfgVehicles" >> _class)}
+                    && {_class isKindOf "LandVehicle"}
+                    && {getNumber (configFile >> "CfgVehicles" >> _class >> "VehicleTransport" >> "Cargo" >> "canBeTransported") == 1}
+                ) then {_tier pushBackUnique _class};
+            } forEach _list;
+        } forEach ["ClassesAttack","ClassesDual"];
+        _tier
     }
 };
 
@@ -695,6 +752,10 @@ ITW_CLASH_Supports_fnc_PickClass = {
             order; else the one that lifts most; else a preferred class the
             side does not list but the game has (both sides fly the
             Blackfish here, Hark 2026-10-17).
+            v8: the preferred classes before the side's own carriers (Hark:
+            1A). Neither side lists the Blackfish, so v7 flew GUER's Ghost
+            Hawk and would have flown WEST's Huron. An empty preferred list
+            goes back to the side's own.
         */
         case "VIV": {
             private _preferred = ITW_CLASH_SupportsVehicleCarrierClasses select {
@@ -702,15 +763,24 @@ ITW_CLASH_Supports_fnc_PickClass = {
             };
             private _own = _preferred select {_x in _classes};
             if (_own isNotEqualTo []) exitWith {[_own#0,""]};
+            if (_preferred isNotEqualTo []) exitWith {[_preferred#0,""]};
             if (_classes isNotEqualTo []) exitWith {
                 [([_classes,[],{[_x] call ITW_CLASH_Supports_fnc_CarrierLoad},"DESCEND"] call BIS_fnc_sortBy)#0,""]
             };
-            if (_preferred isNotEqualTo []) exitWith {[_preferred#0,""]};
             ["","NO_AIRCRAFT"]
         };
         case "HELI";
         case "PLANE": {
             private _carriers = _classes select {([_x] call ITW_CLASH_Supports_fnc_CargoSeats) >= 4};
+            // v8: a side that lists no troop plane flies the preferred one (Hark: 3A).
+            if (_carriers isEqualTo [] && {_kind isEqualTo "PLANE"}) then {
+                _carriers = ITW_CLASH_SupportsPlaneTroopClasses select {
+                    _x isEqualType ""
+                    && {isClass (configFile >> "CfgVehicles" >> _x)}
+                    && {_x isKindOf "Plane"}
+                    && {([_x] call ITW_CLASH_Supports_fnc_CargoSeats) >= 4}
+                };
+            };
             if (_carriers isEqualTo []) exitWith {["","NO_AIRCRAFT"]};
             // The roomiest: a packed aircraft is the point.
             private _ranked = [_carriers,[],{[_x] call ITW_CLASH_Supports_fnc_CargoSeats},"DESCEND"] call BIS_fnc_sortBy;
@@ -1155,6 +1225,8 @@ ITW_CLASH_Supports_fnc_FlavorGate = {
         case (((_ledger get "lanes") getOrDefault [_row get "lane",""]) isNotEqualTo ""): {"LANE_BUSY"};
         case ((_row get "lane") isEqualTo "RECON" && {time < (_ledger get "reconBlockedUntil")}): {"RELAUNCH"};
         case ([_ledger,"flavor:" + _flavor] call ITW_CLASH_Supports_fnc_OnCooldown): {"COOLDOWN"};
+        // v8: nothing this side has can be carried, so there is nothing to deliver.
+        case ((_row getOrDefault ["aircraft",""]) isEqualTo "VIV" && {([_side,"DELIVERY"] call ITW_CLASH_Supports_fnc_Classes) isEqualTo []}): {"NO_VEHICLE_FIT"};
         case (([_ledger,[_flavor] call ITW_CLASH_Supports_fnc_WalletOf] call ITW_CLASH_Supports_fnc_WalletCash) < ([_flavor,"HOLD"] call ITW_CLASH_Supports_fnc_Price)): {"INSUFFICIENT_FUNDS"};
         default {""};
     };
@@ -1513,6 +1585,7 @@ ITW_CLASH_Supports_fnc_DirectPick = {
     ];
     private _failed = "";
     if (_flavor in ITW_CLASH_SupportsVehicleFlavors) then {
+        if (([_side,"DELIVERY"] call ITW_CLASH_Supports_fnc_Classes) isEqualTo []) then {_failed = "NO_VEHICLE_FIT"};
         _extra set ["need",ITW_CLASH_SupportsVehicleDropCrew];
         _extra set ["squads",0];
         _extra set ["squadSize",0];
@@ -2536,7 +2609,7 @@ ITW_CLASH_SupportsAirborneMinSquadCore = missionNamespace getVariable ["ITW_CLAS
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true dropWallet=%35/min dropCap=%36 dropCadence=%37/%38/%39min carrier=%40 biteBack=%41 biteBackPot=%42wave/%43min biteBackCooldown=%44s biteBackSquads=%45 lanes=RECON,COMMIT,DROP,VEHICLE,BITE_DROP,BITE_VEHICLE picks=strike,drop,vehicle delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true dropWallet=%35/min dropCap=%36 dropCadence=%37/%38/%39min carrier=%40 carrierFirst=preferred planeTroop=%46 deliveryTiers=car,apc,tank canBeTransported=true biteBack=%41 biteBackPot=%42wave/%43min biteBackCooldown=%44s biteBackSquads=%45 lanes=RECON,COMMIT,DROP,VEHICLE,BITE_DROP,BITE_VEHICLE picks=strike,drop,vehicle delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -2581,6 +2654,7 @@ diag_log format [
     ITW_CLASH_SupportsBiteBackCap,
     ITW_CLASH_SupportsBiteBackRefill,
     ITW_CLASH_SupportsBiteBackCooldown,
-    ITW_CLASH_SupportsBiteBackSquads
+    ITW_CLASH_SupportsBiteBackSquads,
+    ITW_CLASH_SupportsPlaneTroopClasses joinString "/"
 ];
 true

@@ -65,8 +65,8 @@ def row(flavor: str) -> str:
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 7;" in raw("ITW_CLASH_Supports.sqf")
-    assert "ITW_CLASH_SupportsAirborneVersion = 2;" in raw("ITW_CLASH_SupportsAirborne.sqf")
+    assert "ITW_CLASH_SupportsVersion = 8;" in raw("ITW_CLASH_Supports.sqf")
+    assert "ITW_CLASH_SupportsAirborneVersion = 3;" in raw("ITW_CLASH_SupportsAirborne.sqf")
     assert "ITW_CLASH_SupportsDebugVersion = 1;" in raw("ITW_CLASH_SupportsDebug.sqf")
     assert "ITW_CLASH_RearBaseCRAMVersion = 5;" in raw("ITW_CLASH_RearBaseCRAM.sqf")
 
@@ -218,9 +218,9 @@ def test_the_carrier_is_found_by_what_it_can_carry_blackfish_first():
     assert 'case "VIV": {_classes select {[_x] call ITW_CLASH_Supports_fnc_IsCarrier}};' in classes
     pick = function_body(CORE, "ITW_CLASH_Supports_fnc_PickClass")
     viv = pick[pick.index('case "VIV": {'):pick.index('case "HELI";')]
-    # The side's own preferred carrier, else its strongest lifter, else a
-    # preferred class the side does not list.
-    assert viv.index("private _own = _preferred select {_x in _classes};") < viv.index("CarrierLoad") < viv.index("[_preferred#0,\"\"]")
+    # v8 (Hark 1A): the preferred carrier first, the side's own if it lists
+    # it, then the preferred class anyway, and only then the side's lifters.
+    assert viv.index("private _own = _preferred select {_x in _classes};") < viv.index("[_preferred#0,\"\"]") < viv.index("CarrierLoad")
 
 
 def test_the_vehicle_flies_inside_the_carrier_and_leaves_it_over_the_zone():
