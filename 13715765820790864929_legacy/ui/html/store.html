@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>C.L.A.S.H. &#8226; Base Store</title>
+    <script>
+      /* Boot. A <script src> cannot work here: the page is handed to the
+         browser as a blob: URL and has no resolvable base, so relative paths
+         resolve to nothing. In game we pull each asset out of the mission with
+         A3API.RequestFile and inline it. Outside the game (opening this file in
+         a desktop browser to work on the layout) A3API is absent and ordinary
+         relative tags are used instead, so the same CSS and JS are exercised. */
+      (function () {
+        var ASSETS = ["store.css", "store.js"];
+        var ROOT = "ui\\html\\";
+
+        function fail(error) {
+          document.body.textContent =
+            "The store could not load. Press Esc and reopen it. " +
+            (error && error.message ? error.message : String(error));
+          document.body.style.cssText =
+            "margin:2rem;background:#101c27;color:#fff;font:18px sans-serif";
+        }
+
+        function inject(name, source) {
+          var style = name.slice(-4) === ".css";
+          var node = document.createElement(style ? "style" : "script");
+          node.textContent = source;
+          document.head.appendChild(node);
+        }
+
+        function native() {
+          return ASSETS.reduce(function (chain, name) {
+            return chain.then(function () {
+              return A3API.RequestFile(ROOT + name).then(function (source) {
+                if (!source || !source.trim()) {
+                  throw new Error("Missing interface asset: " + name);
+                }
+                inject(name, source);
+              });
+            });
+          }, Promise.resolve());
+        }
+
+        function local() {
+          return ASSETS.reduce(function (chain, name) {
+            return chain.then(function () {
+              return new Promise(function (resolve, reject) {
+                var style = name.slice(-4) === ".css";
+                var node = document.createElement(style ? "link" : "script");
+                node.onload = resolve;
+                node.onerror = function () {
+                  reject(new Error("Could not load " + name));
+                };
+                if (style) {
+                  node.rel = "stylesheet";
+                  node.href = name;
+                } else {
+                  node.src = name;
+                }
+                document.head.appendChild(node);
+              });
+            });
+          }, Promise.resolve());
+        }
+
+        var loading =
+          typeof A3API !== "undefined" && A3API.RequestFile ? native() : local();
+
+        window.CLASHStoreReady = loading.then(function () {
+          return window.CLASHStore;
+        });
+        window.CLASHStoreReady.catch(fail);
+      })();
+    </script>
+  </head>
+  <body class="store-shell">
+    <main class="store-workspace">
+      <nav id="categoryList" class="categories scroll" aria-label="Store categories"></nav>
+
+      <section class="catalog" aria-label="Equipment list">
+        <div class="catalog-tools">
+          <h1>Base store</h1>
+          <h2 id="categoryTitle">Equipment</h2>
+          <input
+            id="itemSearch"
+            class="search"
+            type="search"
+            aria-label="Search equipment"
+            placeholder="Search"
+          />
+        </div>
+        <div id="itemList" class="item-list scroll" role="listbox" aria-label="Available equipment"></div>
+        <div id="itemDetails" class="item-details scroll"></div>
+      </section>
+
+      <section class="preview-panel" aria-label="Equipment preview">
+        <div
+          id="previewViewport"
+          class="preview-viewport"
+          tabindex="0"
+          aria-label="3D preview. Drag to rotate, scroll to zoom, or use the arrow and plus or minus keys."
+        ></div>
+        <div class="preview-toolbar toolbar">
+          <button id="characterMode" class="active" data-preview-mode="character">Character</button>
+          <button id="equipmentMode" data-preview-mode="equipment">Equipment</button>
+          <button id="previewReset" title="Reset preview camera">Reset</button>
+        </div>
+      </section>
+
+      <aside class="cart-panel">
+        <div class="cart-heading">
+          <div class="row"><h2>Cart</h2><strong id="balance" title="Available funds">&#8212;</strong></div>
+        </div>
+        <div id="cartList" class="scroll"></div>
+        <div class="checkout">
+          <div class="row"><span>Items / cost</span><strong id="cartSummary">0 / 0</strong></div>
+          <p id="checkoutReason" class="error" role="status"></p>
+          <div class="toolbar">
+            <button id="cartClear">Clear</button>
+            <button id="checkoutButton" class="primary" disabled>Purchase</button>
+          </div>
+        </div>
+      </aside>
+
+      <nav id="targetRow" class="destinations" aria-label="Equipment destination"></nav>
+    </main>
+
+    <footer class="footer">
+      <div class="toolbar">
+        <button id="closeButton">Close</button>
+        <button id="loadoutsButton">Loadouts</button>
+        <button id="refreshButton">Refresh</button>
+      </div>
+      <span id="message" role="status"></span>
+    </footer>
+
+    <!-- Saved loadouts. A view swap rather than a second dialog: one browser
+         control, one whitelist entry, one bridge to keep alive. -->
+    <div class="modal-backdrop hidden" id="loadoutModal" role="dialog" aria-modal="true" aria-labelledby="loadoutHeading">
+      <section class="loadout-modal">
+        <h2 id="loadoutHeading">Saved loadouts</h2>
+        <p class="muted">
+          Loadouts are stored in your Arma profile on this computer. Saving records
+          what you are wearing and carrying right now.
+        </p>
+        <div class="loadout-save toolbar">
+          <input id="loadoutName" type="text" maxlength="40" aria-label="New loadout name" placeholder="Loadout name" />
+          <button id="loadoutSave" class="primary">Save current</button>
+        </div>
+        <div id="loadoutList" class="scroll"></div>
+        <div class="toolbar">
+          <button id="loadoutClose">Back to store</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="attachmentModal" role="dialog" aria-modal="true" aria-labelledby="attachmentWeaponName">
+      <section class="attachment-modal">
+        <h2 id="attachmentWeaponName">Included equipment</h2>
+        <p id="attachmentWeaponMeta"></p>
+        <strong id="attachmentWeaponPrice"></strong>
+        <div id="attachmentList" class="scroll"></div>
+        <div class="toolbar">
+          <button id="attachmentCancel">Cancel</button>
+          <button id="attachmentConfirm" class="primary">Add weapon with attachments</button>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

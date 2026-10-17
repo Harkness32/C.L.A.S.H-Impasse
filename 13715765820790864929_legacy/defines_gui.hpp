@@ -75,3 +75,7 @@
 #define ITW_TARGETS_TITLE          8813
 #define ITW_ASSIGNMENTS_TABLE_IDC  8820
 #define ITW_ASSIGNMENTS_FIRST_IDC  8821
+
+// C.L.A.S.H. base store (ITW_CLASH_Store*.sqf, ui\StoreDialog.hpp)
+#define ITW_CLASH_STORE_IDD         8900
+#define ITW_CLASH_STORE_BROWSER_IDC 8901

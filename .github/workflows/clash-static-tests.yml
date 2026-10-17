@@ -85,3 +85,4 @@ jobs:
           tests/test_commander_supports.py
           tests/test_colossus_concentration.py
           tests/test_sqf_static_checks.py
+          tests/test_clash_base_store.py
