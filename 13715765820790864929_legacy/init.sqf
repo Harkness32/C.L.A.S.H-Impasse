@@ -260,6 +260,10 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | counter-battery-missing | shelling never reveals a firing position";
             };
+            // Why a HAL helicopter is not being sent: observe only.
+            if (fileExists "ITW_CLASH_AirIdleDiag.sqf") then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_AirIdleDiag.sqf";
+            };
             // The players' map: Impasse's markers for the enemy groups their
             // HAL commander knows of (HAL's own Info Markers are off).
             if (fileExists "ITW_CLASH_MapKnowledge.sqf") then {
