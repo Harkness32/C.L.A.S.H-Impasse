@@ -122,7 +122,7 @@ def test_every_support_is_live_by_default():
     # v3 (Hark, 2026-10-16): unlock all of them. Shadow mode stays one
     # variable away, and each flavor keeps its own switch. v4 keeps that.
     core = code("ITW_CLASH_Supports.sqf")
-    assert "ITW_CLASH_SupportsVersion = 4;" in core
+    assert "ITW_CLASH_SupportsVersion = 5;" in core
     assert '["ITW_CLASH_SupportsDryRun",false]' in core
     for flavor in ["UAV", "Bomb", "Guided", "Carpet", "AirborneHeli", "AirbornePlane", "VehicleDrop"]:
         assert f'["ITW_CLASH_Supports{flavor}Enabled",true]' in core, flavor
@@ -277,7 +277,9 @@ def test_the_jet_is_steered_onto_the_report_never_the_bombs():
     check = unguided.index("_along <= (_lead - _first + ITW_CLASH_SupportsStrikeCheckLead)")
     assert approach < line_up < check
     # What is left off the line at the final check is a miss or a break-off.
-    assert 'if (_wide > ITW_CLASH_SupportsStrikeCrossLimit) exitWith {_result = ["BREAKOFF","passed-wide"]};' in unguided
+    # v5: held to the flavor's own limit (the bomb's footprint); console test
+    # passes keep the old 250 m.
+    assert 'if (_wide > _crossLimit) exitWith {_result = ["BREAKOFF","passed-wide"]};' in unguided
     # The pass itself never creates a bomb: only the per-frame release does.
     assert "fnc_DropBomb" not in unguided
 
@@ -622,7 +624,7 @@ def test_fixed_wing_uavs_fly_above_spaa_reach_and_rotary_ones_stay_low():
     # each side, over objectives covered by Cheetahs.
     source = code("ITW_CLASH_SupportsUAV.sqf")
     raw = (MISSION / "ITW_CLASH_SupportsUAV.sqf").read_text()
-    assert "ITW_CLASH_SupportsUAVVersion = 2;" in raw
+    assert "ITW_CLASH_SupportsUAVVersion = 3;" in raw
     assert 'ITW_CLASH_SupportsUAVHeight",2000]' in source
     assert 'ITW_CLASH_SupportsUAVHeightRotary",500]' in source
     run = function_body(source, "ITW_CLASH_SupportsUAV_fnc_Run")

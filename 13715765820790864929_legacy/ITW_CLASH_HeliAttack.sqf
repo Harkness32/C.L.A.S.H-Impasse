@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HeliAttackStarted",false]) exitWith {true};
 
 ITW_CLASH_HeliAttackStarted = true;
-ITW_CLASH_HeliAttackVersion = 3;
+ITW_CLASH_HeliAttackVersion = 4;
 ITW_CLASH_HeliAttackReady = false;
 
 /*
@@ -45,6 +45,25 @@ ITW_CLASH_HeliAttackReady = false;
     CLASH release or withdrawal, HAL's own Break), the sortie stops within a
     poll, leaves that owner's orders standing, and GoAttAir exits the way it
     does when RYD_Wait reports the group gone: no return leg on top of them.
+
+    v4, from the 2026-10-17 session (Hark: "the helos turned their ass to
+    the targets"):
+      - The yaw assist's sign was backwards. A wrong-signed loop pushes the
+        error away from zero on both sides, so its one resting point is 180
+        degrees: tail on. Five point-ats never came on; after the flip one
+        did in 7.7 s. Positive about the model's up axis turns the nose
+        clockwise. The flip check now asks whether the error is closing
+        while the assist is actually turning the airframe, which also
+        catches an aircraft already parked tail on, and it keeps a sign per
+        airframe class, locked once an assisted point-at comes on.
+      - Five of seven point-at sorties died before their first position, at
+        149 to 258 m. Every leg is now flown low (forced transit height,
+        the troop lifts' arrival speed schedule so it does not balloon on
+        arrival), and the aircraft climbs to its firing height only once it
+        is there.
+      - Firing and ring heights are forced: in combat the AI flew 145 to
+        258 m against a set 59 to 150. A forced height also stops a
+        helicopter landing, so every sortie releases it on the way out.
 */
 
 // Contacts this far from HAL's point can be looked at or pointed at.
@@ -66,6 +85,20 @@ ITW_CLASH_HeliAttackMinFuel = missionNamespace getVariable ["ITW_CLASH_HeliAttac
 ITW_CLASH_HeliAttackHeightMin = missionNamespace getVariable ["ITW_CLASH_HeliAttackHeightMin",50];
 ITW_CLASH_HeliAttackHeightMax = missionNamespace getVariable ["ITW_CLASH_HeliAttackHeightMax",150];
 ITW_CLASH_HeliAttackHeightRatio = missionNamespace getVariable ["ITW_CLASH_HeliAttackHeightRatio",0.15];
+/*
+    v4. Every leg to a firing or look position, and the leg onto an orbit, is
+    flown at the transit height (the troop lifts' cruise height); the
+    aircraft climbs to its firing height once it arrives, and points only
+    after reaching PopUpFraction of it or PopUpTimeout seconds. Heights are
+    forced (flyInHeight [h, true]) so combat cannot climb the aircraft;
+    false goes back to the plain command. Released at the end of the sortie
+    to ReleaseHeight, unforced, so HAL's return leg can land.
+*/
+ITW_CLASH_HeliAttackTransitHeight = missionNamespace getVariable ["ITW_CLASH_HeliAttackTransitHeight",30];
+ITW_CLASH_HeliAttackForceHeight = missionNamespace getVariable ["ITW_CLASH_HeliAttackForceHeight",true];
+ITW_CLASH_HeliAttackPopUpFraction = missionNamespace getVariable ["ITW_CLASH_HeliAttackPopUpFraction",0.8];
+ITW_CLASH_HeliAttackPopUpTimeout = missionNamespace getVariable ["ITW_CLASH_HeliAttackPopUpTimeout",20];
+ITW_CLASH_HeliAttackReleaseHeight = missionNamespace getVariable ["ITW_CLASH_HeliAttackReleaseHeight",30];
 ITW_CLASH_HeliAttackPoll = missionNamespace getVariable ["ITW_CLASH_HeliAttackPoll",2];
 
 /*
@@ -101,14 +134,23 @@ ITW_CLASH_HeliAttackPointClearRadius = missionNamespace getVariable ["ITW_CLASH_
 /*
     Yaw assist: rad/s of turn per radian of heading error, the most it turns
     (rad/s), and only below this speed (km/h). The sign is the engine's
-    angular velocity convention: positive about the up axis turns left under
-    the right-hand rule, so a target to the right needs negative. If a turn
-    ever opens the error instead, fnc_Aim flips it once and says so.
+    angular velocity convention, measured in game on 2026-10-17: positive
+    about the model's up axis turns the nose clockwise, as Arma measures
+    headings, so a target to the right needs positive. v3 assumed the
+    right-hand rule (-1) and parked aircraft tail on.
+
+    The default is per airframe class from there on (ITW_CLASH_HeliAttackYawSigns,
+    class -> [sign, locked, flips]): an assisted point-at that comes on locks
+    the class's sign; one where the error did not close by MinProgress degrees
+    in 1.5 s of the assist actually turning flips it, at most MaxFlips times.
 */
 ITW_CLASH_HeliAttackYawGain = missionNamespace getVariable ["ITW_CLASH_HeliAttackYawGain",2];
 ITW_CLASH_HeliAttackYawRate = missionNamespace getVariable ["ITW_CLASH_HeliAttackYawRate",0.8];
 ITW_CLASH_HeliAttackYawMaxSpeed = missionNamespace getVariable ["ITW_CLASH_HeliAttackYawMaxSpeed",40];
-ITW_CLASH_HeliAttackYawSign = missionNamespace getVariable ["ITW_CLASH_HeliAttackYawSign",-1];
+ITW_CLASH_HeliAttackYawSign = missionNamespace getVariable ["ITW_CLASH_HeliAttackYawSign",1];
+ITW_CLASH_HeliAttackYawMinProgress = missionNamespace getVariable ["ITW_CLASH_HeliAttackYawMinProgress",10];
+ITW_CLASH_HeliAttackYawMaxFlips = missionNamespace getVariable ["ITW_CLASH_HeliAttackYawMaxFlips",3];
+if (isNil "ITW_CLASH_HeliAttackYawSigns") then {ITW_CLASH_HeliAttackYawSigns = createHashMap};
 
 ITW_CLASH_HeliAttack_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -194,6 +236,24 @@ ITW_CLASH_HeliAttack_fnc_ClearWaypoints = {
 };
 
 /*
+    v4. The height every aircraft of the flight holds: forced unless
+    ForceHeight is off or _forced is false, in which case the plain command
+    (or the forced form with false, to release a forced height).
+*/
+ITW_CLASH_HeliAttack_fnc_SetHeight = {
+    params ["_flight","_height",["_forced",true]];
+    {
+        if (!isNull _x && {alive _x}) then {
+            if (ITW_CLASH_HeliAttackForceHeight) then {
+                _x flyInHeight [_height,_forced];
+            } else {
+                _x flyInHeight _height;
+            };
+        };
+    } forEach _flight;
+};
+
+/*
     Weapons free every pass, without waiting for a waypoint to apply it:
     COMBAT, fire at will (YELLOW), and attack off, so the crew shoots what it
     sees from the line it is flying instead of leaving it to close in.
@@ -212,8 +272,8 @@ ITW_CLASH_HeliAttack_fnc_Arm = {
         // speed limit) along with setting this sortie's height.
         _x limitSpeed 1e10;
         _x forceSpeed -1;
-        _x flyInHeight _height;
     } forEach _flight;
+    [_flight,_height] call ITW_CLASH_HeliAttack_fnc_SetHeight;
 };
 
 ITW_CLASH_HeliAttack_fnc_Height = {
@@ -244,9 +304,19 @@ ITW_CLASH_HeliAttack_fnc_Stop = {
     if (_group getVariable ["ITW_CLASH_Withdrawing",false]) exitWith {"withdrawing"};
     if !(_group getVariable ["Busy" + str _group,false]) exitWith {"released"};
     // canMove: a lost rotor can leave overall damage low (G63, 2026-10-16).
-    if ((_flight findIf {
-        !alive _x || {!canMove _x} || {damage _x > ITW_CLASH_HeliAttackMaxDamage} || {fuel _x < ITW_CLASH_HeliAttackMinFuel}
-    }) >= 0) exitWith {"rtb-condition"};
+    // v4: which limit it was is kept on the group for the end line.
+    private _rtb = "";
+    {
+        _rtb = switch (true) do {
+            case (!alive _x): {"dead"};
+            case (!canMove _x): {"disabled"};
+            case (damage _x > ITW_CLASH_HeliAttackMaxDamage): {format ["damage-%1",round ((damage _x) * 100)]};
+            case (fuel _x < ITW_CLASH_HeliAttackMinFuel): {format ["fuel-%1",round ((fuel _x) * 100)]};
+            default {""};
+        };
+        if (_rtb isNotEqualTo "") exitWith {};
+    } forEach _flight;
+    if (_rtb isNotEqualTo "") exitWith {_group setVariable ["ITW_CLASH_HeliAttackRtbWhy",_rtb]; "rtb-condition"};
     if ((time - _started) > ITW_CLASH_HeliAttackMaxTime) exitWith {"time"};
     ""
 };
@@ -429,6 +499,16 @@ ITW_CLASH_HeliAttack_fnc_YawRelease = {
     isNil {ITW_CLASH_HeliAttackYaw = ITW_CLASH_HeliAttackYaw select {!((_x#0) isEqualTo _veh)}};
 };
 
+// v4. The yaw sign for this airframe's class: [sign, locked, flips].
+ITW_CLASH_HeliAttack_fnc_YawState = {
+    params ["_veh"];
+    ITW_CLASH_HeliAttackYawSigns getOrDefault [typeOf _veh,[ITW_CLASH_HeliAttackYawSign,false,0]]
+};
+ITW_CLASH_HeliAttack_fnc_YawSignOf = {
+    params ["_veh"];
+    ([_veh] call ITW_CLASH_HeliAttack_fnc_YawState)#0
+};
+
 ITW_CLASH_HeliAttack_fnc_YawFrame = {
     if (ITW_CLASH_HeliAttackYaw isEqualTo []) exitWith {};
     ITW_CLASH_HeliAttackYaw = ITW_CLASH_HeliAttackYaw select {
@@ -439,8 +519,11 @@ ITW_CLASH_HeliAttack_fnc_YawFrame = {
         if ((speed _veh) > ITW_CLASH_HeliAttackYawMaxSpeed || {((getPosATL _veh)#2) < 5}) then {continue};
         private _err = [_veh,_pos] call ITW_CLASH_HeliAttack_fnc_HeadingError;
         private _rate = (((rad _err) * ITW_CLASH_HeliAttackYawGain) max (-ITW_CLASH_HeliAttackYawRate)) min ITW_CLASH_HeliAttackYawRate;
+        private _sign = [_veh] call ITW_CLASH_HeliAttack_fnc_YawSignOf;
         private _w = angularVelocityModelSpace _veh;
-        _veh setAngularVelocityModelSpace [_w#0,_w#1,_rate * ITW_CLASH_HeliAttackYawSign];
+        _veh setAngularVelocityModelSpace [_w#0,_w#1,_rate * _sign];
+        // For the flip check: when the assist last actually turned it.
+        _veh setVariable ["ITW_CLASH_HeliAttackYawAppliedAt",time];
     } forEach ITW_CLASH_HeliAttackYaw;
 };
 
@@ -489,6 +572,7 @@ ITW_CLASH_HeliAttack_fnc_Aim = {
     private _assisted = false;
     private _assistErr = -1;
     private _checkSignAt = -1;
+    private _lead = vehicle leader _group;
     private _why = "";
     waitUntil {
         sleep 0.5;
@@ -512,15 +596,38 @@ ITW_CLASH_HeliAttack_fnc_Aim = {
         };
         if (_assisted) then {
             {[_x,_pos] call ITW_CLASH_HeliAttack_fnc_YawHold} forEach _flight;
-            // A turn that opened the error ran the wrong way: learn the
-            // engine's sign once, for every sortie after.
+            // v4. Is the error closing while the assist is really turning the
+            // airframe? A wrong sign rests at 180 degrees, tail on, so "the
+            // error grew" (v3) could not see an aircraft already parked there.
             if (_checkSignAt > 0 && {time >= _checkSignAt}) then {
+                private _turning = (speed _lead) <= ITW_CLASH_HeliAttackYawMaxSpeed
+                    && {(time - (_lead getVariable ["ITW_CLASH_HeliAttackYawAppliedAt",-1e10])) < 1};
+                if (!_turning) exitWith {_checkSignAt = time + 1};
                 _checkSignAt = -1;
-                if (_onAt < 0 && {_err > (_assistErr + 10)}) then {
-                    ITW_CLASH_HeliAttackYawSign = -ITW_CLASH_HeliAttackYawSign;
-                    ["yaw-sign-flipped",[_ctx get "id",ITW_CLASH_HeliAttackYawSign,round _assistErr,round _err]] call
+                ([_lead] call ITW_CLASH_HeliAttack_fnc_YawState) params ["_sign","_locked","_flips"];
+                if (
+                    !_locked
+                    && {_onAt < 0}
+                    && {_assistErr > (2 * ITW_CLASH_HeliAttackPointAlign)}
+                    && {_err > (_assistErr - ITW_CLASH_HeliAttackYawMinProgress)}
+                    && {_flips < ITW_CLASH_HeliAttackYawMaxFlips}
+                ) then {
+                    ITW_CLASH_HeliAttackYawSigns set [typeOf _lead,[-_sign,false,_flips + 1]];
+                    ["yaw-sign-flipped",[_ctx get "id",typeOf _lead,-_sign,_flips + 1,round _assistErr,round _err]] call
                         ITW_CLASH_HeliAttack_fnc_Log;
+                    // The new sign gets its own check, from here.
+                    _assistErr = _err;
+                    _checkSignAt = time + 1.5;
                 };
+            };
+        };
+        // An assisted point-at that came on proves the sign: keep it.
+        if (_assisted && {_onAt >= 0}) then {
+            ([_lead] call ITW_CLASH_HeliAttack_fnc_YawState) params ["_sign","_locked","_flips"];
+            if (!_locked) then {
+                ITW_CLASH_HeliAttackYawSigns set [typeOf _lead,[_sign,true,_flips]];
+                ["yaw-sign-confirmed",[_ctx get "id",typeOf _lead,_sign,_flips,(round ((_onAt - _start) * 10)) / 10]] call
+                    ITW_CLASH_HeliAttack_fnc_Log;
             };
         };
         (_onAt >= 0 && {(time - _onAt) >= ITW_CLASH_HeliAttackPointHold})
@@ -544,9 +651,13 @@ ITW_CLASH_HeliAttack_fnc_Aim = {
     longer one at the airframe's own speed. Ordered in one unscheduled step
     with the stop check, so a withdrawal or release that lands between them
     is not overwritten. Returns a stop reason or "".
+
+    v4: flown at the transit height, slowed by the troop lifts' arrival
+    schedule when it is loaded; with a _height, the aircraft then climbs to
+    it before this returns (PopUpFraction of it, or PopUpTimeout).
 */
 ITW_CLASH_HeliAttack_fnc_MoveTo = {
-    params ["_ctx","_point"];
+    params ["_ctx","_point",["_height",-1]];
     private _group = _ctx get "group";
     private _flight = _ctx get "flight";
     private _started = _ctx get "started";
@@ -563,6 +674,12 @@ ITW_CLASH_HeliAttack_fnc_MoveTo = {
         };
     };
     if (_reason isNotEqualTo "") exitWith {_reason};
+    // v4: the leg is flown low, at the transit height.
+    [_flight,ITW_CLASH_HeliAttackTransitHeight] call ITW_CLASH_HeliAttack_fnc_SetHeight;
+    // v4: the troop lifts' arrival schedule when it is loaded, so the
+    // aircraft is already slow when it gets there and has nothing to flare
+    // off into height (ITW_CLASH_HALStayLow.sqf).
+    private _schedule = !isNil "ITW_CLASH_HALStayLow_fnc_Schedule";
     private _timeout = ITW_CLASH_HeliAttackLegTimeout max ((_distance / ITW_CLASH_HeliAttackPointMinSpeed) + 30);
     private _start = time;
     private _checkPos = getPosATL _veh;
@@ -572,6 +689,10 @@ ITW_CLASH_HeliAttack_fnc_MoveTo = {
         _reason = [_group,_flight,_started] call ITW_CLASH_HeliAttack_fnc_Stop;
         if (_reason isNotEqualTo "") exitWith {true};
         _veh = vehicle leader _group;
+        if (_schedule) then {
+            private _kmh = (([_veh distance2D _point] call ITW_CLASH_HALStayLow_fnc_Schedule)#0) min _limit;
+            {_x limitSpeed _kmh} forEach (_flight select {alive _x});
+        };
         private _here = (_veh distance2D _point) <= ITW_CLASH_HeliAttackPointArrival;
         // Stalled for 20 s counts as there, as ALiVE's unitReadyRemote does.
         if ((time - _checkAt) >= 20) then {
@@ -580,6 +701,19 @@ ITW_CLASH_HeliAttack_fnc_MoveTo = {
             _checkAt = time;
         };
         _here || {(time - _start) > _timeout}
+    };
+    if (_reason isNotEqualTo "") exitWith {_reason};
+    // v4: there, low. Climb to where it fires from before anything points.
+    if (_height > 0) then {
+        [_flight,_height] call ITW_CLASH_HeliAttack_fnc_SetHeight;
+        private _until = time + ITW_CLASH_HeliAttackPopUpTimeout;
+        waitUntil {
+            sleep 0.5;
+            _reason = [_group,_flight,_started] call ITW_CLASH_HeliAttack_fnc_Stop;
+            if (_reason isNotEqualTo "") exitWith {true};
+            (((getPosATL (vehicle leader _group))#2) >= (_height * ITW_CLASH_HeliAttackPopUpFraction))
+            || {time > _until}
+        };
     };
     _reason
 };
@@ -616,6 +750,7 @@ ITW_CLASH_HeliAttack_fnc_FlyOrbit = {
     private _closestSpeed = -1;
     private _closestHeight = -1;
     private _passStart = time;
+    private _ringHeight = -1;
 
     while {true} do {
         _reason = [_group,_flight,_started] call ITW_CLASH_HeliAttack_fnc_Stop;
@@ -657,6 +792,7 @@ ITW_CLASH_HeliAttack_fnc_FlyOrbit = {
             if (_radius < 0) exitWith {_reason = "winchester"};
 
             private _height = [_radius] call ITW_CLASH_HeliAttack_fnc_Height;
+            _ringHeight = _height;
             [_group,_flight,_height] call ITW_CLASH_HeliAttack_fnc_Arm;
             // Enter on the side we are already on, so arrival is not an overflight.
             if (_pass == 0) then {_bearing = _centre getDir (vehicle leader _group)};
@@ -680,6 +816,11 @@ ITW_CLASH_HeliAttack_fnc_FlyOrbit = {
         private _point = _centre getPos [_radius,_bearing];
         _point set [2,0];
         private _lead = leader _group;
+        // v4: still getting to the ring is a transit, flown low; on it, the
+        // ring's height.
+        private _onto = ((vehicle _lead) distance2D _point) > ((_radius * 2) max 800);
+        [_flight,if (_onto) then {ITW_CLASH_HeliAttackTransitHeight} else {_ringHeight}] call
+            ITW_CLASH_HeliAttack_fnc_SetHeight;
         // Check and order in one unscheduled step, so a withdrawal or release
         // that lands between them is not overwritten by this leg.
         isNil {
@@ -807,7 +948,7 @@ ITW_CLASH_HeliAttack_fnc_FlyPoint = {
             private _base = _centre getDir _heli;
             if (_moved) then {_base = _base + (_zig * ([_farthest] call ITW_CLASH_HeliAttack_fnc_HopStep)); _zig = -_zig};
             ([_centre,_farthest,_base,_height,[]] call ITW_CLASH_HeliAttack_fnc_FiringPosition) params ["_pos","_bearing","_los"];
-            _reason = [_ctx,_pos] call ITW_CLASH_HeliAttack_fnc_MoveTo;
+            _reason = [_ctx,_pos,_height] call ITW_CLASH_HeliAttack_fnc_MoveTo;
             if (_reason isNotEqualTo "") exitWith {};
             _moved = true;
             {
@@ -842,7 +983,7 @@ ITW_CLASH_HeliAttack_fnc_FlyPoint = {
             private _others = (_found apply {_x#2}) select [1,count _found];
             ([_primaryPos,_standoff,_base,_height,_others] call ITW_CLASH_HeliAttack_fnc_FiringPosition) params ["_pos","_bearing","_los","_near"];
             private _positionStart = time;
-            _reason = [_ctx,_pos] call ITW_CLASH_HeliAttack_fnc_MoveTo;
+            _reason = [_ctx,_pos,_height] call ITW_CLASH_HeliAttack_fnc_MoveTo;
             if (_reason isNotEqualTo "") exitWith {};
             _moved = true;
             _positions = _positions + 1;
@@ -936,6 +1077,8 @@ ITW_CLASH_HeliAttack_fnc_Fly = {
             _veh limitSpeed 1e10;
         };
     } forEach _handlers;
+    // A forced height would keep it from landing on HAL's return leg.
+    [_flight,ITW_CLASH_HeliAttackReleaseHeight,false] call ITW_CLASH_HeliAttack_fnc_SetHeight;
     [_flight] call ITW_CLASH_HeliAttack_fnc_Unwatch;
     if (!isNull _group) then {
         isNil {
@@ -961,14 +1104,17 @@ ITW_CLASH_HeliAttack_fnc_Fly = {
     ["end",[
         _id,_reason,_ctx get "passes",round (time - (_ctx get "started")),
         _ctx get "source",_ctx get "type",
-        [_flight] call ITW_CLASH_HeliAttack_fnc_TakeShots
+        [_flight] call ITW_CLASH_HeliAttack_fnc_TakeShots,
+        if (_reason isEqualTo "rtb-condition" && {!isNull _group}) then {
+            _group getVariable ["ITW_CLASH_HeliAttackRtbWhy",""]
+        } else {""}
     ]] call ITW_CLASH_HeliAttack_fnc_Log;
     [_alive,_reason]
 };
 
 ITW_CLASH_HeliAttackReady = true;
 diag_log format [
-    "CLASH BOOT | heli-attack-ready | version=%1 retarget=%2 maxUncertainty=%3 step=%4 clearPasses=%5 maxTime=%6 height=%7-%8 modes=ORBIT,POINT pointAims=%9 align=%10 assistAfter=%11 hold=%12 hop=%13 hopSpeed=%14 yawGain=%15 yawRate=%16 yawSign=%17 combatMode=YELLOW attack=false noSAD=true crewFires=true halOwnsDecision=true reportedCentres=true revealsKnownOnly=true yieldsToOwners=true",
+    "CLASH BOOT | heli-attack-ready | version=%1 retarget=%2 maxUncertainty=%3 step=%4 clearPasses=%5 maxTime=%6 height=%7-%8 modes=ORBIT,POINT pointAims=%9 align=%10 assistAfter=%11 hold=%12 hop=%13 hopSpeed=%14 yawGain=%15 yawRate=%16 yawSign=%17 yawSignPerClass=true transit=%18m forcedHeight=%19 popUp=%20/%21s release=%22m combatMode=YELLOW attack=false noSAD=true crewFires=true halOwnsDecision=true reportedCentres=true revealsKnownOnly=true yieldsToOwners=true",
     ITW_CLASH_HeliAttackVersion,
     ITW_CLASH_HeliAttackRetargetRadius,
     ITW_CLASH_HeliAttackMaxUncertainty,
@@ -985,6 +1131,11 @@ diag_log format [
     ITW_CLASH_HeliAttackPointHopSpeed,
     ITW_CLASH_HeliAttackYawGain,
     ITW_CLASH_HeliAttackYawRate,
-    ITW_CLASH_HeliAttackYawSign
+    ITW_CLASH_HeliAttackYawSign,
+    ITW_CLASH_HeliAttackTransitHeight,
+    ITW_CLASH_HeliAttackForceHeight,
+    ITW_CLASH_HeliAttackPopUpFraction,
+    ITW_CLASH_HeliAttackPopUpTimeout,
+    ITW_CLASH_HeliAttackReleaseHeight
 ];
 true

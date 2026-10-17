@@ -2,8 +2,9 @@
 
 See docs/CLASH_CommanderSupports_Model.md. These pin the contracts:
 
-- BOMB has its own value floor (1.5): a lone vehicle, a lone tank, a manned
-  static or a pair of riflemen qualifies; one rifleman does not.
+- BOMB and GUIDED share the acquiring floor (1.5; v4 bomb, v5 both): a lone
+  vehicle, a lone tank, a manned static or a pair of riflemen qualifies; one
+  rifleman does not.
 - CARPET stays for clusters: fewer than three contacts is NOT_CLUSTERED.
 - BOMB and GUIDED acquire on site. They skip the assessment's uncertainty
   gate, and go on a contact still believed to exist after its position has
@@ -49,8 +50,8 @@ STRIKE = code("ITW_CLASH_SupportsStrike.sqf")
 # ------------------------------------------------------------------- gates
 
 
-def test_the_bomb_has_its_own_floor_and_carpet_needs_a_cluster():
-    assert '["ITW_CLASH_SupportsValueFloorBomb",1.5]' in CORE
+def test_the_acquiring_flavors_have_their_own_floor_and_carpet_needs_a_cluster():
+    assert '["ITW_CLASH_SupportsValueFloorAcquire",1.5]' in CORE
     assert '["ITW_CLASH_SupportsCarpetMinContacts",3]' in CORE
     # The general floor is unchanged for everything else.
     assert '["ITW_CLASH_SupportsValueFloor",2]' in CORE
@@ -60,10 +61,10 @@ def test_the_bomb_has_its_own_floor_and_carpet_needs_a_cluster():
         in candidates
     )
     assert '[_context,_flavor,-1,_targetKey,"NOT_CLUSTERED"] call ITW_CLASH_Supports_fnc_Exclude;' in candidates
-    assert (
-        'private _floor = if (_flavor isEqualTo "BOMB") then {ITW_CLASH_SupportsValueFloorBomb} '
-        "else {ITW_CLASH_SupportsValueFloor};" in candidates
-    )
+    # v5: the guided pass too; it was excluded from four lone vehicles in one
+    # session while the bomb flew at them.
+    assert "private _floor = if (_flavor in ITW_CLASH_SupportsAcquireFlavors) then {" in candidates
+    assert "ITW_CLASH_SupportsValueFloorAcquire" in candidates
     assert 'if ((_cluster get "worth") < _floor) then {' in candidates
     # Carpet is refused as a non-cluster before the floor is read.
     assert candidates.index('"NOT_CLUSTERED"') < candidates.index('"BELOW_FLOOR"')
@@ -100,9 +101,9 @@ def test_the_acquiring_passes_go_on_a_stale_position_the_others_do_not():
 
 
 def test_the_boot_line_reports_the_new_gates():
-    assert "bombFloor=%22 carpetMinContacts=%23 acquireOnSite=%24" in CORE
+    assert "acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24" in CORE
     assert 'ITW_CLASH_SupportsAcquireFlavors joinString "/"' in CORE
-    assert "bombAcquires=%20 reveal=%21 reline=%22m/%23m lead=%24s/%25s/%26m" in STRIKE
+    assert "bombAcquires=%20 reveal=%21 reline=%22s/%23m lead=%24s/%25s/%26m" in STRIKE
 
 
 # ------------------------------------------------------------- acquisition
@@ -181,9 +182,13 @@ def test_only_the_bomb_acquires_and_only_outside_a_console_test():
 
 def test_the_jet_is_re_lined_only_while_it_can_turn():
     unguided = function_body(STRIKE, "ITW_CLASH_SupportsStrike_fnc_UnguidedPass")
-    assert "&& {_along > ITW_CLASH_SupportsStrikeRelineMin}" in unguided
+    # v5: in seconds of flight left before the final check, at the speed it
+    # is flying (1800 m was 2 s at 200 m/s on 2026-10-17).
+    assert "&& {_toCheck >= ITW_CLASH_SupportsStrikeRelineSeconds}" in unguided
+    assert "private _toCheck = (_along - (_lead - _first + ITW_CLASH_SupportsStrikeCheckLead))" in unguided
     assert "if (_moved > ITW_CLASH_SupportsStrikeRelineShift) then {" in unguided
-    assert '["ITW_CLASH_SupportsStrikeRelineMin",1800]' in STRIKE
+    assert '["ITW_CLASH_SupportsStrikeRelineSeconds",10]' in STRIKE
+    assert "RelineMin" not in STRIKE
     # Re-lining comes after the approach line-up and before the final check.
     approach = unguided.index("_along <= ITW_CLASH_SupportsStrikeApproachUpdate")
     reline = unguided.index('["bomb-relined",')

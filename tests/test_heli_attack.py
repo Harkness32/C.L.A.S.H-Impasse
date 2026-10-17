@@ -88,6 +88,7 @@ def test_the_copy_adds_only_the_helicopter_branch():
         "_cause = [];",
         "_timer = 0;",
         "_alive = true;",
+        "_wp = [];",
         "_clashHeli = (",
         "!(isPlayer (leader _unitG))",
         '&& {!isNil "ITW_CLASH_HeliAttack_fnc_Fly"}',
@@ -109,7 +110,9 @@ def test_the_copy_adds_only_the_helicopter_branch():
 def test_what_the_branch_skips_is_declared_before_it():
     source = strip_comments(copy())
     branch = source.index("if (_clashHeli) then")
-    for name in ["_lasT = ObjNull;", "_cause = [];", "_timer = 0;", "_alive = true;"]:
+    # v4: _wp too. HAL's own path makes it in the else block and deletes it
+    # after the block (2026-10-17 RPT, GoAttAir line 317).
+    for name in ["_lasT = ObjNull;", "_cause = [];", "_timer = 0;", "_alive = true;", "_wp = [];"]:
         assert source.index(name) < branch, name
 
 
@@ -269,7 +272,8 @@ def test_weapons_free_each_pass_and_lift_limits_cleared():
     arm = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Arm")
     assert '"RED"' not in arm
     for line in ['_group setBehaviourStrong "COMBAT";', '_group setCombatMode "YELLOW";', "_group enableAttack false;",
-                 '_x enableAI "AUTOTARGET";', "_x limitSpeed 1e10;", "_x forceSpeed -1;", "_x flyInHeight _height;"]:
+                 '_x enableAI "AUTOTARGET";', "_x limitSpeed 1e10;", "_x forceSpeed -1;",
+                 "[_flight,_height] call ITW_CLASH_HeliAttack_fnc_SetHeight;"]:
         assert line in arm, line
 
 
@@ -286,7 +290,7 @@ def test_it_loads_after_the_rack_and_the_supports():
 
 def test_boot_line_says_what_it_does():
     raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
-    assert "ITW_CLASH_HeliAttackVersion = 3;" in raw
+    assert "ITW_CLASH_HeliAttackVersion = 4;" in raw
     assert "CLASH BOOT | heli-attack-ready |" in raw
     assert "yieldsToOwners=true" in raw
     assert "modes=ORBIT,POINT" in raw
@@ -315,7 +319,7 @@ def test_attack_is_put_back_only_when_the_sortie_ends_on_its_own_terms():
 
 def test_a_crippled_aircraft_ends_the_sortie():
     body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Stop")
-    assert "{!canMove _x}" in body
+    assert "case (!canMove _x): {\"disabled\"};" in body
 
 
 def test_a_gunner_anywhere_means_the_ring_and_only_the_airframe_means_point():
@@ -387,6 +391,47 @@ def test_get_far_then_point_three_times_then_hop_to_the_side():
     assert 'ITW_CLASH_HeliAttackPointAims",3]' in raw
 
 
+def test_every_leg_is_low_and_it_climbs_only_once_there():
+    # v4: 5 of 7 point-at sorties died in transit at 149 to 258 m.
+    body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_MoveTo")
+    assert 'params ["_ctx","_point",["_height",-1]];' in body
+    transit = body.index("[_flight,ITW_CLASH_HeliAttackTransitHeight] call ITW_CLASH_HeliAttack_fnc_SetHeight;")
+    wait = body.index("waitUntil {")
+    popup = body.index("[_flight,_height] call ITW_CLASH_HeliAttack_fnc_SetHeight;")
+    assert transit < wait < popup
+    assert "(_height * ITW_CLASH_HeliAttackPopUpFraction)" in body
+    # The troop lifts' arrival schedule, so it does not balloon on arrival.
+    assert 'private _schedule = !isNil "ITW_CLASH_HALStayLow_fnc_Schedule";' in body
+    assert "call ITW_CLASH_HALStayLow_fnc_Schedule)#0) min _limit;" in body
+    point = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_FlyPoint")
+    assert point.count("call ITW_CLASH_HeliAttack_fnc_MoveTo;") == 2
+    assert point.count("[_ctx,_pos,_height] call ITW_CLASH_HeliAttack_fnc_MoveTo;") == 2
+    orbit = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_FlyOrbit")
+    assert "private _onto = ((vehicle _lead) distance2D _point) > ((_radius * 2) max 800);" in orbit
+    raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
+    assert 'ITW_CLASH_HeliAttackTransitHeight",30]' in raw
+
+
+def test_heights_are_forced_and_released_for_the_landing():
+    helper = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_SetHeight")
+    assert "_x flyInHeight [_height,_forced];" in helper
+    assert "_x flyInHeight _height;" in helper
+    fly = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Fly")
+    cleanup = fly[fly.index('_x params ["_veh","_fired","_threats"];'):]
+    # A forced height keeps a helicopter from landing: always released.
+    release = cleanup.index("[_flight,ITW_CLASH_HeliAttackReleaseHeight,false] call ITW_CLASH_HeliAttack_fnc_SetHeight;")
+    assert release < cleanup.index("if (_reason in ITW_CLASH_HeliAttackForeignStops) then {")
+
+
+def test_the_end_line_says_which_sortie_limit():
+    stop = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Stop")
+    assert '_group setVariable ["ITW_CLASH_HeliAttackRtbWhy",_rtb]; "rtb-condition"' in stop
+    for why in ('"dead"', '"disabled"', '"damage-%1"', '"fuel-%1"'):
+        assert why in stop, why
+    fly = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Fly")
+    assert '_group getVariable ["ITW_CLASH_HeliAttackRtbWhy",""]' in fly
+
+
 def test_a_hop_is_short_and_slow_a_transit_is_not():
     body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_MoveTo")
     assert ("private _limit = if (_distance <= ITW_CLASH_HeliAttackPointHopFar) then "
@@ -455,33 +500,70 @@ def test_the_yaw_assist_is_heading_only_capped_local_and_lapses():
     assert ("private _rate = (((rad _err) * ITW_CLASH_HeliAttackYawGain) max (-ITW_CLASH_HeliAttackYawRate)) "
             "min ITW_CLASH_HeliAttackYawRate;") in frame
     # Pitch and roll rates are the flight model's; only yaw is set.
-    assert "_veh setAngularVelocityModelSpace [_w#0,_w#1,_rate * ITW_CLASH_HeliAttackYawSign];" in frame
+    assert "_veh setAngularVelocityModelSpace [_w#0,_w#1,_rate * _sign];" in frame
+    assert "private _sign = [_veh] call ITW_CLASH_HeliAttack_fnc_YawSignOf;" in frame
     hold = function_body(source, "ITW_CLASH_HeliAttack_fnc_YawHold")
     assert "private _entry = [_veh,+_pos,time + 1.5];" in hold
     assert 'addMissionEventHandler ["EachFrame",{call ITW_CLASH_HeliAttack_fnc_YawFrame}];' in source
     raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
-    assert 'ITW_CLASH_HeliAttackYawSign",-1]' in raw
+    # v4: measured in game 2026-10-17, positive turns the nose clockwise.
+    assert 'ITW_CLASH_HeliAttackYawSign",1]' in raw
 
 
-def test_a_wrong_way_turn_flips_the_sign_once_and_says_so():
+def test_a_turn_that_does_not_close_the_error_flips_that_airframes_sign():
+    # v4: v3 flipped only when the error grew, which an aircraft already
+    # parked tail on (the wrong sign's resting point) can never show.
     body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Aim")
-    assert "if (_onAt < 0 && {_err > (_assistErr + 10)}) then {" in body
-    assert "ITW_CLASH_HeliAttackYawSign = -ITW_CLASH_HeliAttackYawSign;" in body
+    assert "&& {_err > (_assistErr - ITW_CLASH_HeliAttackYawMinProgress)}" in body
+    # Only while the assist is really turning it, and never once locked.
+    assert '(time - (_lead getVariable ["ITW_CLASH_HeliAttackYawAppliedAt",-1e10])) < 1' in body
+    assert "if (!_turning) exitWith {_checkSignAt = time + 1};" in body
+    assert "!_locked" in body and "{_flips < ITW_CLASH_HeliAttackYawMaxFlips}" in body
+    assert "ITW_CLASH_HeliAttackYawSigns set [typeOf _lead,[-_sign,false,_flips + 1]];" in body
     assert '["yaw-sign-flipped",[' in body
+    # An assisted point-at that comes on locks the class's sign.
+    assert "ITW_CLASH_HeliAttackYawSigns set [typeOf _lead,[_sign,true,_flips]];" in body
+    assert '["yaw-sign-confirmed",[' in body
+    frame = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_YawFrame")
+    assert '_veh setVariable ["ITW_CLASH_HeliAttackYawAppliedAt",time];' in frame
+    state = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_YawState")
+    assert "getOrDefault [typeOf _veh,[ITW_CLASH_HeliAttackYawSign,false,0]]" in state
 
 
-def yaw_rate(err_deg, gain=2.0, cap=0.8, sign=-1):
+def yaw_rate(err_deg, gain=2.0, cap=0.8, sign=1):
     """Python mirror of the assist's commanded yaw rate (rad/s, model z)."""
     import math
     return max(-cap, min(cap, math.radians(err_deg) * gain)) * sign
 
 
 def test_yaw_rate_model():
-    # A target to the right needs a clockwise turn from above: negative about z.
-    assert yaw_rate(20) < 0
-    assert yaw_rate(-20) > 0
-    assert yaw_rate(90) == -0.8
-    assert abs(yaw_rate(5) + 0.1745) < 0.001
+    # A target to the right needs a clockwise turn from above, which in Arma
+    # is positive about the model's up axis (v4, measured 2026-10-17).
+    assert yaw_rate(20) > 0
+    assert yaw_rate(-20) < 0
+    assert yaw_rate(90) == 0.8
+    assert abs(yaw_rate(5) - 0.1745) < 0.001
+
+
+def rest(start_err, sign, steps=400, dt=0.05):
+    """The assist's loop on a bare yaw: where the heading error settles.
+
+    The rate turns the heading (positive clockwise); the error is the
+    target's bearing less the heading, so it moves the other way.
+    """
+    err = start_err
+    for _ in range(steps):
+        err -= yaw_rate(err, sign=sign) * 57.2958 * dt
+        err = ((err + 540) % 360) - 180
+    return err
+
+
+def test_a_wrong_sign_parks_the_tail_on_the_target():
+    # Hark's 2026-10-17 report, as the loop's arithmetic: from either side,
+    # the inverted assist comes to rest tail on; the right one nose on.
+    for start in (20, 97, -97, 170, -170):
+        assert abs(abs(rest(start, -1)) - 180) < 2, start
+        assert abs(rest(start, 1)) < 2, start
 
 
 def heading_error(heli_dir, bearing):

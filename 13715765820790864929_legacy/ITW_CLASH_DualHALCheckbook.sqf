@@ -432,8 +432,24 @@ ITW_CLASH_DualHAL_fnc_RefreshBLUFORObjectives = {
 */
 ITW_CLASH_SupportRTB = missionNamespace getVariable ["ITW_CLASH_SupportRTB",true];
 
+/*
+    HAL's Info Markers for the players' own commander (Hark, 2026-10-17: "is
+    there a hal module that updates the players on what the ai knows").
+    HAL has no intel feed as such; this is its Leader Settings "Info Markers"
+    option. Each cycle the commander draws its own groups (with their ids)
+    and every enemy group it knows of as NATO symbols, plus its ordnance
+    drops. They are HAL's own picture: an enemy marker sits on the group's
+    leader once the commander knows of it, not on a reported position.
+    HAL makes them with createMarker, so everyone sees them: the enemy
+    commander's are left off, or the players would see what it knows of
+    them. HQSitRep copies the global every cycle, so it can be changed from
+    the console.
+*/
+ITW_CLASH_PlayerInfoMarkers = missionNamespace getVariable ["ITW_CLASH_PlayerInfoMarkers",true];
+
 ITW_CLASH_DualHAL_fnc_ConfigureBLUFORGlobals = {
     RydHQB_SupportRTB = ITW_CLASH_SupportRTB;
+    RydHQB_InfoMarkers = ITW_CLASH_PlayerInfoMarkers;
     RydHQB_Wait = 1;
     RydHQB_SubAll = false;
     RydHQB_SubSynchro = false;
@@ -1583,7 +1599,7 @@ diag_log "CLASH BOOT | dual-hal-core-wrapper-skipped | sideBinderOwnsCommanderB=
     };
 
     call ITW_CLASH_DualHAL_fnc_InstallCargoHook;
-    diag_log "CLASH BOOT | dual-hal-ready | BLUFOR=B OPFOR=A checkbook=true cargo=native";
+    diag_log format ["CLASH BOOT | dual-hal-ready | BLUFOR=B OPFOR=A checkbook=true cargo=native playerInfoMarkers=%1 enemyInfoMarkers=false",ITW_CLASH_PlayerInfoMarkers];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         sleep 2;

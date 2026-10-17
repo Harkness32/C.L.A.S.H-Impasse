@@ -110,6 +110,10 @@ _lasT = ObjNull;
 _cause = [];
 _timer = 0;
 _alive = true;
+// HAL's own path makes its search-and-destroy waypoint inside the else block
+// below and deletes it after the block (_timer > 120); declared out here or
+// it is gone by then (2026-10-17 RPT, line 317).
+_wp = [];
 _clashHeli = (
 	!(isPlayer (leader _unitG))
 	&& {!isNil "ITW_CLASH_HeliAttack_fnc_Fly"}

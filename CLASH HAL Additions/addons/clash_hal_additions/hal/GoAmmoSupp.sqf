@@ -440,6 +440,13 @@ else
 		{
 		[_unitG] call RYD_WPdel;
 
+		// C.L.A.S.H.: the unit being resupplied is gone, dead or deleted. Its
+		// position is then [0,0,0]: RYD_WPadd refuses the first leg and the
+		// attach below errors on _wp (2026-10-17 RPT, line 474), and a later
+		// leg would be ordered to the map corner. The delivery is over; the
+		// return leg below runs as after a finished one.
+		if ((isNull _Trg) or {not (alive _Trg)}) exitWith {};
+
 		if not (_counter == 0) then 
 			{
 			_posX = ((position _Trg) select 0) + (random 100) -  50;

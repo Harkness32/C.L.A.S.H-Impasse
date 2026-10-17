@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 4;
+ITW_CLASH_SupportsVersion = 5;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -50,6 +50,18 @@ ITW_CLASH_SupportsReady = false;
     the pre-spawn check on a contact still believed to exist even after its
     position has gone stale, because they look for it themselves.
 
+    v5 (Hark, 2026-10-17: "supports are just crazy rare"):
+      - Strikes about twice as often: bomb and guided cost 10 minutes of
+        income (were 20), carpet 20 (was 40), and SAVE pulls half as hard.
+      - The guided pass shares the acquiring floor (1.5): it was excluded
+        from four lone vehicles in one session, a parked Cheetah among them,
+        while the bomb flew at them.
+      - A UAV that dies within a minute of reaching its station marks a
+        killbox: no UAV goes within 1.5 km of it for 15 minutes. A's UAVs
+        died 5 to 10 s after reaching the same spot four times.
+      - The bomb pass spawns 6 km out (other jets 4 km), so an acquisition
+        has time to become a line the jet can actually fly.
+
     Every number below is a placeholder for calibration.
 */
 
@@ -81,13 +93,16 @@ ITW_CLASH_SupportsIncomeScale = missionNamespace getVariable ["ITW_CLASH_Support
 // Intended cadence in minutes. Price = income per minute x cadence, so tuning
 // is "how often should this happen", not a hunt for numbers.
 ITW_CLASH_SupportsUAVCadence = missionNamespace getVariable ["ITW_CLASH_SupportsUAVCadence",4];
-ITW_CLASH_SupportsBombCadence = missionNamespace getVariable ["ITW_CLASH_SupportsBombCadence",20];
-ITW_CLASH_SupportsGuidedCadence = missionNamespace getVariable ["ITW_CLASH_SupportsGuidedCadence",20];
-ITW_CLASH_SupportsCarpetCadence = missionNamespace getVariable ["ITW_CLASH_SupportsCarpetCadence",40];
+// v5: strikes twice as often (were 20, 20 and 40).
+ITW_CLASH_SupportsBombCadence = missionNamespace getVariable ["ITW_CLASH_SupportsBombCadence",10];
+ITW_CLASH_SupportsGuidedCadence = missionNamespace getVariable ["ITW_CLASH_SupportsGuidedCadence",10];
+ITW_CLASH_SupportsCarpetCadence = missionNamespace getVariable ["ITW_CLASH_SupportsCarpetCadence",20];
 ITW_CLASH_SupportsAirborneHeliCadence = missionNamespace getVariable ["ITW_CLASH_SupportsAirborneHeliCadence",30];
 ITW_CLASH_SupportsAirbornePlaneCadence = missionNamespace getVariable ["ITW_CLASH_SupportsAirbornePlaneCadence",50];
 // Holding costs less than taking: the side losing ground holds more.
 ITW_CLASH_SupportsHoldingDiscount = missionNamespace getVariable ["ITW_CLASH_SupportsHoldingDiscount",0.75];
+// v5: how hard SAVE pulls in the pick, against its 3/2/1/0.5 by bank fill.
+ITW_CLASH_SupportsSaveScale = missionNamespace getVariable ["ITW_CLASH_SupportsSaveScale",0.5];
 
 // ------------------------------------------------------------------ cooldowns
 
@@ -103,10 +118,11 @@ ITW_CLASH_SupportsObjectiveCooldown = missionNamespace getVariable ["ITW_CLASH_S
 // ---------------------------------------------------------------- targeting
 
 ITW_CLASH_SupportsValueFloor = missionNamespace getVariable ["ITW_CLASH_SupportsValueFloor",2];
-// v4: the bomb's own floor. COLOSSUS weights: rifleman 1, vehicle 1.5,
-// tank 3, static 0.5. At 1.5 a lone vehicle or tank qualifies, so do two
-// riflemen, or a static whose gunner is tracked as well; one rifleman does not.
-ITW_CLASH_SupportsValueFloorBomb = missionNamespace getVariable ["ITW_CLASH_SupportsValueFloorBomb",1.5];
+// The floor for the flavors that acquire on site (bomb and guided; v4 for the
+// bomb, v5 for both). COLOSSUS weights: rifleman 1, vehicle 1.5, tank 3,
+// static 0.5. At 1.5 a lone vehicle or tank qualifies, so do two riflemen,
+// or a static whose gunner is tracked as well; one rifleman does not.
+ITW_CLASH_SupportsValueFloorAcquire = missionNamespace getVariable ["ITW_CLASH_SupportsValueFloorAcquire",1.5];
 // v4: carpet is for clusters. Fewer contacts than this and it is not offered.
 ITW_CLASH_SupportsCarpetMinContacts = missionNamespace getVariable ["ITW_CLASH_SupportsCarpetMinContacts",3];
 ITW_CLASH_SupportsClusterRadius = missionNamespace getVariable ["ITW_CLASH_SupportsClusterRadius",150];
@@ -141,6 +157,19 @@ ITW_CLASH_SupportsThreatProximity = missionNamespace getVariable ["ITW_CLASH_Sup
 ITW_CLASH_SupportsDelayMin = missionNamespace getVariable ["ITW_CLASH_SupportsDelayMin",45];
 ITW_CLASH_SupportsDelayMax = missionNamespace getVariable ["ITW_CLASH_SupportsDelayMax",120];
 ITW_CLASH_SupportsSpawnDistanceJet = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceJet",4000];
+// v5: the bomb pass starts further out, so what it acquires can still be
+// turned onto: at 200 m/s the 4 km start left about 5 s (2026-10-17).
+ITW_CLASH_SupportsSpawnDistanceBomb = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceBomb",6000];
+/*
+    v5. A UAV lost within KillboxSeconds of reaching its station marks where
+    it died as a killbox for its side: no UAV is sent, or retasked, within
+    KillboxRadius of it for KillboxDuration seconds.
+*/
+ITW_CLASH_SupportsUAVKillboxSeconds = missionNamespace getVariable ["ITW_CLASH_SupportsUAVKillboxSeconds",60];
+ITW_CLASH_SupportsUAVKillboxRadius = missionNamespace getVariable ["ITW_CLASH_SupportsUAVKillboxRadius",1500];
+ITW_CLASH_SupportsUAVKillboxDuration = missionNamespace getVariable ["ITW_CLASH_SupportsUAVKillboxDuration",900];
+// sideKey -> [[position, time], ...]
+if (isNil "ITW_CLASH_SupportsUAVKillboxes") then {ITW_CLASH_SupportsUAVKillboxes = createHashMap};
 ITW_CLASH_SupportsSpawnDistanceSlow = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceSlow",5000];
 // For projecting uncertainty to release only; the aircraft fly at their own.
 ITW_CLASH_SupportsSpeedJet = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedJet",110];
@@ -238,7 +267,7 @@ ITW_CLASH_SupportsDenials = [
     "NO_GUIDED_WEAPON","NO_AIRFIELD","NO_ORIGIN","NO_CONTACT","TOO_UNCERTAIN",
     "BELOW_FLOOR","ETB_ANSWERING","DANGER_CLOSE","AIR_DENIED","OBJECTIVE_FROZEN",
     "DZ_UNASSESSED","NO_HEADROOM","TARGET_GONE","NO_EXECUTOR","SPAWN_FAILED",
-    "CONSOLIDATING","NO_DZ","NO_SQUADS","NOT_CLUSTERED"
+    "CONSOLIDATING","NO_DZ","NO_SQUADS","NOT_CLUSTERED","UAV_KILLBOX"
 ];
 
 ITW_CLASH_SupportsLedgers = createHashMap;
@@ -555,6 +584,7 @@ ITW_CLASH_Supports_fnc_SpawnPoint = {
 
 ITW_CLASH_Supports_fnc_SpawnDistance = {
     params ["_flavor"];
+    if (_flavor isEqualTo "BOMB") exitWith {ITW_CLASH_SupportsSpawnDistanceBomb};
     private _kind = ([_flavor] call ITW_CLASH_Supports_fnc_Row) getOrDefault ["aircraft",""];
     if (_kind isEqualTo "JET") exitWith {ITW_CLASH_SupportsSpawnDistanceJet};
     ITW_CLASH_SupportsSpawnDistanceSlow
@@ -1028,7 +1058,9 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                 [_context,_flavor,-1,_targetKey,"NOT_CLUSTERED"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
-            private _floor = if (_flavor isEqualTo "BOMB") then {ITW_CLASH_SupportsValueFloorBomb} else {ITW_CLASH_SupportsValueFloor};
+            private _floor = if (_flavor in ITW_CLASH_SupportsAcquireFlavors) then {
+                ITW_CLASH_SupportsValueFloorAcquire
+            } else {ITW_CLASH_SupportsValueFloor};
             if ((_cluster get "worth") < _floor) then {
                 [_context,_flavor,-1,_targetKey,"BELOW_FLOOR"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
@@ -1209,9 +1241,37 @@ ITW_CLASH_Supports_fnc_DropCandidates = {
     leads, else overwatch of the plan objective. Refreshed every assessment
     without a roll.
 */
+// v5. Where this side's UAVs have died on arrival lately.
+ITW_CLASH_Supports_fnc_MarkKillbox = {
+    params ["_side","_position"];
+    private _key = [_side] call ITW_CLASH_Supports_fnc_SideKey;
+    isNil {
+        private _boxes = (ITW_CLASH_SupportsUAVKillboxes getOrDefault [_key,[]]) select {
+            (time - (_x#1)) <= ITW_CLASH_SupportsUAVKillboxDuration
+        };
+        _boxes pushBack [[_position#0,_position#1,0],time];
+        ITW_CLASH_SupportsUAVKillboxes set [_key,_boxes];
+    };
+    ["uav-killbox",[_key,(_position apply {round _x}) select [0,2],ITW_CLASH_SupportsUAVKillboxDuration]] call
+        ITW_CLASH_Supports_fnc_Log;
+};
+
+ITW_CLASH_Supports_fnc_InKillbox = {
+    params ["_side","_position"];
+    if (_position isEqualTo []) exitWith {false};
+    private _key = [_side] call ITW_CLASH_Supports_fnc_SideKey;
+    ((ITW_CLASH_SupportsUAVKillboxes getOrDefault [_key,[]]) findIf {
+        (time - (_x#1)) <= ITW_CLASH_SupportsUAVKillboxDuration
+        && {((_x#0) distance2D _position) <= ITW_CLASH_SupportsUAVKillboxRadius}
+    }) >= 0
+};
+
 ITW_CLASH_Supports_fnc_UAVTask = {
     params ["_side","_planObjective","_objectives"];
     private _planPos = [_planObjective] call ITW_CLASH_Supports_fnc_ObjectivePos;
+    // v5: a place this side's UAVs keep dying over is not a task.
+    private _planBoxed = [_side,_planPos] call ITW_CLASH_Supports_fnc_InKillbox;
+    if (_planBoxed) then {_planPos = []};
     // Where uncertainty keeps the commander from deciding, look there first:
     // nobody has looked, or the enemy seen there can no longer be placed.
     private _planIntel = if (_planPos isEqualTo []) then {""} else {
@@ -1221,13 +1281,16 @@ ITW_CLASH_Supports_fnc_UAVTask = {
     if (_planIntel isEqualTo "STALE_CONTACT") exitWith {[_planPos,_planObjective,"stale-plan"]};
     private _stale = _objectives findIf {
         private _pos = [_x] call ITW_CLASH_Supports_fnc_ObjectivePos;
-        _pos isNotEqualTo [] && {([_side,_pos] call ITW_CLASH_Knowledge_fnc_IntelState) isEqualTo "STALE_CONTACT"}
+        _pos isNotEqualTo []
+        && {!([_side,_pos] call ITW_CLASH_Supports_fnc_InKillbox)}
+        && {([_side,_pos] call ITW_CLASH_Knowledge_fnc_IntelState) isEqualTo "STALE_CONTACT"}
     };
     if (_stale >= 0) exitWith {
         private _index = _objectives#_stale;
         [[_index] call ITW_CLASH_Supports_fnc_ObjectivePos,_index,"stale-contact"]
     };
     if (_planPos isNotEqualTo []) exitWith {[_planPos,_planObjective,"overwatch"]};
+    if (_planBoxed) exitWith {[[],_planObjective,"killbox"]};
     [[],-1,"none"]
 };
 
@@ -1322,6 +1385,9 @@ ITW_CLASH_Supports_fnc_Assess = {
     private _task = [_side,_planObjective,_objectives] call ITW_CLASH_Supports_fnc_UAVTask;
     ITW_CLASH_SupportsUAVTasks set [[_side] call ITW_CLASH_Supports_fnc_SideKey,_task];
     _task params ["_taskPos","_taskObjective","_taskWhy"];
+    if (_taskWhy isEqualTo "killbox") then {
+        [_context,"UAV",_taskObjective,"","UAV_KILLBOX"] call ITW_CLASH_Supports_fnc_Exclude;
+    };
     if (_taskPos isNotEqualTo []) then {
         private _gate = [_context,"UAV"] call ITW_CLASH_Supports_fnc_FlavorGate;
         if (_gate isEqualTo "" && {(_ledger get "cash") < (["UAV","TAKE"] call ITW_CLASH_Supports_fnc_Price)}) then {
@@ -1356,12 +1422,12 @@ ITW_CLASH_Supports_fnc_Assess = {
     // Save is an option of its own: one roll decides whether and what.
     private _cap = (call ITW_CLASH_Supports_fnc_Cap) max 1;
     private _fill = (_ledger get "cash") / _cap;
-    private _saveWeight = switch (true) do {
+    private _saveWeight = ITW_CLASH_SupportsSaveScale * (switch (true) do {
         case (_fill < (1 / 3)): {3};
         case (_fill < (2 / 3)): {2};
         case (_fill < 1): {1};
         default {0.5};
-    };
+    });
     _pool pushBack (["SAVE","SAVE",-1,"",[],_saveWeight,["",[],[]]] call ITW_CLASH_Supports_fnc_Candidate);
 
     ([_pool] call ITW_CLASH_Supports_fnc_Pick) params ["_pick","_draw","_total"];
@@ -1888,7 +1954,7 @@ ITW_CLASH_SupportsAirbornePlaneSquads = missionNamespace getVariable ["ITW_CLASH
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 bombFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -1910,8 +1976,16 @@ diag_log format [
     ITW_CLASH_SupportsInfluenceRadius,
     ITW_CLASH_SupportsInfluenceEdge,
     ITW_CLASH_SupportsThreatProximity,
-    ITW_CLASH_SupportsValueFloorBomb,
+    ITW_CLASH_SupportsValueFloorAcquire,
     ITW_CLASH_SupportsCarpetMinContacts,
-    ITW_CLASH_SupportsAcquireFlavors joinString "/"
+    ITW_CLASH_SupportsAcquireFlavors joinString "/",
+    ITW_CLASH_SupportsBombCadence,
+    ITW_CLASH_SupportsGuidedCadence,
+    ITW_CLASH_SupportsCarpetCadence,
+    ITW_CLASH_SupportsSaveScale,
+    ITW_CLASH_SupportsSpawnDistanceBomb,
+    ITW_CLASH_SupportsUAVKillboxSeconds,
+    ITW_CLASH_SupportsUAVKillboxRadius,
+    ITW_CLASH_SupportsUAVKillboxDuration
 ];
 true

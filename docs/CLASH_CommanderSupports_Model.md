@@ -1,6 +1,6 @@
 # C.L.A.S.H. Commander Supports Model
 
-Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site.** Phase 0 (per-side air-loss closures, hard-kill
+Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed.** Phase 0 (per-side air-loss closures, hard-kill
 fighter denial) shipped in `448324b`; see `COMMANDER_SUPPORTS_PHASE0.md`.
 
 Every number in this document is a placeholder for calibration, not a decision.
@@ -377,7 +377,7 @@ exempt.
 |---|---|
 | UAV launch | 3 if the plan objective is Unobserved or Stale contact (uncertainty is blocking a decision there); 1 for another objective with Stale contact; 0.5 otherwise |
 | Airborne | Base 1. +1 if the push is short by more than the best strike could remove. +1 if our nearest available ground force is more than 1500 m out. 3 for a held point under pressure with no anchor |
-| Save | 3 with the bank below a third of its cap, 2 below two thirds, 1 below full, 0.5 at the cap |
+| Save | 3 with the bank below a third of its cap, 2 below two thirds, 1 below full, 0.5 at the cap, times 0.5 since v5 (`ITW_CLASH_SupportsSaveScale`) |
 
 Modifiers:
 
@@ -410,7 +410,7 @@ Under CONSOLIDATE only candidates at held points enter the pool.
 | Switch | Flavor enabled | `DISABLED` |
 | Knowledge | The flavor's statuses, rechecked at admission | `NO_CONTACT`, `TOO_UNCERTAIN` |
 | Objective | Plan objective under PUSH, or a held point under pressure. Not capture-frozen (`ITW_CLASH_fnc_ObjectiveFrozen`). Any other objective is simply not a candidate | `CONSOLIDATING`, `OBJECTIVE_FROZEN` |
-| Value | Cluster worth at least 2; the bomb pass 1.5 (v4: a lone vehicle, a lone tank or two riflemen, and a static once its gunner is tracked too; never one rifleman). Carpet also needs three contacts or more | `BELOW_FLOOR`, `NOT_CLUSTERED` |
+| Value | Cluster worth at least 2; the bomb and guided passes 1.5 (`ITW_CLASH_SupportsValueFloorAcquire`; v4 the bomb, v5 the guided pass too: a lone vehicle, a lone tank or two riflemen, and a static once its gunner is tracked too; never one rifleman). Carpet also needs three contacts or more | `BELOW_FLOOR`, `NOT_CLUSTERED` |
 | Danger close | Footprint plus 300 m clear of every living friendly: on foot, in vehicles, in aircraft below 300 m, under canopy. 500 m for players | `DANGER_CLOSE` |
 | Corridor | UAV and helicopters use the default fighter rule (`HARD_KILL`); jets use `ANY_AA_MISSILE`. `AIR_DENIED` denies | `AIR_DENIED` |
 | ETB overlap | Target not already tasked to a busy ETB responder of the side (`ITW_CLASH_Supports_fnc_ETBAnswering` reads `ITW_CLASH_ThreatCoverageTarget` on the commander's groups) | `ETB_ANSWERING` |
@@ -502,12 +502,18 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   | Flavor | Intended cadence |
   |---|---|
   | UAV | Every 4 minutes |
-  | Bomb pass, guided pass | Every 20 minutes |
-  | Carpet | Every 40 minutes |
+  | Bomb pass, guided pass | Every 10 minutes (v5; was 20) |
+  | Carpet | Every 20 minutes (v5; was 40) |
   | Helicopter airborne | Every 30 minutes |
   | C-130 troops | Every 50 minutes |
 
 - **Holding discount:** supports at a held point cost 0.75 of the price.
+- **v5 tempo** (Hark, 2026-10-17: "supports are just crazy rare"). In 33
+  minutes of one session B flew three strikes and A none: A spent everything on
+  UAVs dying at one spot, and SAVE won most picks for both. Halving the strike
+  prices opens the money gate twice as often; halving SAVE's pull adds a little
+  more (a strike of weight 1 against UAV 3 and an empty bank: 14% of picks to
+  18%).
 - **Starting cash:** one UAV.
 - **Persistence:** reset on load. Nothing is written to `profileNamespace`.
 
@@ -564,13 +570,29 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   despawns. Not on station within 600 s: `BREAKOFF`, refunded.
 - **Loss:** the recon lane stays blocked for a 300 s relaunch delay. The loss
   feeds AirPicture's side-aware loss counter.
+- **Killbox (UAV v3, supports v5):** a UAV lost within 60 s of reaching its
+  station marks where it died for its side. For 15 minutes no UAV is tasked,
+  launched or retasked within 1.5 km of it: the task falls to an objective with
+  leads elsewhere, or none (`UAV_KILLBOX` in the pool). On 2026-10-17 four of
+  A's five UAVs died 5 to 10 s after reaching the same station with no killer
+  recorded, so the air picture, which weighs a loss by its killer, never
+  closed it.
+- **What players see:** a UAV's reveals go to its HQ group, which is how HAL
+  learns them; they never reached the players. Since 2026-10-17 the players'
+  own commander draws HAL's Info Markers (`ITW_CLASH_PlayerInfoMarkers`,
+  `RydHQB_InfoMarkers`): its groups and every enemy group it knows of, as NATO
+  symbols on the map, so what a UAV finds shows up there once HAL takes it in.
+  The enemy commander's stay off, because HAL's markers are global.
 
 ### 9.3 Strike pass
 
 - The jet flies a line through the aim point (bomb pass 250 m, carpet 400 m,
   guided 600 m above it). Unguided release is timed by ballistic fall time from
-  where the bomb leaves (5 m under the jet) and the jet's speed, with no drag.
-  Every bomb leaves with the jet's velocity and arcs forward like a real stick.
+  where the bomb leaves (5 m under the jet) and the jet's speed, with no drag,
+  times 1.08 since v5 (`ITW_CLASH_SupportsStrikeReleaseScale`). Every bomb
+  leaves with the jet's velocity and arcs forward like a real stick.
+- **v5, the bomb pass:** spawns 6 km out (other jets 4 km) and is held to
+  550 km/h, so an acquisition has time to become a line the jet can fly.
 - **Line-up**, about 3 km out: the latest report is read, the uncertainty limit
   and danger close are checked, and the jet's line is pointed through the new
   aim. The aircraft is steered onto the target; bombs are never moved onto it.
@@ -620,11 +642,16 @@ The setup delay is varied per request (45 to 120 s) and never announced.
      jumpy fix cannot fling the aim. The aim is the latest fix moved on by that
      velocity until the bombs arrive (the fix's age plus the run left over the
      jet's ground speed), never more than 250 m.
-  5. **Re-line:** with more than 1800 m of run left and the aim moved more than
-     25 m, the jet is steered onto the new aim (at most every 3 s). After that
-     only the timing follows; what is off the line is a miss, more than 250 m a
-     break-off.
-  6. **Final check:** an acquired target that is alive is bombed where the jet
+  5. **Re-line:** with at least 10 s of flight left before the final check, at
+     the speed it is flying (v5; v4 used 1800 m of run, 2 s at 200 m/s), and the
+     aim moved more than 25 m, the jet is steered onto the new aim (at most
+     every 3 s). After that only the timing follows.
+  6. **Held to its footprint (v5):** a bomb pass more than 50 m off its line at
+     the final check breaks off, and the line is checked once more on the frame
+     the first bomb would leave: off by more, nothing drops (`wide`), and the
+     money comes back. Carpet keeps 250 m; a console test pass keeps 250 m so a
+     drifting calibration run still gives impacts.
+  7. **Final check:** an acquired target that is alive is bombed where the jet
      has it, led to impact. Nothing acquired, or the target died: the report,
      only if it is inside the 300 m limit with a contact not LOST; otherwise
      `BREAKOFF` (`no-target-found`), egress, refund.
@@ -660,6 +687,20 @@ The setup delay is varied per request (45 to 120 s) and never announced.
      The scan ends once the report is inside minimum range.
   5. **Nothing valid** within a 20 s window, or before minimum range:
      `BREAKOFF`, egress, despawn, refund.
+- **First live releases (2026-10-17):** the Black Wasp acquired the ground's
+  IFV by sight 203 m from a stale report (R 1245 m), re-lined 2.37 km out at
+  200 m/s and released all four bombs on time (5.5 m late), but about 250 m to
+  the side: it never settled on the new line in the 5 s it had, and the 250 m
+  limit let it drop. All four landed 112 to 119 m long of the no-drag model
+  and within 3 m of each other: Arma's Mk82 carries further than a plain drop.
+  v5 answers both: the footprint limit and later re-line rule above, and the
+  1.08 lead.
+- **Break-off (v5):** a pass that breaks off turns away from the side the
+  target is on, from where it is (track plus or minus 100 degrees), then takes
+  the colder turn home. It no longer flies on 2 km past the aim: the A-10 that
+  broke off on 2026-10-17 passed 460 m from the Cheetah it was meant to bomb
+  and was lost. Delivered passes still go on past the target. Every break-off
+  logs `supports-strike-breakoff-geometry`.
 - **Carpet:** 21 bombs, Antistasi's layout centred on the aim point: 15 m
   apart along the line, in five lanes 40 m apart across it.
 - **Every bomb:** released only while the aircraft is alive, and given the
@@ -742,7 +783,9 @@ the loud debugger; the pool and ledger lines are too long for chat.
 | `supports-strike-bomb-relined`, `-bomb-target-lost` | v4: how far the aim moved and the run left; an acquired target that died before release |
 | `supports-strike-bomb-release-fix` | v4: at the final check: type, class, how, fix age, fixes held, lead in metres, estimated speed, distance from the report |
 | `supports-strike-released`, `-guided-fired`, `-scan-empty`, `-effect` | What each pass did (bombs released and skipped, mean lateness in metres; shots, fallbacks, envelope refusal; why a scan ended: for the bomb pass `bomb-report` or `bomb-breakoff`, with looks taken and the report's R), and how many of the target's entities died after it (log only) |
-| `supports-strike-impact` | Per bomb: error against the no-drag model (along, across), error against its pattern point (along, across), release height, speed, lateness in metres |
+| `supports-strike-impact` | Per bomb: error against the no-drag model (along, across), error against its pattern point (along, across), release height, speed, lateness in metres. The model is the raw no-drag one, without the release scale, so the scale can be refitted from it |
+| `supports-strike-breakoff-geometry` | v5: id, flavor, reason, metres to the aim along the line, metres off it, line heading, track heading, missiles that came at it during the pass, height, speed |
+| `supports-uav-killbox` | v5: side, where a UAV died within a minute of arriving, how long the area is closed |
 | `supports-strike-impact-summary` | Per pass: the four mean errors |
 | `supports-strike-ammo` | Boot: the bomb class's simulation, air friction, side air friction, max speed, thrust, thrust time, time to live |
 | `supports-strike-test-started`, `-test-outcome` | A console test pass |
@@ -760,6 +803,9 @@ the loud debugger; the pool and ledger lines are too long for chat.
 
 ## 11. Rollout
 
+- **Supports v5 / Strike v5 / UAV v3** (2026-10-17, Hark): strikes twice as
+  often, guided on lone vehicles, the UAV killbox, and the bomb pass held to
+  its footprint with the first fitted release scale. Not yet run in engine.
 - **Supports v4 / Strike v4: lone targets for the bomb, on-site acquisition**
   (2026-10-16, Hark). The bomb pass's floor is 1.5, carpet needs three
   contacts, and the bomb pass acquires its own target like the guided pass
@@ -826,6 +872,19 @@ class goes without that flavor.
    a dice roll.
 15. The lead (v4): `bomb-release-fix` speed and lead against the impact lines
    on a moving target.
+16. v5 release scale: the impact lines' aim error along should now sit near
+   zero at 550 km/h (the model error stays near +8% of the lead). An A-10 pass
+   is the second speed that tells a fraction from a fixed distance.
+17. v5 line: how often a bomb pass ends `passed-wide` or `nothing-released-wide`
+   against `released`, with `breakoff-geometry` saying how far off and whether
+   missiles were coming. If most acquisitions still end wide, the jet needs a
+   second run (Antistasi's CAS repositions to 3 km and comes round).
+18. v5 tempo: strikes per side per hour, against UAVs and SAVE in the pool.
+19. v5 killbox: `supports-uav-killbox` lines, and UAV losses within a minute
+   of arrival dropping after the first.
+20. Info Markers: the players' map shows their own groups and the enemy groups
+   their commander knows of, updated each HAL cycle; nothing of the enemy
+   commander's picture.
 
 ## 14. Tunables
 
@@ -844,7 +903,7 @@ All placeholders.
 | Moving threshold | 30 m between reports |
 | Recently cleared window | 300 s |
 | Cluster radius | 150 m |
-| Value floor | 2; bomb pass 1.5 |
+| Value floor | 2; bomb and guided passes 1.5 |
 | Carpet minimum contacts | 3 |
 | Footprints | Bomb pass 50 m, carpet 60 m |
 | Hard uncertainty limit | 300 m |
@@ -852,15 +911,18 @@ All placeholders.
 | Corridor HOT or CONTESTED multiplier | 0.5 |
 | Holding discount | 0.75 |
 | Setup delay | 45 to 120 s |
-| Spawn distance | Jets 4 km, helicopters and transport planes 5 km |
+| Spawn distance | Jets 4 km, the bomb pass 6 km, helicopters and transport planes 5 km |
+| Save pull | 0.5 times its weight by bank fill |
+| UAV killbox | Lost within 60 s of arriving; 1.5 km; 15 min |
 | UAV altitude, loiter, relaunch | 2000 m AGL (rotary 500 m), 15 min, 300 s |
 | Guided scan | Within 3 km, radius cap 500 m, window 20 s |
-| Bomb acquisition | Reveal 1.5; a look every 1 s from spawn; scan radius R, 150 to 500 m; re-line above 1800 m of run when the aim moved over 25 m; velocity from fixes 4 to 10 s apart; lead cap 250 m |
+| Bomb acquisition | Reveal 1.5; a look every 1 s from spawn; scan radius R, 150 to 500 m; re-line with 10 s or more to the final check when the aim moved over 25 m; velocity from fixes 4 to 10 s apart; lead cap 250 m |
+| Bomb pass speed, release scale | 550 km/h; lead times 1.08 |
 | Strike heights | Bomb pass 250 m, carpet 400 m, guided 600 m |
 | Bomb pass payload | 4 bombs, 15 m apart |
 | Guided pass payload | 2 shots |
 | Carpet | 21 bombs, 15 m along, lanes 40 m apart |
-| Strike cross limit | 250 m off the line at release |
+| Strike cross limit | Bomb pass 50 m (its footprint), at the final check and the first release frame; carpet and console tests 250 m |
 | UAV on station, look, retask | 1500 m, 1000 m, 300 m; transit timeout 600 s |
 | Helicopter heights | Arrives at 150 m, drops from 50 m |
 | C-130 drop height | 250 m |
@@ -903,9 +965,10 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 | `ITW_CLASH_Knowledge.sqf` (v5) | Reports (a groupmate's sighting when the leader has none), uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
 | `ITW_CLASH_Colossus.sqf` (v7) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held; concentration gated on anchored holdings |
 | `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
-| `ITW_CLASH_Supports.sqf` (v4) | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors |
-| `ITW_CLASH_SupportsStrike.sqf` (v4) | Bomb pass with on-site acquisition, guided pass with the on-site scan, carpet |
-| `ITW_CLASH_SupportsUAV.sqf` (v2) | The recon UAV |
+| `ITW_CLASH_Supports.sqf` (v5) | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors |
+| `ITW_CLASH_SupportsStrike.sqf` (v5) | Bomb pass with on-site acquisition, guided pass with the on-site scan, carpet; the break-off turn and its geometry |
+| `ITW_CLASH_SupportsUAV.sqf` (v3) | The recon UAV; marks a killbox on a quick loss |
+| `ITW_CLASH_DualHALCheckbook.sqf` | The players' commander's Info Markers |
 | `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
 | `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
 | `ITW_CLASH_DebugPreflight.sqf` | Lists the five modules |
@@ -914,6 +977,6 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 Boot (`init.sqf`): the rack profile, then Knowledge, then COLOSSUS, then the
 core and its three executors; the core needs Knowledge and COLOSSUS, and an executor that is
 missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
-`tests/test_commander_supports.py` and, for v4, `tests/test_bomb_acquisition.py`. The pure math (pick, overlap, presence,
+`tests/test_commander_supports.py`, `tests/test_bomb_acquisition.py` (v4) and `tests/test_supports_v5.py` (v5). The pure math (pick, overlap, presence,
 falloff, spawn point, release timing, economy) is cross-checked in a Python
 model. The dry run has run in engine (2026-10-16); no live support has yet. Section 13 is the list to verify.

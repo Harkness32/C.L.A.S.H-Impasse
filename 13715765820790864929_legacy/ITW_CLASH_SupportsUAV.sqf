@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsUAVStarted = true;
-ITW_CLASH_SupportsUAVVersion = 2;
+ITW_CLASH_SupportsUAVVersion = 3;
 ITW_CLASH_SupportsUAVReady = false;
 
 /*
@@ -48,6 +48,12 @@ ITW_CLASH_SupportsUAVReady = false;
     look is about 2.6 km slant from the loiter ring; whether the airframe's
     own sensors see that far is the airframe's. A rotary one, used only when the faction has no
     fixed-wing UAV, keeps 500 m: a quadcopter is built for low and close.
+
+    v3 (2026-10-17): 2000 m was not enough everywhere. Four of A's five UAVs
+    died 5 to 10 s after reaching the same station, with no killer recorded,
+    so the air picture never closed it. A UAV lost within a minute of arriving
+    now marks a killbox in the core (ITW_CLASH_Supports_fnc_MarkKillbox), and
+    no UAV is sent or retasked there for a while.
 */
 ITW_CLASH_SupportsUAVHeight = missionNamespace getVariable ["ITW_CLASH_SupportsUAVHeight",2000];
 ITW_CLASH_SupportsUAVHeightRotary = missionNamespace getVariable ["ITW_CLASH_SupportsUAVHeightRotary",500];
@@ -230,6 +236,16 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
         if (_arrivedAt < 0) then {0} else {round (time - _arrivedAt)},
         _looks,_peak,_retasks
     ]] call ITW_CLASH_SupportsUAV_fnc_Log;
+    // v5: dead within a minute of arriving: where it died is a killbox.
+    if (
+        (_result#0) isEqualTo "LOST"
+        && {_arrivedAt >= 0}
+        && {(time - _arrivedAt) <= ITW_CLASH_SupportsUAVKillboxSeconds}
+        && {!isNull _veh}
+        && {!isNil "ITW_CLASH_Supports_fnc_MarkKillbox"}
+    ) then {
+        [_side,getPosATL _veh] call ITW_CLASH_Supports_fnc_MarkKillbox;
+    };
     // Home the way it came; a wreck is left where it fell.
     [_veh,_group,getPosATL _veh,_veh getDir _spawn] spawn ITW_CLASH_Supports_fnc_Egress;
     _result
@@ -237,7 +253,7 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
 
 ITW_CLASH_SupportsUAVReady = true;
 diag_log format [
-    "CLASH BOOT | supports-uav-ready | version=%1 height=%2/rotary%10 loiter=%3s radius=%4 onStation=%5 look=%6 retask=%7 reveal=%8 revealAge=%9s unarmed=true followsAssessment=true",
+    "CLASH BOOT | supports-uav-ready | version=%1 height=%2/rotary%10 loiter=%3s radius=%4 onStation=%5 look=%6 retask=%7 reveal=%8 revealAge=%9s unarmed=true followsAssessment=true killboxOnQuickLoss=true",
     ITW_CLASH_SupportsUAVVersion,
     ITW_CLASH_SupportsUAVHeight,
     ITW_CLASH_SupportsUAVLoiter,

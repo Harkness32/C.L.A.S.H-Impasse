@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsStrikeStarted = true;
-ITW_CLASH_SupportsStrikeVersion = 4;
+ITW_CLASH_SupportsStrikeVersion = 5;
 ITW_CLASH_SupportsStrikeReady = false;
 
 /*
@@ -60,6 +60,26 @@ ITW_CLASH_SupportsStrikeReady = false;
     check: the report is bombed if it is still good enough (the 300 m limit),
     otherwise the jet breaks off and the money comes back. Carpet and console
     test passes fly the report exactly as before.
+
+    v5, from the first live releases (2026-10-17):
+      - The stick landed 250 m to the side: the jet re-lined 2.4 km out at
+        200 m/s, never settled on the new line, and the 250 m cross limit let
+        it drop anyway. A bomb pass is now held to its footprint (50 m) off
+        the line, at the final check and again on the frame the first bomb
+        would leave; off by more, nothing is dropped and the money comes back.
+        Re-lining needs ITW_CLASH_SupportsStrikeRelineSeconds of flight left
+        before the final check, not a distance; the bomb pass is held to
+        550 km/h and spawns 6 km out (core) so that time exists.
+      - All four bombs landed 112 to 119 m long of the no-drag model, within
+        3 m of each other: Arma's Mk82 carries further than a plain drop. The
+        lead is scaled by ITW_CLASH_SupportsStrikeReleaseScale (1.08, about
+        that 115 m at 196 m/s from 266 m); the impact log still measures
+        against the raw model, so the scale can be refitted.
+      - A pass that breaks off turns away from the side the target is on,
+        from where it is, instead of flying on over it: the A-10 that broke
+        off passed 460 m from the Cheetah it was meant to bomb and was lost.
+      - Every break-off is logged with its geometry: how far out, how far off
+        the line, the line and the track, and how many missiles came at it.
 */
 
 ITW_CLASH_SupportsStrikeBombClass = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeBombClass","Bo_Mk82"];
@@ -75,6 +95,9 @@ ITW_CLASH_SupportsStrikeCarpetSpacing = missionNamespace getVariable ["ITW_CLASH
 ITW_CLASH_SupportsStrikeCarpetLane = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeCarpetLane",40];
 // A pass more than this wide of the aim at release is not a pass.
 ITW_CLASH_SupportsStrikeCrossLimit = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeCrossLimit",250];
+// v5: a bomb pass's own limit, its footprint: four bombs 15 m apart do
+// nothing 60 m off the line. Carpet keeps the limit above.
+ITW_CLASH_SupportsStrikeCrossLimitBomb = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeCrossLimitBomb",50];
 ITW_CLASH_SupportsStrikeRunTimeout = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRunTimeout",180];
 // Distance still to fly when the jet lines up on the latest report.
 ITW_CLASH_SupportsStrikeApproachUpdate = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeApproachUpdate",3000];
@@ -88,6 +111,14 @@ ITW_CLASH_SupportsStrikeDropOffset = missionNamespace getVariable ["ITW_CLASH_Su
 // Metres added to the computed lead. Positive releases earlier, so bombs land
 // shorter. Stays 0 until the impact log has separated drag from timing.
 ITW_CLASH_SupportsStrikeReleaseBias = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeReleaseBias",0];
+// v5: the lead times this. Above 1 releases earlier. Fitted from the first
+// live stick (2026-10-17): 115 m long at 196 m/s from 266 m, about 8% of the
+// lead. Physically it should grow with speed and fall time, so a fraction,
+// not metres. Refit from the impact log at other speeds and heights.
+ITW_CLASH_SupportsStrikeReleaseScale = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeReleaseScale",1.08];
+// v5: a bomb pass is flown no faster than this (km/h), so it has time to
+// acquire, and to turn onto what it acquired.
+ITW_CLASH_SupportsStrikeBombKph = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeBombKph",550];
 ITW_CLASH_SupportsStrikeImpactLog = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeImpactLog",true];
 ITW_CLASH_SupportsStrikeScanRange = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanRange",3000];
 ITW_CLASH_SupportsStrikeScanCap = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanCap",500];
@@ -107,9 +138,10 @@ ITW_CLASH_SupportsStrikeEffectDelay = missionNamespace getVariable ["ITW_CLASH_S
 ITW_CLASH_SupportsStrikeRevealValue = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRevealValue",1.5];
 // Seconds between looks.
 ITW_CLASH_SupportsStrikeBombScanInterval = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeBombScanInterval",1];
-// The jet is re-lined onto an acquired target only with this much run left,
-// metres to the aim, and only when the aim moved more than the shift.
-ITW_CLASH_SupportsStrikeRelineMin = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRelineMin",1800];
+// The jet is re-lined onto an acquired target only with this many seconds of
+// flight left before the final check (v5; v4 used 1800 m, which at 200 m/s
+// was 2 s), and only when the aim moved more than the shift.
+ITW_CLASH_SupportsStrikeRelineSeconds = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRelineSeconds",10];
 ITW_CLASH_SupportsStrikeRelineShift = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeRelineShift",25];
 // Velocity from two fixes at least the sample apart and inside the window,
 // seconds; the lead never moves the aim further than the cap, metres.
@@ -211,7 +243,14 @@ ITW_CLASH_SupportsStrike_fnc_Lead = {
     private _velocity = velocity _veh;
     private _horizontal = vectorMagnitude [_velocity#0,_velocity#1,0];
     private _height = ((getPosASL _veh)#2) - ITW_CLASH_SupportsStrikeDropOffset - (getTerrainHeightASL _aim);
-    _horizontal * ([_velocity#2,_height] call ITW_CLASH_SupportsStrike_fnc_FallTime)
+    _horizontal * ([_velocity#2,_height] call ITW_CLASH_SupportsStrike_fnc_FallTime) * ITW_CLASH_SupportsStrikeReleaseScale
+};
+
+// v5. How far off the line a pass of this flavor may be and still release.
+ITW_CLASH_SupportsStrike_fnc_CrossLimit = {
+    params ["_flavor"];
+    if (_flavor isEqualTo "BOMB") exitWith {ITW_CLASH_SupportsStrikeCrossLimitBomb};
+    ITW_CLASH_SupportsStrikeCrossLimit
 };
 
 // One waypoint 3 km past the aim on the run heading, replacing the rest.
@@ -377,9 +416,16 @@ ITW_CLASH_SupportsStrike_fnc_ReleaseFrame = {
     };
     private _aim = _state get "aim";
     private _pattern = _state get "pattern";
-    private _along = ([getPosATL _veh,_aim,_state get "heading"] call ITW_CLASH_Supports_fnc_AlongCross) select 0;
+    ([getPosATL _veh,_aim,_state get "heading"] call ITW_CLASH_Supports_fnc_AlongCross) params ["_along","_cross"];
     private _lead = ([_veh,_aim] call ITW_CLASH_SupportsStrike_fnc_Lead) + ITW_CLASH_SupportsStrikeReleaseBias;
     private _next = _state get "next";
+    // v5: the line once more, on the frame the first bomb would leave; a jet
+    // that drifted off it since the final check drops nothing. The handler
+    // goes on the next frame, by the check at the top.
+    if (_next == 0 && {_along <= (_lead - ((_pattern#0)#0))} && {_cross > (_state get "crossLimit")}) exitWith {
+        _state set ["wide",_cross];
+        _state set ["done","wide"];
+    };
     while {_next < count _pattern && {_along <= (_lead - ((_pattern#_next)#0))}} do {
         (_pattern#_next) params ["_offset","_lateral"];
         private _overshoot = (_lead - _offset) - _along;
@@ -543,6 +589,11 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
     // v4: the bomb pass acquires on site. Carpet and console test passes fly
     // the report as before.
     private _acquire = (_flavor in ITW_CLASH_SupportsAcquireFlavors) && {!_test};
+    // v5: a live pass is held to its flavor's line; a console calibration
+    // pass to the old 250 m, so a drifting run still gives its impacts.
+    private _crossLimit = if (_test) then {ITW_CLASH_SupportsStrikeCrossLimit} else {
+        [_flavor] call ITW_CLASH_SupportsStrike_fnc_CrossLimit
+    };
     private _hq = _support getOrDefault ["hq",grpNull];
     private _report = +_aim;
     private _scanRadius = ((_support getOrDefault ["uncertainty",0]) max ITW_CLASH_SupportsStrikeScanMin)
@@ -657,10 +708,15 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
                     _fixes = _fixes select {(_latest - (_x#1)) <= ITW_CLASH_SupportsStrikeLeadWindow};
                 };
             };
+            // v5: only with time left to settle on the new line before the
+            // final check, at the speed it is flying.
+            private _ground = velocity _veh;
+            private _toCheck = (_along - (_lead - _first + ITW_CLASH_SupportsStrikeCheckLead))
+                / ((vectorMagnitude [_ground#0,_ground#1,0]) max 1);
             if (
                 !isNull _target
                 && {_lined}
-                && {_along > ITW_CLASH_SupportsStrikeRelineMin}
+                && {_toCheck >= ITW_CLASH_SupportsStrikeRelineSeconds}
                 && {(time - _lastLine) >= 3}
             ) then {
                 private _fix = _fixes select ((count _fixes) - 1);
@@ -673,7 +729,7 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
                     _support set ["aim",+_aim];
                     _support set ["heading",_heading];
                     _lastLine = time;
-                    ["bomb-relined",[_support get "id",round _moved,round _along,_fix#2]] call
+                    ["bomb-relined",[_support get "id",round _moved,round _along,_fix#2,round _toCheck]] call
                         ITW_CLASH_SupportsStrike_fnc_Log;
                 };
             };
@@ -733,7 +789,7 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
             };
             if (_result isNotEqualTo []) exitWith {};
             private _wide = ([getPosATL _veh,_aim,_heading] call ITW_CLASH_Supports_fnc_AlongCross) select 1;
-            if (_wide > ITW_CLASH_SupportsStrikeCrossLimit) exitWith {_result = ["BREAKOFF","passed-wide"]};
+            if (_wide > _crossLimit) exitWith {_result = ["BREAKOFF","passed-wide"]};
             _support set ["aim",+_aim];
             _armed = true;
         };
@@ -745,7 +801,8 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
     // The release itself, every frame.
     private _state = createHashMapFromArray [
         ["id",_support get "id"],["veh",_veh],["aim",+_aim],["heading",_heading],["pattern",_pattern],
-        ["next",0],["released",0],["skipped",0],["overshoots",[]],["done",""]
+        ["next",0],["released",0],["skipped",0],["overshoots",[]],["done",""],
+        ["crossLimit",_crossLimit],["wide",-1]
     ];
     private _handler = addMissionEventHandler ["EachFrame",ITW_CLASH_SupportsStrike_fnc_ReleaseFrame,[_state]];
     private _until = time + 60;
@@ -960,7 +1017,14 @@ ITW_CLASH_SupportsStrike_fnc_Run = {
         ITW_CLASH_Supports_fnc_SpawnAircraft) params ["_veh","_group"];
     if (isNull _veh) exitWith {["REVOKED","SPAWN_FAILED"]};
     [_veh] call ITW_CLASH_Supports_fnc_StripAirToAir;
-    if (_kph > 0) then {_veh limitSpeed _kph};
+    if (_kph > 0) then {_veh limitSpeed _kph} else {
+        if (_flavor isEqualTo "BOMB") then {_veh limitSpeed ITW_CLASH_SupportsStrikeBombKph};
+    };
+    // v5: for the break-off line, how many missiles came at it.
+    _veh setVariable ["ITW_CLASH_StrikeMissiles",0];
+    private _missileHandler = _veh addEventHandler ["IncomingMissile",{
+        (_this#0) setVariable ["ITW_CLASH_StrikeMissiles",((_this#0) getVariable ["ITW_CLASH_StrikeMissiles",0]) + 1];
+    }];
 
     _veh flyInHeight _height;
     private _floor = (getTerrainHeightASL _aim) + _height;
@@ -973,11 +1037,32 @@ ITW_CLASH_SupportsStrike_fnc_Run = {
     } else {
         [_support,_veh,_group,_heading] call ITW_CLASH_SupportsStrike_fnc_UnguidedPass
     };
-    // On past the target, a turn on the colder side, and home. A lost
-    // aircraft is left where it fell.
-    [
-        _veh,_group,_support get "aim",_support getOrDefault ["heading",_heading],4000,300,_support
-    ] spawn ITW_CLASH_Supports_fnc_Egress;
+    if (!isNull _veh) then {_veh removeEventHandler ["IncomingMissile",_missileHandler]};
+    private _brokeOff = (_result param [0,""]) isEqualTo "BREAKOFF" && {alive _veh};
+    if (_brokeOff) then {
+        // v5: why it broke off, in geometry: how far out, how far off the
+        // line, the line it was given and the track it was flying, and the
+        // missiles that came at it.
+        private _lineHeading = _support getOrDefault ["heading",_heading];
+        ([getPosATL _veh,_support get "aim",_lineHeading] call ITW_CLASH_Supports_fnc_AlongCross) params ["_along","_cross"];
+        private _v = velocity _veh;
+        ["breakoff-geometry",[
+            _support get "id",_flavor,_result param [1,""],round _along,round _cross,
+            round _lineHeading,round (((_v#0) atan2 (_v#1)) + 360) mod 360,
+            _veh getVariable ["ITW_CLASH_StrikeMissiles",0],round ((getPosATL _veh)#2),round (speed _veh)
+        ]] call ITW_CLASH_SupportsStrike_fnc_Log;
+    };
+    // Delivered: on past the target, a turn on the colder side, and home.
+    // Broken off (v5): away from the side the target is on, from where it is,
+    // never on over it. A lost aircraft is left where it fell.
+    if (_brokeOff) then {
+        private _away = if ((_veh getRelDir (_support get "aim")) <= 180) then {(getDir _veh) - 100} else {(getDir _veh) + 100};
+        [_veh,_group,getPosATL _veh,_away,4000,300,_support] spawn ITW_CLASH_Supports_fnc_Egress;
+    } else {
+        [
+            _veh,_group,_support get "aim",_support getOrDefault ["heading",_heading],4000,300,_support
+        ] spawn ITW_CLASH_Supports_fnc_Egress;
+    };
     _result
 };
 
@@ -1046,7 +1131,7 @@ private _bombConfig = configFile >> "CfgAmmo" >> ITW_CLASH_SupportsStrikeBombCla
 
 ITW_CLASH_SupportsStrikeReady = true;
 diag_log format [
-    "CLASH BOOT | supports-strike-ready | version=%1 bomb=%2x%3 spacing=%4m heights=%5/%6/%7 carpet=21x%8m/%9m lanes crossLimit=%10 scan=%11m cap=%12m window=%13s shots=%14 lineUpAt=%15m skip=%16m bias=%17m fireCone=%18 releaseByFallTime=true releaseEachFrame=true bombsAlwaysAtJet=true impactLog=%19 bombAcquires=%20 reveal=%21 reline=%22m/%23m lead=%24s/%25s/%26m",
+    "CLASH BOOT | supports-strike-ready | version=%1 bomb=%2x%3 spacing=%4m heights=%5/%6/%7 carpet=21x%8m/%9m lanes crossLimit=%10 scan=%11m cap=%12m window=%13s shots=%14 lineUpAt=%15m skip=%16m bias=%17m fireCone=%18 releaseByFallTime=true releaseEachFrame=true bombsAlwaysAtJet=true impactLog=%19 bombAcquires=%20 reveal=%21 reline=%22s/%23m lead=%24s/%25s/%26m crossLimitBomb=%27m releaseScale=%28 bombKph=%29 breakoffTurnsAway=true",
     ITW_CLASH_SupportsStrikeVersion,
     ITW_CLASH_SupportsStrikeBombClass,
     ITW_CLASH_SupportsStrikeBombCount,
@@ -1068,10 +1153,13 @@ diag_log format [
     ITW_CLASH_SupportsStrikeImpactLog,
     "BOMB" in ITW_CLASH_SupportsAcquireFlavors,
     ITW_CLASH_SupportsStrikeRevealValue,
-    ITW_CLASH_SupportsStrikeRelineMin,
+    ITW_CLASH_SupportsStrikeRelineSeconds,
     ITW_CLASH_SupportsStrikeRelineShift,
     ITW_CLASH_SupportsStrikeLeadSample,
     ITW_CLASH_SupportsStrikeLeadWindow,
-    ITW_CLASH_SupportsStrikeLeadCap
+    ITW_CLASH_SupportsStrikeLeadCap,
+    ITW_CLASH_SupportsStrikeCrossLimitBomb,
+    ITW_CLASH_SupportsStrikeReleaseScale,
+    ITW_CLASH_SupportsStrikeBombKph
 ];
 true

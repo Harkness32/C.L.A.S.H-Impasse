@@ -1,8 +1,8 @@
 # C.L.A.S.H. HAL Air Employment Model
 
-Status: **built; v1 and v2 run in engine on 2026-10-16, v3 not yet.** Rack
-profile v4, heli attack v3, GoAttAir swapped in C.L.A.S.H. HAL Additions,
-Dual-HAL Checkbook v9.
+Status: **built; v1 and v2 run in engine on 2026-10-16, v3 on 2026-10-17,
+v4 not yet.** Rack profile v4, heli attack v4, GoAttAir swapped in C.L.A.S.H.
+HAL Additions, Dual-HAL Checkbook v9.
 
 How a HAL attack helicopter flies its sortie, and how any C.L.A.S.H. layer
 learns what a vehicle can actually shoot. Every number here is a placeholder
@@ -59,6 +59,26 @@ The crew pulls the trigger; the routine only turns the nose, to help it acquire.
 
 The fix has to work with whatever rack the helicopter carries, on any modlist.
 Nothing below names an airframe or a weapon.
+
+### 1.2 What v3 taught (2026-10-17)
+
+- **The yaw assist turned the wrong way.** Hark saw the helicopters "turn their
+  ass to the targets". A wrong-signed loop pushes the heading error away from
+  zero on both sides, so its only resting point is 180 degrees: tail on. Five
+  point-ats never came on target; the one-shot flip fired at 1:04:39 (error
+  97 to 112 degrees) and the next point-at came on in 7.7 s. The flip took five
+  tries because a point-at that starts tail on cannot "grow" its error: 180 is
+  the ceiling.
+- **The positions were right.** Arrivals 1935 to 2010 m out against a 2000 m
+  standoff, line of sight at all four.
+- **Transit killed them.** Of seven point-at sorties, five were lost before
+  their first firing position, at 149 to 258 m, to Cheetahs and a Rhino; four
+  were sent at the same objective. Only G106's two sorties reached positions,
+  and it was shot at on them.
+- **Combat climbs.** The Blackfoot orbited at 145 to 194 m against a set 59 m;
+  the DAP fired in transit at 209 m against a set 150.
+
+v4 answers all four (4.2, 4.3).
 
 ## 2. Authority
 
@@ -172,7 +192,10 @@ for line. Variables the original block sets and the tail reads (`_lasT`,
 Both modes **arm** at every pass or position: COMBAT with
 `setBehaviourStrong`, combat mode YELLOW (fire at will, keep to the route),
 attack off (`enableAttack false`), TARGET and AUTOTARGET on, `limitSpeed` and
-`forceSpeed` cleared, `flyInHeight` for the geometry. Both **reveal** to the
+`forceSpeed` cleared, `flyInHeight` for the geometry. Since v4 every height is
+forced (`flyInHeight [height, true]`), so combat cannot climb the aircraft, and
+released (`[30, false]`) when the sortie ends: a forced height also keeps a
+helicopter from landing on HAL's return leg. Both **reveal** to the
 crew, each pass or position, HAL's known enemies (`RydHQ_KnEnemies`) near the
 centre, at 1.5. Nothing the commander does not know.
 
@@ -183,7 +206,9 @@ side has reported within 1500 m of HAL's point, uncertainty 300 m or better,
 that the rack can hit (`reported`); else HAL's point if the rack can hit what
 HAL named (`hal-point`); else one lap at HAL's point (`hal-point-hold`). Then
 `doMove` the leader round the ring, 45 degrees a step, entering on the near
-side; a step ends on arrival (150 m), a 20 s stall, or 120 s. Two laps with
+side; a step ends on arrival (150 m), a 20 s stall, or 120 s. v4: a leg that is
+still getting to the ring (more than twice the radius, and at least 800 m, from
+its point) is flown at the transit height; the ring itself at the ring height. Two laps with
 nothing to hit end the sortie. Each lap logs how close it came
 (`heli-attack-flown`).
 
@@ -211,9 +236,13 @@ A loop over firing positions:
    the hover height (`terrainIntersectASL`). Next is one with fewest other known
    enemies within 600 m, so it is not parked over another target. Last is the
    smallest turn. It flies there and stops: a move under 1.5 km is capped at
-   120 km/h, so it turns tight and stops sharp; a longer one runs at the
-   airframe's own speed, like the v1 run-in that shot well. Watch and target
-   are cleared before every move, so it flies where it is going.
+   120 km/h, so it turns tight and stops sharp. Watch and target are cleared
+   before every move, so it flies where it is going. **v4, low:** every move
+   (to a look position too) is flown at the transit height, 30 m, forced, and
+   slowed by the troop lifts' arrival schedule (`ITW_CLASH_HALStayLow_fnc_Schedule`)
+   so it arrives slow and has nothing to flare off into height. Once there it
+   climbs to the firing height and only then points: at 80% of it, or after
+   20 s.
 4. **Point at, up to three times.** Each point-at takes the best target it has
    not pointed at yet from here (or the best again):
    - the pilot and any gunner `doWatch` and `doTarget` it;
@@ -244,11 +273,23 @@ over 5 m up) and its nose has not come round:
   cannot leave an aircraft turning;
 - local aircraft only, where angular velocity is simulated.
 
-The sign is the engine's convention. Under the right-hand rule, positive about
-the up axis turns left, so a target to the right needs negative (the default,
--1). If a turn ever opens the error by more than 10 degrees within 1.5 s, the
-point-at flips the sign once for every sortie after, and logs
-`heli-attack-yaw-sign-flipped`.
+The sign, measured in engine on 2026-10-17: positive about the model's up axis
+turns the nose **clockwise**, the way Arma measures headings, so a target to the
+right needs positive (the default, +1). v3 assumed the right-hand rule (-1); see
+1.2 for what that did.
+
+v4 keeps the sign **per airframe class** (`ITW_CLASH_HeliAttackYawSigns`, class
+to [sign, locked, flips]), for modded airframes whose model axes might differ:
+
+- **Flip:** 1.5 s after the assist starts, while it is really turning the
+  airframe (under 40 km/h, and the frame handler applied it within the last
+  second; otherwise the check waits a second), if the error has not closed by at
+  least 10 degrees and the point-at began more than 16 degrees off, the class's
+  sign flips (`heli-attack-yaw-sign-flipped`) and the new sign gets its own
+  check. This sees an aircraft parked tail on, which v3's "the error grew" could
+  not. At most 3 flips per class.
+- **Lock:** an assisted point-at that comes on target locks the class's sign
+  (`heli-attack-yaw-sign-confirmed`); a locked sign is never flipped.
 
 Native first: if the AI pilot turns onto a `doTarget` for its own weapons, the
 assist never engages, and `heli-attack-engage` shows `assisted false`.
@@ -261,7 +302,7 @@ assist never engages, and `heli-attack-engage` shows `assisted false`.
 | `winchester` | Out of everything that hits anything | Return leg |
 | `clear` | Two laps or looks with nothing to hit, after having had a target | Return leg |
 | `nothing-to-hit` | Two laps or looks with nothing to hit, never had one | Return leg |
-| `rtb-condition` | Damage over 0.5, fuel under 0.3, or the airframe cannot move | Return leg |
+| `rtb-condition` | Damage over 0.5, fuel under 0.3, or the airframe cannot move; v4 says which on the end line (`dead`, `disabled`, `damage-NN`, `fuel-NN`) | Return leg |
 | `time` | 1200 s | Return leg |
 | `lost` | Group, crew or leader's vehicle gone | Not-alive exit |
 | `mia` | `RydHQ_MIA` set (a CLASH release, HALUnload, HQReset) | Not-alive exit |
@@ -284,7 +325,7 @@ The last five ends mean the group is no longer this sortie's to fly:
   leaves the group's waypoints and attack setting alone and only cancels the
   leader's `doMove`. Neither mode places waypoints of its own any more.
 - On both paths, what is ours goes: watch and target, the speed cap, the yaw
-  assist and the event handlers.
+  assist, the event handlers and (v4) the forced height, released to 30 m.
 - GoAttAir's not-alive exit issues no waypoint, so no return leg lands on top of
   a withdrawal's move.
 
@@ -303,7 +344,7 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
 | Line | Content |
 |---|---|
 | `CLASH BOOT \| rack-profile-ready` | Version, AI mode reach, turret span, ring bounds, margin, guided and unguided standoff caps, `modes=ORBIT,POINT warheadFlags=true` |
-| `CLASH BOOT \| heli-attack-ready` | Version, retarget radius, uncertainty limit, ring step, clear passes, max time, height bounds, `modes=ORBIT,POINT`, point-ats, alignment, assist delay, hold, hop, hop speed, yaw gain, rate and sign, `crewFires=true yieldsToOwners=true` |
+| `CLASH BOOT \| heli-attack-ready` | Version, retarget radius, uncertainty limit, ring step, clear passes, max time, height bounds, `modes=ORBIT,POINT`, point-ats, alignment, assist delay, hold, hop, hop speed, yaw gain, rate and default sign, `yawSignPerClass=true`, transit height, forced, pop-up fraction and timeout, release height, `crewFires=true yieldsToOwners=true` |
 | `CLASHHALADD \| hal-overrides-applied` | Must list `HAL_GoAttAir` |
 | `CLASHHALADD \| goattair-heli` | Group and flight classes, when a sortie takes this path |
 | `rack-profile` | Once per class and loadout: up to 8 entries as [weapon, flags, bands, lock, aim, rounds], and per type [type, usable, ring radius, mode, standoff] |
@@ -311,9 +352,10 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
 | `heli-attack-pass`, `-flown` | ORBIT, each lap: as start; then closest to the centre, speed and height then, seconds, shots by weapon |
 | `heli-attack-look` | POINT, nothing found: group, look count, source, centre, standoff, bearing, line of sight, whether the crew found something, seconds |
 | `heli-attack-engage` | POINT, each firing position: group, position number, target class, source, standoff, distance on arrival, bearing, line of sight, other enemies near, the point-ats as [class, seconds to come on or -1, assisted, shots, alive after, why], why it left, seconds, shots by weapon |
-| `heli-attack-yaw-sign-flipped` | The assist's sign learned: group, new sign, error when it began, error after |
+| `heli-attack-yaw-sign-flipped` | v4: group, airframe class, new sign, flips so far, error when the check began, error now |
+| `heli-attack-yaw-sign-confirmed` | v4: group, airframe class, sign locked, flips it took, seconds to come on |
 | `heli-attack-shot` | Each missile and rocket: group, class, weapon, gunner's target class, range, height, speed |
-| `heli-attack-end` | Group, reason, laps or positions, seconds, last source, last type, shots since the last line |
+| `heli-attack-end` | Group, reason, laps or positions, seconds, last source, last type, shots since the last line, and (v4) which sortie limit for `rtb-condition` |
 | `impasse-careless-cleared` | Group, vehicle class, which handoff |
 
 ## 6. Tunables
@@ -338,13 +380,24 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
 | Look wait | 20 s |
 | Sighting age | 120 s (revealed, unseen targets kept) |
 | Clear radius around a firing position | 600 m |
-| Yaw gain, cap, speed limit, sign | 2 per radian, 0.8 rad/s, 40 km/h, -1 |
+| Yaw gain, cap, speed limit, default sign | 2 per radian, 0.8 rad/s, 40 km/h, +1 (per class from then on) |
+| Yaw flip check | error must close 10 degrees in 1.5 s of turning; only past 16 degrees off; 3 flips per class |
+| Transit height, forced, release | 30 m on every leg, forced; released to 30 m unforced at the end |
+| Pop-up | to the firing height, points at 80% of it or after 20 s |
 | Sortie limits (HAL's) | Damage 0.5, fuel 0.3, 1200 s |
 | Height | 0.15 x standoff or ring radius, 50 to 150 m |
 | Poll | 2 s (0.5 s while pointing) |
 
 ## 7. Tradeoffs and limits
 
+- **Forced heights do not avoid obstacles.** The wiki's warning for low
+  `flyInHeight` applies more to a forced one: at 30 m a helicopter clears
+  trees, not towers or power lines. The troop lifts fly the same 30 m
+  (unforced) without that showing; set `ITW_CLASH_HeliAttackTransitHeight` up,
+  or `ITW_CLASH_HeliAttackForceHeight` off, if it does.
+- **The pop-up is exposure too.** 30 m to 150 m is about 15 to 20 s of climb
+  at each position. It is a shorter window than a whole transit at 150 to
+  260 m, which is what killed five of seven sorties.
 - **A hover is a target.** POINT hovers at 2 km for up to about 50 s a position
   (three point-ats of up to 16 s; less when the crew shoots).
   That is outside most vehicle MGs; AA (a Cheetah, MANPADS) still reaches it, and
@@ -385,6 +438,14 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
    position follows.
 7. A withdrawal or release mid-sortie: `heli-attack-end` with `break`, `mia` or
    `withdrawing`, the withdrawal MOVE still on the group, and no return leg.
+8. v4: the first assisted point-at should come on within 8 s and log
+   `yaw-sign-confirmed` with sign 1 for the DAP; a `yaw-sign-flipped` for it
+   means the measured convention was wrong after all.
+9. v4: transit losses. Heights while moving should sit near 30 m and the pop-up
+   near the firing height; losses should move from transit to positions, or
+   stop.
+10. v4: a helicopter that hands back must land on HAL's return leg (the forced
+   height released). One hovering over its pad means the release failed.
 
 ## 9. Deployment
 
@@ -398,11 +459,11 @@ flies its original SAD.
 | File | Owns |
 |---|---|
 | `ITW_CLASH_RackProfile.sqf` (v4) | Reading racks (missile and warhead flags; only missiles, rockets and carriers guide); mode; ring and standoff; the guided anti-armour test |
-| `ITW_CLASH_HeliAttack.sqf` (v3) | The sortie between HAL's order and its return leg: the ring, or point at; the yaw assist |
-| `CLASH HAL Additions/.../hal/GoAttAir.sqf` | HAL's GoAttAir plus the helicopter branch |
+| `ITW_CLASH_HeliAttack.sqf` (v4) | The sortie between HAL's order and its return leg: the ring, or point at; the yaw assist; low transit and forced heights |
+| `CLASH HAL Additions/.../hal/GoAttAir.sqf` | HAL's GoAttAir plus the helicopter branch; since 2026-10-17 `_wp` is declared before the branch too, because HAL's own path made its waypoint inside the else block and deleted it after (an error whenever a fixed-wing wait passed 120 s) |
 | `CLASH HAL Additions/.../functions/fnc_overrides.sqf` | `HAL_GoAttAir` among the 10 swaps |
 | `ITW_CLASH_DualHALCheckbook.sqf` (v9) | Clearing Impasse's spawn CARELESS at the handoff |
-| `ITW_CLASH_SupportsStrike.sqf` (v3) | Guided pass reads through the rack |
+| `ITW_CLASH_SupportsStrike.sqf` (v5) | Guided pass reads through the rack |
 | `init.sqf` | Rack profile before Knowledge; heli attack after the supports, only if the rack is ready |
 | `ITW_CLASH_DebugPreflight.sqf` | Rows for both modules |
 
