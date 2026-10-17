@@ -26,7 +26,9 @@ ITW_CLASH_AirIdleDiagVersion = 1;
       - the vehicle: canMove, fuel above 0.1, damage at most 0.5, and for an
         armed aircraft at least one magazine;
       - the crew: RYD_AmmoFullCount at 0.15 or more, every man at most 0.5
-        damaged and able to stand.
+        damaged and able to stand, and its strength: summed damage plus the
+        men missing since HAL first counted it ("Nominal"), over the men
+        left, at most 0.4 x (recklessness / 1.2 + 1).
     Its air dispatch then also draws from AirG less NCAirG, NCrewInfG and
     AmmoDrop, and resigns near known AA (RydHQ_AAthreat within 1500 m of the
     run). Each line here gives every one of those for one helicopter.
@@ -35,7 +37,7 @@ ITW_CLASH_AirIdleDiagVersion = 1;
     that has no waypoint left and is not Busy):
       [group, side, class, height, blocks, ammoFull, ammoCount, magazines,
        fuel, damage, canMove, lists it is on, AA HAL knows of, nearest of
-       them in metres]
+       them in metres, [men HAL first counted, men now]]
     "blocks" names each AttackAv gate it fails; [] means HAL may send it.
 
     From the console (Local Exec on a hosted game, Server Exec on a
@@ -81,6 +83,14 @@ ITW_CLASH_AirIdleDiag_fnc_Gates = {
     if (_armedAir && {(count (magazines _veh)) == 0}) then {_blocks pushBack "no-magazines"};
     if (_ammoFull >= 0 && {_ammoFull < 0.15}) then {_blocks pushBack "ammo-full-count"};
     if (((units _group) findIf {(damage _x) > 0.5 || {!canStand _x}}) >= 0) then {_blocks pushBack "crew-hurt"};
+    // HAL's strength test (HQOrders.sqf:190-197): damage summed over the crew
+    // plus the men missing since HAL first counted the group ("Nominal").
+    private _current = count (units _group);
+    private _nominal = _group getVariable ["Nominal" + str _group,_current];
+    private _gDamage = _nominal - _current;
+    {_gDamage = _gDamage + (damage _x)} forEach (units _group);
+    private _reck = _hq getVariable ["RydHQ_Recklessness",0.5];
+    if ((_gDamage / (_current + 0.1)) > (0.4 * ((_reck / 1.2) + 1))) then {_blocks pushBack "strength"};
     private _lists = [
         "RydHQ_Friends","RydHQ_AirG","RydHQ_NCAirG","RydHQ_NCrewInfG","RydHQ_BAirG","RydHQ_RCAS",
         "RydHQ_AttackAv","RydHQ_CombatAv","RydHQ_Exhausted","RydHQ_Garrison"
@@ -99,7 +109,7 @@ ITW_CLASH_AirIdleDiag_fnc_Gates = {
         str (side _group),typeOf _veh,round ((getPosATL _veh)#2),_blocks,
         (round (_ammoFull * 100)) / 100,_ammoCount,count (magazines _veh),
         (round ((fuel _veh) * 100)) / 100,(round ((damage _veh) * 100)) / 100,canMove _veh,
-        _lists,count _aa,round _nearest
+        _lists,count _aa,round _nearest,[_nominal,_current]
     ]
 };
 

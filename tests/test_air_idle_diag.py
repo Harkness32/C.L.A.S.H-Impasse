@@ -18,7 +18,7 @@ def test_it_names_every_attackav_gate_hal_applies():
         assert name in hal, name
         assert '"%s"' % name in CODE, name
     for gate in ['"busy"', '"unable"', '"flank"', '"cannot-move"', '"fuel"', '"damage"',
-                 '"no-magazines"', '"ammo-full-count"', '"crew-hurt"']:
+                 '"no-magazines"', '"ammo-full-count"', '"crew-hurt"', '"strength"']:
         assert gate in CODE, gate
     assert "[_group,_ncVeh] call RYD_AmmoFullCount" in CODE
     assert "_ammoFull < 0.15" in CODE
