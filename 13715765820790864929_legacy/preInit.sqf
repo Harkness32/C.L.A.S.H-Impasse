@@ -243,6 +243,14 @@ isNil {call compile preprocessFileLineNumbers "ITW_Vehicles.sqf";               
 isNil {call compile preprocessFileLineNumbers "ITW_VehRepair.sqf";              };
 isNil {call compile preprocessFileLineNumbers "ITW_Warship.sqf";                };
 isNil {call compile preprocessFileLineNumbers "CustomArsenal\CustomArsenal.sqf";};
+
+// C.L.A.S.H. base store. Order matters: config defines the pricing and funds
+// seams the catalog and server read, and the bridge must exist before a client
+// opens the dialog.
+isNil {call compile preprocessFileLineNumbers "ITW_CLASH_Store.sqf";        };
+isNil {call compile preprocessFileLineNumbers "ITW_CLASH_StoreCatalog.sqf"; };
+isNil {call compile preprocessFileLineNumbers "ITW_CLASH_StoreServer.sqf";  };
+isNil {call compile preprocessFileLineNumbers "ITW_CLASH_StoreBridge.sqf";  };
 isNil {call compile preprocessFileLineNumbers "scripts\Factions\Factions.sqf";  };
 isNil {call compile preprocessFileLineNumbers "scripts\Dlcs\DlcSelect.sqf";     };
 isNil {call compile preprocessFileLineNumbers "scripts\Skull\SKL_BoundaryLines.sqf";};

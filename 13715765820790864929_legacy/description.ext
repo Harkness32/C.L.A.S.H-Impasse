@@ -5,6 +5,28 @@
 #include "defines_gui.hpp"
 #include "dialogs.hpp"
 #include "scripts\SKULL\SKL_TeamSwitch.hpp"
+#include "ui\StoreDialog.hpp"
+
+/*
+    C.L.A.S.H. base store -- page allowlist.
+
+    A CT_WEBBROWSER page served from a path that is not listed here renders
+    perfectly and is NEVER given the A3API binding, so it can never talk to
+    SQF. The failure looks like a dead interface, not a config mistake.
+
+    `+=` extends the engine defaults instead of replacing them.
+
+    The doubled backslashes are correct. Config strings do no backslash-escape
+    processing, which makes "ui\\html\\*" look like it could never match
+    ui\html\store.html -- but the doubled form is what shipping missions use
+    and what is observed to work. Do not "fix" it.
+*/
+class CfgCommands
+{
+    allowedHTMLLoadURIs[] += {
+        "ui\\html\\*"
+    };
+};
 
 #define ITW_CLASH_MISSION_NAME "Impasse - C.L.A.S.H V6"
 

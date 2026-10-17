@@ -168,3 +168,15 @@
     
 // uncomment this define to show all remoteExec calls in the log
 //#define remoteExec select {if (!isServer) then {diag_log ["remoteExec",_x,__FILE_NAME__,__LINE__]};true} remoteExec
+
+// C.L.A.S.H. base store -- resolved purchase line indexes.
+// Lines travel client <-> server as plain positional arrays rather than
+// HashMaps so nothing depends on HashMap network serialisation.
+#define ITW_CLASH_STORE_LINE_CLASS       0
+#define ITW_CLASH_STORE_LINE_NAME        1
+#define ITW_CLASH_STORE_LINE_KIND        2
+#define ITW_CLASH_STORE_LINE_CATEGORY    3
+#define ITW_CLASH_STORE_LINE_CONTAINER   4
+#define ITW_CLASH_STORE_LINE_QUANTITY    5
+#define ITW_CLASH_STORE_LINE_ATTACHMENTS 6
+#define ITW_CLASH_STORE_LINE_SIZE        7
