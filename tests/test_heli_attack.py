@@ -134,8 +134,8 @@ def test_planes_and_player_leads_take_hals_path():
 
 
 def test_it_never_fires_and_never_reads_ground_truth():
-    # v3 points (doWatch, doTarget) but the crew still pulls the trigger
-    # (Hark, 2026-10-16: "let the crew pull the trigger").
+    # v3 points; the crew still pulls the trigger (Hark, 2026-10-16: "let
+    # the crew pull the trigger"). v5: and picks the target too.
     source = heli()
     for verb in ["fireAtTarget", "doFire", "commandFire", "forceWeaponFire", "setAmmo", "setWeaponReloadingTime",
                  "setVehicleAmmo", "allUnits", "nearEntities", "nearestObjects", "getPosATL _target",
@@ -290,7 +290,7 @@ def test_it_loads_after_the_rack_and_the_supports():
 
 def test_boot_line_says_what_it_does():
     raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
-    assert "ITW_CLASH_HeliAttackVersion = 4;" in raw
+    assert "ITW_CLASH_HeliAttackVersion = 5;" in raw
     assert "CLASH BOOT | heli-attack-ready |" in raw
     assert "yieldsToOwners=true" in raw
     assert "modes=ORBIT,POINT" in raw
@@ -347,17 +347,25 @@ def test_flares_are_not_shots():
 # ------------------------------------------------------------- v3: point at
 
 
-def test_detect_is_crew_knowledge_ranked_hal_first_then_armour_down():
+def test_detect_ranks_the_crews_pick_then_hal_then_armour_down():
     body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Detect")
-    assert 'private _rank = if (_veh isEqualTo _halVeh) then {-1} else {(["ARMOR","VEHICLE","STATIC","INFANTRY"] find _class) max 0};' in body
+    assert "case (_veh isEqualTo _crewPick): {-2};" in body
+    assert "case (_veh isEqualTo _halVeh): {-1};" in body
+    assert 'default {(["ARMOR","VEHICLE","STATIC","INFANTRY"] find _class) max 0};' in body
     assert "if (((_types getOrDefault [_class,[0]])#0) <= 0) then {continue};" in body
-    assert "[_found,[],{((_x#0) + 1) * 1e6 + (_x#1)},\"ASCEND\"] call BIS_fnc_sortBy;" in body
+    # Ranks start at -2 now, so the sort key offsets by 2 to stay positive.
+    assert "[_found,[],{((_x#0) + 2) * 1e6 + (_x#1)},\"ASCEND\"] call BIS_fnc_sortBy;" in body
 
 
-def test_a_revealed_unseen_target_can_be_pointed_at_but_a_stale_sighting_cannot():
+def test_only_what_the_flight_acquired_is_pointed_at_never_a_bare_reveal():
+    # v5: a revealed, unseen target has a position (Perceived) but is no
+    # longer a target (Acquired); a stale sighting is neither.
     body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Perceived")
     assert ("if (_maxAge > 0 && {_lastSeen isEqualType 0} && {_lastSeen >= 0} && "
             "{(time - _lastSeen) > _maxAge}) exitWith {[]};") in body
+    detect = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Detect")
+    assert "if !([_flight,_veh] call ITW_CLASH_HeliAttack_fnc_Acquired) then {continue};" in detect
+    assert detect.index("call ITW_CLASH_HeliAttack_fnc_Perceived") < detect.index("call ITW_CLASH_HeliAttack_fnc_Acquired")
     raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
     assert 'ITW_CLASH_HeliAttackPointKnownAge",120]' in raw
 
@@ -471,7 +479,9 @@ def test_the_hop_is_about_700_m_at_any_standoff_and_never_crosses_the_target():
 
 def test_a_point_at_turns_the_nose_and_never_the_trigger():
     body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Aim")
-    assert "if (!isNull _x && {alive _x}) then {_x doWatch _tgt; _x doTarget _tgt};" in body
+    # v5: the crew is told nothing; v3 and v4 assigned the target and the
+    # Ghost Hawks stopped firing (0 of 32 aims).
+    assert "doTarget" not in body and "doWatch" not in body
     # Native first; the assist only after AssistAfter with the nose not on.
     assert ("if (!_assisted && {_onAt < 0} && {(time - _start) >= ITW_CLASH_HeliAttackPointAssistAfter}) then {") in body
     assert "{[_x,_pos] call ITW_CLASH_HeliAttack_fnc_YawHold} forEach _flight;" in body
@@ -585,3 +595,86 @@ def test_each_firing_position_and_look_is_logged():
     assert "_aims,_leave,round (time - _positionStart)," in engage
     assert '["look",[' in point
     assert '["start",[' in point and "_halType" in point
+
+
+# ------------------------------------------------- v5: the crew chooses again
+
+
+def test_v5_header_records_why_the_crew_chooses_again():
+    raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
+    assert "v5, from the second 2026-10-17 run" in raw
+    assert "0 shots in 25 aims (0 in 32 since v3)" in raw
+    assert "from 2695 m" in raw and "down to 342 m" in raw
+
+
+def test_v5_nothing_assigns_a_target_and_unwatch_keeps_the_crews_pick():
+    source = heli()
+    assert "doTarget" not in source
+    body = function_body(source, "ITW_CLASH_HeliAttack_fnc_Unwatch")
+    assert "if (!isNull _x && {alive _x}) then {_x doWatch objNull};" in body
+    # The only watch left is a look's centre, a position, never a target.
+    assert source.count("doWatch [") == 1
+    assert "(driver _x) doWatch [_centre#0,_centre#1,0]" in source
+
+
+def test_v5_a_reveal_is_never_a_sighting():
+    body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_CrewSeenAt")
+    # Revealed, unseen: lastSeen is -2147483.648, so only >= 0 counts, and a
+    # value from the future is not trusted either.
+    assert "if (_seen isEqualType 0 && {_seen >= 0} && {_seen <= (time + 1)}) then {_best = _best max _seen};" in body
+    assert "forEach ((crew _x) select {alive _x});" in body
+    assert "forEach (_flight select {alive _x});" in body
+
+
+def test_v5_acquired_is_a_sensor_track_or_a_recent_crew_sighting():
+    body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Acquired")
+    assert '["_maxAge",ITW_CLASH_HeliAttackPointKnownAge]' in body
+    assert "((getSensorTargets _x) findIf {(_x param [0,objNull]) isEqualTo _object}) >= 0" in body
+    assert "_seen >= 0 && {(time - _seen) <= _maxAge}" in body
+    assert "if (isNull _object || {!alive _object}) exitWith {false};" in body
+
+
+def test_v5_the_crews_own_pick_is_read_not_set():
+    body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_CrewPick")
+    assert "private _t = getAttackTarget _x;" in body
+    assert "forEach [driver _veh,gunner _veh];" in body
+    # The first crewman with a pick wins; exitWith inside then{} would not
+    # leave the forEach, so the guard is on _pick itself.
+    assert "if (isNull _pick && {!isNull _x} && {alive _x}) then {" in body
+    assert "exitWith" not in body.split("if (isNull _veh) exitWith {_pick};", 1)[1]
+
+
+def test_v5_a_point_at_logs_what_the_crew_had():
+    body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_Aim")
+    assert "_peakAim = _peakAim max ((vehicle leader _group) aimedAtTarget [_tgt]);" in body
+    assert "private _seenAt = [_flight,_tgt] call ITW_CLASH_HeliAttack_fnc_CrewSeenAt;" in body
+    assert "private _crewPick = [vehicle leader _group] call ITW_CLASH_HeliAttack_fnc_CrewPick;" in body
+    tail = body[body.index("private _seenAt"):]
+    for field in [
+        "if (_seenAt < 0) then {-1} else {round (time - _seenAt)},",
+        'if (isNull _crewPick) then {""} else {typeOf _crewPick},',
+        "!isNull _crewPick && {_crewPick isEqualTo (vehicle _tgt)},",
+        "(round (_peakAim * 100)) / 100",
+    ]:
+        assert field in tail, field
+
+
+def test_v5_a_look_is_a_short_pop_up_that_drops_when_it_sees_nothing():
+    raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
+    assert 'ITW_CLASH_HeliAttackPointLookWait",10]' in raw
+    body = function_body(heli(), "ITW_CLASH_HeliAttack_fnc_FlyPoint")
+    drop = ("if (!_seen && {_reason isEqualTo \"\"}) then {\n"
+            "                [_flight,ITW_CLASH_HeliAttackTransitHeight] call ITW_CLASH_HeliAttack_fnc_SetHeight;")
+    assert drop in body
+    # After the scan, before the look is logged and the loop decides again.
+    assert body.index("_seen || {(time - _lookStart) >= ITW_CLASH_HeliAttackPointLookWait}") < body.index(drop) < body.index('["look",[')
+
+
+def test_v5_boot_line():
+    raw = read(MISSION / "ITW_CLASH_HeliAttack.sqf")
+    for flag in ["lookWait=%23s", "acquiredAge=%24s", "crewPicks=true", "noAssignedTarget=true",
+                 "acquiredOnly=true", "lookDropsWhenEmpty=true", "crewFires=true"]:
+        assert flag in raw, flag
+    tail = raw[raw.index("CLASH BOOT | heli-attack-ready"):]
+    assert "ITW_CLASH_HeliAttackReleaseHeight,\n    ITW_CLASH_HeliAttackPointLookWait,\n    ITW_CLASH_HeliAttackPointKnownAge\n];" in tail
+    assert tail.count("%") == 24

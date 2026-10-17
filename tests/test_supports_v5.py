@@ -103,7 +103,7 @@ def test_a_uav_lost_on_arrival_marks_a_killbox():
     assert "[_side,getPosATL _veh] call ITW_CLASH_Supports_fnc_MarkKillbox;" in mark
     for name, value in (("Seconds", 60), ("Radius", 1500), ("Duration", 900)):
         assert f'["ITW_CLASH_SupportsUAVKillbox{name}",{value}]' in CORE, name
-    assert "ITW_CLASH_SupportsUAVVersion = 3;" in (MISSION / "ITW_CLASH_SupportsUAV.sqf").read_text()
+    assert "ITW_CLASH_SupportsUAVVersion = 4;" in (MISSION / "ITW_CLASH_SupportsUAV.sqf").read_text()
 
 
 def test_no_uav_is_sent_or_retasked_into_a_killbox():
@@ -188,7 +188,7 @@ def test_a_break_off_turns_away_and_says_why():
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 5;" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
+    assert "ITW_CLASH_SupportsVersion = 6;" in (MISSION / "ITW_CLASH_Supports.sqf").read_text()
     assert "ITW_CLASH_SupportsStrikeVersion = 5;" in (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text()
 
 

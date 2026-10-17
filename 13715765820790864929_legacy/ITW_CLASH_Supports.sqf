@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 5;
+ITW_CLASH_SupportsVersion = 6;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -61,6 +61,17 @@ ITW_CLASH_SupportsReady = false;
         died 5 to 10 s after reaching the same spot four times.
       - The bomb pass spawns 6 km out (other jets 4 km), so an acquisition
         has time to become a line the jet can actually fly.
+
+    v6 (second 2026-10-17 run): money stopped being the gate. Both banks
+    could afford a bomb from five minutes in and ended with two bombs' worth,
+    and nothing was bought: in 27 minutes two clusters came up near a plan
+    objective, one a side, and both were DANGER_CLOSE.
+      - The guided missile is one precision round, not a stick of bombs: its
+        margin past the footprint is DangerMarginGuided (100 m, was 300) and
+        DangerMarginGuidedPlayer (200 m, was 500). Bombs and carpet keep the
+        wide ones.
+      - Every DANGER_CLOSE says how close the nearest friendly was, whether
+        it was a player, and the line it crossed (supports-danger-close).
 
     Every number below is a placeholder for calibration.
 */
@@ -135,6 +146,9 @@ ITW_CLASH_SupportsFootprintGuided = missionNamespace getVariable ["ITW_CLASH_Sup
 ITW_CLASH_SupportsUncertaintyLimit = missionNamespace getVariable ["ITW_CLASH_SupportsUncertaintyLimit",300];
 ITW_CLASH_SupportsDangerMargin = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMargin",300];
 ITW_CLASH_SupportsDangerMarginPlayer = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginPlayer",500];
+// v6: one precision missile, not a stick of bombs.
+ITW_CLASH_SupportsDangerMarginGuided = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginGuided",100];
+ITW_CLASH_SupportsDangerMarginGuidedPlayer = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginGuidedPlayer",200];
 // Friendly aircraft above this are not in the footprint's way.
 ITW_CLASH_SupportsDangerAirHeight = missionNamespace getVariable ["ITW_CLASH_SupportsDangerAirHeight",300];
 ITW_CLASH_SupportsCorridorPenalty = missionNamespace getVariable ["ITW_CLASH_SupportsCorridorPenalty",0.5];
@@ -780,14 +794,42 @@ ITW_CLASH_Supports_fnc_Friendlies = {
     _result
 };
 
+// v6: the margin past the footprint, by flavor and by whether it is a player.
+ITW_CLASH_Supports_fnc_DangerMargin = {
+    params [["_flavor",""],["_player",false]];
+    if (_flavor isEqualTo "GUIDED") exitWith {
+        if (_player) then {ITW_CLASH_SupportsDangerMarginGuidedPlayer} else {ITW_CLASH_SupportsDangerMarginGuided}
+    };
+    if (_player) then {ITW_CLASH_SupportsDangerMarginPlayer} else {ITW_CLASH_SupportsDangerMargin}
+};
+
 ITW_CLASH_Supports_fnc_DangerClose = {
-    params ["_friendlies","_aim","_footprint"];
+    params ["_friendlies","_aim","_footprint",["_flavor",""]];
     (_friendlies findIf {
         _x params ["_position","_player"];
-        (_position distance2D _aim) <= (_footprint + (
-            if (_player) then {ITW_CLASH_SupportsDangerMarginPlayer} else {ITW_CLASH_SupportsDangerMargin}
-        ))
+        (_position distance2D _aim) <= (_footprint + ([_flavor,_player] call ITW_CLASH_Supports_fnc_DangerMargin))
     }) >= 0
+};
+
+/*
+    v6. The friendly that made it danger close, for the log: the one deepest
+    inside its own line. [distance, player, line] or [] when none is inside.
+*/
+ITW_CLASH_Supports_fnc_DangerWhy = {
+    params ["_friendlies","_aim","_footprint",["_flavor",""]];
+    private _worst = [];
+    private _worstDepth = 0;
+    {
+        _x params ["_position","_player"];
+        private _line = _footprint + ([_flavor,_player] call ITW_CLASH_Supports_fnc_DangerMargin);
+        private _distance = _position distance2D _aim;
+        private _depth = _line - _distance;
+        if (_depth >= 0 && {_worst isEqualTo [] || {_depth > _worstDepth}}) then {
+            _worst = [round _distance,_player,round _line];
+            _worstDepth = _depth;
+        };
+    } forEach _friendlies;
+    _worst
 };
 
 ITW_CLASH_Supports_fnc_DistanceWeight = {
@@ -1088,7 +1130,11 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                 [_context,_flavor,-1,_targetKey,"ETB_ANSWERING"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
-            if ([_context get "friendlies",_aim,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) then {
+            if ([_context get "friendlies",_aim,_footprint,_flavor] call ITW_CLASH_Supports_fnc_DangerClose) then {
+                ["danger-close",[
+                    _context get "sign",_flavor,_targetKey,"assess",
+                    [_context get "friendlies",_aim,_footprint,_flavor] call ITW_CLASH_Supports_fnc_DangerWhy
+                ]] call ITW_CLASH_Supports_fnc_Log;
                 [_context,_flavor,-1,_targetKey,"DANGER_CLOSE"] call ITW_CLASH_Supports_fnc_Exclude;
                 continue
             };
@@ -1594,7 +1640,12 @@ ITW_CLASH_Supports_fnc_PreRun = {
             _support set ["denied","TOO_UNCERTAIN"]
         };
         private _footprint = [_support get "flavor","footprint",50] call ITW_CLASH_Supports_fnc_RowNumber;
-        if ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_aim,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) exitWith {
+        private _friendlies = [_side] call ITW_CLASH_Supports_fnc_Friendlies;
+        if ([_friendlies,_aim,_footprint,_support get "flavor"] call ITW_CLASH_Supports_fnc_DangerClose) exitWith {
+            ["danger-close",[
+                _support get "sign",_support get "flavor",_support get "id","pre-run",
+                [_friendlies,_aim,_footprint,_support get "flavor"] call ITW_CLASH_Supports_fnc_DangerWhy
+            ]] call ITW_CLASH_Supports_fnc_Log;
             _support set ["denied","DANGER_CLOSE"]
         };
         _support set ["aim",_aim];
@@ -1954,7 +2005,7 @@ ITW_CLASH_SupportsAirbornePlaneSquads = missionNamespace getVariable ["ITW_CLASH
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -1986,6 +2037,8 @@ diag_log format [
     ITW_CLASH_SupportsSpawnDistanceBomb,
     ITW_CLASH_SupportsUAVKillboxSeconds,
     ITW_CLASH_SupportsUAVKillboxRadius,
-    ITW_CLASH_SupportsUAVKillboxDuration
+    ITW_CLASH_SupportsUAVKillboxDuration,
+    ITW_CLASH_SupportsDangerMarginGuided,
+    ITW_CLASH_SupportsDangerMarginGuidedPlayer
 ];
 true

@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HeliAttackStarted",false]) exitWith {true};
 
 ITW_CLASH_HeliAttackStarted = true;
-ITW_CLASH_HeliAttackVersion = 4;
+ITW_CLASH_HeliAttackVersion = 5;
 ITW_CLASH_HeliAttackReady = false;
 
 /*
@@ -64,6 +64,30 @@ ITW_CLASH_HeliAttackReady = false;
       - Firing and ring heights are forced: in combat the AI flew 145 to
         258 m against a set 59 to 150. A forced height also stops a
         helicopter landing, so every sortie releases it on the way out.
+
+    v5, from the second 2026-10-17 run: every point-at came nose on and
+    none fired, 0 shots in 25 aims (0 in 32 since v3). v1 and v2 never told
+    the crew what to shoot, and the same Ghost Hawks fired DAGRs from 2695 m
+    down to 342 m at targets they chose themselves. v3 added doTarget and
+    doWatch on a target picked from the crew's knowledge, which includes
+    contacts HAL only revealed to it; an assigned target the crew has not
+    seen is one it will not fire at, and the order kept it from switching to
+    one it could. So:
+      - The crew chooses again. Nothing here assigns or watches a target; a
+        point-at only turns the nose, and the crew's own pick is pointed at
+        first when it has one.
+      - Only what the flight acquired itself is pointed at: a crew sighting
+        within PointKnownAge, or a track on an aircraft's own sensors. A
+        reveal still tells the crew where to look, but is never a target.
+      - Each point-at logs how long since the crew saw its target, the
+        crew's own pick, whether it was ours, and how well the weapon was
+        aimed at it (aimedAtTarget, peak), so the next run says why it did
+        or did not fire.
+      - A look is a pop-up, not a hover: climb, scan for PointLookWait (10 s,
+        was 20), and drop back to the transit height before deciding what
+        is next. Helicopters seeing nothing sat 20 s at a time at 150 m in
+        the open (Hark, 2026-10-17), and held 8 s on each target they could
+        not see.
 */
 
 // Contacts this far from HAL's point can be looked at or pointed at.
@@ -125,9 +149,10 @@ ITW_CLASH_HeliAttackPointHopFar = missionNamespace getVariable ["ITW_CLASH_HeliA
 ITW_CLASH_HeliAttackPointHopSpeed = missionNamespace getVariable ["ITW_CLASH_HeliAttackPointHopSpeed",120];
 ITW_CLASH_HeliAttackPointArrival = missionNamespace getVariable ["ITW_CLASH_HeliAttackPointArrival",120];
 ITW_CLASH_HeliAttackPointMinSpeed = missionNamespace getVariable ["ITW_CLASH_HeliAttackPointMinSpeed",12];
-// Looking with nothing found: how long to watch from a standoff.
-ITW_CLASH_HeliAttackPointLookWait = missionNamespace getVariable ["ITW_CLASH_HeliAttackPointLookWait",20];
-// A sighting older than this is not pointed at (revealed, unseen targets are).
+// Looking with nothing found: how long a pop-up scans before it drops (v5: 10, was 20).
+ITW_CLASH_HeliAttackPointLookWait = missionNamespace getVariable ["ITW_CLASH_HeliAttackPointLookWait",10];
+// v5: only a target the flight itself saw within this, or has on its own
+// sensors, is pointed at. A revealed, unseen target is not.
 ITW_CLASH_HeliAttackPointKnownAge = missionNamespace getVariable ["ITW_CLASH_HeliAttackPointKnownAge",120];
 // A firing position is not chosen within this of another known enemy if avoidable.
 ITW_CLASH_HeliAttackPointClearRadius = missionNamespace getVariable ["ITW_CLASH_HeliAttackPointClearRadius",600];
@@ -374,8 +399,9 @@ ITW_CLASH_HeliAttack_fnc_HeadingError = {
     Where the crew thinks a target is: the leader's targetKnowledge, never the
     object's true position. [] when the group does not know it, or when its
     last sighting is older than _maxAge. A target the crew knows of but has
-    never seen itself (revealed: lastSeen is -2147483.648) still counts; that
-    is the knowledge a point-at turns into a sighting.
+    never seen itself (revealed: lastSeen is -2147483.648) still has a
+    position here; whether it may be pointed at is fnc_Acquired's question
+    (v5), not this one.
 */
 ITW_CLASH_HeliAttack_fnc_Perceived = {
     params ["_group","_object",["_maxAge",-1]];
@@ -390,17 +416,80 @@ ITW_CLASH_HeliAttack_fnc_Perceived = {
     [_pos#0,_pos#1,0]
 };
 
+// v5. The group's aircraft: the flight, read from the group itself.
+ITW_CLASH_HeliAttack_fnc_FlightOf = {
+    params ["_group"];
+    private _flight = [];
+    {
+        private _veh = vehicle _x;
+        if (alive _veh && {_veh isKindOf "Air"}) then {_flight pushBackUnique _veh};
+    } forEach (units _group);
+    _flight
+};
+
 /*
-    Detect: what the crew knows of near the centre that the rack can hit,
-    [[vehicle, class, perceived position], ...], best first: HAL's own target,
-    then armour, vehicles, statics, men, each nearest first. The crew's own
-    knowledge (targets), which includes what Brief revealed from the
-    commander; never true positions.
+    v5. The latest time any of the flight's crew saw _object itself, or -1.
+    targetKnowledge gives a revealed, unseen target no sighting time, so a
+    reveal never shows here.
+*/
+ITW_CLASH_HeliAttack_fnc_CrewSeenAt = {
+    params ["_flight","_object"];
+    private _best = -1;
+    if (isNull _object) exitWith {_best};
+    {
+        {
+            private _intel = _x targetKnowledge _object;
+            if (_intel isEqualType [] && {count _intel >= 3}) then {
+                private _seen = _intel#2;
+                if (_seen isEqualType 0 && {_seen >= 0} && {_seen <= (time + 1)}) then {_best = _best max _seen};
+            };
+        } forEach ((crew _x) select {alive _x});
+    } forEach (_flight select {alive _x});
+    _best
+};
+
+/*
+    v5. Has the flight acquired _object by its own means: a crew sighting
+    within _maxAge seconds, or a track on one of its aircraft's sensors.
+*/
+ITW_CLASH_HeliAttack_fnc_Acquired = {
+    params ["_flight","_object",["_maxAge",ITW_CLASH_HeliAttackPointKnownAge]];
+    if (isNull _object || {!alive _object}) exitWith {false};
+    if ((_flight findIf {
+        alive _x && {((getSensorTargets _x) findIf {(_x param [0,objNull]) isEqualTo _object}) >= 0}
+    }) >= 0) exitWith {true};
+    private _seen = [_flight,_object] call ITW_CLASH_HeliAttack_fnc_CrewSeenAt;
+    _seen >= 0 && {(time - _seen) <= _maxAge}
+};
+
+// v5. What the crew of the lead aircraft is attacking on its own: pilot first, then gunner.
+ITW_CLASH_HeliAttack_fnc_CrewPick = {
+    params ["_veh"];
+    private _pick = objNull;
+    if (isNull _veh) exitWith {_pick};
+    {
+        if (isNull _pick && {!isNull _x} && {alive _x}) then {
+            private _t = getAttackTarget _x;
+            if (!isNull _t && {alive _t}) then {_pick = vehicle _t};
+        };
+    } forEach [driver _veh,gunner _veh];
+    _pick
+};
+
+/*
+    Detect: what the flight has acquired near the centre that the rack can
+    hit, [[vehicle, class, perceived position], ...], best first: the crew's
+    own pick, then HAL's own target, then armour, vehicles, statics, men, each
+    nearest first. Read from the crew's knowledge (targets), which includes
+    what Brief revealed from the commander, but v5 keeps only what the flight
+    saw itself or holds on its sensors (fnc_Acquired); never true positions.
 */
 ITW_CLASH_HeliAttack_fnc_Detect = {
     params ["_group","_types","_centre","_halTarget"];
     private _halVeh = if (isNull _halTarget) then {objNull} else {vehicle _halTarget};
     private _from = vehicle leader _group;
+    private _flight = [_group] call ITW_CLASH_HeliAttack_fnc_FlightOf;
+    private _crewPick = [_from] call ITW_CLASH_HeliAttack_fnc_CrewPick;
     private _seen = [];
     private _found = [];
     {
@@ -411,10 +500,15 @@ ITW_CLASH_HeliAttack_fnc_Detect = {
         if (((_types getOrDefault [_class,[0]])#0) <= 0) then {continue};
         private _pos = [_group,_veh,ITW_CLASH_HeliAttackPointKnownAge] call ITW_CLASH_HeliAttack_fnc_Perceived;
         if (_pos isEqualTo [] || {(_pos distance2D _centre) > ITW_CLASH_HeliAttackRetargetRadius}) then {continue};
-        private _rank = if (_veh isEqualTo _halVeh) then {-1} else {(["ARMOR","VEHICLE","STATIC","INFANTRY"] find _class) max 0};
+        if !([_flight,_veh] call ITW_CLASH_HeliAttack_fnc_Acquired) then {continue};
+        private _rank = switch (true) do {
+            case (_veh isEqualTo _crewPick): {-2};
+            case (_veh isEqualTo _halVeh): {-1};
+            default {(["ARMOR","VEHICLE","STATIC","INFANTRY"] find _class) max 0};
+        };
         _found pushBack [_rank,_from distance2D _pos,_veh,_class,_pos];
     } forEach (_group targets [true,ITW_CLASH_HeliAttackRetargetRadius,[],0,_centre]);
-    _found = [_found,[],{((_x#0) + 1) * 1e6 + (_x#1)},"ASCEND"] call BIS_fnc_sortBy;
+    _found = [_found,[],{((_x#0) + 2) * 1e6 + (_x#1)},"ASCEND"] call BIS_fnc_sortBy;
     _found apply {[_x#2,_x#3,_x#4]}
 };
 
@@ -463,13 +557,17 @@ ITW_CLASH_HeliAttack_fnc_WatchThreats = {
     ]
 };
 
-// Drop what this told the crews to watch and target.
+/*
+    Drop what this told the crews to watch. v5: the only thing it ever tells
+    them is where to look (a look's centre), so only the watch is cleared;
+    doTarget objNull would also wipe a target the crew picked for itself.
+*/
 ITW_CLASH_HeliAttack_fnc_Unwatch = {
     params ["_flight"];
     {
         private _veh = _x;
         {
-            if (!isNull _x && {alive _x}) then {_x doWatch objNull; _x doTarget objNull};
+            if (!isNull _x && {alive _x}) then {_x doWatch objNull};
         } forEach [driver _veh,gunner _veh];
     } forEach (_flight select {!isNull _x});
 };
@@ -533,17 +631,20 @@ if (isNil "ITW_CLASH_HeliAttackYawHandler") then {
 
 /*
     One point-at: nose onto a target, held while the crew decides to shoot.
-    The pilot and any gunner are told to watch and target it, which is all
-    the native AI needs if it turns for its own weapons; if the nose has not
-    come round within AssistAfter seconds, the yaw assist turns the airframe
-    while it hovers. Never fires.
+    v5: the crew is told nothing. The target is one the flight acquired
+    itself (fnc_Detect), the crew's own pick first; the nose is turned onto
+    it, by the AI if it turns for its own weapons and by the yaw assist if
+    it has not come round within AssistAfter seconds. Never fires.
 
     Done once on target and held for Hold seconds, or two seconds after the
     crew's first shot, or when it never comes on within AlignTimeout. Out
     early when the target dies, the crew loses it, the aircraft is hit or a
     missile comes in, or the sortie must stop.
 
-    Returns [class, seconds to come on or -1, assisted, shots, alive after, why].
+    Returns [class, seconds to come on or -1, assisted, shots, alive after,
+    why, and v5's evidence: seconds since the crew last saw it (-1 never),
+    the class of the crew's own pick at the end ("" none), whether that pick
+    was this target, and the best aimedAtTarget the lead's weapon reached].
 */
 ITW_CLASH_HeliAttack_fnc_Aim = {
     params ["_ctx","_tgt","_class"];
@@ -557,14 +658,7 @@ ITW_CLASH_HeliAttack_fnc_Aim = {
         _sum
     };
     private _before = call _shotsNow;
-    {
-        private _veh = _x;
-        private _crew = [driver _veh];
-        if (!isNull (gunner _veh) && {(gunner _veh) isNotEqualTo (driver _veh)}) then {_crew pushBack (gunner _veh)};
-        {
-            if (!isNull _x && {alive _x}) then {_x doWatch _tgt; _x doTarget _tgt};
-        } forEach _crew;
-    } forEach _flight;
+    private _peakAim = 0;
 
     private _start = time;
     private _onAt = -1;
@@ -588,6 +682,8 @@ ITW_CLASH_HeliAttack_fnc_Aim = {
         private _err = abs ([vehicle leader _group,_pos] call ITW_CLASH_HeliAttack_fnc_HeadingError);
         if (_err <= ITW_CLASH_HeliAttackPointAlign && {_onAt < 0}) then {_onAt = time};
         if (_shotAt < 0 && {(call _shotsNow) > _before}) then {_shotAt = time};
+        // v5 evidence: how well the lead's current weapon is laid on it.
+        _peakAim = _peakAim max ((vehicle leader _group) aimedAtTarget [_tgt]);
         // The nose has not come round on its own: turn it.
         if (!_assisted && {_onAt < 0} && {(time - _start) >= ITW_CLASH_HeliAttackPointAssistAfter}) then {
             _assisted = true;
@@ -635,13 +731,19 @@ ITW_CLASH_HeliAttack_fnc_Aim = {
         || {_onAt < 0 && {(time - _start) >= ITW_CLASH_HeliAttackPointAlignTimeout}}
     };
     {[_x] call ITW_CLASH_HeliAttack_fnc_YawRelease} forEach _flight;
+    private _seenAt = [_flight,_tgt] call ITW_CLASH_HeliAttack_fnc_CrewSeenAt;
+    private _crewPick = [vehicle leader _group] call ITW_CLASH_HeliAttack_fnc_CrewPick;
     [
         _class,
         if (_onAt < 0) then {-1} else {(round ((_onAt - _start) * 10)) / 10},
         _assisted,
         (call _shotsNow) - _before,
         alive _tgt,
-        _why
+        _why,
+        if (_seenAt < 0) then {-1} else {round (time - _seenAt)},
+        if (isNull _crewPick) then {""} else {typeOf _crewPick},
+        !isNull _crewPick && {_crewPick isEqualTo (vehicle _tgt)},
+        (round (_peakAim * 100)) / 100
     ]
 };
 
@@ -878,18 +980,21 @@ ITW_CLASH_HeliAttack_fnc_FlyOrbit = {
     point at, point at, point at, break off, detect something" (Hark,
     2026-10-16). A loop over firing positions:
 
-      - Detect what the crew knows of near the centre that the rack can hit
-        (fnc_Detect), after telling it what the commander knows there. The
-        centre is a contact our side has reported, or HAL's point.
-        Nothing: look from a standoff on our side for a while, nose on the
-        centre; two looks with nothing and the sortie is over.
+      - Detect what the flight has acquired near the centre that the rack
+        can hit (fnc_Detect), after telling the crew what the commander
+        knows there so it knows where to look. The centre is a contact our
+        side has reported, or HAL's point.
+        Nothing: pop up at a standoff on our side, nose on the centre, scan
+        for PointLookWait, and drop back down if it saw nothing; two looks
+        with nothing and the sortie is over.
       - Get far: a firing position at the rack's standoff from the best
         target (2 km for guided weapons, 1 km for unguided), on the side the
         helicopter is on, that sees the target over the terrain and is clear
         of other known enemies (fnc_FiringPosition). Flown to and stopped.
-      - Point at, up to three times: nose onto the best target first, then
-        others it knows of, each held while the crew decides to shoot
-        (fnc_Aim). The crew pulls the trigger; this only points.
+      - Point at, up to three times: nose onto the best target first (the
+        crew's own pick when it has one), then others it has acquired, each
+        held while the crew decides to shoot (fnc_Aim). The crew picks and
+        pulls the trigger; this only points.
       - Break off: the next position is a hop of about 700 m to the side at
         the same standoff, alternating sides, flown slow so it turns tight:
         a zig-zag across the front, never a circle and never over the top.
@@ -964,6 +1069,11 @@ ITW_CLASH_HeliAttack_fnc_FlyPoint = {
                 _seen || {(time - _lookStart) >= ITW_CLASH_HeliAttackPointLookWait}
             };
             [_flight] call ITW_CLASH_HeliAttack_fnc_Unwatch;
+            // v5: nothing seen from the pop-up: back down before anything else.
+            // A sortie that ends here is released to the same height anyway.
+            if (!_seen && {_reason isEqualTo ""}) then {
+                [_flight,ITW_CLASH_HeliAttackTransitHeight] call ITW_CLASH_HeliAttack_fnc_SetHeight;
+            };
             ["look",[
                 _id,_looks,_source,(_centre apply {round _x}) select [0,2],
                 round _farthest,round _bearing,_los,_seen,round (time - _lookStart)
@@ -1114,7 +1224,7 @@ ITW_CLASH_HeliAttack_fnc_Fly = {
 
 ITW_CLASH_HeliAttackReady = true;
 diag_log format [
-    "CLASH BOOT | heli-attack-ready | version=%1 retarget=%2 maxUncertainty=%3 step=%4 clearPasses=%5 maxTime=%6 height=%7-%8 modes=ORBIT,POINT pointAims=%9 align=%10 assistAfter=%11 hold=%12 hop=%13 hopSpeed=%14 yawGain=%15 yawRate=%16 yawSign=%17 yawSignPerClass=true transit=%18m forcedHeight=%19 popUp=%20/%21s release=%22m combatMode=YELLOW attack=false noSAD=true crewFires=true halOwnsDecision=true reportedCentres=true revealsKnownOnly=true yieldsToOwners=true",
+    "CLASH BOOT | heli-attack-ready | version=%1 retarget=%2 maxUncertainty=%3 step=%4 clearPasses=%5 maxTime=%6 height=%7-%8 modes=ORBIT,POINT pointAims=%9 align=%10 assistAfter=%11 hold=%12 hop=%13 hopSpeed=%14 yawGain=%15 yawRate=%16 yawSign=%17 yawSignPerClass=true transit=%18m forcedHeight=%19 popUp=%20/%21s release=%22m lookWait=%23s acquiredAge=%24s crewPicks=true noAssignedTarget=true acquiredOnly=true lookDropsWhenEmpty=true combatMode=YELLOW attack=false noSAD=true crewFires=true halOwnsDecision=true reportedCentres=true revealsKnownOnly=true yieldsToOwners=true",
     ITW_CLASH_HeliAttackVersion,
     ITW_CLASH_HeliAttackRetargetRadius,
     ITW_CLASH_HeliAttackMaxUncertainty,
@@ -1136,6 +1246,8 @@ diag_log format [
     ITW_CLASH_HeliAttackForceHeight,
     ITW_CLASH_HeliAttackPopUpFraction,
     ITW_CLASH_HeliAttackPopUpTimeout,
-    ITW_CLASH_HeliAttackReleaseHeight
+    ITW_CLASH_HeliAttackReleaseHeight,
+    ITW_CLASH_HeliAttackPointLookWait,
+    ITW_CLASH_HeliAttackPointKnownAge
 ];
 true

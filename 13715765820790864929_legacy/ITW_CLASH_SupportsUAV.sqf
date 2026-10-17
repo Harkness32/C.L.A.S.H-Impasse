@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsUAVStarted = true;
-ITW_CLASH_SupportsUAVVersion = 3;
+ITW_CLASH_SupportsUAVVersion = 4;
 ITW_CLASH_SupportsUAVReady = false;
 
 /*
@@ -54,6 +54,28 @@ ITW_CLASH_SupportsUAVReady = false;
     so the air picture never closed it. A UAV lost within a minute of arriving
     now marks a killbox in the core (ITW_CLASH_Supports_fnc_MarkKillbox), and
     no UAV is sent or retasked there for a while.
+
+    v4 (second 2026-10-17 run): the engine's sensors and the AI crew do not
+    see down from a loiter ring. Across all 12 sorties at 2000 m the most a
+    UAV ever had at once was 2 contacts, and one that loitered the full 15
+    minutes over a contested objective had none. On a 700 m ring at 2000 m
+    the objective sits 70 degrees below the horizon. So (Hark: "why don't we
+    just reveal all targets below the UAV that aren't inside?"):
+      - The footprint: every enemy man, vehicle and static within Footprint
+        metres of the point under the UAV, unless something covers it from
+        above (fnc_Covered: a building's roof by default; any overhead
+        geometry, canopy included, with CoverAny) or the ground hides it
+        from the UAV. That is the camera's look, which the engine does not
+        model from up here.
+      - What it finds is revealed to the commander's HQ group as before (so
+        HAL, and HAL's map markers, have it) and handed to the knowledge
+        layer as a UAV report: the position where the camera saw it, now,
+        with ReportError metres of error, ageing from then like any other
+        report (ITW_CLASH_KnowledgeUAVSightings). It is a measurement, read
+        once at the look, as a strike jet's own sensor track is.
+      - The camera is pointed at the station every poll (lockCameraTo), so
+        the turret's own sensors and crew look at the ground too, unless a
+        player is connected to the UAV.
 */
 ITW_CLASH_SupportsUAVHeight = missionNamespace getVariable ["ITW_CLASH_SupportsUAVHeight",2000];
 ITW_CLASH_SupportsUAVHeightRotary = missionNamespace getVariable ["ITW_CLASH_SupportsUAVHeightRotary",500];
@@ -73,6 +95,20 @@ ITW_CLASH_SupportsUAVRevealLevel = missionNamespace getVariable ["ITW_CLASH_Supp
 // Only what was seen this recently is passed on.
 ITW_CLASH_SupportsUAVRevealAge = missionNamespace getVariable ["ITW_CLASH_SupportsUAVRevealAge",30];
 ITW_CLASH_SupportsUAVSensorRange = missionNamespace getVariable ["ITW_CLASH_SupportsUAVSensorRange",3000];
+/*
+    v4. The footprint: how far from the point under the UAV it sees (the
+    station's centre stays inside it all the way round a 700 m ring); how
+    high the cover ray goes; whether anything overhead covers (true) or only
+    a building (false, Hark's "aren't inside"); the error a UAV report
+    carries; the most it reveals in one poll.
+*/
+ITW_CLASH_SupportsUAVFootprint = missionNamespace getVariable ["ITW_CLASH_SupportsUAVFootprint",1200];
+ITW_CLASH_SupportsUAVCoverRay = missionNamespace getVariable ["ITW_CLASH_SupportsUAVCoverRay",40];
+ITW_CLASH_SupportsUAVCoverAny = missionNamespace getVariable ["ITW_CLASH_SupportsUAVCoverAny",false];
+ITW_CLASH_SupportsUAVReportError = missionNamespace getVariable ["ITW_CLASH_SupportsUAVReportError",10];
+ITW_CLASH_SupportsUAVFootprintCap = missionNamespace getVariable ["ITW_CLASH_SupportsUAVFootprintCap",80];
+// v4. Point the camera at the station every poll.
+ITW_CLASH_SupportsUAVCameraLock = missionNamespace getVariable ["ITW_CLASH_SupportsUAVCameraLock",true];
 
 ITW_CLASH_SupportsUAV_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -123,13 +159,98 @@ ITW_CLASH_SupportsUAV_fnc_Station = {
 };
 
 /*
+    v4. Is something over this man or vehicle that a camera above cannot see
+    through: a straight ray up from its aim point, CoverRay metres. Only a
+    building counts unless CoverAny, when anything overhead does (canopy,
+    nets, a bridge).
+*/
+ITW_CLASH_SupportsUAV_fnc_Covered = {
+    params ["_object"];
+    if (isNull _object) exitWith {true};
+    private _from = aimPos _object;
+    private _to = _from vectorAdd [0,0,ITW_CLASH_SupportsUAVCoverRay];
+    private _hits = lineIntersectsSurfaces [_from,_to,_object,vehicle _object,true,3,"GEOM","NONE"];
+    if (ITW_CLASH_SupportsUAVCoverAny) exitWith {_hits isNotEqualTo []};
+    (_hits findIf {
+        private _thing = if (isNull (_x#3)) then {_x#2} else {_x#3};
+        !isNull _thing && {_thing isKindOf "Building"}
+    }) >= 0
+};
+
+/*
+    v4. The footprint: the enemy's men on foot, vehicles and statics with
+    anyone alive in them, within Footprint metres of the point under the
+    UAV, that nothing covers and no ridge hides from the UAV itself.
+    Returns [found, covered or hidden count].
+*/
+ITW_CLASH_SupportsUAV_fnc_Footprint = {
+    params ["_veh","_side"];
+    if (isNull _veh || {!alive _veh}) exitWith {[[],0]};
+    private _under = getPosATL _veh;
+    _under set [2,0];
+    private _eye = getPosASL _veh;
+    private _found = [];
+    private _covered = 0;
+    {
+        private _object = _x;
+        if (!alive _object) then {continue};
+        private _crew = if (_object isKindOf "CAManBase") then {[_object]} else {(crew _object) select {alive _x}};
+        if (_crew isEqualTo []) then {continue};
+        if !([_side,side group (_crew#0)] call BIS_fnc_sideIsEnemy) then {continue};
+        if (terrainIntersectASL [_eye,(aimPos _object) vectorAdd [0,0,1]] || {[_object] call ITW_CLASH_SupportsUAV_fnc_Covered}) then {
+            _covered = _covered + 1;
+            continue
+        };
+        _found pushBack _object;
+        if ((count _found) >= ITW_CLASH_SupportsUAVFootprintCap) then {break};
+    } forEach (_under nearEntities [["CAManBase","LandVehicle","StaticWeapon","Ship"],ITW_CLASH_SupportsUAVFootprint]);
+    [_found,_covered]
+};
+
+/*
+    v4. A UAV report to the knowledge layer: where the camera saw it, now,
+    with ReportError. The layer weighs it against every other report on its
+    next update (ITW_CLASH_Knowledge.sqf v6) and it ages like any of them.
+*/
+ITW_CLASH_SupportsUAV_fnc_Report = {
+    params ["_side","_objects","_by"];
+    if (_objects isEqualTo [] || {isNil "ITW_CLASH_KnowledgeUAVSightings"} || {isNil "ITW_CLASH_Knowledge_fnc_ContactKey"}) exitWith {0};
+    private _sideKey = [_side] call ITW_CLASH_Knowledge_fnc_SideKey;
+    private _store = ITW_CLASH_KnowledgeUAVSightings getOrDefault [_sideKey,createHashMap,true];
+    private _now = time;
+    {
+        private _position = getPosATL _x;
+        _store set [[_x] call ITW_CLASH_Knowledge_fnc_ContactKey,[
+            _x,[_position#0,_position#1,0],_now,ITW_CLASH_SupportsUAVReportError,_by
+        ]];
+    } forEach _objects;
+    count _objects
+};
+
+/*
+    v4. The camera on the station, so the turret's own sensors and its crew
+    look at the ground. Left alone while a player is connected to the UAV.
+*/
+ITW_CLASH_SupportsUAV_fnc_PointCamera = {
+    params ["_veh","_station"];
+    if (!ITW_CLASH_SupportsUAVCameraLock || {isNull _veh} || {!alive _veh} || {_station isEqualTo []}) exitWith {false};
+    if (((UAVControl _veh) findIf {_x isEqualType objNull && {!isNull _x} && {isPlayer _x}}) >= 0) exitWith {false};
+    private _turret = (allTurrets [_veh,false]) param [0,[]];
+    if (_turret isEqualTo []) exitWith {false};
+    _veh lockCameraTo [[_station#0,_station#1,(getTerrainHeightASL [_station#0,_station#1]) + 2],_turret];
+    true
+};
+
+/*
     What the UAV has seen, passed to its commander: enemy ground contacts on
-    its own sensors and in its crew's recent knowledge, within its sensor
-    range. Returns how many.
+    its own sensors, in its crew's recent knowledge within its sensor range,
+    and (v4) in its footprint. All of it is revealed to the HQ group; the
+    footprint is also reported to the knowledge layer, which reads the crew
+    for itself (a registered sensor group). Returns [all, footprint, covered].
 */
 ITW_CLASH_SupportsUAV_fnc_Sweep = {
-    params ["_veh","_hq"];
-    if (isNull _veh || {!alive _veh}) exitWith {0};
+    params ["_veh","_hq",["_side",sideUnknown],["_by",""]];
+    if (isNull _veh || {!alive _veh}) exitWith {[0,0,0]};
     private _seen = [];
     {
         _x params [["_object",objNull],"",["_relationship",""]];
@@ -146,10 +267,13 @@ ITW_CLASH_SupportsUAV_fnc_Sweep = {
         && {!(_x isKindOf "Air")}
         && {(_x distance2D _veh) <= ITW_CLASH_SupportsUAVSensorRange}
     };
+    ([_veh,_side] call ITW_CLASH_SupportsUAV_fnc_Footprint) params ["_footprint","_covered"];
+    {_ground pushBackUnique _x} forEach _footprint;
     if (!isNull _hq) then {
         {_hq reveal [_x,ITW_CLASH_SupportsUAVRevealLevel]} forEach _ground;
     };
-    count _ground
+    [_side,_footprint,_by] call ITW_CLASH_SupportsUAV_fnc_Report;
+    [count _ground,count _footprint,_covered]
 };
 
 ITW_CLASH_SupportsUAV_fnc_Run = {
@@ -186,6 +310,10 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
     private _arrivedAt = -1;
     private _transitUntil = time + ITW_CLASH_SupportsUAVTransitTimeout;
     private _peak = 0;
+    // v4: the most the footprint had at once, and the most it found covered.
+    private _footPeak = 0;
+    private _coverPeak = 0;
+    private _reported = 0;
     private _looks = 0;
     private _retasks = 0;
     private _result = [];
@@ -210,7 +338,13 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
             _retasks = _retasks + 1;
         };
 
-        _peak = _peak max ([_veh,_hq] call ITW_CLASH_SupportsUAV_fnc_Sweep);
+        // v4: the camera on the station, then everything it and the crew have.
+        [_veh,_station] call ITW_CLASH_SupportsUAV_fnc_PointCamera;
+        ([_veh,_hq,_side,_id] call ITW_CLASH_SupportsUAV_fnc_Sweep) params ["_all","_foot","_cover"];
+        _peak = _peak max _all;
+        _footPeak = _footPeak max _foot;
+        _coverPeak = _coverPeak max _cover;
+        _reported = _reported + _foot;
 
         if ((_veh distance2D _station) <= ITW_CLASH_SupportsUAVOnStation) then {
             if (_arrivedAt < 0) then {
@@ -234,7 +368,7 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
     ["ended",[
         _id,_sign,_result#0,_result#1,
         if (_arrivedAt < 0) then {0} else {round (time - _arrivedAt)},
-        _looks,_peak,_retasks
+        _looks,_peak,_retasks,_footPeak,_coverPeak,_reported
     ]] call ITW_CLASH_SupportsUAV_fnc_Log;
     // v5: dead within a minute of arriving: where it died is a killbox.
     if (
@@ -253,7 +387,7 @@ ITW_CLASH_SupportsUAV_fnc_Run = {
 
 ITW_CLASH_SupportsUAVReady = true;
 diag_log format [
-    "CLASH BOOT | supports-uav-ready | version=%1 height=%2/rotary%10 loiter=%3s radius=%4 onStation=%5 look=%6 retask=%7 reveal=%8 revealAge=%9s unarmed=true followsAssessment=true killboxOnQuickLoss=true",
+    "CLASH BOOT | supports-uav-ready | version=%1 height=%2/rotary%10 loiter=%3s radius=%4 onStation=%5 look=%6 retask=%7 reveal=%8 revealAge=%9s footprint=%11m coverRay=%12m coverAny=%13 reportError=%14m footprintCap=%15 cameraLock=%16 footprintReports=true unarmed=true followsAssessment=true killboxOnQuickLoss=true",
     ITW_CLASH_SupportsUAVVersion,
     ITW_CLASH_SupportsUAVHeight,
     ITW_CLASH_SupportsUAVLoiter,
@@ -263,6 +397,12 @@ diag_log format [
     ITW_CLASH_SupportsUAVRetask,
     ITW_CLASH_SupportsUAVRevealLevel,
     ITW_CLASH_SupportsUAVRevealAge,
-    ITW_CLASH_SupportsUAVHeightRotary
+    ITW_CLASH_SupportsUAVHeightRotary,
+    ITW_CLASH_SupportsUAVFootprint,
+    ITW_CLASH_SupportsUAVCoverRay,
+    ITW_CLASH_SupportsUAVCoverAny,
+    ITW_CLASH_SupportsUAVReportError,
+    ITW_CLASH_SupportsUAVFootprintCap,
+    ITW_CLASH_SupportsUAVCameraLock
 ];
 true

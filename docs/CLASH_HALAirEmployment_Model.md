@@ -1,7 +1,7 @@
 # C.L.A.S.H. HAL Air Employment Model
 
-Status: **built; v1 and v2 run in engine on 2026-10-16, v3 on 2026-10-17,
-v4 not yet.** Rack profile v4, heli attack v4, GoAttAir swapped in C.L.A.S.H.
+Status: **built; v1 and v2 run in engine on 2026-10-16, v3 and v4 on
+2026-10-17, v5 not yet.** Rack profile v4, heli attack v5, GoAttAir swapped in C.L.A.S.H.
 HAL Additions, Dual-HAL Checkbook v9.
 
 How a HAL attack helicopter flies its sortie, and how any C.L.A.S.H. layer
@@ -79,6 +79,32 @@ Nothing below names an airframe or a weapon.
   the DAP fired in transit at 209 m against a set 150.
 
 v4 answers all four (4.2, 4.3).
+
+### 1.3 What v4 taught (second 2026-10-17 run)
+
+- **The aim works.** The yaw sign was confirmed +1 on the first assisted
+  point-at, with no flips. All 25 point-ats came nose on: 3.2 to 6.1 s when the
+  assist turned the airframe, about 0.6 s for the ones after.
+- **Low transit works.** No sortie of 8 was lost on the way in. The one loss,
+  A's G79, was a Cheetah at 148 m on its firing position, 2 km from its target.
+- **Nobody fired.** 0 shots in 25 point-ats, and 0 in all 32 since v3. v1 and
+  v2 never told the crew what to shoot, and the same Ghost Hawks fired DAGRs
+  at targets they chose themselves: G63 four into a Rooikat from 2695 m down
+  to 1607 m and four into an APC from 685 to 342 m, G64 three into a Marshall
+  from 1557 to 471 m, G93 four from 2435 to 1805 m (Hark: "we have seen the
+  ghost hawk engage vehicles before"). v3 added `doTarget` and `doWatch` on a
+  target picked from the crew's knowledge, which includes contacts HAL only
+  revealed to it. An assigned target the crew has not seen is one it will not
+  fire at, and the order kept it from switching to one it could. Two point-ats
+  ended `lost`: even the revealed knowledge lapsed while it held. Most of the
+  old shots were fired at 100 to 270 km/h, so whether the hover itself also
+  holds fire is open; the v5 point-at log is there to tell.
+- **Seeing nothing meant hovering in the open.** Hark: helicopters "when they
+  don't see any targets, kinda just sit in the open hovering". Twelve looks sat
+  20 s each at 150 m, and every point-at held 8 s on a target the crew had not
+  seen.
+
+v5 answers the last two (4.2).
 
 ## 2. Authority
 
@@ -217,27 +243,34 @@ nothing to hit end the sortie. Each lap logs how close it came
 A loop over firing positions:
 
 1. **Detect.** Pick the centre as ORBIT does (`reported` or `hal-point`),
-   reveal the commander's knowledge there, then list what the crew knows of
-   within 1500 m of it that the rack can hit (`targets`, enemies only):
+   reveal the commander's knowledge there so the crew knows where to look,
+   then list what the flight has acquired within 1500 m of it that the rack
+   can hit (`targets`, enemies only):
    - where the crew thinks each one is (`targetKnowledge`), never the true
      position;
-   - a sighting older than 120 s is dropped; a target revealed but not yet
-     seen by the crew itself is kept, because pointing at it is how the crew
-     comes to see it;
-   - ranked HAL's own target first, then armour, vehicles, statics, men, each
-     nearest first.
+   - **v5: acquired only** (`fnc_Acquired`): a crew member of the flight saw it
+     within 120 s (`lastSeen`; a revealed, unseen target has none), or it is on
+     one of the flight's own sensors (`getSensorTargets`). v4 kept revealed,
+     unseen targets so that pointing would make the crew see them; it did not,
+     and the crew never fired at them;
+   - ranked **the crew's own pick first** (v5: `getAttackTarget` of the pilot,
+     then the gunner), then HAL's own target, then armour, vehicles, statics,
+     men, each nearest first.
 2. **Nothing found: look.** Fly to the farthest standoff on our side of the
-   centre, watch the centre, and wait up to 20 s for the crew to find
-   something. Two looks with nothing, and the sortie ends (`clear` if it ever
-   had a target, `nothing-to-hit` if not).
+   centre, pop up, watch the centre (`doWatch` on the position, the only watch
+   left), and scan up to **10 s** (v5; was 20) for the flight to acquire
+   something. **v5:** nothing acquired, it drops straight back to the transit
+   height before deciding what is next. Two looks with nothing, and the sortie
+   ends (`clear` if it ever had a target, `nothing-to-hit` if not).
 3. **Get far.** A firing position at the standoff from the best target, from
    the side the helicopter is on, trying that bearing and 30 and 60 degrees
    either side. First choice is one that sees the target over the terrain from
    the hover height (`terrainIntersectASL`). Next is one with fewest other known
    enemies within 600 m, so it is not parked over another target. Last is the
    smallest turn. It flies there and stops: a move under 1.5 km is capped at
-   120 km/h, so it turns tight and stops sharp. Watch and target are cleared
-   before every move, so it flies where it is going. **v4, low:** every move
+   120 km/h, so it turns tight and stops sharp. A look's watch is cleared
+   before every move, so it flies where it is going; v5 never clears a target,
+   which would wipe one the crew picked itself. **v4, low:** every move
    (to a look position too) is flown at the transit height, 30 m, forced, and
    slowed by the troop lifts' arrival schedule (`ITW_CLASH_HALStayLow_fnc_Schedule`)
    so it arrives slow and has nothing to flare off into height. Once there it
@@ -245,7 +278,8 @@ A loop over firing positions:
    20 s.
 4. **Point at, up to three times.** Each point-at takes the best target it has
    not pointed at yet from here (or the best again):
-   - the pilot and any gunner `doWatch` and `doTarget` it;
+   - **v5: the crew is told nothing.** v3 and v4 gave the pilot and any gunner
+     `doWatch` and `doTarget` on it, and no point-at ever drew a shot;
    - if the nose is not within 8 degrees after 1.5 s, the **yaw assist** turns
      the airframe (4.3);
    - it is done once on target and held 8 s, or 2 s after the crew's first
@@ -253,7 +287,10 @@ A loop over firing positions:
    - out early when the target dies, the crew loses it, or the aircraft is
      hit or has a missile inbound (`Hit` and `IncomingMissile` handlers).
      A hit or missile ends the position at once.
-   The crew pulls the trigger. Nothing here fires.
+   The crew picks and pulls the trigger. Nothing here fires. v5 logs with each
+   point-at how long since the crew saw it, the crew's own pick at the end and
+   whether it was this target, and the best `aimedAtTarget` the lead's weapon
+   reached on it.
 5. **Break off.** The next position is a hop of about 700 m to the side at the
    same standoff (a 20 degree step at 2 km, the 40 degree cap at 1 km),
    alternating sides: a zig-zag across the target's front. The hop's straight
@@ -344,14 +381,14 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
 | Line | Content |
 |---|---|
 | `CLASH BOOT \| rack-profile-ready` | Version, AI mode reach, turret span, ring bounds, margin, guided and unguided standoff caps, `modes=ORBIT,POINT warheadFlags=true` |
-| `CLASH BOOT \| heli-attack-ready` | Version, retarget radius, uncertainty limit, ring step, clear passes, max time, height bounds, `modes=ORBIT,POINT`, point-ats, alignment, assist delay, hold, hop, hop speed, yaw gain, rate and default sign, `yawSignPerClass=true`, transit height, forced, pop-up fraction and timeout, release height, `crewFires=true yieldsToOwners=true` |
+| `CLASH BOOT \| heli-attack-ready` | Version, retarget radius, uncertainty limit, ring step, clear passes, max time, height bounds, `modes=ORBIT,POINT`, point-ats, alignment, assist delay, hold, hop, hop speed, yaw gain, rate and default sign, `yawSignPerClass=true`, transit height, forced, pop-up fraction and timeout, release height, v5 look wait and acquired age, `crewPicks=true noAssignedTarget=true acquiredOnly=true lookDropsWhenEmpty=true`, `crewFires=true yieldsToOwners=true` |
 | `CLASHHALADD \| hal-overrides-applied` | Must list `HAL_GoAttAir` |
 | `CLASHHALADD \| goattair-heli` | Group and flight classes, when a sortie takes this path |
 | `rack-profile` | Once per class and loadout: up to 8 entries as [weapon, flags, bands, lock, aim, rounds], and per type [type, usable, ring radius, mode, standoff] |
 | `heli-attack-start` | ORBIT: group, class, lap, source, type, HAL's target type, centre, mode, radius, height, revealed. POINT: group, class, mode, HAL's target type, HAL's point, [type, standoff] for each usable type |
 | `heli-attack-pass`, `-flown` | ORBIT, each lap: as start; then closest to the centre, speed and height then, seconds, shots by weapon |
 | `heli-attack-look` | POINT, nothing found: group, look count, source, centre, standoff, bearing, line of sight, whether the crew found something, seconds |
-| `heli-attack-engage` | POINT, each firing position: group, position number, target class, source, standoff, distance on arrival, bearing, line of sight, other enemies near, the point-ats as [class, seconds to come on or -1, assisted, shots, alive after, why], why it left, seconds, shots by weapon |
+| `heli-attack-engage` | POINT, each firing position: group, position number, target class, source, standoff, distance on arrival, bearing, line of sight, other enemies near, the point-ats as [class, seconds to come on or -1, assisted, shots, alive after, why, and v5: seconds since the crew saw it (-1 never), the crew's own pick's class, whether that was this target, best `aimedAtTarget`], why it left, seconds, shots by weapon |
 | `heli-attack-yaw-sign-flipped` | v4: group, airframe class, new sign, flips so far, error when the check began, error now |
 | `heli-attack-yaw-sign-confirmed` | v4: group, airframe class, sign locked, flips it took, seconds to come on |
 | `heli-attack-shot` | Each missile and rocket: group, class, weapon, gunner's target class, range, height, speed |
@@ -377,8 +414,8 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
 | Hop, step cap | 700 m, 40 degrees |
 | Hop speed, far | 120 km/h for moves under 1500 m |
 | Position arrival, slowest average | 120 m, 12 m/s |
-| Look wait | 20 s |
-| Sighting age | 120 s (revealed, unseen targets kept) |
+| Look wait | 10 s (v5; was 20), then down to the transit height if nothing was acquired |
+| Sighting age | 120 s; v5 points only at what the flight acquired (crew sighting or own sensor track), never a bare reveal |
 | Clear radius around a firing position | 600 m |
 | Yaw gain, cap, speed limit, default sign | 2 per radian, 0.8 rad/s, 40 km/h, +1 (per class from then on) |
 | Yaw flip check | error must close 10 degrees in 1.5 s of turning; only past 16 degrees off; 3 flips per class |
@@ -410,6 +447,12 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
   aim; lock-on missiles only need the nose round.
 - **Pointing only helps acquisition.** The crew may still hold fire on a target
   it is pointed at; the `engage` line's shots per point-at shows how often.
+- **v5 points less.** Only what the flight acquired is a target, so a crew
+  that sees nothing from 2 km looks twice and goes home instead of holding on
+  reveals. Short sorties are the cost; HAL sends the next one. If the crew
+  still never fires at what it has seen, two levers are left: a scripted
+  trigger at an acquired target inside the envelope (the guided strike's rule),
+  or a closer standoff so the crew sees more.
 - **Unguided weapons fire from far.** The AI's own bands decide when it shoots:
   DAR's Far_AI mode reaches 3200 m. The 1 km standoff limits how far out it is
   asked to point, not what the AI chooses.
@@ -446,6 +489,12 @@ Through `ITW_CLASH_DualHAL_fnc_Log`, so each line carries `dual-hal-` first.
    stop.
 10. v4: a helicopter that hands back must land on HAL's return leg (the forced
    height released). One hovering over its pad means the release failed.
+11. v5: shots per point-at, and the new fields. A point-at with the crew's
+   own pick on it, a recent sighting and a high `aimedAtTarget` that still
+   draws no shot says the hover or the lock is the problem, not the target.
+   One whose crew pick differs says the crew wanted something else.
+12. v5: looks. `heli-attack-look` seconds near 10, heights back near 30 m
+   after an empty one, and fewer, shorter sorties when nothing is seen.
 
 ## 9. Deployment
 
@@ -459,7 +508,7 @@ flies its original SAD.
 | File | Owns |
 |---|---|
 | `ITW_CLASH_RackProfile.sqf` (v4) | Reading racks (missile and warhead flags; only missiles, rockets and carriers guide); mode; ring and standoff; the guided anti-armour test |
-| `ITW_CLASH_HeliAttack.sqf` (v4) | The sortie between HAL's order and its return leg: the ring, or point at; the yaw assist; low transit and forced heights |
+| `ITW_CLASH_HeliAttack.sqf` (v5) | The sortie between HAL's order and its return leg: the ring, or point at what the flight acquired, the crew's pick first, without assigning it; the yaw assist; low transit and forced heights; looks that drop when empty |
 | `CLASH HAL Additions/.../hal/GoAttAir.sqf` | HAL's GoAttAir plus the helicopter branch; since 2026-10-17 `_wp` is declared before the branch too, because HAL's own path made its waypoint inside the else block and deleted it after (an error whenever a fixed-wing wait passed 120 s) |
 | `CLASH HAL Additions/.../functions/fnc_overrides.sqf` | `HAL_GoAttAir` among the 10 swaps |
 | `ITW_CLASH_DualHALCheckbook.sqf` (v9) | Clearing Impasse's spawn CARELESS at the handoff |

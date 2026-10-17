@@ -1,6 +1,6 @@
 # C.L.A.S.H. Commander Supports Model
 
-Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed.** Phase 0 (per-side air-loss closures, hard-kill
+Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed; v6 gives the guided missile its own danger margin, and the recon UAV (v4) reports everything in its footprint that no building covers.** Phase 0 (per-side air-loss closures, hard-kill
 fighter denial) shipped in `448324b`; see `COMMANDER_SUPPORTS_PHASE0.md`.
 
 Every number in this document is a placeholder for calibration, not a decision.
@@ -83,6 +83,8 @@ All feed one picture per side:
 - HAL groups, players and every other group of the side: what they see.
 - HAL's own recon.
 - Support crews: the UAV, and a strike jet's own sensors while on station.
+- The UAV's footprint (knowledge v6, UAV v4): every enemy under it that no
+  building covers, as a UAV report (9.2).
 - Counter-battery fixes, as leads.
 
 There is no "gunfire heard" sensor. Squads see units and report them.
@@ -166,6 +168,20 @@ Knowledge v5, from 36 minutes of contact on 2026-10-16 (05:11 session):
   the group's report is now that groupmate's most recent sighting. Still one
   report per group, never merged. `knowledge-never-seen` is now [leader never
   saw it, groups checked, groupmate sightings used].
+
+Knowledge v6, from the second 2026-10-17 run: **the UAV's footprint is a
+report.** Through the engine's sensors and its crew, no UAV at 2000 m ever had
+more than 2 contacts at once in 12 sorties. The UAV now looks at its footprint
+itself (9.2) and leaves each sighting in `ITW_CLASH_KnowledgeUAVSightings`: the
+entity, where the camera saw it, when, and a 10 m error. Each update makes those
+entities candidates and weighs the UAV's report against every observer's on the
+same target by the same rule (error plus allowance times age, smallest now
+wins); nothing is merged, and the record's observer reads `uav:<support id>`.
+A UAV report is never refreshed on its own: it ages from the look, and a target
+that leaves the footprint keeps only what was seen of it then. Stale or dead
+entries are dropped where they are read. The position is read once, at the
+look, as a strike jet's own sensor track is: the camera's measurement, not a
+standing view of the truth.
 
 ### 4.3 Uncertainty
 
@@ -411,7 +427,7 @@ Under CONSOLIDATE only candidates at held points enter the pool.
 | Knowledge | The flavor's statuses, rechecked at admission | `NO_CONTACT`, `TOO_UNCERTAIN` |
 | Objective | Plan objective under PUSH, or a held point under pressure. Not capture-frozen (`ITW_CLASH_fnc_ObjectiveFrozen`). Any other objective is simply not a candidate | `CONSOLIDATING`, `OBJECTIVE_FROZEN` |
 | Value | Cluster worth at least 2; the bomb and guided passes 1.5 (`ITW_CLASH_SupportsValueFloorAcquire`; v4 the bomb, v5 the guided pass too: a lone vehicle, a lone tank or two riflemen, and a static once its gunner is tracked too; never one rifleman). Carpet also needs three contacts or more | `BELOW_FLOOR`, `NOT_CLUSTERED` |
-| Danger close | Footprint plus 300 m clear of every living friendly: on foot, in vehicles, in aircraft below 300 m, under canopy. 500 m for players | `DANGER_CLOSE` |
+| Danger close | Footprint plus 300 m clear of every living friendly: on foot, in vehicles, in aircraft below 300 m, under canopy. 500 m for players. The guided pass, one precision missile, 100 m and 200 m (v6). Each denial logs the friendly that caused it (`supports-danger-close`) | `DANGER_CLOSE` |
 | Corridor | UAV and helicopters use the default fighter rule (`HARD_KILL`); jets use `ANY_AA_MISSILE`. `AIR_DENIED` denies | `AIR_DENIED` |
 | ETB overlap | Target not already tasked to a busy ETB responder of the side (`ITW_CLASH_Supports_fnc_ETBAnswering` reads `ITW_CLASH_ThreatCoverageTarget` on the commander's groups) | `ETB_ANSWERING` |
 | Lane | Recon lane: one UAV. Commitment lane: one strike or drop in flight | `LANE_BUSY` |
@@ -577,6 +593,22 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   A's five UAVs died 5 to 10 s after reaching the same station with no killer
   recorded, so the air picture, which weighs a loss by its killer, never
   closed it.
+- **Footprint (UAV v4):** each poll it also takes every enemy man on foot,
+  vehicle with anyone alive in it, and static within 1200 m of the point under
+  it, unless a building covers it (a ray straight up 40 m from the target's aim
+  point that meets a building's geometry; `ITW_CLASH_SupportsUAVCoverAny` true
+  makes any overhead geometry count, canopy and nets included) or the terrain
+  hides it from the UAV itself. At most 80 a poll. They are revealed to the HQ group with the rest and reported to the
+  knowledge layer (4.2). This is the camera's look, which the engine does not
+  model from a loiter ring: on a 700 m ring at 2000 m the objective sits 70
+  degrees below the horizon, and across 12 sorties the sensors and crew peaked
+  at 2 contacts (Hark: "why don't we just reveal all targets below the UAV that
+  aren't inside?"). The cost is plain: a man in the open under a UAV is seen
+  wherever he is in its footprint unless the ground itself is in the way, and
+  a vehicle under trees is seen unless CoverAny is on.
+- **Camera (UAV v4):** pointed at the station every poll (`lockCameraTo`), so
+  the turret's own sensors and crew look at the ground; left alone while a
+  player is connected to the UAV.
 - **What players see:** a UAV's reveals go to its HQ group, which is how HAL
   learns them; they never reached the players. Since 2026-10-17 the players'
   own commander draws HAL's Info Markers (`ITW_CLASH_PlayerInfoMarkers`,
@@ -786,10 +818,11 @@ the loud debugger; the pool and ledger lines are too long for chat.
 | `supports-strike-impact` | Per bomb: error against the no-drag model (along, across), error against its pattern point (along, across), release height, speed, lateness in metres. The model is the raw no-drag one, without the release scale, so the scale can be refitted from it |
 | `supports-strike-breakoff-geometry` | v5: id, flavor, reason, metres to the aim along the line, metres off it, line heading, track heading, missiles that came at it during the pass, height, speed |
 | `supports-uav-killbox` | v5: side, where a UAV died within a minute of arriving, how long the area is closed |
+| `supports-danger-close` | v6: side, flavor, target key (assessment) or support id (pre-run), where (`assess` or `pre-run`), and the friendly deepest inside its line: [metres, player, line] |
 | `supports-strike-impact-summary` | Per pass: the four mean errors |
 | `supports-strike-ammo` | Boot: the bomb class's simulation, air friction, side air friction, max speed, thrust, thrust time, time to live |
 | `supports-strike-test-started`, `-test-outcome` | A console test pass |
-| `supports-uav-launched`, `-on-station`, `-retasked`, `-ended` | The UAV's life: looks stamped, peak contacts in one sweep, retasks |
+| `supports-uav-launched`, `-on-station`, `-retasked`, `-ended` | The UAV's life: looks stamped, peak contacts in one sweep, retasks; v4 adds the footprint's peak, the most it found covered in one poll, and footprint reports made |
 | `supports-airborne-boarded`, `-released`, `-handoff`, `-vehicle-*` | The drop: squads and men, release geometry, who took each squad and which order it got |
 | `supports-ledger` | Periodic: cash, cap, income, lanes |
 | `knowledge-objective` | Periodic per objective: intelligence state, observed, fixed, leads, oldest report |
@@ -803,9 +836,19 @@ the loud debugger; the pool and ledger lines are too long for chat.
 
 ## 11. Rollout
 
+- **Supports v6 / UAV v4 / Knowledge v6** (2026-10-17, second run, Hark): the
+  guided missile's danger margin is 100 m (200 m for players); every
+  DANGER_CLOSE is logged with its cause; the UAV reports its footprint and
+  points its camera. Not yet run in engine.
 - **Supports v5 / Strike v5 / UAV v3** (2026-10-17, Hark): strikes twice as
   often, guided on lone vehicles, the UAV killbox, and the bomb pass held to
-  its footprint with the first fitted release scale. Not yet run in engine.
+  its footprint with the first fitted release scale. Ran once (second
+  2026-10-17 run, 27 minutes): no strike was bought. Both banks could afford a
+  bomb from five minutes in and ended with two bombs' worth; two clusters came
+  up near a plan objective, one a side, and both were DANGER_CLOSE. Three of
+  four UAVs died within 10 s of arriving; A's killbox expired and its next UAV
+  died 120 m from the first wreck. The one that loitered 15 minutes revealed
+  nothing.
 - **Supports v4 / Strike v4: lone targets for the bomb, on-site acquisition**
   (2026-10-16, Hark). The bomb pass's floor is 1.5, carpet needs three
   contacts, and the bomb pass acquires its own target like the guided pass
@@ -885,6 +928,17 @@ class goes without that flavor.
 20. Info Markers: the players' map shows their own groups and the enemy groups
    their commander knows of, updated each HAL cycle; nothing of the enemy
    commander's picture.
+21. v4 footprint: `supports-uav-ended` footprint peak and reports against the
+   old peak, and the objectives under a UAV reading `OBSERVED` in
+   `knowledge-objective`. Then whether strikes follow: candidates in
+   `supports-pool` near a UAV's station.
+22. v4 cover: whether `lineIntersectsSurfaces` with `GEOM` from a man's aim
+   point meets the floors and roofs of Altis's buildings (the covered peak);
+   whether `isKindOf "Building"` holds for terrain buildings, ruins and walls.
+23. v4 camera: whether `lockCameraTo` on a UAV with an AI gunner holds, and
+   whether the Greyhawk's own `getSensorTargets` then sees the ground.
+24. v6 danger close: `supports-danger-close` distances, and how many were
+   players; whether guided passes now run where bombs are still refused.
 
 ## 14. Tunables
 
@@ -907,7 +961,7 @@ All placeholders.
 | Carpet minimum contacts | 3 |
 | Footprints | Bomb pass 50 m, carpet 60 m |
 | Hard uncertainty limit | 300 m |
-| Danger close margin | 300 m, 500 m for players |
+| Danger close margin | 300 m, 500 m for players; the guided pass 100 m and 200 m |
 | Corridor HOT or CONTESTED multiplier | 0.5 |
 | Holding discount | 0.75 |
 | Setup delay | 45 to 120 s |
@@ -915,6 +969,7 @@ All placeholders.
 | Save pull | 0.5 times its weight by bank fill |
 | UAV killbox | Lost within 60 s of arriving; 1.5 km; 15 min |
 | UAV altitude, loiter, relaunch | 2000 m AGL (rotary 500 m), 15 min, 300 s |
+| UAV footprint | 1200 m under it; cover ray 40 m, buildings only; report error 10 m; 80 a poll; camera on the station |
 | Guided scan | Within 3 km, radius cap 500 m, window 20 s |
 | Bomb acquisition | Reveal 1.5; a look every 1 s from spawn; scan radius R, 150 to 500 m; re-line with 10 s or more to the final check when the aim moved over 25 m; velocity from fixes 4 to 10 s apart; lead cap 250 m |
 | Bomb pass speed, release scale | 550 km/h; lead times 1.08 |
@@ -962,12 +1017,12 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 
 | File | Owns |
 |---|---|
-| `ITW_CLASH_Knowledge.sqf` (v5) | Reports (a groupmate's sighting when the leader has none), uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
+| `ITW_CLASH_Knowledge.sqf` (v6) | Reports (a groupmate's sighting when the leader has none; the UAV's footprint reports), uncertainty, statuses, looks, intelligence state, the truth diagnostic, clock, never-seen and speed instrumentation |
 | `ITW_CLASH_Colossus.sqf` (v7) | The one call to `ITW_CLASH_Supports_fnc_Assess` after its order; reported strength beside live; a push only for ground not held; concentration gated on anchored holdings |
 | `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
-| `ITW_CLASH_Supports.sqf` (v5) | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors |
+| `ITW_CLASH_Supports.sqf` (v6) | Registry, ledger, pool, pick, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors, the guided danger margin |
 | `ITW_CLASH_SupportsStrike.sqf` (v5) | Bomb pass with on-site acquisition, guided pass with the on-site scan, carpet; the break-off turn and its geometry |
-| `ITW_CLASH_SupportsUAV.sqf` (v3) | The recon UAV; marks a killbox on a quick loss |
+| `ITW_CLASH_SupportsUAV.sqf` (v4) | The recon UAV; marks a killbox on a quick loss; the footprint, its cover test and its reports; the camera |
 | `ITW_CLASH_DualHALCheckbook.sqf` | The players' commander's Info Markers |
 | `ITW_CLASH_SupportsAirborne.sqf` | Helicopter and C-130 drops, the vehicle add-on, the hand-off |
 | `ITW_CLASH_AirPicture.sqf` | `Observed` also accepts a recent `uav` look |
@@ -977,6 +1032,6 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 Boot (`init.sqf`): the rack profile, then Knowledge, then COLOSSUS, then the
 core and its three executors; the core needs Knowledge and COLOSSUS, and an executor that is
 missing revokes its supports with `NO_EXECUTOR`. Static contracts are pinned in
-`tests/test_commander_supports.py`, `tests/test_bomb_acquisition.py` (v4) and `tests/test_supports_v5.py` (v5). The pure math (pick, overlap, presence,
+`tests/test_commander_supports.py`, `tests/test_bomb_acquisition.py` (v4), `tests/test_supports_v5.py` (v5) and `tests/test_supports_v6.py` (v6). The pure math (pick, overlap, presence,
 falloff, spawn point, release timing, economy) is cross-checked in a Python
 model. The dry run has run in engine (2026-10-16); no live support has yet. Section 13 is the list to verify.

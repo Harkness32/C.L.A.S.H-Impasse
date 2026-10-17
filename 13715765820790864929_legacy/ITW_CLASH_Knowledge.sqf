@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_KnowledgeStarted",false]) exitWith {true};
 
 ITW_CLASH_KnowledgeStarted = true;
-ITW_CLASH_KnowledgeVersion = 5;
+ITW_CLASH_KnowledgeVersion = 6;
 ITW_CLASH_KnowledgeReady = false;
 
 /*
@@ -79,6 +79,16 @@ ITW_CLASH_KnowledgeReady = false;
         speeds, split by moving and settled, so the next run can set the
         allowances from data instead of a guess. The allowances themselves
         are unchanged here.
+
+    v6 (second 2026-10-17 run): the recon UAV's footprint is a report. A UAV
+    at 2000 m saw 0 to 2 contacts through the engine's sensors and crew, so
+    the UAV now looks at its footprint itself (ITW_CLASH_SupportsUAV.sqf v4)
+    and leaves what it saw in ITW_CLASH_KnowledgeUAVSightings: the entity,
+    where the camera saw it, when, and an error. Each update weighs that
+    against every observer's report on the same target by the same rule, the
+    smallest envelope now wins, and nothing is merged. A UAV report is never
+    refreshed by itself: it ages from the look like any sighting, and a
+    target that leaves the footprint keeps only what was seen of it then.
 */
 
 ITW_CLASH_KnowledgeEnabled = missionNamespace getVariable ["ITW_CLASH_KnowledgeEnabled",true];
@@ -140,6 +150,9 @@ ITW_CLASH_KnowledgeContacts = createHashMap;
 ITW_CLASH_KnowledgeLooks = createHashMap;
 // Support crews whose own knowledge nominates candidates (they are not HAL's).
 ITW_CLASH_KnowledgeSensorGroups = [];
+// v6. sideKey -> (contactKey -> [entity, position, seenAt, error, uav id]),
+// written by the recon UAV's footprint (ITW_CLASH_SupportsUAV_fnc_Report).
+if (isNil "ITW_CLASH_KnowledgeUAVSightings") then {ITW_CLASH_KnowledgeUAVSightings = createHashMap};
 // Counter-battery fix key -> fixed offset, so a fix is a lead with an error
 // rather than the firing position itself.
 ITW_CLASH_KnowledgeFixOffsets = createHashMap;
@@ -620,6 +633,19 @@ ITW_CLASH_Knowledge_fnc_Update = {
         } forEach (_leader targets [true,ITW_CLASH_KnowledgeSensorRange]);
     } forEach ITW_CLASH_KnowledgeSensorGroups;
 
+    // v6: what the UAV's footprint saw is a candidate too; stale or dead
+    // entries are dropped here, the one place they are read.
+    private _uavSightings = ITW_CLASH_KnowledgeUAVSightings getOrDefault [_key,createHashMap,true];
+    {
+        _y params [["_entity",objNull],"",["_at",-1e10]];
+        if (isNull _entity || {!alive _entity} || {(_now - _at) > ITW_CLASH_KnowledgeForgetAfter}) then {
+            _uavSightings deleteAt _x;
+        } else {
+            private _veh = vehicle _entity;
+            if (alive _veh) then {_candidates pushBackUnique _veh};
+        };
+    } forEach (+_uavSightings);
+
     private _seen = [];
     {
         private _target = _x;
@@ -632,6 +658,8 @@ ITW_CLASH_Knowledge_fnc_Update = {
         private _best = [];
         private _bestR = 1e10;
         private _bestObserver = grpNull;
+        private _bestBy = "";
+        private _contactKey = [_target] call ITW_CLASH_Knowledge_fnc_ContactKey;
         {
             private _observerGroup = _x;
             if ((_observerGroup knowsAbout _target) < ITW_CLASH_KnowledgeThreshold) then {continue};
@@ -645,10 +673,24 @@ ITW_CLASH_Knowledge_fnc_Update = {
                 _bestObserver = _observerGroup;
             };
         } forEach _observers;
+        // v6: the UAV's look at it competes like one more observer's report.
+        private _look = _uavSightings getOrDefault [_contactKey,[]];
+        if (_look isNotEqualTo []) then {
+            _look params ["","_lookPosition","_lookAt","_lookError",["_lookBy",""]];
+            private _r = _lookError + _speed * ((_now - _lookAt) max 0);
+            if (_r < _bestR) then {
+                _bestR = _r;
+                _best = [+_lookPosition,_lookAt,_lookError];
+                _bestObserver = grpNull;
+                _bestBy = "uav:" + _lookBy;
+            };
+        };
         if (_best isEqualTo []) then {continue};
         _best params ["_position","_seenAt","_error"];
+        private _observerName = if (_bestBy isEqualTo "") then {
+            [_bestObserver] call ITW_CLASH_Knowledge_fnc_GroupId
+        } else {_bestBy};
 
-        private _contactKey = [_target] call ITW_CLASH_Knowledge_fnc_ContactKey;
         _seen pushBack _contactKey;
         private _record = _contacts getOrDefault [_contactKey,createHashMap];
         if (count _record == 0) then {
@@ -656,7 +698,7 @@ ITW_CLASH_Knowledge_fnc_Update = {
                 ["entity",_target],["class",_class],["source","SIGHT"],
                 ["position",_position],["seenAt",_seenAt],["error",_error],
                 ["firstSeen",_seenAt],["confirmedAt",_seenAt],["movedAt",-1e10],["moving",false],
-                ["observer",[_bestObserver] call ITW_CLASH_Knowledge_fnc_GroupId]
+                ["observer",_observerName]
             ];
             _contacts set [_contactKey,_record];
         } else {
@@ -679,7 +721,7 @@ ITW_CLASH_Knowledge_fnc_Update = {
                 _record set ["position",_position];
                 _record set ["seenAt",_seenAt];
                 _record set ["error",_error];
-                _record set ["observer",[_bestObserver] call ITW_CLASH_Knowledge_fnc_GroupId];
+                _record set ["observer",_observerName];
             };
         };
         [_key,_record] call ITW_CLASH_Knowledge_fnc_TruthSample;
@@ -898,7 +940,7 @@ ITW_CLASH_Knowledge_fnc_Summary = {
 
 ITW_CLASH_KnowledgeReady = true;
 diag_log format [
-    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5/armor%17 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 minUncertainty=%16 truthSpeeds=true clockSamples=true neverSeenSeparate=true groupmateSightings=true hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
+    "CLASH BOOT | knowledge-ready | version=%1 poll=%2 speeds=%3/%4/%5/armor%17 observed=%6s/%7m fixed=%8m/%9s lead=%10m existence=%11-%12s cleared=%13s truth=%14 presenceFloor=%15 minUncertainty=%16 truthSpeeds=true clockSamples=true neverSeenSeparate=true groupmateSightings=true uavFootprintReports=true hqObserver=false reportsMerged=false observeOnly=true lostStillCounts=true bestReportByUncertainty=true clearedNeedsGroundLook=true",
     ITW_CLASH_KnowledgeVersion,
     ITW_CLASH_KnowledgePoll,
     ITW_CLASH_KnowledgeSpeedStatic,

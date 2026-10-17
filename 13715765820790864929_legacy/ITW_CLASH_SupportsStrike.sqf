@@ -922,7 +922,7 @@ ITW_CLASH_SupportsStrike_fnc_GuidedPass = {
             && {_x isKindOf "LandVehicle"}
             && {(_x distance2D _report) <= _scanRadius}
             && {([_veh,_x,_ammo] call ITW_CLASH_SupportsStrike_fnc_Envelope) isEqualTo ""}
-            && {!([_friendlies,getPosATL _x,_footprint] call ITW_CLASH_Supports_fnc_DangerClose)}
+            && {!([_friendlies,getPosATL _x,_footprint,"GUIDED"] call ITW_CLASH_Supports_fnc_DangerClose)}
             && {!([_hq,[_x]] call ITW_CLASH_Supports_fnc_ETBAnswering)}
         };
         _seen = _seen max (count _pool);

@@ -136,7 +136,7 @@ NEVER_SEEN = -2147483.648
 
 def test_never_seen_is_its_own_count_before_the_clock_check():
     source = knowledge()
-    assert "ITW_CLASH_KnowledgeVersion = 5;" in (MISSION / "ITW_CLASH_Knowledge.sqf").read_text()
+    assert "ITW_CLASH_KnowledgeVersion = 6;" in (MISSION / "ITW_CLASH_Knowledge.sqf").read_text()
     assert "ITW_CLASH_KnowledgeNeverSeenBelow = -1e6;" in source
     report = function_body(source, "ITW_CLASH_Knowledge_fnc_ReadReport")
     never = report.index("if (_lastSeen < ITW_CLASH_KnowledgeNeverSeenBelow) exitWith {")

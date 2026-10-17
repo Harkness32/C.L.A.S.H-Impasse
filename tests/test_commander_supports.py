@@ -122,7 +122,7 @@ def test_every_support_is_live_by_default():
     # v3 (Hark, 2026-10-16): unlock all of them. Shadow mode stays one
     # variable away, and each flavor keeps its own switch. v4 keeps that.
     core = code("ITW_CLASH_Supports.sqf")
-    assert "ITW_CLASH_SupportsVersion = 5;" in core
+    assert "ITW_CLASH_SupportsVersion = 6;" in core
     assert '["ITW_CLASH_SupportsDryRun",false]' in core
     for flavor in ["UAV", "Bomb", "Guided", "Carpet", "AirborneHeli", "AirbornePlane", "VehicleDrop"]:
         assert f'["ITW_CLASH_Supports{flavor}Enabled",true]' in core, flavor
@@ -473,7 +473,7 @@ def test_every_denial_used_is_in_the_vocabulary():
 
 def test_losing_the_position_is_not_losing_the_enemy():
     source = code("ITW_CLASH_Knowledge.sqf")
-    assert "ITW_CLASH_KnowledgeVersion = 5;" in source
+    assert "ITW_CLASH_KnowledgeVersion = 6;" in source
     held = function_body(source, "ITW_CLASH_Knowledge_fnc_Held")
     assert "([_y] call ITW_CLASH_Knowledge_fnc_Existence) > 0" in held
     census = function_body(source, "ITW_CLASH_Knowledge_fnc_Census")
@@ -624,7 +624,7 @@ def test_fixed_wing_uavs_fly_above_spaa_reach_and_rotary_ones_stay_low():
     # each side, over objectives covered by Cheetahs.
     source = code("ITW_CLASH_SupportsUAV.sqf")
     raw = (MISSION / "ITW_CLASH_SupportsUAV.sqf").read_text()
-    assert "ITW_CLASH_SupportsUAVVersion = 3;" in raw
+    assert "ITW_CLASH_SupportsUAVVersion = 4;" in raw
     assert 'ITW_CLASH_SupportsUAVHeight",2000]' in source
     assert 'ITW_CLASH_SupportsUAVHeightRotary",500]' in source
     run = function_body(source, "ITW_CLASH_SupportsUAV_fnc_Run")
