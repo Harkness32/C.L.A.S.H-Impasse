@@ -50,14 +50,17 @@ ITW_CLASH_RearBaseCRAMReady = false;
 
     v5 (Hark, 2026-10-17, the first v4 run: the same Cheetah and Titan as
     before): v4 found no C-RAM at all. It counted a gun as anti-air only when
-    its round's airLock is 2 ("air only"); a CIWS round that may also be fired
-    at ground targets is 1 ("air and ground"), so it failed. A C-RAM is now an
-    autonomous static, not artillery, with no anti-air missile, whose unguided
-    gun can engage aircraft (airLock 1 or 2), and which is built for air: an
-    air-only round, its own radar, or filed by its maker as anti-air. The last
-    part is what keeps the autonomous HMG and GMG turrets out: their guns can
-    also be fired at aircraft. The scan says once, per candidate, why each
-    autonomous piece was or was not taken (rear-cram-cram-scan).
+    its round's airLock is 2. The Praetorian's, read in that run's console:
+    ammo_AAA_Gun35mm_AA, airLock 1, aiAmmoUsageFlags 256, and the piece filed
+    as EdSubcat_Turrets. aiAmmoUsageFlags is the engine telling its own AI
+    what a round is for, and 256 alone is "air". A C-RAM is now an autonomous
+    static, not artillery, with no anti-air missile, whose unguided gun can
+    engage aircraft (airLock 1 or 2) and is meant for them: a round used
+    against air and nothing on the ground, or airLock 2, or a radar of its
+    own, or filed as anti-air. The usage flags are what keep the autonomous
+    HMG and GMG turrets out: their rounds are also for infantry and vehicles.
+    The scan says once, per candidate, why each autonomous piece was or was
+    not taken (rear-cram-cram-scan).
 */
 
 ITW_CLASH_RearBaseCRAMEnabled = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnabled",true];
@@ -109,18 +112,40 @@ ITW_CLASH_RearBaseCRAM_fnc_Log = {
     site), then anything that can shoot at aircraft.
 */
 /*
-    v5. What the class's own guns can do against aircraft: the highest airLock
-    among its unguided rounds (0 cannot, 1 air and ground, 2 air only).
+    v5. What a round is for, as the engine's own AI reads it: the
+    aiAmmoUsageFlags sum (32 infantry, 64 light vehicles, 128 armour,
+    256 air), a number or a "64 + 128" string in config.
 */
-ITW_CLASH_RearBaseCRAM_fnc_GunAirLock = {
+ITW_CLASH_RearBaseCRAM_fnc_UsageFlags = {
+    params ["_ammo"];
+    private _entry = configFile >> "CfgAmmo" >> _ammo >> "aiAmmoUsageFlags";
+    if (isNumber _entry) exitWith {getNumber _entry};
+    private _sum = 0;
+    {_sum = _sum + parseNumber _x} forEach ((getText _entry) splitString "+ ");
+    _sum
+};
+
+/*
+    v5. What the class's own guns can do against aircraft, over its unguided
+    rounds: [highest airLock (0 cannot, 1 air and ground, 2 air only),
+    whether one that can engage aircraft is used against air and nothing on
+    the ground].
+*/
+ITW_CLASH_RearBaseCRAM_fnc_GunAir = {
     params ["_class"];
     private _lock = 0;
+    private _airUse = false;
     {
         private _ammo = getText (configFile >> "CfgMagazines" >> _x >> "ammo");
         if (_ammo isEqualTo "" || {[_ammo] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided}) then {continue};
-        _lock = _lock max (getNumber (configFile >> "CfgAmmo" >> _ammo >> "airLock"));
+        private _roundLock = getNumber (configFile >> "CfgAmmo" >> _ammo >> "airLock");
+        _lock = _lock max _roundLock;
+        private _flags = [_ammo] call ITW_CLASH_RearBaseCRAM_fnc_UsageFlags;
+        if (_roundLock >= 1 && {((floor (_flags / 256)) mod 2) == 1} && {((floor (_flags / 32)) mod 8) == 0}) then {
+            _airUse = true;
+        };
     } forEach ([_class] call ITW_CLASH_AirPicture_fnc_ConfigMagazines);
-    _lock
+    [_lock,_airUse]
 };
 
 /*
@@ -128,9 +153,10 @@ ITW_CLASH_RearBaseCRAM_fnc_GunAirLock = {
     one, else why not:
       a public static weapon, autonomous (isUav), not artillery, with no
       anti-air missile (so not a SAM site), whose unguided gun can engage
-      aircraft, and that is built for air: an air-only round (airLock 2), a
-      radar of its own, or filed by its maker as anti-air (EdSubcat_AAs).
-    The last test is what leaves out the autonomous HMG and GMG turrets.
+      aircraft, and that is meant for them: a round the AI uses against air
+      and nothing on the ground (the Praetorian's), an air-only round
+      (airLock 2), a radar of its own, or filed as anti-air (EdSubcat_AAs).
+    The usage flags are what leave out the autonomous HMG and GMG turrets.
 */
 ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy = {
     params ["_class"];
@@ -142,8 +168,9 @@ ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy = {
     if (getNumber (_config >> "artilleryScanner") == 1) exitWith {"artillery"};
     private _profile = [_class] call ITW_CLASH_AirPicture_fnc_ClassProfile;
     if (_profile get "antiAirMissile") exitWith {"missile"};
-    private _lock = [_class] call ITW_CLASH_RearBaseCRAM_fnc_GunAirLock;
+    ([_class] call ITW_CLASH_RearBaseCRAM_fnc_GunAir) params ["_lock","_airUse"];
     if (_lock < 1) exitWith {"no-air-gun"};
+    if (_airUse) exitWith {""};
     if (_lock >= 2) exitWith {""};
     if (_profile get "radar") exitWith {""};
     if ((toLowerANSI getText (_config >> "editorSubcategory")) isEqualTo "edsubcat_aas") exitWith {""};
@@ -171,7 +198,7 @@ ITW_CLASH_RearBaseCRAM_fnc_CRAMClasses = {
         if ((count _scan) < 40) then {
             _scan pushBack [
                 _x,if (_why isEqualTo "") then {"cram"} else {_why},
-                if (_why in ["no-class","not-public","not-autonomous","not-static"]) then {-1} else {[_x] call ITW_CLASH_RearBaseCRAM_fnc_GunAirLock},
+                if (_why in ["no-class","not-public","not-autonomous","not-static"]) then {[]} else {[_x] call ITW_CLASH_RearBaseCRAM_fnc_GunAir},
                 getText (configFile >> "CfgVehicles" >> _x >> "editorSubcategory")
             ];
         };

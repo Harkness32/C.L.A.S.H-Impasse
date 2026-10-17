@@ -433,34 +433,51 @@ def test_an_autonomous_piece_is_crewed_by_its_own_ai_on_our_side():
 
 
 def test_v5_a_ciws_round_that_also_hits_ground_still_counts():
-    # v4 needed airLock 2; the first run found no C-RAM and fell back.
-    lock = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_GunAirLock")
-    assert "[_ammo] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided" in lock
-    assert '_lock = _lock max (getNumber (configFile >> "CfgAmmo" >> _ammo >> "airLock"));' in lock
+    # The Praetorian, from the 2026-10-17 console: airLock 1,
+    # aiAmmoUsageFlags 256, EdSubcat_Turrets. v4 needed airLock 2.
+    gun = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_GunAir")
+    assert "[_ammo] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided" in gun
+    assert "_roundLock >= 1 && {((floor (_flags / 256)) mod 2) == 1} && {((floor (_flags / 32)) mod 8) == 0}" in gun
+    flags = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_UsageFlags")
+    assert "if (isNumber _entry) exitWith {getNumber _entry};" in flags
+    assert '((getText _entry) splitString "+ ")' in flags
     why = function_body(CRAM, "ITW_CLASH_RearBaseCRAM_fnc_CRAMWhy")
     assert 'if (_lock < 1) exitWith {"no-air-gun"};' in why
-    assert 'if (_lock >= 2) exitWith {""};' in why
+    assert why.index('if (_airUse) exitWith {""};') < why.index('if (_lock >= 2) exitWith {""};')
     assert 'if (_profile get "radar") exitWith {""};' in why
     assert '"edsubcat_aas"' in why
     assert why.rstrip().rstrip("}").rstrip().endswith('"not-built-for-air"')
 
 
+def _usage(text):
+    return sum(int(x) for x in text.replace("+", " ").split()) if isinstance(text, str) else text
+
+
+def _air_use(lock, flags):
+    flags = _usage(flags)
+    return lock >= 1 and (flags // 256) % 2 == 1 and (flags // 32) % 8 == 0
+
+
 def test_v5_model_keeps_hmg_turrets_out_and_takes_a_ciws():
-    def why(lock, radar=False, subcat="", missile=False, artillery=False, static=True, uav=True):
+    def why(lock, flags=0, radar=False, subcat="", missile=False, artillery=False, static=True, uav=True):
         if not uav: return "not-autonomous"
         if not static: return "not-static"
         if artillery: return "artillery"
         if missile: return "missile"
         if lock < 1: return "no-air-gun"
-        if lock >= 2 or radar or subcat.lower() == "edsubcat_aas": return ""
+        if _air_use(lock, flags) or lock >= 2 or radar or subcat.lower() == "edsubcat_aas": return ""
         return "not-built-for-air"
-    assert why(1, subcat="EdSubcat_AAs") == ""          # a CIWS filed as anti-air
-    assert why(1, radar=True) == ""                     # a CIWS with its own radar
-    assert why(2) == ""                                 # an air-only round
-    assert why(1, subcat="EdSubcat_Turrets") == "not-built-for-air"   # autonomous HMG
-    assert why(0, subcat="EdSubcat_Turrets") == "no-air-gun"          # autonomous GMG
-    assert why(2, missile=True, subcat="EdSubcat_AAs") == "missile"   # a SAM site
-    assert why(0, artillery=True) == "artillery"                      # a naval gun
+    # The Praetorian exactly as the console read it.
+    assert why(1, 256, subcat="EdSubcat_Turrets") == ""
+    assert why(1, "256", subcat="EdSubcat_Turrets") == ""
+    # An autonomous HMG: also for infantry and vehicles.
+    assert why(1, "64 + 128 + 256", subcat="EdSubcat_Turrets") == "not-built-for-air"
+    assert why(1, 32 + 64, subcat="EdSubcat_Turrets") == "not-built-for-air"
+    assert why(0, 64 + 128, subcat="EdSubcat_Turrets") == "no-air-gun"     # GMG
+    assert why(2, 256, missile=True, subcat="EdSubcat_AAs") == "missile"    # SAM site
+    assert why(0, 0, artillery=True) == "artillery"                         # naval gun
+    # Light or marking bits do not count as ground use.
+    assert _air_use(1, 256 + 1 + 2)
 
 
 def test_v5_the_scan_says_why_once():
