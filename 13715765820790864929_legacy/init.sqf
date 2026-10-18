@@ -6,6 +6,11 @@ isNil {call compile preprocessFileLineNumbers "params.sqf";};
 waitUntil {! isNil "ITW_PreInitComplete"};
 
 if (!isServer && !hasInterface) exitWith {};
+
+// Client-only ACE overlay; the server half is loaded after AirPicture below.
+if (hasInterface && {fileExists "ITW_CLASH_AirThreatOverlay.sqf"}) then {
+    [] execVM "ITW_CLASH_AirThreatOverlay.sqf";
+};
 waitUntil {!isNil "ITW_Params_complete"};
 waitUntil {!isNil "ITW_ParamRadioVolume"};
 0 fadeRadio ITW_ParamRadioVolume/10;
@@ -147,6 +152,13 @@ if (isServer) then {
                 _airPictureLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_AirPicture.sqf";
             } else {
                 diag_log "CLASH BOOT | WARNING | air-picture-missing | enemy air is seen only at HAL's own cycle rate";
+            };
+            // Observation-only AA overlay. Publishes only HAL-known, side-scoped
+            // map reports; it never changes HAL tasking or corridor distances.
+            if (_airPictureLoaded isEqualTo true && {fileExists "ITW_CLASH_AirThreatOverlay.sqf"}) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_AirThreatOverlay.sqf";
+            } else {
+                diag_log "CLASH BOOT | WARNING | air-threat-overlay-unavailable | ACE threat map disabled; HAL unchanged";
             };
             // The Emerging Threats Budget: a separate wallet per commander on
             // top of Impasse, so a threat counter no longer competes with
