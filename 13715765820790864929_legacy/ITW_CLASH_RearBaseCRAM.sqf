@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") exitWith {
 };
 
 ITW_CLASH_RearBaseCRAMStarted = true;
-ITW_CLASH_RearBaseCRAMVersion = 5;
+ITW_CLASH_RearBaseCRAMVersion = 6;
 ITW_CLASH_RearBaseCRAMReady = false;
 
 /*
@@ -61,6 +61,20 @@ ITW_CLASH_RearBaseCRAMReady = false;
     HMG and GMG turrets out: their rounds are also for infantry and vehicles.
     The scan says once, per candidate, why each autonomous piece was or was
     not taken (rear-cram-cram-scan).
+
+    v6 (Hark, 2026-10-17 run 4: "the tanks spawning at a rear base and the
+    cram not being in that same rear base is weird"): the piece was placed
+    once, at whatever base the graph gave for no reference in particular
+    (the first active objective's), and never moved, while the rear echelon
+    spawned where its own reference put it. It now stands where the side's
+    rear echelon actually spawns: ITW_CLASH_Generation_fnc_Resolve notes the
+    rear base each time a caller puts something there
+    (ITW_CLASH_GenerationRearUse), and the newest of those is the side's
+    current rear base. When that changes, a new piece goes up at the new base and the old
+    one stays until nothing has spawned at its base for Idle seconds, then is
+    stood down (not while a player is within StandDownClear of it). Until the
+    first rear-echelon spawn, the graph's own answer is used, as before. A
+    destroyed piece is replaced where it stood, if its base is still in use.
 */
 
 ITW_CLASH_RearBaseCRAMEnabled = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnabled",true];
@@ -85,12 +99,19 @@ ITW_CLASH_RearBaseCRAMPlayerClass = missionNamespace getVariable ["ITW_CLASH_Rea
 ITW_CLASH_RearBaseCRAMEnemyClass = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnemyClass",""];
 // v4: a real C-RAM before any other piece. False goes back to the v3 ladder.
 ITW_CLASH_RearBaseCRAMPreferCRAM = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMPreferCRAM",true];
+// v6: a piece whose base has had no rear-echelon spawn for this long, and is
+// not the side's current rear base, is stood down.
+ITW_CLASH_RearBaseCRAMIdle = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMIdle",600];
+// v6: never removed in front of a player; the stand-down waits.
+ITW_CLASH_RearBaseCRAMStandDownClear = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMStandDownClear",300];
+// v6: at most this many per side at once (the old base's and the new one's).
+ITW_CLASH_RearBaseCRAMMaxPerSide = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMMaxPerSide",2];
 // v4: the game's C-RAM classes, found once.
 ITW_CLASH_RearBaseCRAMClassesFound = nil;
 
-// sideKey -> [vehicle, group, destroyedAt, position, recrews]
 // Sides already told they have nothing to emplace.
 ITW_CLASH_RearBaseCRAMSilenced = [];
+// sideKey -> (base index -> [vehicle, group, destroyedAt, position, recrews, placedAt])
 ITW_CLASH_RearBaseCRAMs = createHashMap;
 
 ITW_CLASH_RearBaseCRAM_fnc_Log = {
@@ -276,8 +297,8 @@ ITW_CLASH_RearBaseCRAM_fnc_SelectClass = {
     // substitution Impasse makes for itself at VehicleArrays.sqf:734.
     //
     // It is crewed with a gunner and no driver, exactly as a static is, so it
-    // sits where it is placed and cannot be driven off. ITW_CLASH_CRAM keeps
-    // the SPAA overwatch sweep from adopting it and walking it to a sector.
+    // sits where it is placed and cannot be driven off. ITW_CLASH_CRAM marks
+    // it as the emplacement for counter-air coverage.
     if (_classes isEqualTo []) then {
         _classes = [
             if (_friendly) then {
@@ -304,14 +325,48 @@ ITW_CLASH_RearBaseCRAM_fnc_SelectClass = {
     _classes#0
 };
 
-// The rear base for this side, off Impasse's own base graph - the same node an
-// ETB ground purchase stages at.
-ITW_CLASH_RearBaseCRAM_fnc_RearPosition = {
+/*
+    v6. The side's current rear base: where its rear echelon last spawned.
+    Before anything has, the graph's own answer, asked without noting a use
+    (this is a question, not a spawn). -1 when there is neither.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_CurrentBase = {
     params ["_side"];
-    if (isNil "ITW_CLASH_Generation_fnc_Resolve") exitWith {[]};
+    private _uses = if (isNil "ITW_CLASH_Generation_fnc_RearUses") then {[]} else {
+        [_side] call ITW_CLASH_Generation_fnc_RearUses
+    };
+    if (_uses isNotEqualTo []) exitWith {(_uses#0)#0};
+    if (isNil "ITW_CLASH_Generation_fnc_Resolve") exitWith {-1};
     private _generation = [_side,"SPAA","REAR",[]] call ITW_CLASH_Generation_fnc_Resolve;
-    if ((_generation getOrDefault ["status",""]) isNotEqualTo "RESOLVED") exitWith {[]};
-    private _rear = +(_generation getOrDefault ["rearPosition",[]]);
+    if ((_generation getOrDefault ["status",""]) isNotEqualTo "RESOLVED") exitWith {-1};
+    _generation getOrDefault ["rearBase",-1]
+};
+
+// v6. When this side's rear echelon last spawned at this base; -1 never.
+ITW_CLASH_RearBaseCRAM_fnc_LastUse = {
+    params ["_side","_base"];
+    if (isNil "ITW_CLASH_GenerationRearUse") exitWith {-1};
+    (ITW_CLASH_GenerationRearUse getOrDefault [toUpperANSI str _side,createHashMap]) getOrDefault [_base,-1]
+};
+
+/*
+    v6. Is the base a piece stands at still in use? The current rear base
+    always is; any other until Idle seconds after its last rear-echelon spawn,
+    or after the piece went up there if nothing has spawned there since.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_InUse = {
+    params ["_side","_base","_current","_entry"];
+    if (_base isEqualTo _current) exitWith {true};
+    private _last = ([_side,_base] call ITW_CLASH_RearBaseCRAM_fnc_LastUse) max (_entry param [5,-1]);
+    _last >= 0 && {(time - _last) < ITW_CLASH_RearBaseCRAMIdle}
+};
+
+// A point in that base, off its spawn point - the same point an ETB ground
+// purchase or a rear-echelon hand-off stages at.
+ITW_CLASH_RearBaseCRAM_fnc_RearPosition = {
+    params ["_base"];
+    if (isNil "ITW_CLASH_Generation_fnc_BaseSpawn") exitWith {[]};
+    private _rear = [_base,false] call ITW_CLASH_Generation_fnc_BaseSpawn;
     if (_rear isEqualTo []) exitWith {[]};
     if (count _rear < 3) then {_rear pushBack 0};
 
@@ -477,7 +532,7 @@ ITW_CLASH_RearBaseCRAM_fnc_Crew = {
 };
 
 ITW_CLASH_RearBaseCRAM_fnc_Spawn = {
-    params ["_side"];
+    params ["_side","_base",["_position",[]]];
     private _class = [_side] call ITW_CLASH_RearBaseCRAM_fnc_SelectClass;
     if (_class isEqualTo "") exitWith {
         // Once per side. The class pools do not change mid-mission, so this
@@ -490,7 +545,7 @@ ITW_CLASH_RearBaseCRAM_fnc_Spawn = {
         };
         []
     };
-    private _position = [_side] call ITW_CLASH_RearBaseCRAM_fnc_RearPosition;
+    if (_position isEqualTo []) then {_position = [_base] call ITW_CLASH_RearBaseCRAM_fnc_RearPosition};
     if (_position isEqualTo []) exitWith {[]};
 
     private _veh = createVehicle [_class,_position,[],0,"CAN_COLLIDE"];
@@ -516,21 +571,54 @@ ITW_CLASH_RearBaseCRAM_fnc_Spawn = {
     ["placed",[
         toUpperANSI str _side,_class,_position apply {round _x},
         ([_class] call ITW_CLASH_AirPicture_fnc_ClassProfile) get "radar",
-        [_class] call ITW_CLASH_RearBaseCRAM_fnc_IsCRAM
+        [_class] call ITW_CLASH_RearBaseCRAM_fnc_IsCRAM,
+        _base
     ]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
-    [_veh,_crewed#0,0,_position,0]
+    [_veh,_crewed#0,0,_position,0,time]
 };
 
-ITW_CLASH_RearBaseCRAM_fnc_Maintain = {
-    params ["_side"];
+/*
+    v6. Take a piece down: its crew, the hull (or the wreck) and the group.
+    Not while a player is within StandDownClear of it - a gun that vanishes in
+    front of someone reads as a bug - so it waits, said once.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_StandDown = {
+    params ["_side","_base","_placed"];
     private _key = toUpperANSI str _side;
-    private _entry = ITW_CLASH_RearBaseCRAMs getOrDefault [_key,[]];
-
-    if (_entry isEqualTo []) exitWith {
-        private _fresh = [_side] call ITW_CLASH_RearBaseCRAM_fnc_Spawn;
-        if (_fresh isNotEqualTo []) then {ITW_CLASH_RearBaseCRAMs set [_key,_fresh]};
-        _fresh isNotEqualTo []
+    private _entry = _placed getOrDefault [_base,[]];
+    if (_entry isEqualTo []) exitWith {true};
+    _entry params ["_veh","_group","_destroyedAt","_position"];
+    private _near = allPlayers findIf {alive _x && {(_x distance2D _position) < ITW_CLASH_RearBaseCRAMStandDownClear}};
+    if (_near >= 0) exitWith {
+        if !(_entry param [6,false]) then {
+            _entry set [6,true];
+            ["stand-down-waits",[_key,_base,name (allPlayers#_near)]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+        };
+        false
     };
+    if (!isNull _veh) then {
+        {deleteVehicle _x} forEach ((crew _veh) select {!isPlayer _x});
+        deleteVehicle _veh;
+    };
+    if (!isNull _group) then {
+        {deleteVehicle _x} forEach ((units _group) select {!isPlayer _x});
+        deleteGroup _group;
+    };
+    _placed deleteAt _base;
+    private _last = [_side,_base] call ITW_CLASH_RearBaseCRAM_fnc_LastUse;
+    ["stood-down",[_key,_base,if (_last < 0) then {-1} else {round (time - _last)}]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+    true
+};
+
+/*
+    One emplacement's upkeep: re-crewed in place, and replaced where it stood
+    five minutes after the hull is destroyed.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_Maintain = {
+    params ["_side","_base","_placed"];
+    private _key = toUpperANSI str _side;
+    private _entry = _placed getOrDefault [_base,[]];
+    if (_entry isEqualTo []) exitWith {false};
 
     _entry params ["_veh","_group","_destroyedAt","_position",["_recrews",0]];
 
@@ -583,17 +671,54 @@ ITW_CLASH_RearBaseCRAM_fnc_Maintain = {
 
     if (!isNull _veh) then {deleteVehicle _veh};
     if (!isNull _group && {units _group isEqualTo []}) then {deleteGroup _group};
-    ITW_CLASH_RearBaseCRAMs deleteAt _key;
-    private _fresh = [_side] call ITW_CLASH_RearBaseCRAM_fnc_Spawn;
+    _placed deleteAt _base;
+    // Where the original stood: a replacement placed off a fresh search would
+    // appear somewhere else in the base, which reads as the gun teleporting.
+    private _fresh = [_side,_base,_position] call ITW_CLASH_RearBaseCRAM_fnc_Spawn;
     if (_fresh isNotEqualTo []) then {
-        // Replaced where the original stood, not wherever the base graph now
-        // resolves: re-resolving made a replacement appear at a different base
-        // after a zone flip, which reads as the emplacement teleporting.
-        _fresh set [3,_position];
-        ITW_CLASH_RearBaseCRAMs set [_key,_fresh];
-        ["replaced",[_key,_position apply {round _x}]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+        _placed set [_base,_fresh];
+        ["replaced",[_key,_position apply {round _x},_base]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
     };
     _fresh isNotEqualTo []
+};
+
+/*
+    v6. One side, one pass: stand down what is out of use, keep up what is
+    not, and put one up at the current rear base if none stands there.
+*/
+ITW_CLASH_RearBaseCRAM_fnc_Follow = {
+    params ["_side"];
+    private _key = toUpperANSI str _side;
+    private _placed = ITW_CLASH_RearBaseCRAMs getOrDefault [_key,createHashMap];
+    ITW_CLASH_RearBaseCRAMs set [_key,_placed];
+    private _current = [_side] call ITW_CLASH_RearBaseCRAM_fnc_CurrentBase;
+
+    // Keys first: both paths below delete from the map being walked.
+    {
+        private _base = _x;
+        if ([_side,_base,_current,_placed get _base] call ITW_CLASH_RearBaseCRAM_fnc_InUse) then {
+            [_side,_base,_placed] call ITW_CLASH_RearBaseCRAM_fnc_Maintain;
+        } else {
+            [_side,_base,_placed] call ITW_CLASH_RearBaseCRAM_fnc_StandDown;
+        };
+    } forEach (keys _placed);
+
+    if (_current < 0 || {_current in _placed}) exitWith {false};
+    if ((count _placed) >= ITW_CLASH_RearBaseCRAMMaxPerSide) exitWith {
+        if ((missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMFullAt" + _key,-1]) isNotEqualTo _current) then {
+            missionNamespace setVariable ["ITW_CLASH_RearBaseCRAMFullAt" + _key,_current];
+            ["at-capacity",[_key,_current,keys _placed]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+        };
+        false
+    };
+    private _previous = keys _placed;
+    private _fresh = [_side,_current] call ITW_CLASH_RearBaseCRAM_fnc_Spawn;
+    if (_fresh isEqualTo []) exitWith {false};
+    _placed set [_current,_fresh];
+    if (_previous isNotEqualTo []) then {
+        ["followed",[_key,_current,_previous]] call ITW_CLASH_RearBaseCRAM_fnc_Log;
+    };
+    true
 };
 
 [] spawn {
@@ -609,7 +734,7 @@ ITW_CLASH_RearBaseCRAM_fnc_Maintain = {
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {
         if (ITW_CLASH_RearBaseCRAMEnabled) then {
             {
-                [_x] call ITW_CLASH_RearBaseCRAM_fnc_Maintain;
+                [_x] call ITW_CLASH_RearBaseCRAM_fnc_Follow;
             } forEach [ITW_PlayerSide,ITW_EnemySide];
         };
         sleep ITW_CLASH_RearBaseCRAMPoll;
@@ -618,12 +743,15 @@ ITW_CLASH_RearBaseCRAM_fnc_Maintain = {
 
 ITW_CLASH_RearBaseCRAMReady = true;
 diag_log format [
-    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=%6 autonomousCrewJoined=true halRegistered=false impasseBilled=false vehDefStamped=false gunnerOnly=true maxRecrews=%5 crewLossRecrews=true replaceAtOriginalPosition=true",
+    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=%6 autonomousCrewJoined=true halRegistered=false impasseBilled=false vehDefStamped=false gunnerOnly=true maxRecrews=%5 crewLossRecrews=true replaceAtOriginalPosition=true followsRearBase=spawn-ledger idle=%7 maxPerSide=%8 standDownClear=%9",
     ITW_CLASH_RearBaseCRAMVersion,
     ITW_CLASH_RearBaseCRAMRespawn,
     ITW_CLASH_RearBaseCRAMOffset,
     ITW_CLASH_RearBaseCRAMPoll,
     ITW_CLASH_RearBaseCRAMMaxRecrews,
-    if (ITW_CLASH_RearBaseCRAMPreferCRAM) then {"cram-then-faction-static-aa-then-faction-aa-vehicle"} else {"faction-static-aa-then-faction-aa-vehicle"}
+    if (ITW_CLASH_RearBaseCRAMPreferCRAM) then {"cram-then-faction-static-aa-then-faction-aa-vehicle"} else {"faction-static-aa-then-faction-aa-vehicle"},
+    ITW_CLASH_RearBaseCRAMIdle,
+    ITW_CLASH_RearBaseCRAMMaxPerSide,
+    ITW_CLASH_RearBaseCRAMStandDownClear
 ];
 true

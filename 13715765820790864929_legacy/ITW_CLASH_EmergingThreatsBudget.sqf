@@ -628,7 +628,6 @@ ITW_CLASH_ETB_fnc_AssetIsEmployed = {
     (_group getVariable ["Busy" + str _group,false])
     || {_group getVariable ["Resting" + str _group,false]}
     || {_group getVariable ["ITW_CLASH_ResupplyClaimed",false]}
-    || {_group getVariable ["ITW_CLASH_SPAAOverwatch",false]}
 };
 
 /*

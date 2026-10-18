@@ -10,7 +10,6 @@ FEEDERS = {
     "ITW_CLASH_AirPicture.sqf": ("ITW_CLASH_AirPicture_fnc_Log", "air-picture"),
     "ITW_CLASH_ThunderRunAirTiers.sqf": ("ITW_CLASH_ThunderRunAirTiers_fnc_Log", "air-tiers"),
     "ITW_CLASH_HALCargoDiceFix.sqf": ("ITW_CLASH_HALCargoDice_fnc_Log", "hal-cargo-dice"),
-    "ITW_CLASH_SPAAOverwatch.sqf": ("ITW_CLASH_SPAAOverwatch_fnc_Log", "spaa-overwatch"),
     "ITW_CLASH_RearBaseCRAM.sqf": ("ITW_CLASH_RearBaseCRAM_fnc_Log", "rear-cram"),
     "ITW_CLASH_FOBAirDefence.sqf": ("ITW_CLASH_FOBAirDefence_fnc_Log", "fob-air-defence"),
     "ITW_CLASH_EmergingThreatsBudget.sqf": ("ITW_CLASH_ETB_fnc_Log", "etb"),

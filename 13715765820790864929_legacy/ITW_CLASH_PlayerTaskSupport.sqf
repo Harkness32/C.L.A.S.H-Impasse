@@ -567,7 +567,7 @@ ITW_CLASH_PlayerTasks_fnc_PackageProvider = {
         }
     ]);
     private _generation = [
-        _side,"LOGISTICS_PACKAGE_AMMO","REAR_AIR",_reference
+        _side,"LOGISTICS_PACKAGE_AMMO","REAR_AIR",_reference,true
     ] call ITW_CLASH_Generation_fnc_Resolve;
     if ((_generation getOrDefault ["status",""]) != "RESOLVED") exitWith {
         [

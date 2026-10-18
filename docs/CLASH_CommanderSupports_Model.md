@@ -608,7 +608,7 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   airfield is next to the target. That point lies beyond our airfield, in our own
   airspace. If it would fall off the map, the bearing turns in 15 degree steps up
   to 90 either way, and only then is the point clamped 500 m inside the edge. A
-  strike's spawn is computed from its target cluster, not the objective centre. Origins: the rear air base for helicopters and the UAV,
+  strike's spawn is computed from its target cluster, not the objective centre. Origins: the side's rear base for helicopters and the UAV (`REAR_AIR`, the same base as its armour since 2026-10-17),
   an owned airfield for fixed-wing.
 - Crewed aircraft come from Impasse's own factory (`ITW_AtkSpawnVeh`), so the
   crew is the faction's. The UAV is created with its own AI crew, joined to a
@@ -853,7 +853,7 @@ The setup delay is varied per request (45 to 120 s) and never announced.
     lists it (v8, Hark 1A); else the side's own aircraft that carry vehicles
     inside (config `VehicleTransport >> Carrier`), the strongest lifter. Neither
     side lists the Blackfish, so v7 flew GUER's Ghost Hawk and would have flown
-    WEST's Huron. An empty list goes back to the side's own. From the rear air
+    WEST's Huron. An empty list goes back to the side's own. From the side's rear
     base: a VTOL needs no runway.
   - **Vehicle (v8, Hark 2B):** the side's armed and dual-role cars, then its
     APCs, then its tanks, in a random order within each, each only if the

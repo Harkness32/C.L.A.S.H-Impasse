@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALThreatCoverageStarted",false]) exitWith {true};
 ITW_CLASH_HALThreatCoverageStarted = true;
-ITW_CLASH_HALThreatCoverageVersion = 6;
+ITW_CLASH_HALThreatCoverageVersion = 7;
 ITW_CLASH_HALThreatCoverageReady = false;
 
 /*
@@ -79,6 +79,12 @@ ITW_CLASH_ThreatCoverageAAInfantryUmbrella = missionNamespace getVariable [
 // bought. Player high command stays disabled: HAL alone employs ETB assets.
 ITW_CLASH_ThreatCoverageAirWarning = missionNamespace getVariable [
     "ITW_CLASH_ThreatCoverageAirWarning",true
+];
+// v7: how many SPAA the ETB keeps alive per side. HAL employs them as its own
+// armour (there is no back-line reservation any more), so this is a spending
+// limit, not a doctrine: the one the overwatch cap used to be.
+ITW_CLASH_ThreatCoverageSPAAMaxPerSide = missionNamespace getVariable [
+    "ITW_CLASH_ThreatCoverageSPAAMaxPerSide",1
 ];
 
 ITW_CLASH_ThreatCoverageDemands = createHashMap;
@@ -181,10 +187,11 @@ ITW_CLASH_HALThreatCoverage_fnc_ArmorThreats = {
     enough to see them. Each entry carries whether it may be funded at once.
 
     Deliberately NOT filtered by the front, unlike armor: aircraft cross a front
-    in seconds, the coverage count and the helicopter corridors need to know
-    about all of them, and counter-air has one provider CLASH employs itself.
-    Where the front bites is the provider choice below - a CAP jet against an
-    out-of-front jet is handed to HAL and wasted, an SPAA is not.
+    in seconds, and the coverage count and the helicopter corridors need to
+    know about all of them. Where the front bites is the provider choice below:
+    nothing is bought against an out-of-front aircraft, because every provider
+    is HAL's to employ and HAL scores one zero. The rear bases, where most of
+    those circle, have the C-RAM.
 */
 ITW_CLASH_HALThreatCoverage_fnc_AirThreats = {
     params ["_hq"];
@@ -696,7 +703,11 @@ ITW_CLASH_HALThreatCoverage_fnc_IdleAssets = {
             && {!(_group getVariable ["Resting" + str _group,false])}
             && {!(_group getVariable ["Unable",false])}
             && {!(_group getVariable ["ITW_CLASH_ResupplyClaimed",false])}
-            && {!(_group getVariable ["ITW_CLASH_SPAAOverwatch",false])}
+            // An SPAA is HAL armour: HAL's air dispatch draws only on CAP
+            // aircraft and AA infantry (RYD_Dispatcher, "Air"), so offering
+            // one against an aircraft can never task it, and an idle one
+            // would only block the purchase that could.
+            && {(_x get "capability") isNotEqualTo "SPAA"}
             && {([_group,_NCVeh] call RYD_AmmoCount) > 0}
         }
     }
@@ -721,35 +732,31 @@ ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider = {
     };
     if (_options isEqualTo []) exitWith {["","all-providers-failed"]};
 
-    // The back line already holds its mobile AA. A second would park behind the
-    // front covering a sector the first one re-points onto every poll, and the
-    // overwatch doctrine would refuse to adopt it anyway - so the money would
-    // buy an asset nothing employs.
-    private _spaaFull = !isNil "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity"
-        && {[_side] call ITW_CLASH_SPAAOverwatch_fnc_AtCapacity};
+    // The ETB already keeps its SPAA. HAL employs it as armour, so another
+    // buys another light armoured vehicle with counter-air money; the limit
+    // is the side's live ETB SPAA, not what HAL is doing with them.
+    private _etbSPAA = if (isNil "ITW_CLASH_ETB_fnc_Assets") then {[]} else {
+        [_side,"SPAA"] call ITW_CLASH_ETB_fnc_Assets
+    };
+    private _spaaFull = ({
+        private _veh = _x get "vehicle";
+        !isNull _veh && {alive _veh}
+    } count _etbSPAA) >= ITW_CLASH_ThreatCoverageSPAAMaxPerSide;
     if (_spaaFull) then {
         _options = _options select {!(_x isEqualTo "SPAA")};
     };
     if (_spaaFull && {_options isEqualTo []}) exitWith {["","spaa-at-capacity"]};
 
-    // Outside the front, only a provider CLASH employs itself can answer: HAL's
-    // dispatcher scores an out-of-front threat zero, so anything handed to it is
-    // money spent on an asset that will never be tasked. SPAA is the one
-    // provider CLASH places itself, which is exactly why it still works here.
+    // Outside the front nothing answers: HAL's dispatcher scores an
+    // out-of-front threat zero, and every provider is HAL's to employ, so
+    // anything bought is money spent on an asset that will never be tasked.
+    // SPAA used to be the exception, when CLASH held it behind the front
+    // itself; it no longer does.
     // (Flag and exit at function scope: an exitWith inside a then block would
     // only leave the block, which has bitten this repo three times.)
     private _outsideFront = !([_hq,getPosATL _threat] call
         ITW_CLASH_HALThreatCoverage_fnc_InFront);
-    if (_outsideFront) then {
-        _options = _options select {_x isEqualTo "SPAA"};
-    };
-    if (_outsideFront) exitWith {
-        if (_options isEqualTo []) then {
-            ["","outside-front"]
-        } else {
-            ["SPAA","outside-front-clash-employed"]
-        }
-    };
+    if (_outsideFront) exitWith {["","outside-front"]};
 
     if (_need isEqualTo "COUNTER_AIR") exitWith {
         // CAP if we own an airport, SPAA otherwise: SPAA is what gives a side
@@ -862,13 +869,10 @@ ITW_CLASH_HALThreatCoverage_fnc_Cover = {
     if (isNull _group && {!isNull _asset}) then {_group = group effectiveCommander _asset};
 
     if (_capability isEqualTo "SPAA") then {
-        // The one exception to HAL owning employment: CLASH places SPAA in
-        // overwatch behind the front and never sends it forward.
-        if (!isNil "ITW_CLASH_SPAAOverwatch_fnc_Adopt") then {
-            [_group,_hq,getPosATL _threat] call ITW_CLASH_SPAAOverwatch_fnc_Adopt;
-        };
-        // SPAA is placed rather than dispatched, but it still ought to know
-        // what it was bought to shoot at.
+        // HAL's from here, as armour, like Impasse's own SPAA. HAL never sends
+        // a ground vehicle at an aircraft, so it is not offered against this
+        // one (and no failure is marked for it); it is told what it was bought
+        // to shoot at, and counts as cover wherever it is inside its umbrella.
         [_group,_threat] call ITW_CLASH_HALThreatCoverage_fnc_Brief;
     } else {
         private _tasked = [_hq,_group,_threat,_need,"purchase"] call
@@ -965,8 +969,9 @@ ITW_CLASH_HALThreatCoverage_fnc_AirReaction = {
             ITW_CLASH_HALThreatCoverage_fnc_Offer;
     } forEach _idle;
 
-    // The sector where enemy air is operating, for the lift rules and for
-    // SPAA placement. Nothing is recalled.
+    // Where enemy air is operating, kept on the commander (the SPAA overwatch
+    // that used to steer by it is gone; the air-reaction log carries it too).
+    // Nothing is recalled.
     _hq setVariable ["ITW_CLASH_AirAlarmPosition",getPosATL _threat];
     _hq setVariable ["ITW_CLASH_AirAlarmAt",time];
     ["air-reaction",[
@@ -1102,10 +1107,11 @@ ITW_CLASH_HALThreatCoverage_fnc_Evaluate = {
 
 ITW_CLASH_HALThreatCoverageReady = true;
 diag_log format [
-    "CLASH BOOT | hal-threat-coverage-ready | version=%1 needs=ANTI_ARMOR,COUNTER_AIR providers=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA funding=etb impasseRowsBilled=false threatClassification=vehicle observedCoverage=true failureMemory=%2 groundPersistence=%3 airLane=immediate",
+    "CLASH BOOT | hal-threat-coverage-ready | version=%1 needs=ANTI_ARMOR,COUNTER_AIR providers=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA funding=etb impasseRowsBilled=false threatClassification=vehicle observedCoverage=true failureMemory=%2 groundPersistence=%3 airLane=immediate spaa=hal-armour spaaMaxPerSide=%4 outsideFront=none",
     ITW_CLASH_HALThreatCoverageVersion,
     ITW_CLASH_ThreatCoverageFailureMemory,
-    ITW_CLASH_ThreatCoverageGroundPersistence
+    ITW_CLASH_ThreatCoverageGroundPersistence,
+    ITW_CLASH_ThreatCoverageSPAAMaxPerSide
 ];
 
 true

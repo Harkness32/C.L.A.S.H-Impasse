@@ -102,15 +102,6 @@ ITW_CLASH_LoudDebug_fnc_Sentence = {
         case "hal-cargo-dice|lift-allowed": {
             format ["HELICOPTER LIFT ALLOWED - route %2 - commander %1",1 call _p,0 call _p]
         };
-        // ---- backline air defence ----
-        case "spaa-overwatch|adopted": {
-            format ["%2 RESERVED FOR BACKLINE AA - overwatch, never dispatched - commander %1",
-                0 call _p,1 call _p]
-        };
-        case "spaa-overwatch|stationed": {
-            format ["BACKLINE AA %1 %2 to %3 covering %4",
-                1 call _p,5 call _p,3 call _at,4 call _at]
-        };
         // ---- the flag that decides whether anyone attacks at all ----
         case "recon-latch|latched": {
             format ["RECON COMPLETE HELD FOR %1 - %2 enemy groups known, HAL stage %3 - capture orders unblocked",
@@ -142,6 +133,14 @@ ITW_CLASH_LoudDebug_fnc_Sentence = {
         };
         case "rear-cram|replaced": {
             format ["REAR-BASE AIR DEFENCE REPLACED - %1",0 call _p]
+        };
+        case "rear-cram|followed": {
+            format ["REAR-BASE AIR DEFENCE FOLLOWS THE REAR to base %2 (was %3) - %1",
+                0 call _p,1 call _p,2 call _p]
+        };
+        case "rear-cram|stood-down": {
+            format ["REAR-BASE AIR DEFENCE STOOD DOWN at base %2 - no rear spawn there for %3s - %1",
+                0 call _p,1 call _p,2 call _p]
         };
         case "fob-air-defence|sent": {
             format ["%2 RESERVED FOR BACKLINE AA - walking to FOB %3 (%4m) - commander %1",

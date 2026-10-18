@@ -901,7 +901,8 @@ ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn = {
             side _crewGroup,
             "FIELD_ARMOR",
             if (_air) then {"REAR_AIR"} else {"REAR"},
-            getPosATL _veh
+            getPosATL _veh,
+            true
         ] call ITW_CLASH_Generation_fnc_Resolve;
         if (_resolved isEqualType createHashMap && {
             (_resolved getOrDefault ["status",""]) == "RESOLVED"

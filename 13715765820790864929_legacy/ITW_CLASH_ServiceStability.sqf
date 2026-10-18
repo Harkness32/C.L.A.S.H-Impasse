@@ -175,7 +175,7 @@ ITW_CLASH_Service_fnc_TryReactivate = {
         "reference",if (isNull _requester) then {[0,0,0]} else {getPosATL leader _requester}
     ]);
     private _generation = [
-        _side,_capability,_profile,_reference
+        _side,_capability,_profile,_reference,true
     ] call ITW_CLASH_Generation_fnc_Resolve;
     if ((_generation getOrDefault ["status",""]) != "RESOLVED") exitWith {createHashMap};
 

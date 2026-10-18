@@ -66,7 +66,6 @@ ITW_CLASH_DebugPreflightManifest = [
     ["ITW_CLASH_AirPicture","air picture","enemy air seen only at HAL's cycle rate"],
     ["ITW_CLASH_ETB","emerging threats budget","threat counters compete for Impasse tickets"],
     ["ITW_CLASH_HALThreatCoverage","threat coverage","AA and AT threats go unanswered"],
-    ["ITW_CLASH_SPAAOverwatch","SPAA overwatch","HAL dispatches air defence forward as armor"],
     ["ITW_CLASH_RearBaseCRAM","rear-base C-RAM","rear bases have no air defence"],
     ["ITW_CLASH_FOBAirDefence","FOB air defence","AA squads stay where they spawned"],
     ["ITW_CLASH_HALFront","HAL front","threats answered anywhere on the map"],

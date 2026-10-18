@@ -104,7 +104,9 @@ def test_a_replacement_stands_where_the_original_did():
     # after a zone flip, which reads as the emplacement teleporting.
     body = code_only(function_body(text("ITW_CLASH_RearBaseCRAM.sqf"),
                                    "ITW_CLASH_RearBaseCRAM_fnc_Maintain"))
-    assert "_fresh set [3,_position]" in body
+    # v6: the position is handed to the spawn, so the hull really stands
+    # there (v5 only rewrote the record of where it stood).
+    assert "[_side,_base,_position] call ITW_CLASH_RearBaseCRAM_fnc_Spawn" in body
 
 
 def test_clearing_a_rear_base_can_be_made_permanent():

@@ -20,8 +20,8 @@ Each phase is its own commit and can be shipped on its own.
 | 2 | `ITW_CLASH_AirPicture.sqf` | Observation only, on a 5-second clock, using HAL's own `knowsAbout >= 0.05` test. Also owns every classification from the vehicle: armored threat, combat aircraft, SPAA, air defence weight and umbrella, helicopter threat tier, corridor state. |
 | 3 | `ITW_CLASH_EmergingThreatsBudget.sqf` | The ledger: income, prices, reserve, row and safety limits, reservations, escrow, living assets, write-offs, idle release, authorization, logging. |
 | 4 | `ITW_CLASH_HALThreatCoverage.sqf` (rewritten), plus the ETB section of `ITW_CLASH_ForceGeneration.sqf` | Demand, coverage and the purchase transaction. |
-| 5 | `ITW_CLASH_SPAAOverwatch.sqf` | Every SPAA on a side, the ETB's and Impasse's alike, stays behind the front. |
-| follow-on | `ITW_CLASH_RearBaseCRAM.sqf` | One static air defence piece per side at the rear base, outside HAL and unbilled, replaced 5 minutes after it dies. |
+| 5 | ~~`ITW_CLASH_SPAAOverwatch.sqf`~~ | Removed 2026-10-17: HAL employs every SPAA as its own armour. See *One rear base, a C-RAM that follows it, and no back-line SPAA* below. |
+| follow-on | `ITW_CLASH_RearBaseCRAM.sqf` | One C-RAM per side at the base its rear echelon spawns at, following it when that moves, outside HAL and unbilled, replaced 5 minutes after it dies. |
 | follow-on | `ITW_CLASH_FOBAirDefence.sqf` | Walks an idle AA squad to each FOB and hands it to HAL's own garrison routine on arrival. |
 | tiers | `ITW_CLASH_ThunderRunAirTiers.sqf` | Only a hard-kill system closes a resupply corridor; relaxes Thunder Run's blunt air denial, never tightens it. |
 | tiers | `ITW_CLASH_HALCargoDiceFix.sqf` | Replaces HAL's map-wide lift coin flip (`SCargo.sqf:186`) with the route's own corridor verdict. |
@@ -46,8 +46,8 @@ tiers, so those land on rules that exist.
   in `tests/test_emerging_threats_budget.py`.
 - It never decides that a commander should own something: HAL creates the
   demand, through threat coverage.
-- It never employs anything. The one exception is SPAA, which CLASH places in
-  overwatch and never sends forward.
+- It never employs anything. SPAA used to be the exception, placed by CLASH in
+  overwatch behind the front; since 2026-10-17 it is HAL's like everything else.
 - Logistics and transport keep using Impasse's cheap transport rows, which
   worked in the test run (70 approved to 2 denied).
 
@@ -71,9 +71,12 @@ tiers, so those land on rules that exist.
 | `ITW_CLASH_AirPictureIgnoreFront` | `true` |
 | `ITW_CLASH_ThreatCoverageGroundPersistence` | `90` s |
 | `ITW_CLASH_ThreatCoverageFailureMemory` | `600` s |
-| `ITW_CLASH_SPAAOverwatchStandoff` | `1500` m |
+| `ITW_CLASH_ThreatCoverageSPAAMaxPerSide` | `1` |
 | `ITW_CLASH_RearBaseCRAMEnabled` | `true` |
 | `ITW_CLASH_RearBaseCRAMRespawn` | `300` s |
+| `ITW_CLASH_RearBaseCRAMIdle` | `600` s |
+| `ITW_CLASH_RearBaseCRAMMaxPerSide` | `2` |
+| `ITW_CLASH_RearBaseCRAMStandDownClear` | `300` m |
 | `ITW_CLASH_FOBAirDefenceEnabled` | `true` |
 | `ITW_CLASH_FOBAirDefenceArrival` | `75` m |
 | `ITW_CLASH_FOBAirDefenceIncludeRear` | `true` |
@@ -149,7 +152,7 @@ in plain language to in-game chat:
 CLASH: AIR CORRIDOR CLOSED BY B_APC_Tracked_01_AA_F (MOBILE_AA) at 4821,7190 - commander A, holds 480s
 CLASH: AIR CORRIDOR OPENED - O_SAM_System_04_F (STATIC_SAM) dead after 12s unseen - commander B
 CLASH: HELICOPTER LIFT REFUSED - route 3100,6050 to 4790,7210 is AIR_DENIED (recent-losses) - commander B
-CLASH: B_APC_Tracked_01_AA_F RESERVED FOR BACKLINE AA - overwatch, never dispatched - commander B
+CLASH: REAR-BASE AIR DEFENCE FOLLOWS THE REAR to base 40 (was [41]) - GUER
 CLASH: ETB REFUSED CAP_AIRCRAFT - ETB_RESERVE_CAP - commander B
 ```
 
@@ -172,7 +175,7 @@ CLASH BOOT | hal-dispatcher-aa-fix-ready | patched=true ...
 CLASH BOOT | air-picture-ready | poll=5 grace=15 ...
 CLASH BOOT | etb-ready | dryRun=false start=40 capacity=80 rate=...
 CLASH BOOT | hal-threat-coverage-ready | needs=ANTI_ARMOR,COUNTER_AIR ...
-CLASH BOOT | spaa-overwatch-ready | standoff=1500 ...
+CLASH BOOT | rear-base-cram-ready | version=6 ... followsRearBase=spawn-ledger idle=600 ...
 ```
 
 Every purchase can be explained from four lines:
@@ -348,6 +351,8 @@ Two defects found alongside it:
 
 ## One mobile AA in the back line
 
+*Superseded 2026-10-17: there is no back line of SPAA any more (see *One rear base, a C-RAM that follows it, and no back-line SPAA*). The ETB's own limit of one live SPAA per side survives as `ITW_CLASH_ThreatCoverageSPAAMaxPerSide`.*
+
 The first run left one commander holding two Cheetahs behind the front and the
 other holding one, all three idle. Neither of the pair was bought - the ETB
 made no SPAA purchase at all that run. Both came from Impasse's own spawner and
@@ -400,8 +405,8 @@ own. An IFV may answer a tank; a soft vehicle may not. Demanding a match would
 price most factions out of answering armour at all.
 
 The filter applies **only to `GROUND_ANTI_ARMOR`**. An aircraft's survival is
-its corridor, which the air picture already rules on, and SPAA sits behind the
-front by doctrine.
+its corridor, which the air picture already rules on, and an SPAA is bought to
+answer aircraft, not the armour HAL may later send it against.
 
 Price still decides *within* what is suitable - the sort is unchanged, and a
 price above the reserve still falls back to a cheaper vehicle. It simply can no
@@ -433,11 +438,10 @@ keeps only classes whose config says they can actually shoot at aircraft.
 
 The vehicle is crewed exactly as a static is: **a gunner and no driver**. It
 cannot be driven anywhere, so it behaves as the emplacement it is meant to be.
-`ITW_CLASH_CRAM` then keeps `ITW_CLASH_SPAAOverwatch_fnc_Adopt` from taking it,
-which matters twice over - an adopted C-RAM would consume one of the back
-line's capped mobile-AA slots and be ordered to a sector it can never drive to.
-The refusal is placed before the capacity test so it never costs a slot even
-transiently.
+`ITW_CLASH_CRAM` then kept `ITW_CLASH_SPAAOverwatch_fnc_Adopt` from taking it
+(an adopted C-RAM would have consumed one of the back line's capped mobile-AA
+slots and been ordered to a sector it could never drive to). The overwatch is
+gone since 2026-10-17; the flag still marks the emplacement for coverage.
 
 Having nothing to emplace is now said **once per side**. The class pools do not
 change mid-mission, so neither does the answer.
@@ -500,6 +504,83 @@ The scan says once, for every autonomous ground piece the game has, whether it
 was taken and if not why (`rear-cram-cram-scan`: class, `cram` or the reason,
 [`airLock`, air use], editor subcategory). If the Praetorian is still not taken,
 that line names the test it failed. The override still names a class directly.
+
+## One rear base, a C-RAM that follows it, and no back-line SPAA
+
+Hark, 2026-10-17, run 4: "helicopters are spawning at the same cram base, while
+infantry are spawning at an entirely different forward base. the infantry makes
+sense, the tanks spawning at a rear base and the cram not being in that same
+rear base is weird." Then "should we just move airspawns to the same rear
+base?" ("A for sure"), the C-RAM to follow ("a new one at the new rear base,
+and the old one removed once nothing spawns there any more"), and "we should
+stop reserving backline aa vehicles since we got the CRAM fix built, if hal
+wants aa he should make that move now."
+
+### Why there were two rear bases
+
+`ITW_CLASH_Generation_fnc_Resolve` walks Impasse's attack vectors per active
+objective: the side's attack source for that objective is the forward base, and
+that base's own attack source is the rear base. Impasse keeps two vectors per
+objective and side (`ITW_OBJ_ATTACKS`): land (nearest owned base by drivable
+route within 7 km, else the air base) and air (nearest in a straight line).
+`REAR` walked the land chain and `REAR_AIR` the air chain, so the two could end
+at different upstream bases. In run 4 GUER's armour staged at base 40 and its
+aircraft at 41. That is CLASH's split, not Impasse's: Impasse spawns everything
+at its attack source.
+
+### What changed
+
+- **`REAR_AIR` walks the land chain** (ForceGeneration v3). Aircraft spawn at
+  the same rear base as the armour, at that base's vehicle point.
+  `FORWARD_AIR` (CASEVAC, transport lifts) keeps the air chain.
+- **A rear-use ledger.** `Resolve` takes a fifth argument, `_spawning`. A
+  caller that puts something at the rear base it gets back passes `true`, and
+  a `REAR`/`REAR_AIR` answer is noted in `ITW_CLASH_GenerationRearUse` (side
+  -> base -> time). The spawning callers: the Checkbook provider, the ETB spawn
+  point, service reactivation, the rear-echelon field hand-off, the ammo
+  package. Callers that only ask never write: the C-RAM, the garrison sweep, the
+  CAS corridor check, a support aircraft's bearing.
+- **The C-RAM follows it** (v6). The side's current rear base is the newest
+  base in the ledger (the graph's own answer only before the first spawn). No
+  piece there: one goes up (`rear-cram-placed`, then `rear-cram-followed` when
+  another still stands). A piece at any other base is stood down once nothing
+  has spawned there for `Idle` (600 s), never in front of a player within
+  `StandDownClear` (300 m; `rear-cram-stand-down-waits`), at most `MaxPerSide`
+  (2) at once (`rear-cram-at-capacity`, said once per base). A destroyed piece
+  is replaced five minutes later where it stood, if its base is still in use;
+  v5 only rewrote the record of the position, so the replacement actually
+  appeared at a fresh search point.
+- **No back-line SPAA.** `ITW_CLASH_SPAAOverwatch.sqf` is deleted. An ETB SPAA
+  is registered with HAL like any other purchase (constraint lists cleared,
+  HAL's own taxonomy files it, a Cheetah or Tigris as light armour), and
+  Impasse's own SPAA is no longer adopted. The dependents:
+  - Threat coverage v7: a bought SPAA is briefed on its threat but not offered
+    against it, because HAL's "Air" dispatch draws only on CAP aircraft and AA
+    infantry (`HAC_fnc.sqf`, `RYD_Dispatcher`); offering it would only mark
+    SPAA as a failed provider. An idle SPAA is not re-offered either, so it
+    never blocks a CAP purchase. Nothing is bought against an out-of-front
+    aircraft (`outside-front`): SPAA was the exception only while CLASH held
+    it. The ETB keeps at most `ITW_CLASH_ThreatCoverageSPAAMaxPerSide` (1) live
+    SPAA per side, counted from its own assets.
+  - FOB air defence v2: the launcher teams always go to the FOBs; nothing
+    holds the back line for them.
+  - The ETB audits an idle SPAA like any other asset (idle release after
+    480 s).
+  - The preflight manifest and the loud debugger drop the module.
+
+### Tradeoffs
+
+- HAL has no SPAA doctrine. It files a Cheetah as light armour and sends it
+  with attacks against infantry, cars, artillery and statics, never toward an
+  aircraft. Its gun still fires at aircraft that come into range, and counter-
+  air coverage still counts any SPAA inside its 3.5 km umbrella, wherever HAL
+  has put it.
+- A side with no airport has SPAA as its only bought counter-air, and that SPAA
+  now goes where HAL sends it. The rear bases are covered by the C-RAM.
+- The ledger is written when a spawning caller resolves, before the spawn is
+  known to succeed, so a resolution that is then denied (no affordable class)
+  still counts as a use of that base.
+- For up to `Idle` after the rear moves, both bases have a C-RAM.
 
 ## COLOSSUS v2: CONSOLIDATE, still advisory
 
@@ -631,6 +712,8 @@ bought for it. It reveals only that threat's group and only to that asset; it
 reads no commander knowledge pool and nothing map-wide.
 
 ### A stationed SPAA was never cued to the tracks it was covering
+
+*Superseded 2026-10-17: nothing stations SPAA any more. A bought one is still briefed on the threat it was bought for.*
 
 `fnc_Sector` points an SPAA at the nearest hostile aircraft the commander knows
 about and `fnc_Station` drives it there on RED - without telling the group those
@@ -840,6 +923,8 @@ HAL may fix it upstream - but a recompile or verification failure logs a
 warning and keeps the stock order.
 
 ## Launcher teams fight once a SPAA holds the back line
+
+*Superseded 2026-10-17 (FOB air defence v2): no SPAA holds the back line, so the launcher teams always go to the FOBs.*
 
 An AA squad walked to a FOB is a squad not in the fight, and a mobile SPAA on
 overwatch covers the same sky far better: it relocates as the front moves, it

@@ -276,15 +276,9 @@ if (isServer) then {
             } else {
                 diag_log "CLASH BOOT | WARNING | artillery-scoot-missing | gun lines fire from one grid square all mission";
             };
-            // SPAA overwatch: every air defence vehicle on a side, the ETB's
-            // and Impasse's alike, stays behind the front instead of being
-            // dispatched forward as another armored group.
-            private _spaaOverwatchLoaded = false;
-            if (_airPictureLoaded isEqualTo true && {fileExists "ITW_CLASH_SPAAOverwatch.sqf"}) then {
-                _spaaOverwatchLoaded = call compile preprocessFileLineNumbers "ITW_CLASH_SPAAOverwatch.sqf";
-            } else {
-                diag_log "CLASH BOOT | WARNING | spaa-overwatch-missing-or-prereq-failed | HAL keeps dispatching SPAA forward";
-            };
+            // No SPAA overwatch since 2026-10-17: HAL employs every SPAA, the
+            // ETB's and Impasse's alike, as its own armour. The rear bases
+            // are held by the C-RAM below.
             // HAL taxonomy: what HAL thinks each class IS. The curated
             // RYD_WS_* lists missed 15 of the 61 classes run4 fielded, the
             // Rooikat among them; CLASH seeds the buckets it already decides

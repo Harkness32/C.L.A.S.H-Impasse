@@ -115,8 +115,10 @@ def test_spaa_is_briefed_too():
         text("ITW_CLASH_HALThreatCoverage.sqf"),
         "ITW_CLASH_HALThreatCoverage_fnc_Cover",
     )
-    assert "ITW_CLASH_SPAAOverwatch_fnc_Adopt" in body
-    assert "ITW_CLASH_HALThreatCoverage_fnc_Brief" in body
+    # Since 2026-10-17 it is HAL's, as armour, and nothing adopts it.
+    assert "ITW_CLASH_SPAAOverwatch_fnc_Adopt" not in body
+    spaa = body.index('_capability isEqualTo "SPAA"')
+    assert "ITW_CLASH_HALThreatCoverage_fnc_Brief" in body[spaa:body.index("} else {", spaa)]
 
 
 def test_the_offer_line_records_what_was_briefed():

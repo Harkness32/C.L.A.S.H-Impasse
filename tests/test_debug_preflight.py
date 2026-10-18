@@ -70,7 +70,6 @@ def test_every_shipped_module_is_in_the_manifest():
         "ITW_CLASH_AirPicture",
         "ITW_CLASH_ETB",
         "ITW_CLASH_HALThreatCoverage",
-        "ITW_CLASH_SPAAOverwatch",
         "ITW_CLASH_RearBaseCRAM",
         "ITW_CLASH_FOBAirDefence",
         "ITW_CLASH_HALFront",

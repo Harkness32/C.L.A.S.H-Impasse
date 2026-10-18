@@ -145,12 +145,9 @@ def test_a_crammed_vehicle_cannot_be_driven_away():
     assert '_veh setVariable ["ITW_CLASH_CRAM",true,true]' in source
 
 
-def test_the_overwatch_sweep_leaves_it_alone():
-    overwatch = text("ITW_CLASH_SPAAOverwatch.sqf")
-    body = function_body(overwatch, "ITW_CLASH_SPAAOverwatch_fnc_Adopt")
-    assert 'getVariable ["ITW_CLASH_CRAM",false]) exitWith {false}' in body
-    # And it is refused before the capacity test, so it never costs a slot.
-    assert body.index("ITW_CLASH_CRAM") < body.index("AtCapacity")
+def test_nothing_adopts_it_any_more():
+    # The SPAA overwatch that had to be told to leave it alone is gone.
+    assert not (MISSION / "ITW_CLASH_SPAAOverwatch.sqf").exists()
 
 
 def test_having_nothing_to_emplace_is_said_once_per_side():

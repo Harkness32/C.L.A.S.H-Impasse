@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ForceGenerationReady",false]) exitWith {true};
 
-ITW_CLASH_ForceGenerationVersion = 2;
+ITW_CLASH_ForceGenerationVersion = 3;
 ITW_CLASH_ArtilleryMinimumPerSide = missionNamespace getVariable [
     "ITW_CLASH_ArtilleryMinimumPerSide",1
 ];
@@ -164,14 +164,55 @@ ITW_CLASH_Generation_fnc_Interstitial = {
 };
 
 /*
+    Where each side's rear echelon has actually been put, and when.
+
+    sideKey -> (rear base index -> mission time). Written by Resolve only for a
+    caller that passes _spawning (the ones that put a vehicle or a package at
+    the rear base it returns), so a caller that only asks - the C-RAM, the
+    garrison sweep, a corridor check, a support's bearing - never makes a base
+    look used. The rear-base C-RAM reads it: it stands where the rear echelon
+    spawns, and is stood down where it no longer does.
+*/
+if (isNil "ITW_CLASH_GenerationRearUse") then {ITW_CLASH_GenerationRearUse = createHashMap};
+
+ITW_CLASH_Generation_fnc_NoteRearUse = {
+    params ["_side","_baseIndex"];
+    if (_baseIndex < 0) exitWith {false};
+    private _key = toUpperANSI str _side;
+    private _uses = ITW_CLASH_GenerationRearUse getOrDefault [_key,createHashMap];
+    _uses set [_baseIndex,time];
+    ITW_CLASH_GenerationRearUse set [_key,_uses];
+    true
+};
+
+// [base index, time] of every rear base this side has spawned at, newest first.
+ITW_CLASH_Generation_fnc_RearUses = {
+    params ["_side"];
+    private _uses = ITW_CLASH_GenerationRearUse getOrDefault [toUpperANSI str _side,createHashMap];
+    private _list = (keys _uses) apply {[_x,_uses get _x]};
+    [_list,[],{_x#1},"DESCEND"] call BIS_fnc_sortBy
+};
+
+/*
     Resolve the same ITW base graph for either side:
       active objective -> side attack-source FOB -> upstream rear FOB.
 
     Profiles only select an operational echelon. INTERSTITIAL is derived from
     the two real nodes and a nearby road; it is not a theater-proximity corridor.
+
+    REAR_AIR walks the land chain, like REAR: the rear echelon is one base,
+    aircraft and armour alike, and only the point in it differs (the base's
+    vehicle spawn for an aircraft). Hark, 2026-10-17 run 4: GUER's tanks
+    staged at base 40 and its aircraft at 41, because the air chain (nearest
+    owned base in a straight line) and the land chain (nearest by road) had
+    picked different upstream bases. FORWARD_AIR keeps the air chain: a
+    transport or CASEVAC lift launches from the nearest base in the air.
+
+    _spawning: the caller is putting something at the base it gets back, so a
+    REAR or REAR_AIR answer is noted as rear-echelon use (see above).
 */
 ITW_CLASH_Generation_fnc_Resolve = {
-    params ["_side","_capability",["_profile","FORWARD"],["_reference",[]]];
+    params ["_side","_capability",["_profile","FORWARD"],["_reference",[]],["_spawning",false]];
     private _failed = createHashMapFromArray [
         ["status","UNRESOLVED"],
         ["side",_side],
@@ -189,7 +230,8 @@ ITW_CLASH_Generation_fnc_Resolve = {
     private _profileKey = toUpperANSI _profile;
     private _air = _profileKey in ["FORWARD_AIR","REAR_AIR"];
     private _friendly = _side == ITW_PlayerSide;
-    private _slot = if (_air) then {
+    // Only a forward air lift walks the air chain; REAR_AIR is the rear echelon.
+    private _slot = if (_profileKey isEqualTo "FORWARD_AIR") then {
         if (_friendly) then {ITW_ATTACK_AIR_F} else {ITW_ATTACK_AIR_E}
     } else {
         if (_friendly) then {ITW_ATTACK_LAND_F} else {ITW_ATTACK_LAND_E}
@@ -266,6 +308,9 @@ ITW_CLASH_Generation_fnc_Resolve = {
     if (_origin isEqualTo []) exitWith {
         _failed set ["reason","deployment-position-unavailable"];
         _failed
+    };
+    if (_spawning && {_profileKey in ["REAR","REAR_AIR"]}) then {
+        [_side,_rearBase] call ITW_CLASH_Generation_fnc_NoteRearUse;
     };
 
     createHashMapFromArray [
@@ -512,7 +557,7 @@ ITW_CLASH_Generation_fnc_Provider = {
         "reference",getPosATL leader _requester
     ]);
     private _generation = [
-        _side,_capability,_profile,_reference
+        _side,_capability,_profile,_reference,true
     ] call ITW_CLASH_Generation_fnc_Resolve;
     if ((_generation getOrDefault ["status",""]) != "RESOLVED") exitWith {
         [_request,"DEFERRED",[],_generation getOrDefault ["reason","node-unresolved"],"generation-v1",createHashMap,_generation] call
@@ -850,7 +895,7 @@ ITW_CLASH_Generation_fnc_ETBSpawnPoint = {
         ["airport","",_position]
     };
     private _generation = [
-        _side,_capability,"REAR",_reference
+        _side,_capability,"REAR",_reference,true
     ] call ITW_CLASH_Generation_fnc_Resolve;
     if ((_generation getOrDefault ["status",""]) isNotEqualTo "RESOLVED") exitWith {
         ["","NO_CANDIDATE",[]]
@@ -860,10 +905,15 @@ ITW_CLASH_Generation_fnc_ETBSpawnPoint = {
 
 /*
     Register an ETB asset with HAL. Same handoff as every other C.L.A.S.H.
-    purchase - HAL owns employment from here - with two differences: no
-    ITW_VehDef, and SPAA never enters HAL's attack, flank or recon pools, which
-    is the one exception to "HAL owns employment" and what lets CLASH hold it in
-    overwatch behind the front.
+    purchase - HAL owns employment from here - with one difference: no
+    ITW_VehDef.
+
+    SPAA included, since 2026-10-17 (Hark: "we should stop reserving backline
+    aa vehicles since we got the CRAM fix built, if hal wants aa he should make
+    that move now"). It used to be held out of every HAL pool and parked behind
+    the front by the SPAA overwatch; now HAL files it by its own taxonomy (a
+    Cheetah or a Tigris is light armour, RYD_WS_LArmor_class) and employs it
+    as it does Impasse's own.
 */
 ITW_CLASH_Generation_fnc_ETBRegisterAsset = {
     params ["_veh","_group","_hq","_capability"];
@@ -880,14 +930,12 @@ ITW_CLASH_Generation_fnc_ETBRegisterAsset = {
         [_group,_veh,"etb-" + toLowerANSI _capability] call ITW_CLASH_DualHAL_fnc_MarkVehicleCrew;
     };
 
-    private _combat = _capability isNotEqualTo "SPAA";
     if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
-        [_group,["NoAttack","NoRecon","NoDef"],!_combat] call
+        [_group,["NoAttack","NoRecon","NoDef"],false] call
             ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
     } else {
         {
             private _arr = (+(_hq getVariable [_x,[]])) - [_group];
-            if (!_combat) then {_arr pushBackUnique _group};
             _hq setVariable [_x,_arr];
         } forEach ["RydHQ_NoAttack","RydHQ_NoRecon","RydHQ_NoDef"];
     };
@@ -929,12 +977,8 @@ ITW_CLASH_Generation_fnc_ETBRegisterAsset = {
                 _hq setVariable [_x,_pool];
             } forEach ["RydHQ_RCAP","RydHQ_RCAS","RydHQ_AirG"];
         };
-        case "SPAA": {
-            // Deliberately no pool at all. CLASH places it and HAL never sends
-            // it anywhere; the overwatch layer owns it from here.
-            _group setVariable ["ITW_CLASH_SPAAOverwatch",true];
-            _veh setVariable ["ITW_CLASH_SPAAOverwatch",true,true];
-        };
+        // SPAA: no pool of ours. HAL's own classification files it at its
+        // next cycle, as it does an Impasse-spawned one.
     };
 
     // Tracked for the service layers with no Impasse row: an ETB asset is not
@@ -972,9 +1016,9 @@ ITW_CLASH_Generation_fnc_ETBFulfil = {
     if (isNull _hq) exitWith {["NO_CANDIDATE",["no-commander"]] call _deny};
     private _side = side _hq;
 
-    // Only ground armour answers need protection: an aircraft's survival is its
-    // corridor, which the air picture already rules on, and SPAA sits behind
-    // the front by doctrine.
+    // Only anti-armour answers need protection: an aircraft's survival is its
+    // corridor, which the air picture already rules on, and an SPAA is bought
+    // to answer aircraft, not the armour HAL may later send it against.
     private _minGrade = 0;
     if (
         _capability isEqualTo "GROUND_ANTI_ARMOR"
@@ -1138,7 +1182,7 @@ ITW_CLASH_Generation_fnc_ETBCheapestPrice = {
 
 ITW_CLASH_ForceGenerationReady = true;
 diag_log format [
-    "CLASH BOOT | force-generation-ready | version=%1 resolver=symmetric-itw-graph artillery=interstitial logistics=rear ticketing=itw-surrogate bothSides=true halTacticalAuthority=true etbProviders=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA etbVehDefStamped=false",
+    "CLASH BOOT | force-generation-ready | version=%1 resolver=symmetric-itw-graph rearAirChain=land forwardAirChain=air rearUseLedger=spawning-callers artillery=interstitial logistics=rear ticketing=itw-surrogate bothSides=true halTacticalAuthority=true etbProviders=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA etbVehDefStamped=false",
     ITW_CLASH_ForceGenerationVersion
 ];
 true

@@ -68,7 +68,8 @@ def test_versions():
     assert "ITW_CLASH_SupportsVersion = 8;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsAirborneVersion = 3;" in raw("ITW_CLASH_SupportsAirborne.sqf")
     assert "ITW_CLASH_SupportsDebugVersion = 2;" in raw("ITW_CLASH_SupportsDebug.sqf")
-    assert "ITW_CLASH_RearBaseCRAMVersion = 5;" in raw("ITW_CLASH_RearBaseCRAM.sqf")
+    # v6 (2026-10-17) moved the C-RAM with the rear base; v5's detection is unchanged.
+    assert int(re.search(r"ITW_CLASH_RearBaseCRAMVersion = (\d+);", raw("ITW_CLASH_RearBaseCRAM.sqf")).group(1)) >= 5
 
 
 def test_three_families_three_lanes_one_drop_wallet():

@@ -314,13 +314,14 @@ def test_the_etb_registration_path_never_stamps_itw_vehdef():
     )
 
 
-def test_spaa_enters_no_hal_dispatch_pool_at_all():
+def test_spaa_is_handed_to_hal_like_every_other_purchase():
+    # 2026-10-17: no back-line reservation. The constraint lists are cleared
+    # for every capability, and HAL's own taxonomy files the SPAA.
     body = function_body(generation(), "ITW_CLASH_Generation_fnc_ETBRegisterAsset")
-    spaa = body.index('case "SPAA":')
-    tail = body[spaa:]
-    assert "ITW_CLASH_SPAAOverwatch" in tail
-    for pool in ["RydHQ_RCAS", "RydHQ_RCAP", "RydHQ_AirG", "RydHQ_LArmorG", "RydHQ_CarsG"]:
-        assert pool not in tail, pool
+    assert "ITW_CLASH_SPAAOverwatch" not in body
+    assert "_combat" not in body
+    assert '[_group,["NoAttack","NoRecon","NoDef"],false] call' in body
+    assert 'case "SPAA":' not in body
 
 
 def test_players_are_cued_only_once_the_counter_air_has_been_spotted():
@@ -353,7 +354,7 @@ def test_the_etb_only_buys_against_threats_hal_will_act_on():
     assert "ITW_CLASH_HALThreatCoverage_fnc_InFront" in armor
 
 
-def test_air_still_sees_out_of_front_threats_but_only_spaa_answers_them():
+def test_air_still_sees_out_of_front_threats_but_nothing_answers_them():
     source = coverage()
     # Aircraft cross a front in seconds and the corridors need all of them, so
     # the air picture is not filtered - the provider choice is what bites.
@@ -361,27 +362,43 @@ def test_air_still_sees_out_of_front_threats_but_only_spaa_answers_them():
     assert "ITW_CLASH_HALThreatCoverage_fnc_InFront" not in air
     choose = function_body(source, "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider")
     assert "_outsideFront" in choose
-    assert '_options select {_x isEqualTo "SPAA"}' in choose
-    assert '"outside-front"' in choose
-    # And the guard must exit at function scope, not inside a then block.
-    assert "if (_outsideFront) exitWith {" in choose
+    # SPAA was the exception while CLASH held it; every provider is HAL's now.
+    assert 'if (_outsideFront) exitWith {["","outside-front"]};' in choose
+    assert "outside-front-clash-employed" not in choose
 
 
-def test_no_spaa_is_bought_that_the_back_line_would_not_hold():
+def test_the_etb_keeps_one_spaa_alive_per_side():
     source = coverage()
     body = function_body(source, "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider")
-    assert "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity" in body
+    # A spending limit on its own purchases, counted live, not a doctrine.
+    assert "ITW_CLASH_SPAAOverwatch" not in body
+    assert '[_side,"SPAA"] call ITW_CLASH_ETB_fnc_Assets' in body
+    assert "ITW_CLASH_ThreatCoverageSPAAMaxPerSide" in body
+    assert 'ITW_CLASH_ThreatCoverageSPAAMaxPerSide",1' in source
     assert '_options select {!(_x isEqualTo "SPAA")}' in body
     assert '"spaa-at-capacity"' in body
-    # Guarded, so a mission without the overwatch module still buys normally.
-    assert 'isNil "ITW_CLASH_SPAAOverwatch_fnc_AtCapacity"' in body
-
-
-def test_the_capacity_gate_runs_before_the_front_branch():
-    # Otherwise an out-of-front threat would still buy a second one, since that
-    # branch exits early with SPAA as its only option.
-    body = function_body(coverage(), "ITW_CLASH_HALThreatCoverage_fnc_ChooseProvider")
+    assert 'isNil "ITW_CLASH_ETB_fnc_Assets"' in body
     assert body.index("_spaaFull") < body.index("_outsideFront")
+
+
+def test_a_bought_spaa_is_briefed_not_offered():
+    # HAL's air dispatch draws on CAP aircraft and AA infantry only, so an
+    # offer against an aircraft could never task it and would only mark the
+    # provider failed.
+    cover = function_body(coverage(), "ITW_CLASH_HALThreatCoverage_fnc_Cover")
+    spaa = cover.index('_capability isEqualTo "SPAA"')
+    branch = cover[spaa:cover.index("} else {", spaa)]
+    assert "ITW_CLASH_HALThreatCoverage_fnc_Brief" in branch
+    assert "ITW_CLASH_HALThreatCoverage_fnc_Offer" not in branch
+    assert "MarkProviderFailed" not in branch
+    hal = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAC_fnc.sqf").read_text(encoding="utf-8", errors="replace")
+    assert '_pool = [[_airCAP,2,"AIRCAP"],[_AAInfG,0.5,"INF"]]' in hal
+
+
+def test_an_idle_spaa_never_blocks_a_counter_air_purchase():
+    body = function_body(coverage(), "ITW_CLASH_HALThreatCoverage_fnc_IdleAssets")
+    assert '(_x get "capability") isNotEqualTo "SPAA"' in body
+    assert "ITW_CLASH_SPAAOverwatch" not in body
 
 
 def test_an_unarmoured_counter_is_not_offered_against_armour():

@@ -799,7 +799,8 @@ ITW_CLASH_Supports_fnc_PickClass = {
 
 /*
     Where a support flies from: an owned airfield for fixed-wing, the side's
-    rear air base for helicopters and the UAV.
+    rear base for helicopters and the UAV (REAR_AIR: the armour's own rear
+    base since 2026-10-17, at its vehicle point).
 */
 ITW_CLASH_Supports_fnc_Origin = {
     params ["_side","_flavor","_aim"];

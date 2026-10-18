@@ -143,7 +143,7 @@ a global every cycle, so whoever sets that global decides whether a side fights.
 **The lease** — C.L.A.S.H. takes a group off HAL using HAL's own `Busy` lock
 (after HAL's `Break` unwinds the running order), strips it from HAL's role
 lists, runs a doctrine, then hands it back and audits that HAL took it. Used by
-`Resupply`, `SPAAOverwatch`, `HotDrop`, `GTFO`, `FOBAirDefence`. The hazard is
+`Resupply`, `HotDrop`, `GTFO`, `FOBAirDefence` (and `SPAAOverwatch`, removed 2026-10-17). The hazard is
 the one-way door: eight files call `enableAttack false` and only two restore,
 which is why `AttackRestore` exists as a safety net.
 
@@ -176,7 +176,6 @@ init.sqf
   4  Air/threat AirPicture → EmergingThreatsBudget → HALThreatCoverage
   5  Doctrine   Knowledge → Colossus → Supports (+ SupportsStrike,
                 SupportsUAV, SupportsAirborne), CounterBattery, ArtilleryScoot,
-                SPAAOverwatch,
                 HALTaxonomy, RearBaseCRAM, FOBAirDefence, HALFront,
                 InfantryDemand, HotDrop, ThunderRunAirTiers
   6  Player     PlayerGarageDeployment, PlayerDemandDispatch,
@@ -254,15 +253,15 @@ two needs — anti-armour and counter-air — *"the gaps the baseline army
 structurally cannot close."* Enemy infantry, cars, statics, artillery and cargo
 never open ETB demand on purpose. It also briefs threats to the dispatcher
 (`reveal` level 2) before `RYD_Dispatcher` runs, excludes crewless hulls from
-`ArmorThreats`, and gates on SPAA capacity.
+`ArmorThreats`, and keeps at most one live ETB SPAA per side (v7).
 
-**`SPAAOverwatch`** is *"the one exception to 'HAL owns employment'."* An air
-defence vehicle is only worth what it denies; HAL treats one as another armoured
-group and sends it forward. The doctrine covers **every** SPAA on a side, not
-just ETB purchases, because coverage counting cannot trust an Impasse-spawned
-Cheetah that might wander off.
+**`SPAAOverwatch`** was *"the one exception to 'HAL owns employment'."* It held
+every SPAA on a side behind the front. Removed 2026-10-17 (Hark: "we should
+stop reserving backline aa vehicles since we got the CRAM fix built, if hal
+wants aa he should make that move now"): HAL now files a Cheetah as light
+armour and employs it as it does any other, and the rear bases are the C-RAM's.
 
-**`RearBaseCRAM`** (v2) puts one static AA piece at each rear base, outside HAL
+**`RearBaseCRAM`** (v6) puts one C-RAM at each side's rear base, outside HAL
 and unbilled, to make one thing true: *an enemy aircraft circling a rear base
 should not be what makes that commander buy a fighter.* Counter-air coverage
 already counts it at weight 1.0 inside a 3 km umbrella, so the demand does not
@@ -276,10 +275,17 @@ made GUER's NATO-classed AA read as a BLUFOR asset in GUER's own base. An
 uncrewed-but-intact piece is now re-crewed in place, and a replacement stands
 where the original did rather than re-resolving the base graph.
 
+v6 follows the rear base. `ITW_CLASH_Generation_fnc_Resolve` notes the rear
+base each time a caller actually puts something there (`_spawning`, ledger
+`ITW_CLASH_GenerationRearUse`); the newest is the side's current rear base and
+gets a piece, and a piece at a base nothing has spawned at for 600 s is stood
+down (never in front of a player). `REAR_AIR` now walks the land chain too, so
+aircraft and armour share that base.
+
 **`FOBAirDefence`** walks an idle AA squad to a FOB and then hands it to HAL's
-garrison routine. It yields entirely when overwatch already holds a mobile SPAA
-on that side's back line — the C-RAM deliberately does not count toward that,
-because it is bolted to one spot and covers the base, not the FOBs.
+garrison routine. It used to yield when overwatch held a mobile SPAA on that
+side's back line; with the overwatch gone (v2) it always runs. The C-RAM never
+counted: it is bolted to one spot and covers the base, not the FOBs.
 
 **`ThunderRunAirTiers`** replaces Thunder Run's three blunt denial rules with
 graded ones. The old rules closed a corridor on *any* known enemy aircraft within
@@ -568,7 +574,7 @@ its own, usually because a parent loads and reports it.
 | `DualHALCheckbookHardening` | 5 | 230 | `dual-hal-checkbook-hardening-ready` | Commander B is a real HAL HQ but also an invisible compatibility object. |
 | `CheckbookAPI` | 2 | 277 | `checkbook-api-ready` | Checkbook V2 is the single state boundary between HAL intent and Impasse resources. |
 | `EmergingThreatsBudget` | 1 | 786 | `etb-ready` | The Emerging Threats Budget. |
-| `ForceGeneration` | 2 | 1144 | `force-generation-ready` | Resolve the same ITW base graph for either side: active objective -> side attack-source FOB -> upstream rear FOB. |
+| `ForceGeneration` | 3 | 1188 | `force-generation-ready` | Resolve the same ITW base graph for either side: active objective -> side attack-source FOB -> upstream rear FOB. |
 | `VehicleEchelonPolicy` | 2 | 224 | `vehicle-echelon-policy-ready` | _no in-source header_ |
 | `SeaGenerationGuard` | 3 | 247 | `sea-generation-guard-ready` | _no in-source header_ |
 | `FrontRouting` | 1 | 445 | `front-routing-ready` | Front Routing Phase 0 This is the commander-facing operational FOB selector for both sides. |
@@ -579,10 +585,9 @@ its own, usually because a parent loads and reports it.
 | module | v | lines | ready flag | what it does (its own words) |
 |---|---|---|---|---|
 | `AirPicture` | 4 | 1243 | `air-picture-ready` | The air picture: observation only. |
-| `HALThreatCoverage` | 6 | 1109 | `hal-threat-coverage-ready` | Threat coverage, on the Emerging Threats Budget. |
-| `SPAAOverwatch` | 1 | 427 | `spaa-overwatch-ready` | SPAA overwatch: the one exception to "HAL owns employment". |
-| `RearBaseCRAM` | 2 | 382 | `rear-base-cram-ready` | Rear-base C-RAM. |
-| `FOBAirDefence` | 1 | 322 | `fob-air-defence-ready` | AA teams garrison FOBs. |
+| `HALThreatCoverage` | 7 | 1117 | `hal-threat-coverage-ready` | Threat coverage, on the Emerging Threats Budget. |
+| `RearBaseCRAM` | 6 | 757 | `rear-base-cram-ready` | Rear-base C-RAM. |
+| `FOBAirDefence` | 2 | 291 | `fob-air-defence-ready` | AA teams garrison FOBs. |
 | `HotDrop` | 5 | 637 | `hot-drop-ready` | HotDrop: the troop-insertion profile. |
 | `HALParadrop` | 1 | 143 | `hal-paradrop-ready` | _no in-source header_ |
 | `ThunderRunAirTiers` | 1 | 147 | `thunder-run-air-tiers-ready` | Helicopter threat tiers, applied to Thunder Run's air denial. |
@@ -774,7 +779,6 @@ of these in `description.ext` `class Params` or the mission namespace.
 | `ITW_CLASH_RearBaseCRAMEnabled = false` | no rear-base air defence |
 | `ITW_CLASH_RearBaseCRAMRespawn = 0` | a rear base cleared of air defence stays cleared |
 | `ITW_CLASH_ResupplyGFRHold = false` | claimed vehicle groups withdraw to a rally (v1 behaviour) instead of holding |
-| `ITW_CLASH_FOBAirDefenceYieldToSPAA = false` | FOB air defence stops deferring to mobile overwatch |
 | `ITW_CLASH_HotDropStates` | which corridor verdicts HotDrop will claim a lift for |
 | `ITW_CLASH_HotDropNoLandStates` | corridors where a refused paradrop aborts rather than landing |
 | `CLASHDebug` (param) | 0 off, 1 preflight to chat, 2 full loud debug |
