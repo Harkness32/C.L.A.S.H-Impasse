@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_HALTaxonomyStarted",false]) exitWith {true};
 ITW_CLASH_HALTaxonomyStarted = true;
-ITW_CLASH_HALTaxonomyVersion = 3;
+ITW_CLASH_HALTaxonomyVersion = 4;
 ITW_CLASH_HALTaxonomyReady = false;
 
 /*
@@ -51,6 +51,25 @@ ITW_CLASH_HALTaxonomyReady = false;
     suppresses the autofill for that class. That makes a wrong answer here
     HAL's only answer, so every decision is logged, and a class we cannot place
     confidently is left alone rather than guessed at.
+
+    v4, one exception to the scope above: an aircraft whose weapons are all on
+    pylons. HAL decides "armed" once per class from the config magazines and
+    its top-level turrets', less its flare list (HAC_fnc2.sqf, RYD_PresentRHQ).
+    A pylon is in neither, so the stub-wing Ghost Hawk, guns and rockets all on
+    pylons, is filed as an unarmed transport: RHQ_NCAir, and RHQ_NCCargo for
+    its seats. Its group then sits on RydHQ_NCAirG and RydHQ_NCCargoG, and
+    HAL never puts it in AttackAv (HQOrders.sqf:159-213).
+
+    The Air seed only prevents that when it lands before HAL's autofill first
+    sees the class, which is a race this module's poll can lose. Hark,
+    2026-10-17: "stub wing helicopters no longer move out". Run 2 at 04:49:
+    spawned 4:57:25, seeded 4:58:00, and they flew. Run 4: spawned 17:15:26,
+    seeded 17:15:46, and the next run's air-idle report had both GUER ones on
+    NCAirG and NCCargoG. So such a class is EXCLUDED from NCAir and NCCargo
+    (RHQs_NCAir, RHQs_NCCargo), which HAL subtracts every situation report
+    whoever filed it first. Never seeded, and only for this case: an aircraft
+    HAL can see a gun on is HAL's call, transport or not (the curated
+    door-gun Ghost Hawk stays a transport).
 */
 
 ITW_CLASH_HALTaxonomyEnabled = missionNamespace getVariable [
@@ -72,6 +91,14 @@ ITW_CLASH_HALTaxonomyDecided = createHashMap;
 // is the autofill's business and is never seeded or excluded here.
 ITW_CLASH_HALTaxonomyPrimaries = ["Inf","Art","HArmor","LArmor","Cars","Air","Naval","Static"];
 ITW_CLASH_HALTaxonomyCapabilities = ["LArmorAT","ATinf","AAinf","StaticAA","StaticAT"];
+// v4: excluded, never seeded, for an aircraft armed only on its pylons.
+ITW_CLASH_HALTaxonomyPylonAirExclusions = ["NCAir","NCCargo"];
+// HAL's own flare list, as RYD_PresentRHQ subtracts it (HAC_fnc2.sqf:2327).
+ITW_CLASH_HALTaxonomyHALFlareMagazines = [
+    "Laserbatteries","60Rnd_CMFlareMagazine","120Rnd_CMFlareMagazine","240Rnd_CMFlareMagazine",
+    "60Rnd_CMFlare_Chaff_Magazine","120Rnd_CMFlare_Chaff_Magazine","240Rnd_CMFlare_Chaff_Magazine",
+    "192Rnd_CMFlare_Chaff_Magazine","168Rnd_CMFlare_Chaff_Magazine","300Rnd_CMFlare_Chaff_Magazine"
+];
 
 ITW_CLASH_HALTaxonomy_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -261,6 +288,47 @@ ITW_CLASH_HALTaxonomy_fnc_Apply = {
     [_seeded,_excluded]
 };
 
+/*
+    v4. The weapons an aircraft carries that HAL's autofill cannot see: its
+    default rack (each pylon's attachment), when HAL's own armed test finds
+    nothing but flares. [] when HAL can see a weapon, or there is none on the
+    rack either.
+*/
+ITW_CLASH_HALTaxonomy_fnc_PylonOnlyWeapons = {
+    params ["_class"];
+    private _cfg = configFile >> "CfgVehicles" >> _class;
+    if !(isClass _cfg) exitWith {[]};
+    // HAL's test, as written: the class's magazines plus each top-level
+    // turret's, less its flare list.
+    private _halMags = getArray (_cfg >> "magazines");
+    {
+        _halMags append getArray (_x >> "magazines");
+    } forEach ("true" configClasses (_cfg >> "Turrets"));
+    if ((_halMags - ITW_CLASH_HALTaxonomyHALFlareMagazines) isNotEqualTo []) exitWith {[]};
+    private _rack = ("true" configClasses (_cfg >> "Components" >> "TransportPylonsComponent" >> "Pylons")) apply {
+        getText (_x >> "attachment")
+    };
+    _rack = _rack select {_x isNotEqualTo "" && {!(_x in ITW_CLASH_HALTaxonomyHALFlareMagazines)}};
+    _rack arrayIntersect _rack
+};
+
+// v4. Take it off HAL's non-combat air and cargo lists, through the exclusion
+// HAL subtracts each situation report. Returns the lists it was newly put on.
+ITW_CLASH_HALTaxonomy_fnc_ArmPylonAir = {
+    params ["_class"];
+    private _excluded = [];
+    {
+        private _excludeVar = "RHQs_" + _x;
+        private _exclude = +(missionNamespace getVariable [_excludeVar,[]]);
+        if !(_class in _exclude) then {
+            _exclude pushBack _class;
+            _excluded pushBack _x;
+        };
+        missionNamespace setVariable [_excludeVar,_exclude];
+    } forEach ITW_CLASH_HALTaxonomyPylonAirExclusions;
+    _excluded
+};
+
 // Every class actually present, both sides. The lists are classname lists
 // shared by all commanders, so there is no per-side taxonomy to build: a
 // Rooikat is a Rooikat whoever owns it.
@@ -292,10 +360,16 @@ ITW_CLASH_HALTaxonomy_fnc_Sweep = {
         _verdict params ["_primary","_capabilities","_grade"];
         ITW_CLASH_HALTaxonomyDecided set [_class,_verdict];
         _new = _new + 1;
+        private _rack = if (_primary isEqualTo "Air") then {
+            [_class] call ITW_CLASH_HALTaxonomy_fnc_PylonOnlyWeapons
+        } else {[]};
 
         if (ITW_CLASH_HALTaxonomyAdvisoryOnly) then {
             ["would-classify",[_class,_primary,_capabilities,_grade]] call
                 ITW_CLASH_HALTaxonomy_fnc_Log;
+            if (_rack isNotEqualTo []) then {
+                ["would-arm-pylon-air",[_class,_rack]] call ITW_CLASH_HALTaxonomy_fnc_Log;
+            };
             continue
         };
 
@@ -303,6 +377,11 @@ ITW_CLASH_HALTaxonomy_fnc_Sweep = {
             params ["_seeded","_excluded"];
         ["classified",[_class,_primary,_capabilities,_grade,_seeded,_excluded]] call
             ITW_CLASH_HALTaxonomy_fnc_Log;
+        if (_rack isNotEqualTo []) then {
+            ["armed-pylon-air",[
+                _class,_rack,[_class] call ITW_CLASH_HALTaxonomy_fnc_ArmPylonAir
+            ]] call ITW_CLASH_HALTaxonomy_fnc_Log;
+        };
     } forEach (call ITW_CLASH_HALTaxonomy_fnc_Present);
     _new
 };
@@ -320,12 +399,13 @@ ITW_CLASH_HALTaxonomy_fnc_Sweep = {
 
     ITW_CLASH_HALTaxonomyReady = true;
     diag_log format [
-        "CLASH BOOT | hal-taxonomy-ready | version=%1 advisoryOnly=%2 poll=%3 primaries=%4 capabilities=%5 autofillSuppressedForSeeded=true halUntouched=true",
+        "CLASH BOOT | hal-taxonomy-ready | version=%1 advisoryOnly=%2 poll=%3 primaries=%4 capabilities=%5 autofillSuppressedForSeeded=true halUntouched=true pylonOnlyAirExcludedFrom=%6",
         ITW_CLASH_HALTaxonomyVersion,
         ITW_CLASH_HALTaxonomyAdvisoryOnly,
         ITW_CLASH_HALTaxonomyPoll,
         ITW_CLASH_HALTaxonomyPrimaries joinString ",",
-        ITW_CLASH_HALTaxonomyCapabilities joinString ","
+        ITW_CLASH_HALTaxonomyCapabilities joinString ",",
+        ITW_CLASH_HALTaxonomyPylonAirExclusions joinString ","
     ];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {

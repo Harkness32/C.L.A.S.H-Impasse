@@ -218,7 +218,9 @@ def test_an_mbt_is_still_heavy_armour():
 
 
 def test_taxonomy_version_moved_again():
-    assert "ITW_CLASH_HALTaxonomyVersion = 3;" in read(MISSION / "ITW_CLASH_HALTaxonomy.sqf")
+    # v3 here; v4 (2026-10-18) added the pylon-only aircraft exclusion.
+    version = int(re.search(r"ITW_CLASH_HALTaxonomyVersion = (\d+);", read(MISSION / "ITW_CLASH_HALTaxonomy.sqf")).group(1))
+    assert version >= 3
 
 
 # --- 4. the base-embark fast path says why it declined -----------------------

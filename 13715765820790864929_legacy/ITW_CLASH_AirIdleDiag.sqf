@@ -40,6 +40,10 @@ ITW_CLASH_AirIdleDiagVersion = 1;
        them in metres, [men HAL first counted, men now]]
     "blocks" names each AttackAv gate it fails; [] means HAL may send it.
 
+    First answer (2026-10-18): both GUER stub-wings blocked by "NCCargoG" and
+    "air-pool-NCAirG", HAL's autofill having filed a pylon-armed class as
+    unarmed lift. Fixed in ITW_CLASH_HALTaxonomy.sqf v4.
+
     From the console (Local Exec on a hosted game, Server Exec on a
     dedicated one), now, with the same fields:
       [] call ITW_CLASH_AirIdleDiag_fnc_Report;

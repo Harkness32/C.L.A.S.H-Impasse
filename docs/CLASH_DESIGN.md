@@ -401,6 +401,12 @@ The substantive difference is that **HAL decides AT by guidance**
 wheeled AFV is not AT to HAL, is never promoted into `LArmorAT`, and sits in
 `LArmor` — which is absent from HAL's anti-armour pool.
 
+v4 (2026-10-18) has one exception to the scope: an aircraft armed only on its
+pylons. HAL's autofill counts config and turret magazines, not pylons, so it
+files one as unarmed lift (`RHQ_NCAir`, `RHQ_NCCargo`) whenever it sees the
+class before the seed lands, and HAL never sends it. Such a class is excluded
+from both (`RHQs_NCAir`, `RHQs_NCCargo`), never seeded.
+
 `LArmorAT` is a **promotion for light armour**, not a label for tank destroyers:
 HAL's Armor pool is `[airCAS, HArmorG, LArmorATG, ATInfG]`, so a tank is already
 in it via `HArmor` and adding it to `LArmorAT` too would double its weight.
@@ -608,7 +614,7 @@ its own, usually because a parent loads and reports it.
 | `HALReconLatch` | 1 | 193 | `hal-recon-latch-ready` | RydHQ_ReconDone, latched. |
 | `HALWaypointGuardFix` | 1 | 160 | `hal-waypoint-guard-ready` | HAL drops a capture waypoint when _wp0 is not defined. |
 | `HALDispatcherSoftArmorFix` | 1 | 244 | `hal-soft-armor-fix-ready` | Trucks drive up to tanks because only armour ever checks for armour. |
-| `HALTaxonomy` | 1 | 294 | `hal-taxonomy-ready` | One owner for "what does HAL think this vehicle is". |
+| `HALTaxonomy` | 4 | 423 | `hal-taxonomy-ready` | One owner for "what does HAL think this vehicle is". |
 | `ArtilleryScoot` | 1 | 252 | `artillery-scoot-ready` | Shoot and scoot. |
 | `CounterBattery` | 1 | 281 | `counter-battery-ready` | Counter-battery: working out where the shelling came from. |
 | `ArtilleryCertification` | 1 | 158 | `–` | _no in-source header_ |

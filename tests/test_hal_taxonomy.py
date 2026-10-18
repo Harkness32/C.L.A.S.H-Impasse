@@ -84,6 +84,9 @@ def test_it_only_speaks_for_the_buckets_it_declares():
     # so they stay with the autofill and must not appear in either list.
     declared = source[source.index("ITW_CLASH_HALTaxonomyPrimaries ="):
                       source.index("ITW_CLASH_HALTaxonomy_fnc_Log")]
+    # v4's one exception is declared on its own and only ever excluded (see
+    # the pylon-only aircraft tests below), so it is left out of this scan.
+    declared = re.sub(r'ITW_CLASH_HALTaxonomyPylonAirExclusions = \[[^\]]*\];', "", declared)
     for untouched in ("recon", "specFor", "Cargo", "Crew", "Support", "Other"):
         assert untouched not in declared, untouched
 
@@ -292,3 +295,58 @@ def test_it_is_wired_in_behind_the_usual_guard():
 
 def test_it_appears_in_the_preflight_manifest():
     assert '["ITW_CLASH_HALTaxonomy","hal taxonomy"' in text("ITW_CLASH_DebugPreflight.sqf")
+
+
+# --- v4: an aircraft armed only on its pylons ------------------------------
+#
+# Hark, 2026-10-17: "stub wing helicopters no longer move out". The air-idle
+# report had both GUER stub-wing Ghost Hawks on NCAirG and NCCargoG. HAL's
+# autofill counts the config magazines and top-level turrets' only, so a rack
+# of pylons reads as unarmed, and the Air seed only helps if it lands first.
+
+def hal_autofill() -> str:
+    return (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAC_fnc2.sqf").read_text(
+        encoding="utf-8", errors="ignore")
+
+
+def test_the_armed_test_mirrors_hals_own():
+    hal = hal_autofill()
+    # HAL's: config magazines plus each top-level turret's, less its flares.
+    assert '_mags = getArray (_vehClass2 >> "magazines") + _tMags;' in hal
+    assert "_isArmed = (count (_mags - _flareMags)) > 0;" in hal
+    assert "RHQ_NCAir pushBackUnique _veh;" in hal
+    flares = re.search(r"_flareMags = \[([^\]]*)\];", hal).group(1)
+    source = taxonomy()
+    ours = re.search(r"ITW_CLASH_HALTaxonomyHALFlareMagazines = \[([^\]]*)\];", source, re.S).group(1)
+    assert re.findall(r'"([^"]+)"', flares) == re.findall(r'"([^"]+)"', ours)
+    body = code_only(function_body(source, "ITW_CLASH_HALTaxonomy_fnc_PylonOnlyWeapons"))
+    assert 'getArray (_cfg >> "magazines")' in body
+    assert '("true" configClasses (_cfg >> "Turrets"))' in body
+    assert "if ((_halMags - ITW_CLASH_HALTaxonomyHALFlareMagazines) isNotEqualTo []) exitWith {[]};" in body
+    # Only then the rack: each pylon's default attachment.
+    assert '"TransportPylonsComponent" >> "Pylons"' in body
+    assert 'getText (_x >> "attachment")' in body
+
+
+def test_it_is_excluded_never_seeded():
+    source = taxonomy()
+    assert 'ITW_CLASH_HALTaxonomyPylonAirExclusions = ["NCAir","NCCargo"];' in source
+    body = code_only(function_body(source, "ITW_CLASH_HALTaxonomy_fnc_ArmPylonAir"))
+    assert '"RHQs_" + _x' in body
+    assert "RYD_WS_" not in body
+    # And HAL subtracts that list every situation report, whoever filed first.
+    sitrep = (ROOT / "NR6 Hal" / "addons" / "nr6_hal" / "HAL" / "HQSitRep.sqf").read_text(
+        encoding="utf-8", errors="ignore")
+    assert "_NCAir_class = RHQ_NCAir + RYD_WS_NCAir_class - RHQs_NCAir;" in sitrep
+    assert "_NCCargo_class = RHQ_NCCargo + RYD_WS_NCCargo_class - RHQs_NCCargo;" in sitrep
+
+
+def test_only_an_air_verdict_is_checked_and_it_is_logged():
+    sweep = code_only(function_body(taxonomy(), "ITW_CLASH_HALTaxonomy_fnc_Sweep"))
+    assert 'private _rack = if (_primary isEqualTo "Air") then {' in sweep
+    assert '"armed-pylon-air"' in sweep
+    advisory = sweep[sweep.index("ITW_CLASH_HALTaxonomyAdvisoryOnly"):]
+    gated = advisory[:advisory.index("fnc_Apply")]
+    assert '"would-arm-pylon-air"' in gated
+    assert "ArmPylonAir" not in gated
+    assert "ITW_CLASH_HALTaxonomyVersion = 4;" in taxonomy()

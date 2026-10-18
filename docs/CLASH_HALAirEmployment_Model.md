@@ -106,6 +106,31 @@ v4 answers all four (4.2, 4.3).
 
 v5 answers the last two (4.2).
 
+### 1.4 Whether HAL sends it at all (2026-10-18)
+
+Run 4 (2026-10-17): no stub-wing sortie at all, on either side; a GUER one hung
+at 48 m over its spawn for half an hour. The air-idle report
+(`ITW_CLASH_AirIdleDiag_fnc_Report`) on the next run named the gate: both GUER
+DAPs were on `RydHQ_NCAirG` and `RydHQ_NCCargoG`, which keep a group out of
+AttackAv (`HQOrders.sqf:159-213`). Fuel, damage, ammunition, crew and strength
+all passed.
+
+HAL files an unknown class once, the first situation report that sees it
+(`RYD_PresentRHQ`, `HAC_fnc2.sqf`): armed means a magazine other than flares in
+the config `magazines` or a top-level turret's. The DAP's weapons are all on
+pylons, so HAL calls it unarmed air with seats: `RHQ_NCAir` and `RHQ_NCCargo`.
+The taxonomy's `Air` seed keeps the autofill off a class only if it lands first,
+and its poll is 60 s. Run 2: spawned 4:57:25, seeded 4:58:00, and it flew eight
+sorties. Run 4: spawned 17:15:26, seeded 17:15:46, and HAL had got there first.
+
+Taxonomy v4 excludes such a class from NCAir and NCCargo (`RHQs_NCAir`,
+`RHQs_NCCargo`), which HAL subtracts at every situation report however the
+class was first filed, so the order no longer matters. It applies only to an
+aircraft whose every non-flare weapon is on its default rack: one HAL can see a
+gun on stays HAL's call (the curated door-gun Ghost Hawk stays a transport).
+Logged as `hal-taxonomy-armed-pylon-air` with the rack and the lists it was
+taken off. Until that first sweep (up to 60 s) HAL may still treat it as a lift.
+
 ## 2. Authority
 
 | Who | Decides |
