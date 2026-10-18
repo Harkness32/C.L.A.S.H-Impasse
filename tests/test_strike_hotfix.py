@@ -107,3 +107,36 @@ def test_which_jets_can_fly_it_is_said_once_per_class():
     raw = (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text(encoding="utf-8")
     assert "ITW_CLASH_SupportsStrikeVersion = 6;" in raw
     assert "guidedNeedsMotor=true" in raw
+
+
+# --------------------------------------- 3. lead time (Hark: "jets are fast")
+
+def test_every_strike_starts_eight_km_out():
+    raw = (MISSION / "ITW_CLASH_Supports.sqf").read_text(encoding="utf-8")
+    assert '["ITW_CLASH_SupportsSpawnDistanceJet",8000]' in raw
+    assert '["ITW_CLASH_SupportsSpawnDistanceBomb",8000]' in raw
+    spawn = function_body(CORE, "ITW_CLASH_Supports_fnc_SpawnDistance")
+    assert 'if (_kind isEqualTo "JET") exitWith {ITW_CLASH_SupportsSpawnDistanceJet};' in spawn
+    # Helicopters, transport planes and the UAV are unchanged.
+    assert '["ITW_CLASH_SupportsSpawnDistanceSlow",5000]' in raw
+    assert "jetSpawn=%47m projectionJet=%48" in raw
+
+
+def test_flight_time_is_projected_at_what_jets_fly():
+    raw = (MISSION / "ITW_CLASH_Supports.sqf").read_text(encoding="utf-8")
+    assert '["ITW_CLASH_SupportsSpeedJet",150]' in raw
+    speed = function_body(CORE, "ITW_CLASH_Supports_fnc_ProjectionSpeed")
+    assert 'case "JET": {ITW_CLASH_SupportsSpeedJet};' in speed
+
+
+def test_the_guided_scan_runs_from_five_km_to_minimum_range():
+    raw = (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text(encoding="utf-8")
+    assert '["ITW_CLASH_SupportsStrikeScanRange",5000]' in raw
+    assert '["ITW_CLASH_SupportsStrikeScanWindow",60]' in raw
+    # It starts where the missile's default lock reaches, inside the spawn.
+    max_range = int(re.search(r'"ITW_CLASH_SupportsStrikeMaxRange",(\d+)', raw).group(1))
+    assert max_range == 5000
+    body = function_body(STRIKE, "ITW_CLASH_SupportsStrike_fnc_GuidedPass")
+    assert '(_veh distance2D _report) <= ITW_CLASH_SupportsStrikeScanRange' in body
+    # Minimum range still ends it first.
+    assert 'if (_along < _minRange) exitWith {_ended = "inside-min-range"};' in body

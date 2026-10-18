@@ -603,8 +603,8 @@ The setup delay is varied per request (45 to 120 s) and never announced.
 ### 9.1 Common flight rules
 
 - Aircraft spawn **after** the setup delay, in flight, on the bearing from the
-  side's origin to the task, always the full 4 km (jets) or 5 km (helicopters,
-  transport planes) short of it, so a strike has its run-in even when our
+  side's origin to the task, always the full 8 km (jets, since 2026-10-18; 4 km
+  before, 6 km for the bomb pass) or 5 km (helicopters, transport planes) short of it, so a strike has its run-in even when our
   airfield is next to the target. That point lies beyond our airfield, in our own
   airspace. If it would fall off the map, the bearing turns in 15 degree steps up
   to 90 either way, and only then is the point clamped 500 m inside the edge. A
@@ -694,8 +694,8 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   where the bomb leaves (5 m under the jet) and the jet's speed, with no drag,
   times 1.08 since v5 (`ITW_CLASH_SupportsStrikeReleaseScale`). Every bomb
   leaves with the jet's velocity and arcs forward like a real stick.
-- **v5, the bomb pass:** spawns 6 km out (other jets 4 km) and is held to
-  550 km/h, so an acquisition has time to become a line the jet can fly.
+- **v5, the bomb pass:** spawns 6 km out (other jets 4 km; every strike 8 km since
+  2026-10-18) and is held to 550 km/h, so an acquisition has time to become a line the jet can fly.
 - **Line-up**, about 3 km out: the latest report is read, the uncertainty limit
   and danger close are checked, and the jet's line is pointed through the new
   aim. The aircraft is steered onto the target; bombs are never moved onto it.
@@ -768,7 +768,7 @@ The setup delay is varied per request (45 to 120 s) and never announced.
   did not get itself, but it is only as good as each jet's sensors and crew
   (13, item 14).
 - **Guided pass, with on-site scan:**
-  1. Inbound with radar on. Once within 3 km, read the jet's own
+  1. Inbound with radar on. Once within 5 km (3 km before 2026-10-18), read the jet's own
      `getSensorTargets` and its crew's known targets for enemy ground vehicles
      inside the scan radius around the reported position. Scan radius = R
      projected to arrival, capped at 500 m.
@@ -795,7 +795,7 @@ The setup delay is varied per request (45 to 120 s) and never announced.
      (`missileLockMinDistance` and `missileLockMaxDistance`, 800 and 5000 m when
      its config has none), within 40 degrees of the nose, terrain line of sight.
      The scan ends once the report is inside minimum range.
-  5. **Nothing valid** within a 20 s window, or before minimum range:
+  5. **Nothing valid** before minimum range (a 60 s ceiling; 20 s before 2026-10-18):
      `BREAKOFF`, egress, despawn, refund.
 - **First live releases (2026-10-17):** the Black Wasp acquired the ground's
   IFV by sight 203 m from a stale report (R 1245 m), re-lined 2.37 km out at
@@ -1115,7 +1115,8 @@ All placeholders.
 | Corridor HOT or CONTESTED multiplier | 0.5 |
 | Holding discount | 0.75 |
 | Setup delay | 45 to 120 s |
-| Spawn distance | Jets 4 km, the bomb pass 6 km, helicopters and transport planes 5 km |
+| Spawn distance | Jets 8 km, the bomb pass included (2026-10-18; 4 and 6 km before), helicopters and transport planes 5 km |
+| Flight-time projection | Jets 150 m/s (2026-10-18; 110 before), what they fly: the Wipeout 555 km/h, the bomb pass held to 550 |
 | Save pull | 0.5 times its weight by bank fill |
 | UAV killbox | Lost within 60 s of arriving; 1.5 km; 15 min |
 | UAV altitude, loiter, relaunch | 2000 m AGL (rotary 500 m), 15 min, 300 s |
@@ -1125,7 +1126,7 @@ All placeholders.
 | Vehicle delivery | Carrier `B_T_VTOL_01_vehicle_F` first for both sides; cars, APCs, tanks that can be carried; 200 m; 70 m/s; release 2.5 s short; 4 vehicles tried; crew counted 3 |
 | Troop plane | `B_T_VTOL_01_infantry_F` for a side that lists none |
 | Bite-back | Pot of 1 wave, starts full, 20 min a wave; 20 min a point; flag floor 0.9; 2 squads and a vehicle; 15 to 45 s scramble |
-| Guided scan | Within 3 km, radius cap 500 m, window 20 s |
+| Guided scan | Within 5 km down to the missile's minimum range, radius cap 500 m, 60 s ceiling (2026-10-18; 3 km and 20 s before) |
 | Bomb acquisition | Reveal 1.5; a look every 1 s from spawn; scan radius R, 150 to 500 m; re-line with 10 s or more to the final check when the aim moved over 25 m; velocity from fixes 4 to 10 s apart; lead cap 250 m |
 | Bomb pass speed, release scale | 550 km/h; lead times 1.08 |
 | Strike heights | Bomb pass 250 m, carpet 400 m, guided 600 m |

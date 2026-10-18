@@ -120,10 +120,14 @@ ITW_CLASH_SupportsStrikeReleaseScale = missionNamespace getVariable ["ITW_CLASH_
 // acquire, and to turn onto what it acquired.
 ITW_CLASH_SupportsStrikeBombKph = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeBombKph",550];
 ITW_CLASH_SupportsStrikeImpactLog = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeImpactLog",true];
-ITW_CLASH_SupportsStrikeScanRange = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanRange",3000];
+// v6 (2026-10-18, 2A): the guided scan starts at 5 km, the default reach of
+// the missile's lock (StrikeMaxRange), and runs until the report is inside
+// the missile's minimum range; it used to start at 3 km and stop after 20 s,
+// about 14 s of search at 555 km/h. The window is now only a ceiling.
+ITW_CLASH_SupportsStrikeScanRange = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanRange",5000];
 ITW_CLASH_SupportsStrikeScanCap = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanCap",500];
 ITW_CLASH_SupportsStrikeScanMin = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanMin",150];
-ITW_CLASH_SupportsStrikeScanWindow = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanWindow",20];
+ITW_CLASH_SupportsStrikeScanWindow = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeScanWindow",60];
 ITW_CLASH_SupportsStrikeShots = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeShots",2];
 // Launch envelope. The missile's own lock distances are used when its config
 // has them; these are the fallbacks. The cone is half-angle off the nose.

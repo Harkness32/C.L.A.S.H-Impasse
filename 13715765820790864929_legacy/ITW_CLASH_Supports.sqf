@@ -254,10 +254,15 @@ ITW_CLASH_SupportsThreatProximity = missionNamespace getVariable ["ITW_CLASH_Sup
 
 ITW_CLASH_SupportsDelayMin = missionNamespace getVariable ["ITW_CLASH_SupportsDelayMin",45];
 ITW_CLASH_SupportsDelayMax = missionNamespace getVariable ["ITW_CLASH_SupportsDelayMax",120];
-ITW_CLASH_SupportsSpawnDistanceJet = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceJet",4000];
+// 2026-10-18 (Hark: "jets are fast", 1A): every strike starts 8 km out. A
+// jet spawned in flight spends its first seconds settling onto its line, and
+// from 4 km the guided pass began scanning 6.5 s after it appeared (the
+// Wipeout flew 555 km/h); now it has about 32 s first.
+ITW_CLASH_SupportsSpawnDistanceJet = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceJet",8000];
 // v5: the bomb pass starts further out, so what it acquires can still be
-// turned onto: at 200 m/s the 4 km start left about 5 s (2026-10-17).
-ITW_CLASH_SupportsSpawnDistanceBomb = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceBomb",6000];
+// turned onto: at 200 m/s the 4 km start left about 5 s (2026-10-17). 6 km
+// then, 8 km with the others since 2026-10-18.
+ITW_CLASH_SupportsSpawnDistanceBomb = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceBomb",8000];
 /*
     v5. A UAV lost within KillboxSeconds of reaching its station marks where
     it died as a killbox for its side: no UAV is sent, or retasked, within
@@ -270,7 +275,10 @@ ITW_CLASH_SupportsUAVKillboxDuration = missionNamespace getVariable ["ITW_CLASH_
 if (isNil "ITW_CLASH_SupportsUAVKillboxes") then {ITW_CLASH_SupportsUAVKillboxes = createHashMap};
 ITW_CLASH_SupportsSpawnDistanceSlow = missionNamespace getVariable ["ITW_CLASH_SupportsSpawnDistanceSlow",5000];
 // For projecting uncertainty to release only; the aircraft fly at their own.
-ITW_CLASH_SupportsSpeedJet = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedJet",110];
+// Jets 150 m/s since 2026-10-18 (3A): what they fly, the guided Wipeout 555
+// km/h and the bomb pass held to 550. At 110 the 8 km run read as 73 s and
+// a moving vehicle as 290 m further off than it would be.
+ITW_CLASH_SupportsSpeedJet = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedJet",150];
 ITW_CLASH_SupportsSpeedHeli = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedHeli",60];
 ITW_CLASH_SupportsSpeedPlane = missionNamespace getVariable ["ITW_CLASH_SupportsSpeedPlane",80];
 // A spawn point is kept this far inside the map edge.
@@ -2637,7 +2645,7 @@ ITW_CLASH_SupportsAirborneMinSquadCore = missionNamespace getVariable ["ITW_CLAS
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true dropWallet=%35/min dropCap=%36 dropCadence=%37/%38/%39min carrier=%40 carrierFirst=preferred planeTroop=%46 deliveryTiers=car,apc,tank canBeTransported=true biteBack=%41 biteBackPot=%42wave/%43min biteBackCooldown=%44s biteBackSquads=%45 lanes=RECON,COMMIT,DROP,VEHICLE,BITE_DROP,BITE_VEHICLE picks=strike,drop,vehicle delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true dropWallet=%35/min dropCap=%36 dropCadence=%37/%38/%39min carrier=%40 carrierFirst=preferred planeTroop=%46 deliveryTiers=car,apc,tank canBeTransported=true biteBack=%41 biteBackPot=%42wave/%43min biteBackCooldown=%44s biteBackSquads=%45 lanes=RECON,COMMIT,DROP,VEHICLE,BITE_DROP,BITE_VEHICLE picks=strike,drop,vehicle delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true jetSpawn=%47m projectionJet=%48",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -2683,6 +2691,8 @@ diag_log format [
     ITW_CLASH_SupportsBiteBackRefill,
     ITW_CLASH_SupportsBiteBackCooldown,
     ITW_CLASH_SupportsBiteBackSquads,
-    ITW_CLASH_SupportsPlaneTroopClasses joinString "/"
+    ITW_CLASH_SupportsPlaneTroopClasses joinString "/",
+    ITW_CLASH_SupportsSpawnDistanceJet,
+    ITW_CLASH_SupportsSpeedJet
 ];
 true

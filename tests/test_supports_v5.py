@@ -129,7 +129,8 @@ def test_no_uav_is_sent_or_retasked_into_a_killbox():
 
 
 def test_the_bomb_pass_starts_further_out_and_slower():
-    assert '["ITW_CLASH_SupportsSpawnDistanceBomb",6000]' in CORE
+    # 6 km in v5; 8 km with every strike since 2026-10-18 (Hark 1A).
+    assert '["ITW_CLASH_SupportsSpawnDistanceBomb",8000]' in CORE
     spawn = function_body(CORE, "ITW_CLASH_Supports_fnc_SpawnDistance")
     assert 'if (_flavor isEqualTo "BOMB") exitWith {ITW_CLASH_SupportsSpawnDistanceBomb};' in spawn
     assert '["ITW_CLASH_SupportsStrikeBombKph",550]' in STRIKE
