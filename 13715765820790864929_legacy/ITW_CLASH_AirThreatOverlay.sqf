@@ -180,9 +180,6 @@ if (isServer && {
             private _guided = [_ammoName] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided;
             private _range = getNumber (_ammo >> "maxRange");
             _range = _range max getNumber (_ammo >> "missileLockMaxDistance");
-            if (_guided) then {
-                _range = _range max getNumber (_ammo >> "maxControlRange");
-            };
             {
                 private _cfg = configFile >> "CfgWeapons" >> _x;
                 // A weapon may support many magazines; ignore unrelated guns.
@@ -192,6 +189,11 @@ if (isServer && {
                     _range = _range max getNumber (_cfg >> _x >> "maxRange");
                 } forEach getArray (_cfg >> "modes");
             } forEach _weapons;
+            // Manual guidance range is useful only as a fallback; it is not
+            // evidence of a realistic missile engagement distance by itself.
+            if (_guided && {_range < 2000}) then {
+                _range = _range max getNumber (_ammo >> "maxControlRange");
+            };
             // Modded missiles sometimes omit range properties or inherit a
             // nonsensical few hundred metres from a generic CfgAmmo class.
             if (_guided && {_range < 2000}) then {
@@ -293,7 +295,9 @@ if (isServer && {
         {
             private _entry = _memory get _x;
             _entry params ["_pos","_radius","_seenAt","_category","_ttl","_veh"];
-            if (isNull _veh || {!alive _veh} || {(time - _seenAt) > _ttl}) then {
+            // Loss of the actual hull is not omniscient destruction intel:
+            // retain its old warning until evidence naturally expires.
+            if ((time - _seenAt) > _ttl) then {
                 _memory deleteAt _x;
                 continue
             };
