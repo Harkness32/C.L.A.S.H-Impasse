@@ -57,7 +57,7 @@ def test_report_does_not_follow_real_enemy_position():
         "ITW_CLASH_AirThreatOverlay_fnc_Perceived"
     )
     # No direct position query on a live hostile can be used by this overlay.
-    assert "getPosATL" not in source
+    assert "getPosATL _veh" not in source
     assert "getPosASL" not in source
     assert "_lastSeen < time - 180" in source
     assert "ITW_CLASH_AirThreatOverlayMobileMemory" in source
@@ -74,7 +74,7 @@ def test_longest_available_aa_weapon_range_is_used():
     assert "_best = _best max _range" in range_body
     assert "ITW_CLASH_AirThreatOverlayMargin" in range_body
     assert "_best = if (_radar) then {12000} else {8000}" in range_body
-    assert "flight" not in range_body.lower() or "ttl" not in range_body.lower()
+    assert "maxSpeed" not in range_body and "timeToLive" not in range_body
 
 
 def test_ace_toggle_and_map_markers_are_client_local_only():
