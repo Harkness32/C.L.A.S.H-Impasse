@@ -111,6 +111,7 @@ if (hasInterface && {
                         {true},
                         {},[],{[0,0,0]},2,[false,false,false,false,false],
                         {
+                            params ["_target","_player","_params","_actionData"];
                             _actionData set [
                                 1,if (ITW_CLASH_AirThreatOverlayShown) then {
                                     "Hide AirThreats"
@@ -149,13 +150,15 @@ if (isServer && {
     // matching weapon modes. No arbitrary "SPAA=3.5km" ceiling. Flight speed
     // times TTL is NOT treated as a reliable engagement range.
     ITW_CLASH_AirThreatOverlay_fnc_Range = {
-        params ["_veh"];
+        params ["_veh",["_knownAA",false]];
         if (isNull _veh || {_veh isKindOf "Air"}) exitWith {0};
 
         private _profile = [_veh] call ITW_CLASH_AirPicture_fnc_WeaponProfile;
         private _radar = _profile getOrDefault ["radar",false];
         private _loaded = [];
-        {_loaded pushBackUnique (_x#0)} forEach (magazinesAllTurrets _veh);
+        {
+            if ((_x#2) > 0) then {_loaded pushBackUnique (_x#0)};
+        } forEach (magazinesAllTurrets _veh);
         if (_veh isKindOf "CAManBase") then {
             {_loaded pushBackUnique _x} forEach magazines _veh;
         };
@@ -171,7 +174,9 @@ if (isServer && {
             private _ammoName = getText (configFile >> "CfgMagazines" >> _mag >> "ammo");
             if (_ammoName == "") then {continue};
             private _ammo = configFile >> "CfgAmmo" >> _ammoName;
-            if (getNumber (_ammo >> "airLock") <= 1) then {continue};
+            // Some sensor-driven SAM mods omit legacy airLock. HAL\'s own
+            // AA threat bucket is independent corroboration for their role.
+            if (getNumber (_ammo >> "airLock") <= 1 && {!_knownAA}) then {continue};
             private _guided = [_ammoName] call ITW_CLASH_AirPicture_fnc_AmmoIsGuided;
             private _range = getNumber (_ammo >> "maxRange");
             _range = _range max getNumber (_ammo >> "missileLockMaxDistance");
@@ -196,6 +201,11 @@ if (isServer && {
             _best = _best max _range;
         } forEach _loaded;
         // A range of zero means we have no evidence of AA armament.
+        if (_best <= 0 && {_knownAA}) then {
+            // An identified AA system with unreadable mod ammunition must
+            // not be depicted as safe at 2 km. This is a coarse warning.
+            _best = if (_radar) then {12000} else {8000};
+        };
         if (_best <= 0) exitWith {0};
         (_best * ITW_CLASH_AirThreatOverlayMargin) max 1000 min 60000
     };
@@ -232,6 +242,7 @@ if (isServer && {
         private _memory = ITW_CLASH_AirThreatOverlayMemory getOrDefault [_key,createHashMap];
         ITW_CLASH_AirThreatOverlayMemory set [_key,_memory];
         private _observers = [_hq] call ITW_CLASH_AirPicture_fnc_Observers;
+        private _aaGroups = _hq getVariable ["RydHQ_AAthreat",[]];
         private _candidates = +(_hq getVariable ["RydHQ_KnEnemies",[]]);
         // Existing denial memory supplies known identities, NOT true positions.
         {
@@ -248,7 +259,9 @@ if (isServer && {
             if (_id in _processed) then {continue};
             _processed pushBack _id;
 
-            private _range = [_veh] call ITW_CLASH_AirThreatOverlay_fnc_Range;
+            private _crewGroup = group effectiveCommander _veh;
+            private _knownAA = _crewGroup in _aaGroups || {group _unit in _aaGroups};
+            private _range = [_veh,_knownAA] call ITW_CLASH_AirThreatOverlay_fnc_Range;
             if (_range <= 0) then {continue};
             private _intel = [_veh,_observers] call ITW_CLASH_AirThreatOverlay_fnc_Perceived;
             if (_intel isEqualTo [] && {_unit != _veh}) then {
