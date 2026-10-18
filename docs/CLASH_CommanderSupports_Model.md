@@ -1,6 +1,6 @@
 # C.L.A.S.H. Commander Supports Model
 
-Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed; v6 gives the guided missile its own danger margin, and the recon UAV (v4) reports everything in its footprint that no building covers; v7 splits the drops into their own families and wallet, makes vehicle delivery its own support carried by a Blackfish, adds bite-back waves for points being lost, and console tests for all of it; v8 fixes what the first console tests showed (the carrier, what is delivered, the troop plane, passengers leaving early).** Phase 0 (per-side air-loss closures, hard-kill
+Status: **built; live by default since supports v3; v4 lets the bomb pass take lone targets and acquire on site; v5 doubles the strike tempo and fixes what the first live strikes showed; v6 gives the guided missile its own danger margin, and the recon UAV (v4) reports everything in its footprint that no building covers; v7 splits the drops into their own families and wallet, makes vehicle delivery its own support carried by a Blackfish, adds bite-back waves for points being lost, and console tests for all of it; v8 fixes what the first console tests showed (the carrier, what is delivered, the troop plane, passengers leaving early); strike v6 and a v8 hotfix (2026-10-18) put the commanders back in the air and keep bombs out of the guided pass.** Phase 0 (per-side air-loss closures, hard-kill
 fighter denial) shipped in `448324b`; see `COMMANDER_SUPPORTS_PHASE0.md`.
 
 Every number in this document is a placeholder for calibration, not a decision.
@@ -780,6 +780,13 @@ The setup delay is varied per request (45 to 120 s) and never announced.
      with a seeker other than air-to-air and the armour flag on the missile or
      its warhead, and the weapon that fires that magazine on that turret or
      pylon (Strike v3 keeps its own reader for when the profile is missing).
+     **v6: and a motor** (`thrust` or `thrustTime` above 0). Arma simulates a
+     bomb as a missile without thrust (`Bo_Mk82`: `shotMissile`, 0, 0), so on
+     2026-10-18 the Black Wasp and Wipeout cluster variants qualified and
+     launched CBU-85s from missile range at 600 m: the Rooikat lived. Which
+     jets qualify, and on which magazine, is logged once per class
+     (`supports-strike-guided-class`); a side whose jets carry no powered
+     guided anti-armour round has no guided pass (`NO_GUIDED_WEAPON`).
      `fireAtTarget`, and if that returns false, the weapon's missile spawned at
      the jet and given the target with `setMissileTarget`. That fallback is
      legitimate only because the jet acquired the target itself.
@@ -1170,7 +1177,7 @@ From the audit, waiting on a design call; nothing in the build presumes them:
 | `ITW_CLASH_RackProfile.sqf` | What a vehicle can fire, read from its live rack; the guided pass reads its weapon through it (see `CLASH_HALAirEmployment_Model.md`) |
 | `ITW_CLASH_Supports.sqf` (v8) | Registry, ledger and its three wallets, the three pools and picks, bite-back, direct picks, admission, lifecycle, settlement, shared flight code; live by default; the bomb's own floor, carpet's cluster minimum, the acquiring flavors, the guided danger margin |
 | `ITW_CLASH_SupportsDebug.sqf` (v1) | Console tests: a drop, a delivery, a wave, the wallets, filling a wallet (section 17) |
-| `ITW_CLASH_SupportsStrike.sqf` (v5) | Bomb pass with on-site acquisition, guided pass with the on-site scan, carpet; the break-off turn and its geometry |
+| `ITW_CLASH_SupportsStrike.sqf` (v6) | Bomb pass with on-site acquisition, guided pass with the on-site scan, carpet; the break-off turn and its geometry |
 | `ITW_CLASH_SupportsUAV.sqf` (v4) | The recon UAV; marks a killbox on a quick loss; the footprint, its cover test and its reports; the camera |
 | `ITW_CLASH_DualHALCheckbook.sqf` | The players' commander's Info Markers |
 | `ITW_CLASH_SupportsAirborne.sqf` (v3) | Helicopter and plane drops, passengers held aboard until the jump, vehicle delivery carried inside its aircraft, the hand-offs |
@@ -1230,6 +1237,16 @@ reasons counted). `supports-test-launched` names the target: its key, class,
 size, worth, aim and distance from the point, how many candidates there were,
 and the weight. Only the striking side's troops count as friendlies, so a GUER
 test near you can hit you.
+
+**The v8 regression (2026-10-18 run).** The strike test first passed its
+point as a target's fourth element. In a commander's own assessment that slot
+is the objective's picture entry, a hashmap, so the first assessment failed
+("Type HashMap, expected Array", `ITW_CLASH_Supports.sqf:1323`) and the error
+ended COLOSSUS's loop for both sides: no commander support of any kind, and no
+COLOSSUS order after the first, for the whole 90 minutes. The point now rides
+on the test context (`at`). A refused test also names a cluster a flavor
+values at zero (`NOT_FOR_LEAD_ONLY`: a bomb takes no lead-only cluster), where
+it used to say only "nothing it could strike".
 
 `Fill` is the test of the real decision: the next assessment's drop and vehicle
 pools can afford everything, so what the commander picks, and why the rest is

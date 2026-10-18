@@ -281,8 +281,10 @@ ITW_CLASH_SupportsDebug_fnc_Strike = {
     private _context = [_side] call ITW_CLASH_Supports_fnc_MakeContext;
     if (count _context == 0) exitWith {[format ["no commander for %1",_side]] call ITW_CLASH_SupportsDebug_fnc_Say; ""};
     _context set ["test",true];
+    // The point rides on the context, not in the target (see StrikeCandidates).
+    _context set ["at",_point];
     private _reason = if (_objective >= 0 && {[_side,_objective] call ITW_CLASH_Supports_fnc_HeldBy}) then {"HOLD"} else {"TAKE"};
-    private _candidates = [_context,[[_objective,_reason,1,_point]],[_flavor]] call ITW_CLASH_Supports_fnc_StrikeCandidates;
+    private _candidates = [_context,[[_objective,_reason,1]],[_flavor]] call ITW_CLASH_Supports_fnc_StrikeCandidates;
     if (_candidates isEqualTo []) exitWith {
         private _counts = createHashMap;
         {

@@ -187,7 +187,10 @@ def test_a_test_strike_is_the_commanders_own_pick_near_the_point():
     # Hark 1A: the pool's own clustering and scoring, centred on the point.
     strike = function_body(DEBUG, "ITW_CLASH_SupportsDebug_fnc_Strike")
     assert '_context set ["test",true];' in strike
-    assert "[_context,[[_objective,_reason,1,_point]],[_flavor]] call ITW_CLASH_Supports_fnc_StrikeCandidates;" in strike
+    # The point rides on the context: a target's fourth slot is the
+    # assessment's picture entry (2026-10-18, see test_strike_hotfix.py).
+    assert '_context set ["at",_point];' in strike
+    assert "[_context,[[_objective,_reason,1]],[_flavor]] call ITW_CLASH_Supports_fnc_StrikeCandidates;" in strike
     assert '([_candidates,[],{_x get "weight"},"DESCEND"] call BIS_fnc_sortBy)#0' in strike
     for needle in ['_pick set ["wallet","TEST"];', '_pick set ["price",0];', '_pick set ["test",true];',
                    "[_context,_pick] call ITW_CLASH_Supports_fnc_Admit"]:
@@ -200,7 +203,8 @@ def test_a_test_strike_is_the_commanders_own_pick_near_the_point():
 def test_the_strike_pool_takes_a_point_and_flavors_and_a_test_skips_only_the_economy():
     body = function_body(CORE, "ITW_CLASH_Supports_fnc_StrikeCandidates")
     assert 'params ["_context","_targets",["_flavors",ITW_CLASH_SupportsStrikeFlavors]];' in body
-    assert '_x params ["_index","_reason","_urgency",["_at",[]]];' in body
+    assert '_x params ["_index","_reason","_urgency"];' in body
+    assert 'private _at = if (_test) then {_context getOrDefault ["at",[]]} else {[]};' in body
     assert "} forEach _flavors;" in body
     assert "if (!_test) then {[_context,_clusters] call ITW_CLASH_Supports_fnc_CountCrossings};" in body
     assert 'if (!_test && {(_ledger get "cash") < ([_flavor,_reason] call ITW_CLASH_Supports_fnc_Price)}) then {' in body

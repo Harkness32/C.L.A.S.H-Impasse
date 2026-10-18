@@ -1306,10 +1306,16 @@ ITW_CLASH_Supports_fnc_Candidate = {
     objective's centre.
 
     v8: a console test (a context marked test) may give a point of its own
-    for an objective's centre (a fourth element) and the flavors to ask
-    about, and asks none of the economic questions: no price, no denied
-    corridor, and the crossing count, which is the assessments' own record,
-    is left alone.
+    for an objective's centre and the flavors to ask about, and asks none of
+    the economic questions: no price, no denied corridor, and the crossing
+    count, which is the assessments' own record, is left alone.
+
+    The test's point travels on the context ("at"), never in a target. v8
+    first read it as a target's fourth element, which in a commander's own
+    assessment is the objective's picture entry, a hashmap: "Type HashMap,
+    expected Array" on the first assessment, and the error ended COLOSSUS's
+    loop for both sides (2026-10-18 run: no support of any kind for 90
+    minutes, both wallets full the whole time).
 */
 ITW_CLASH_Supports_fnc_StrikeCandidates = {
     params ["_context","_targets",["_flavors",ITW_CLASH_SupportsStrikeFlavors]];
@@ -1320,7 +1326,8 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
     private _objectives = [];
     private _centers = [];
     {
-        _x params ["_index","_reason","_urgency",["_at",[]]];
+        _x params ["_index","_reason","_urgency"];
+        private _at = if (_test) then {_context getOrDefault ["at",[]]} else {[]};
         private _center = if (_at isNotEqualTo []) then {[_at#0,_at#1,0]} else {[_index] call ITW_CLASH_Supports_fnc_ObjectivePos};
         if (_center isEqualTo []) then {continue};
         _objectives pushBack [_index,_reason,_urgency,_center,[_hq,_center] call ITW_CLASH_Supports_fnc_Committed];
@@ -1347,7 +1354,11 @@ ITW_CLASH_Supports_fnc_StrikeCandidates = {
                 _base = 2;
             };
             // Zero is impossible, not unlikely: no candidate, nothing to log.
-            if (_base <= 0) then {continue};
+            // A console test says it, so "nothing it could strike" has a why.
+            if (_base <= 0) then {
+                if (_test) then {[_context,_flavor,-1,_targetKey,"NOT_FOR_" + _class] call ITW_CLASH_Supports_fnc_Exclude};
+                continue
+            };
 
             private _gate = [_context,_flavor] call ITW_CLASH_Supports_fnc_FlavorGate;
             if (_gate isNotEqualTo "") then {

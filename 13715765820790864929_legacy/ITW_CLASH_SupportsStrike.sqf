@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsStrikeStarted = true;
-ITW_CLASH_SupportsStrikeVersion = 5;
+ITW_CLASH_SupportsStrikeVersion = 6;
 ITW_CLASH_SupportsStrikeReady = false;
 
 /*
@@ -163,9 +163,19 @@ ITW_CLASH_SupportsStrike_fnc_Log = {
 // The rack profile is the one reader for this since v3: it also asks for a
 // seeker or manual guidance, so an unguided rocket flagged for armour is no
 // longer a "guided" weapon. The body below is its fallback.
+//
+// v6: and it has a motor. Arma simulates a bomb as a missile without thrust
+// (Bo_Mk82: shotMissile, thrust 0, thrustTime 0), so a laser or cluster bomb
+// with an armour flag passed as a guided missile. On 2026-10-18 the guided
+// pass flew the Black Wasp and Wipeout cluster variants and launched their
+// CBU-85s with fireAtTarget from missile range, 600 m up: the Rooikat it was
+// aimed at lived. The pass fires from standoff, which only a powered round
+// can reach; bombs are the bomb pass's.
 ITW_CLASH_SupportsStrike_fnc_IsGuidedAntiArmor = {
     params ["_ammo"];
     if (_ammo isEqualTo "") exitWith {false};
+    private _motor = configFile >> "CfgAmmo" >> _ammo;
+    if ((getNumber (_motor >> "thrust")) <= 0 && {(getNumber (_motor >> "thrustTime")) <= 0}) exitWith {false};
     if (!isNil "ITW_CLASH_Rack_fnc_IsGuidedAntiArmour") exitWith {
         [_ammo] call ITW_CLASH_Rack_fnc_IsGuidedAntiArmour
     };
@@ -192,10 +202,14 @@ ITW_CLASH_SupportsStrike_fnc_ClassGuided = {
         private _attachment = getText (_x >> "attachment");
         if (_attachment isNotEqualTo "") then {_magazines pushBack _attachment};
     } forEach ("isClass _x" configClasses (_config >> "Components" >> "TransportPylonsComponent" >> "Pylons"));
-    private _guided = (_magazines findIf {
+    private _found = _magazines findIf {
         [getText (configFile >> "CfgMagazines" >> _x >> "ammo")] call ITW_CLASH_SupportsStrike_fnc_IsGuidedAntiArmor
-    }) >= 0;
+    };
+    private _guided = _found >= 0;
     ITW_CLASH_SupportsStrikeGuidedClasses set [_class,_guided];
+    // v6: once per class, which jets can fly the guided pass and with what.
+    ["guided-class",[_class,_guided,if (_guided) then {_magazines#_found} else {""}]] call
+        ITW_CLASH_SupportsStrike_fnc_Log;
     _guided
 };
 
@@ -1131,7 +1145,7 @@ private _bombConfig = configFile >> "CfgAmmo" >> ITW_CLASH_SupportsStrikeBombCla
 
 ITW_CLASH_SupportsStrikeReady = true;
 diag_log format [
-    "CLASH BOOT | supports-strike-ready | version=%1 bomb=%2x%3 spacing=%4m heights=%5/%6/%7 carpet=21x%8m/%9m lanes crossLimit=%10 scan=%11m cap=%12m window=%13s shots=%14 lineUpAt=%15m skip=%16m bias=%17m fireCone=%18 releaseByFallTime=true releaseEachFrame=true bombsAlwaysAtJet=true impactLog=%19 bombAcquires=%20 reveal=%21 reline=%22s/%23m lead=%24s/%25s/%26m crossLimitBomb=%27m releaseScale=%28 bombKph=%29 breakoffTurnsAway=true",
+    "CLASH BOOT | supports-strike-ready | version=%1 bomb=%2x%3 spacing=%4m heights=%5/%6/%7 carpet=21x%8m/%9m lanes crossLimit=%10 scan=%11m cap=%12m window=%13s shots=%14 lineUpAt=%15m skip=%16m bias=%17m fireCone=%18 releaseByFallTime=true releaseEachFrame=true bombsAlwaysAtJet=true impactLog=%19 bombAcquires=%20 reveal=%21 reline=%22s/%23m lead=%24s/%25s/%26m crossLimitBomb=%27m releaseScale=%28 bombKph=%29 breakoffTurnsAway=true guidedNeedsMotor=true",
     ITW_CLASH_SupportsStrikeVersion,
     ITW_CLASH_SupportsStrikeBombClass,
     ITW_CLASH_SupportsStrikeBombCount,

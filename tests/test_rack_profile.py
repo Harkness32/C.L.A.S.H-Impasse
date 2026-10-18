@@ -168,7 +168,8 @@ def test_the_guided_pass_reads_through_the_rack():
     assert "[_ammo] call ITW_CLASH_Rack_fnc_IsGuidedAntiArmour" in guided
     weapon = function_body(strike, "ITW_CLASH_SupportsStrike_fnc_GuidedWeapon")
     assert "([_veh,_magazine,_turret] call ITW_CLASH_Rack_fnc_WeaponFor)#0" in weapon
-    assert "ITW_CLASH_SupportsStrikeVersion = 5;" in (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text()
+    # v6 (2026-10-18) added the motor rule in front of the rack call.
+    assert int(re.search(r"ITW_CLASH_SupportsStrikeVersion = (\d+);", (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text()).group(1)) >= 5
 
 
 def test_it_boots_before_its_readers():
