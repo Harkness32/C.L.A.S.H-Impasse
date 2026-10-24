@@ -96,7 +96,7 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeMedevac = {
     private _demandId = [
         "MEDEVAC","MEDEVAC_SEVERE","MEDEVAC_SEVERE|" + str _targetGroup,
         _hq,_casualty,
-        "HAL MEDEVAC: Casualty Extraction",
+        "CSAR: Casualty Extraction",
         format ["HAL reports severe casualties in %1. Reach the casualty position, evacuate the surviving severe casualties, and return them to a live friendly base.",_name],
         "Acquire any living movable vehicle with sufficient passenger capacity for the evacuees.",
         getPosATL _casualty

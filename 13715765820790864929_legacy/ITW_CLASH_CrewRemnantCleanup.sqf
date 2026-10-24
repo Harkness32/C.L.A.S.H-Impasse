@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_CrewRemnantCleanupStarted",false]) exitWith {true};
 ITW_CLASH_CrewRemnantCleanupStarted = true;
-ITW_CLASH_CrewRemnantCleanupVersion = 2;
+ITW_CLASH_CrewRemnantCleanupVersion = 3;
 ITW_CLASH_CrewRemnantGrace = missionNamespace getVariable [
     "ITW_CLASH_CrewRemnantGrace",20
 ];
@@ -100,6 +100,42 @@ ITW_CLASH_CrewRemnant_fnc_IsReserved = {
     || {_group getVariable ["ITW_CLASH_ReconstitutionTransit",false]}
     || {_group getVariable ["ITW_CLASH_RecoveryOwned",false]}
     || {_group getVariable ["itwDelivery",false]}
+    // v3: CSAR holds a crew while a player can still come for it. CSAR only
+    // asks; this module is still the only thing that deletes one.
+    || {_group getVariable ["ITW_CLASH_CSAR",false]}
+};
+
+/*
+    v3: a downed crew is not AI work.
+
+    ITW_CLASH_Withdrawals is the queue AI CASEVAC and ground MEDEVAC take their
+    jobs from, and GTFO writes an entry for any group HAL puts in
+    RydHQ_Exhausted - nothing there excludes a vehicle crew. So in the seconds
+    between a vehicle dying and this module quarantining its crew, HAL can hand
+    the crew a withdrawal and an AI helicopter can be sent to recover it.
+    Rescuing a crew is player work (CSAR) or it does not happen, so the entry
+    goes when the crew is quarantined.
+
+    Not while an extraction already owns the crew: those two states mean an
+    aircraft is committed, and they are also what keeps this module off the
+    crew, so dropping the entry under them would strand the flight.
+*/
+ITW_CLASH_CrewRemnant_fnc_DropWithdrawal = {
+    params ["_group"];
+    if (isNull _group || {isNil "ITW_CLASH_Withdrawals"}) exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {false};
+    if ((_group getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "") exitWith {false};
+
+    private _id = [_group] call ITW_CLASH_DualHAL_fnc_GroupId;
+    private _entry = ITW_CLASH_Withdrawals getOrDefault [_id,[]];
+    // Group ids are names, so confirm the entry is this crew's before taking it.
+    if (_entry isEqualTo [] || {(_entry#0) isNotEqualTo _group}) exitWith {false};
+
+    ITW_CLASH_Withdrawals deleteAt _id;
+    _group setVariable ["ITW_CLASH_Withdrawing",nil];
+    _group setVariable ["ITW_CLASH_WithdrawalDestination",nil];
+    ["withdrawal-dropped",[_id,_entry#3,_entry#7]] call ITW_CLASH_CrewRemnant_fnc_Log;
+    true
 };
 
 /*
@@ -189,6 +225,7 @@ ITW_CLASH_CrewRemnant_fnc_VehicleState = {
                 // which the crew is in neither place.
                 ITW_CLASH_CrewRemnantQuarantined pushBackUnique _group;
                 [_group] call ITW_CLASH_CrewRemnant_fnc_RemoveHAL;
+                [_group] call ITW_CLASH_CrewRemnant_fnc_DropWithdrawal;
                 private _state = [_veh] call ITW_CLASH_CrewRemnant_fnc_VehicleState;
                 ["quarantined",[
                     [_group] call ITW_CLASH_DualHAL_fnc_GroupId,
@@ -238,7 +275,7 @@ ITW_CLASH_CrewRemnant_fnc_VehicleState = {
 
 ITW_CLASH_CrewRemnantCleanupReady = true;
 diag_log format [
-    "CLASH BOOT | crew-remnant-cleanup-ready | version=%1 maxSurvivors=%2 grace=%3 playerRadius=%4 vehicleCrewOnly=true walksQuarantined=true",
+    "CLASH BOOT | crew-remnant-cleanup-ready | version=%1 maxSurvivors=%2 grace=%3 playerRadius=%4 vehicleCrewOnly=true walksQuarantined=true dropsStaleWithdrawal=true csarMayHold=true",
     ITW_CLASH_CrewRemnantCleanupVersion,
     ITW_CLASH_CrewRemnantMaxSurvivors,
     ITW_CLASH_CrewRemnantGrace,

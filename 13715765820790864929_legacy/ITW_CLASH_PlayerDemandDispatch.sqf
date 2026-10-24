@@ -5,10 +5,14 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandDispatchStarted",false]
 
 ITW_CLASH_PlayerDemandDispatchStarted = true;
 ITW_CLASH_PlayerDemandDispatchReady = false;
-ITW_CLASH_PlayerDemandDispatchVersion = 1;
+ITW_CLASH_PlayerDemandDispatchVersion = 2;
 ITW_CLASH_PlayerDemands = createHashMap;
 ITW_CLASH_PlayerDemandNextId = 0;
 ITW_CLASH_PlayerDemandPoll = 1;
+// How long a finished demand stays readable before the poll drops it.
+ITW_CLASH_PlayerDemandRetention = missionNamespace getVariable [
+    "ITW_CLASH_PlayerDemandRetention",300
+];
 ITW_CLASH_PlayerDemandMedevacPickupRadius = 35;
 ITW_CLASH_PlayerDemandMedevacHomeRadius = 125;
 ITW_CLASH_PlayerDemandMedevacDeliveredCooldown = 900;
@@ -739,7 +743,7 @@ ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand = {
         private _name = [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId;
         [
             "MEDEVAC","MEDEVAC_SEVERE",_key,_hq,_casualty,
-            "HAL MEDEVAC: Casualty Extraction",
+            "CSAR: Casualty Extraction",
             format ["HAL reports severe casualties in %1. Reach the casualty position, evacuate the surviving severe casualties, and return them to a live friendly base.",_name],
             "Acquire any living movable vehicle with sufficient passenger capacity for the evacuees.",
             getPosATL _casualty
@@ -911,7 +915,7 @@ ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand = {
     } forEach allPlayers;
 
     diag_log format [
-        "CLASH BOOT | player-demand-dispatch-ready | version=%1 subscriptionGatesDispatch=true capabilityGatesExecution=true vehicleIndependentAssignment=true nativeUnableSeparated=true ammoDemandHook=true medevacDemandHook=true",
+        "CLASH BOOT | player-demand-dispatch-ready | version=%1 subscriptionGatesDispatch=true capabilityGatesExecution=true vehicleIndependentAssignment=true nativeUnableSeparated=true ammoDemandHook=true medevacDemandHook=true prunesTerminalDemands=true",
         ITW_CLASH_PlayerDemandDispatchVersion
     ];
 
@@ -935,6 +939,28 @@ ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand = {
                         ITW_CLASH_PlayerDemand_fnc_Log;
                 };
             };
+        } forEach (keys ITW_CLASH_PlayerDemands);
+
+        /*
+            Finished demands leave the table.
+
+            Nothing used to, and this loop walks every key once a second. That
+            was affordable while a demand meant a live HAL request; CSAR_CREW
+            publishes one per vehicle crew that survives its vehicle, so the
+            table now grows with attrition. Terminal rows are kept briefly so
+            an RPT read straight after a mission still shows how it ended.
+        */
+        {
+            private _demand = [_x] call ITW_CLASH_PlayerDemand_fnc_Get;
+            private _state = _demand getOrDefault ["state",""];
+            if !(_state in ["COMPLETED","INVALID","FAILED"]) then {continue};
+            if (time - (_demand getOrDefault ["stateAt",time]) < ITW_CLASH_PlayerDemandRetention) then {
+                continue
+            };
+            ITW_CLASH_PlayerDemands deleteAt _x;
+            ["player-demand-pruned",[
+                _x,_state,_demand getOrDefault ["stateReason",""]
+            ]] call ITW_CLASH_PlayerDemand_fnc_Log;
         } forEach (keys ITW_CLASH_PlayerDemands);
 
         call ITW_CLASH_PlayerDemand_fnc_DispatchOpen;

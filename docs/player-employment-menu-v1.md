@@ -16,6 +16,13 @@ changes vehicles.
   and an ACE self action.
 - All five channels are always visible: combat, transport, MEDEVAC, logistics,
   and artillery.
+- The MEDEVAC channel is **presented as CSAR**. It carries two demand kinds:
+  `MEDEVAC_SEVERE`, the casualty extraction it always carried, and `CSAR_CREW`,
+  the recovery of a crew that survived its vehicle. One tick accepts both,
+  which is why rescue did not become a sixth subscription — the same reasoning
+  that kept reconnaissance inside the combat channel. The channel name,
+  `ITW_CLASH_PlayerJobTypes` and the stored subscription array are unchanged,
+  so nothing is migrated and the capability seam stays passenger capacity.
 - The group leader changes group-level subscriptions because HAL assigns work
   to groups and the eventual payout ledger is group-shared.
 - Subscriptions persist until the leader changes them. Vehicle changes and task

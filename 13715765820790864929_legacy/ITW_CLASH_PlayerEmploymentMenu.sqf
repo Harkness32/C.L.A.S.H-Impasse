@@ -165,7 +165,10 @@ ITW_CLASH_PlayerEmployment_fnc_OpenMenu = {
             "1","1"
         ],
         [
-            ["MEDEVAC","Accept MEDEVAC Missions"] call
+            // Presented as CSAR: one tick covers casualty evacuation and the
+            // recovery of a downed crew. The channel is still MEDEVAC
+            // everywhere behind the menu, so no subscription is migrated.
+            ["MEDEVAC","Accept CSAR Missions"] call
                 ITW_CLASH_PlayerEmployment_fnc_Label,
             [4],"",-5,
             [["expression","['MEDEVAC'] call ITW_CLASH_PlayerEmployment_fnc_ToggleSubscription"]],

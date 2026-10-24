@@ -208,5 +208,50 @@ def test_the_quarantine_line_says_what_is_wrong_with_the_vehicle():
 
 def test_the_boot_line_says_the_fix_is_loaded():
     source = cleanup()
-    assert "ITW_CLASH_CrewRemnantCleanupVersion = 2;" in source
+    assert "ITW_CLASH_CrewRemnantCleanupVersion = 3;" in source
     assert "walksQuarantined=true" in source
+    assert "dropsStaleWithdrawal=true" in source
+
+
+# --- v3: who may hold a crew, and who may not be sent for one -------------
+
+
+def test_csar_may_hold_a_quarantined_crew_but_still_does_not_delete_it():
+    """CSAR asks for a crew to be kept; the delete stays here."""
+    reserved = function_body(cleanup(), "ITW_CLASH_CrewRemnant_fnc_IsReserved")
+    assert '_group getVariable ["ITW_CLASH_CSAR",false]' in reserved
+
+    source = cleanup()
+    # One deleter: nothing outside this module's own loop removes the men.
+    assert source.count("deleteVehicle _x;") == 1
+    assert source.count("_seat deleteVehicleCrew _x;") == 1
+
+
+def test_a_quarantined_crew_stops_being_an_ai_rescue_job():
+    """ITW_CLASH_Withdrawals is what AI CASEVAC and ground MEDEVAC work from,
+    and GTFO writes an entry for anything HAL calls exhausted, a crew
+    included. Rescuing a crew is player work, so the entry goes."""
+    drop = function_body(cleanup(), "ITW_CLASH_CrewRemnant_fnc_DropWithdrawal")
+    assert "ITW_CLASH_Withdrawals deleteAt _id;" in drop
+    assert '_group setVariable ["ITW_CLASH_Withdrawing",nil];' in drop
+    # The entry has to be this crew's, since the key is a group name.
+    assert "(_entry#0) isNotEqualTo _group" in drop
+    assert drop.index("isNotEqualTo _group") < drop.index("deleteAt _id")
+
+    # Dropped as part of quarantine, so there is no pass on which a quarantined
+    # crew is still an AI job.
+    body = loop()
+    listed = body.index("ITW_CLASH_CrewRemnantQuarantined pushBackUnique _group;")
+    dropped = body.index("call ITW_CLASH_CrewRemnant_fnc_DropWithdrawal;")
+    assert listed < dropped < body.index('["quarantined",[')
+
+
+def test_a_committed_extraction_keeps_its_withdrawal():
+    """Those two states mean an aircraft is already flying at the crew. They
+    also keep this module off it, so taking the entry would strand the flight
+    and delete nothing."""
+    drop = function_body(cleanup(), "ITW_CLASH_CrewRemnant_fnc_DropWithdrawal")
+    for state in ["ITW_CLASH_CASEVAC_State", "ITW_CLASH_GroundMEDEVAC_State"]:
+        guard = '(_group getVariable ["%s",""]) isNotEqualTo ""' % state
+        assert guard in drop, state
+        assert drop.index(guard) < drop.index("deleteAt _id"), state

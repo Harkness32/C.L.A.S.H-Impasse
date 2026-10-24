@@ -677,6 +677,15 @@ if (isServer) then {
         } else {
             diag_log "CLASH BOOT | evac-boarding-fix-missing | baseline physical boarding remains active";
         };
+        // CSAR reuses CASEVAC's safety gate and staging order, so it loads
+        // here and waits on those functions itself. Without it a downed crew
+        // keeps the cleanup lifecycle, which is also what happens when no
+        // player is ticked for the work.
+        if (fileExists "ITW_CLASH_CSAR.sqf") then {
+            [] execVM "ITW_CLASH_CSAR.sqf";
+        } else {
+            diag_log "CLASH BOOT | csar-missing | downed crews keep the cleanup lifecycle";
+        };
     } else {
         diag_log "CLASH BOOT | casevac-missing | walking withdrawal remains active";
     };
