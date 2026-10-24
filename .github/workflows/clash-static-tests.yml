@@ -73,6 +73,7 @@ jobs:
           tests/test_anchor_lift_collision.py
           tests/test_crew_remnant_cleanup.py
           tests/test_csar.py
+          tests/test_air_threat_overlay.py
           tests/test_garrison_busy_release.py
           tests/test_carrier_release.py
           tests/test_hal_transport_isolation.py
