@@ -78,13 +78,24 @@ def test_the_patch_appends_soft_groups_without_rewriting_the_risk_rule():
     assert "_LArmorG + _HArmorG)) and" not in source
 
 
-def test_heavy_armour_keeps_its_taxonomy_but_armor_response_is_capability_gated():
+def test_armour_that_cannot_fight_armour_is_demoted_and_the_responder_pool_is_narrowed():
     source = fix()
-    # Do not demote a heavy APC merely because it lacks AT ammunition.
+    # This test used to require the opposite - that a heavy hull keep HArmor
+    # however it was armed, with the AT gate applied to the responder pool
+    # alone. Taxonomy v4 overruled that: HArmor is the pool HAL sends at tanks,
+    # so grade and chassis are not enough, an AT answer is required too, and a
+    # vehicle without one goes to LArmor. It appears in every pool HArmor does
+    # except Armor, so it keeps every role it can perform.
     taxonomy = text("ITW_CLASH_HALTaxonomy.sqf")
-    assert '_grade >= 2 && {_class isKindOf "Tank"}): {"HArmor"}' in taxonomy
+    assert "ITW_CLASH_HALTaxonomyVersion = 4;" in taxonomy
+    harmor = taxonomy.index(': {"HArmor"}')
+    case = taxonomy[taxonomy.rindex("case (", 0, harmor):harmor]
+    for term in ["_grade >= 2", '_class isKindOf "Tank"', "_antiArmor"]:
+        assert term in case, term
+    assert 'case (_grade >= 1 && {_armouredChassis || {_antiArmor}}): {"LArmor"};' in taxonomy
 
-    # Instead narrow HAL's Armor responder pool only.
+    # The responder pool is still narrowed as well, which is now belt and
+    # braces rather than the only gate.
     assert '"(_HArmorG arrayIntersect ITW_CLASH_AntiArmorVehicleGroups)"' in source
     assert '"(_LArmorATG arrayIntersect ITW_CLASH_AntiArmorVehicleGroups)"' in source
     assert "armor-response-anchor-not-unique" in source
