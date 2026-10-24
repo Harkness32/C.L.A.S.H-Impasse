@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,7 +139,7 @@ def test_blufor_objectives_use_private_mirrors_and_full_hal_taken_contract():
     assert "ITW_CLASH_BLUFORObjectiveMirrors" in dual
     assert '_mirror setVariable ["SetTakenA",_friendlyOwned,true];' in dual
 
-    assert "ITW_CLASH_DualHALCheckbookHardeningVersion = 6;" in hardening
+    assert "ITW_CLASH_DualHALCheckbookHardeningVersion = 7;" in hardening
     assert "RydHQB_Taken = +_taken;" in hardening
     assert 'setVariable ["RydHQ_Taken",+_taken]' in hardening
     assert "ITW_CLASH_DualHALHardeningLastBZone" in hardening
@@ -171,6 +172,62 @@ def test_reconstitution_and_evacuation_cargo_cannot_be_stolen_by_field_handoff()
     # seam, so the hardening predicate can fail open to the canonical transit.
     assert 'setVariable ["ITW_CLASH_ReconstitutionTransit",true]' in attack
     assert "[_vehInfo,false,false] call ITW_AtkAddVehicle;" in attack
+
+
+def reservation_body(name: str) -> str:
+    """The predicate's code, without the comments that quote the old shape."""
+    source = mission(name)
+    body = source.split("ITW_CLASH_DualHAL_fnc_IsLifecycleReserved = {", 1)[1]
+    body = body.split("\n};", 1)[0]
+    body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+    return "\n".join(
+        line for line in body.split("\n") if not line.lstrip().startswith("//")
+    )
+
+
+def test_the_vehicle_half_of_the_reservation_predicate_can_report_a_reservation():
+    """A vehicle test inside `if (!isNull _veh) then {...}` can never answer
+    the question: exitWith leaves the block, then control falls through to the
+    trailing false. Both predicates test the vehicle at function scope, so an
+    airframe already flying somebody else's lift reads as reserved."""
+    for name, marks in [
+        ("ITW_CLASH_DualHALCheckbook.sqf", [
+            '_veh getVariable ["ITW_CLASH_CASEVAC",false]',
+            '_veh getVariable ["ITW_CLASH_GroundMEDEVAC",false]',
+            '_veh getVariable ["ITW_CLASH_ReconstitutionTransport",false]',
+        ]),
+        ("ITW_CLASH_DualHALCheckbookHardening.sqf", [
+            '_veh getVariable ["ITW_CLASH_AuthorityHold",false]',
+            '(_veh getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo ""',
+            '(_veh getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo ""',
+        ]),
+    ]:
+        body = reservation_body(name)
+        assert "if (!isNull _veh) then {" not in body, name
+        guard = body.index("if (isNull _veh) exitWith {false};")
+        for mark in marks:
+            assert "if (%s) exitWith {true};" % mark in body, (name, mark)
+            at = body.index(mark)
+            assert guard < at, (name, mark)
+            # Function scope: nothing is left open between the guard and here.
+            prefix = body[:at]
+            assert prefix.count("{") == prefix.count("}"), (name, mark)
+
+
+def test_a_null_vehicle_still_falls_through_to_the_group_answer():
+    """The group tests come first and the vehicle guard returns false, so the
+    one-argument callers keep the answer they had before the repair."""
+    for name in [
+        "ITW_CLASH_DualHALCheckbook.sqf",
+        "ITW_CLASH_DualHALCheckbookHardening.sqf",
+    ]:
+        body = reservation_body(name)
+        assert body.index('params ["_group",["_veh",objNull]];') < body.index(
+            "if (isNull _veh) exitWith {false};"
+        ), name
+        assert body.rstrip().endswith("false"), name
+        group_tests = body[:body.index("if (isNull _veh) exitWith {false};")]
+        assert group_tests.count("_group getVariable") >= 3, name
 
 
 def test_impasse_remains_vehicle_count_authority_after_checkbook_purchase():

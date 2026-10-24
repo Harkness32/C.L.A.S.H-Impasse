@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookStarted",false]) exitWith {true};
 
 ITW_CLASH_DualHALCheckbookStarted = true;
-ITW_CLASH_DualHALCheckbookVersion = 9;
+ITW_CLASH_DualHALCheckbookVersion = 10;
 ITW_CLASH_DualHALReady = false;
 ITW_CLASH_CheckbookEnabled = true;
 ITW_CLASH_CommanderRegistry = createHashMap;
@@ -86,11 +86,22 @@ ITW_CLASH_DualHAL_fnc_IsLifecycleReserved = {
     if (_group getVariable ["ITW_CLASH_RecoveryOwned",false]) exitWith {true};
     if (_group getVariable ["itwDelivery",false]) exitWith {true};
 
-    if (!isNull _veh) then {
-        if (_veh getVariable ["ITW_CLASH_CASEVAC",false]) exitWith {true};
-        if (_veh getVariable ["ITW_CLASH_GroundMEDEVAC",false]) exitWith {true};
-        if (_veh getVariable ["ITW_CLASH_ReconstitutionTransport",false]) exitWith {true};
-    };
+    /*
+        v10: the vehicle tests answer the question again.
+
+        They sat in `if (!isNull _veh) then { ... }`, where exitWith leaves the
+        block and control then falls through to the trailing false, so a marked
+        airframe read as unreserved however it was flagged. Every caller that
+        passes a vehicle was asking a question that could only come back no:
+        HotDrop declining a reserved carrier or reserved cargo, the field
+        handoff bypassing a reserved lift, and the Impasse writer suppression.
+        At function scope exitWith leaves the function, which is the contract
+        those callers were written against.
+    */
+    if (isNull _veh) exitWith {false};
+    if (_veh getVariable ["ITW_CLASH_CASEVAC",false]) exitWith {true};
+    if (_veh getVariable ["ITW_CLASH_GroundMEDEVAC",false]) exitWith {true};
+    if (_veh getVariable ["ITW_CLASH_ReconstitutionTransport",false]) exitWith {true};
     false
 };
 
@@ -118,10 +129,9 @@ ITW_CLASH_DualHAL_fnc_ShouldSuppressImpasseVehicleWriter = {
     ) then {_vehInfo#VEHINFO_VEH} else {vehicle leader _group};
     // v7: a reconstitution lift is never taken from Impasse, loaded or empty.
     // Its reservation flag is dropped when the squad is out; this mark is not
-    // (ITW_CLASH_ReconstitutionDispatchFix.sqf v7 sets it and says why). At
-    // function scope on purpose: the vehicle tests inside
-    // ITW_CLASH_DualHAL_fnc_IsLifecycleReserved sit in a `then` block, where
-    // exitWith only leaves the block.
+    // (ITW_CLASH_ReconstitutionDispatchFix.sqf v7 sets it and says why), so it
+    // is still read here although the predicate below now reads the vehicle:
+    // ITW_CLASH_ReconstitutionLift is not one of the marks that predicate tests.
     if (!isNull _veh && {
         _veh getVariable ["ITW_CLASH_ReconstitutionLift",false]
     }) exitWith {false};

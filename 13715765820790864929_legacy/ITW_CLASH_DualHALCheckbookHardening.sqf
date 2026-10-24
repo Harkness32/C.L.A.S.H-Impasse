@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_DualHALCheckbookHardeningStarted",false]) exitWith {true};
 ITW_CLASH_DualHALCheckbookHardeningStarted = true;
-ITW_CLASH_DualHALCheckbookHardeningVersion = 6;
+ITW_CLASH_DualHALCheckbookHardeningVersion = 7;
 ITW_CLASH_DualHALHardeningLastBZone = -1;
 
 if (
@@ -64,11 +64,13 @@ ITW_CLASH_DualHAL_fnc_IsLifecycleReserved = {
         !(_group getVariable ["ITW_CLASH_DualHALManaged",false])
     }) exitWith {true};
 
-    if (!isNull _veh) then {
-        if (_veh getVariable ["ITW_CLASH_AuthorityHold",false]) exitWith {true};
-        if ((_veh getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {true};
-        if ((_veh getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "") exitWith {true};
-    };
+    // v7: same repair as the base predicate. These three sat in a `then` block
+    // where exitWith only left the block, so an airframe already flying a
+    // CASEVAC or a ground MEDEVAC read as free to take.
+    if (isNull _veh) exitWith {false};
+    if (_veh getVariable ["ITW_CLASH_AuthorityHold",false]) exitWith {true};
+    if ((_veh getVariable ["ITW_CLASH_CASEVAC_State",""]) isNotEqualTo "") exitWith {true};
+    if ((_veh getVariable ["ITW_CLASH_GroundMEDEVAC_State",""]) isNotEqualTo "") exitWith {true};
     false
 };
 

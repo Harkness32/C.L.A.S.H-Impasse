@@ -79,5 +79,5 @@ def test_both_vehicle_handoffs_clear_it_and_transports_keep_it():
 
 def test_version_and_boot_flag():
     raw = (MISSION / "ITW_CLASH_DualHALCheckbook.sqf").read_text(encoding="utf-8")
-    assert "ITW_CLASH_DualHALCheckbookVersion = 9;" in raw
+    assert "ITW_CLASH_DualHALCheckbookVersion = 10;" in raw
     assert "impasseCarelessCleared=true" in raw

@@ -383,12 +383,12 @@ def test_the_migration_took_it_out_of_impasse_and_gave_it_no_order():
 
 
 def test_the_reservation_flag_on_the_vehicle_could_not_have_stopped_it():
-    """The vehicle tests in the reservation predicate sit inside a `then`
-    block, where exitWith only leaves the block, and the flag is dropped at the
-    dismount anyway. If this is ever repaired the mark below is still needed,
-    because the flag is still dropped."""
+    """Checkbook v10 repaired the predicate, so the vehicle tests now report at
+    function scope. The flag is still dropped at the dismount, which is the
+    reason it could not have stopped it and the reason the mark below is still
+    needed."""
     reserved = function_body(mission("ITW_CLASH_DualHALCheckbook.sqf"), "ITW_CLASH_DualHAL_fnc_IsLifecycleReserved")
-    assert depth_at(reserved, '_veh getVariable ["ITW_CLASH_ReconstitutionTransport",false]') > 1
+    assert depth_at(reserved, '_veh getVariable ["ITW_CLASH_ReconstitutionTransport",false]') == 1
     release = function_body(transit(), "ITW_CLASH_Reconstitution_fnc_ReleaseTransportReservation")
     assert '_veh setVariable ["ITW_CLASH_ReconstitutionTransport",nil,true];' in release
 
@@ -442,5 +442,5 @@ def test_the_boot_lines_say_what_is_loaded():
     guard = mission("ITW_CLASH_LogisticsGuard.sqf")
     assert "ITW_CLASH_LogisticsHandoffVersion = 5;" in guard
     assert "deletedVehiclesNotAssigned=true" in guard
-    assert "ITW_CLASH_DualHALCheckbookVersion = 9;" in mission("ITW_CLASH_DualHALCheckbook.sqf")
+    assert "ITW_CLASH_DualHALCheckbookVersion = 10;" in mission("ITW_CLASH_DualHALCheckbook.sqf")
     assert "ITW_CLASH_InfantryAuthorityVersion = 5;" in mission("ITW_CLASH_InfantryAuthority.sqf")

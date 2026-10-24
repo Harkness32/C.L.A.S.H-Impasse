@@ -148,7 +148,7 @@ def test_bootstrap_accepts_the_symmetric_runtime_versions():
 def test_field_vehicle_staging_obeys_shared_echelon_policy():
     dual = mission("ITW_CLASH_DualHALCheckbook.sqf")
 
-    assert "ITW_CLASH_DualHALCheckbookVersion = 9;" in dual
+    assert "ITW_CLASH_DualHALCheckbookVersion = 10;" in dual
     assert "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn" in dual
 
     echelon = dual[
