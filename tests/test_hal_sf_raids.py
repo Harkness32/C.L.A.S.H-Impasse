@@ -28,8 +28,45 @@ def test_statusquo_patch_targets_lines_that_exist_once_in_hal():
         "if (_HQ in _knownEG) then",
         "_SFTgts pushBack _HQ",
         "_SFcount = {",
+        '(8/(0.75 + ((_HQ getVariable ["RydHQ_Recklessness",0.5])/2)))',
     ]:
         assert quo.count(bad) == 1, bad
+
+
+def test_the_four_team_raid_threshold_is_ours_now():
+    """HAL scores a raid at 40 + 60*Activity and then adds
+    ((2 * free teams) - 8/(0.75 + Recklessness/2)) * 20. At the stock
+    Recklessness of 0.5 the subtrahend is 8, so the term is zero at four free
+    teams and -120 at one, which the clamp turns into a 1% roll. That four is
+    arithmetic, not a setting: maximum Recklessness only reaches 3.2."""
+    source = fix()
+    assert "ITW_CLASH_SOFRaidTeams" in source
+    assert 'getVariable ["ITW_CLASH_SOFRaidTeams",1]' in source
+    assert (
+        '"(8/(0.75 + ((_HQ getVariable [""RydHQ_Recklessness"",0.5])/2)))",\n'
+        '            "(2 * ITW_CLASH_SOFRaidTeams)",'
+    ) in source
+    assert '"StatusQuo-SF-team-threshold"' in source
+
+    # The threshold is doubled in the patch because HAL compares it against
+    # 2 * the free team count, so the knob reads in teams.
+    quo = status_quo()
+    assert "(((2 * _SFcount) - (8/(0.75" in quo
+
+    # Still all-or-none, and still guarded by the rewritten-source test.
+    assert "if (!_ok) then {continue};" in source
+    assert 'if (_ok && {(_quo find "_HQ = group _x;") < 0}) then {' in source
+    assert "raidTeamThreshold=%5" in source
+
+
+def test_the_threshold_leaves_recklessness_its_other_jobs():
+    """Recklessness steers 65 other HAL decisions, including whether SF will
+    engage an armour target at all on the line after the roll. The patch takes
+    it out of this one comparison and nothing else."""
+    source = fix()
+    assert source.count("RydHQ_Recklessness") == 1
+    quo = status_quo()
+    assert "(90 - ((_HQ getVariable [\"RydHQ_Recklessness\",0.5]) * 10))" in quo
 
 
 def test_raid_loop_no_longer_overwrites_the_commander():

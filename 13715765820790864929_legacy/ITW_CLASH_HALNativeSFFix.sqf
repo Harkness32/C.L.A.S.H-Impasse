@@ -8,10 +8,28 @@ if (missionNamespace getVariable ["ITW_CLASH_HALNativeSFFixStarted",false]) exit
 ITW_CLASH_HALNativeSFFixStarted = true;
 ITW_CLASH_HALNativeSFFixReady = false;
 ITW_CLASH_HALNativeSFFixFinished = false;
-ITW_CLASH_HALNativeSFFixVersion = 5;
+ITW_CLASH_HALNativeSFFixVersion = 6;
 ITW_CLASH_HALStatusQuoSFPatched = false;
 ITW_CLASH_SFStandbyMinRadius = 90;
 ITW_CLASH_SFStandbyMaxRadius = 220;
+/*
+    v6: how many free SOF teams before a raid is worth considering.
+
+    HAL scores a raid at 40 + 60*Activity, then adds
+    ((2 * free teams) - 8/(0.75 + Recklessness/2)) * 20 (HAC_fnc2.sqf:1203).
+    At the stock Recklessness of 0.5 that subtrahend is exactly 8, so the term
+    is zero at four free teams and -120 at one. The roll is then clamped up to
+    the team count itself, which is a 1% chance behind a coin flip: four teams
+    is the real threshold, and it is arithmetic rather than a setting. Maximum
+    Recklessness only moves it to 3.2, and that dial steers 65 other decisions.
+
+    The subtrahend becomes this number doubled instead. At 1 the term is zero
+    as soon as one team is free, while each team beyond it is still worth +40,
+    so a commander with more teams raids more readily without a commander with
+    one being unable to raid at all. Launching marks the team Busy and
+    _SFcount counts only free teams, so concurrency throttles itself.
+*/
+ITW_CLASH_SOFRaidTeams = missionNamespace getVariable ["ITW_CLASH_SOFRaidTeams",1];
 scriptName "ITW_CLASH_HALNativeSFFix";
 
 private _finishFailure = {
@@ -426,9 +444,10 @@ HAL_SFIdleOrd = {
 // the first raid check turned that loop into the enemy commander for the rest
 // of the game. The raid block also read the SpecFor list StatusQuo builds from
 // HAL's class tables, never the commander's list the recon bridge adds
-// C.L.A.S.H. SOF to in HQOrders, which runs just before it. All four edits
-// apply or none do; unpatched, StatusQuo stays native and C.L.A.S.H. SOF never
-// reach the raid routine.
+// C.L.A.S.H. SOF to in HQOrders, which runs just before it. The fifth edit
+// takes the four-free-team threshold out of HAL's arithmetic and into
+// ITW_CLASH_SOFRaidTeams. All five edits apply or none do; unpatched,
+// StatusQuo stays native and C.L.A.S.H. SOF never reach the raid routine.
 private _statusQuoResults = [];
 if (isNil "RYD_StatusQuo") then {
     _statusQuoResults pushBack "StatusQuo:missing";
@@ -450,6 +469,11 @@ if (isNil "RYD_StatusQuo") then {
             "_SFcount = {",
             "_SpecForG = _HQ getVariable [""RydHQ_SpecForG"",_SpecForG]; _SFcount = {",
             "StatusQuo-SF-commander-list"
+        ],
+        [
+            "(8/(0.75 + ((_HQ getVariable [""RydHQ_Recklessness"",0.5])/2)))",
+            "(2 * ITW_CLASH_SOFRaidTeams)",
+            "StatusQuo-SF-team-threshold"
         ]
     ];
     if (_ok && {(_quo find "_HQ = group _x;") < 0}) then {
@@ -467,11 +491,12 @@ if (!ITW_CLASH_HALStatusQuoSFPatched) then {
 ITW_CLASH_HALNativeSFFixReady = true;
 ITW_CLASH_HALNativeSFFixFinished = true;
 diag_log format [
-    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false sideAwareStandby=true goSFAttack=native-patched-observed nativeExecutorPreserved=true attackChars=%3 statusQuoPatched=%4 statusQuo=%5",
+    "CLASH BOOT | native-sf-fix-ready | version=%1 sourceMatched=true results=%2 idleDoctrine=support-corridor-standby commanderGuard=false sideAwareStandby=true goSFAttack=native-patched-observed nativeExecutorPreserved=true attackChars=%3 statusQuoPatched=%4 raidTeamThreshold=%5 statusQuo=%6",
     ITW_CLASH_HALNativeSFFixVersion,
     _results,
     count _attackSource,
     ITW_CLASH_HALStatusQuoSFPatched,
+    ITW_CLASH_SOFRaidTeams,
     _statusQuoResults
 ];
 true
