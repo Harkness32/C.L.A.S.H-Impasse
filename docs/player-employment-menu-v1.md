@@ -16,9 +16,21 @@ changes vehicles.
   and an ACE self action.
 - All five channels are always visible: combat, transport, MEDEVAC, logistics,
   and artillery.
-- The MEDEVAC channel is **presented as CSAR**. It carries two demand kinds:
-  `MEDEVAC_SEVERE`, the casualty extraction it always carried, and `CSAR_CREW`,
-  the recovery of a crew that survived its vehicle. One tick accepts both,
+- The MEDEVAC channel is **presented as Combat Search and Rescue** ("Accept
+  Combat Search and Rescue Missions"). It carries three demand kinds:
+  `MEDEVAC_SEVERE`, the casualty extraction it always carried; `CSAR_CREW`,
+  the recovery of a crew that survived its vehicle; and `MEDEVAC_SQUAD`
+  (2026-10-27, `ITW_CLASH_PlayerSquadEvac.sqf`), the extraction of one of our
+  AI squads that is withdrawing combat-ineffective. That last one is players
+  first, with the squad behaving exactly as it does for an AI pilot: it
+  withdraws, and when AI CASEVAC's own checks pass (disengaged, clear of the
+  objective and the enemy, a landing zone found) it calls for pickup, holds
+  that landing zone, pops smoke when the carrier is within 700 m, and moves on
+  if contact closes in, calling again from the next safe spot. The call goes
+  to a free CSAR player first; AI CASEVAC and ground MEDEVAC stay off the
+  squad while a player holds it, and take it as before when no player can. `MEDEVAC_SEVERE` alone fired only for a man
+  alive above 75% damage or unable to stand, which vanilla AI almost never
+  is, so in play the channel was nearly silent. One tick accepts all three,
   which is why rescue did not become a sixth subscription — the same reasoning
   that kept reconnaissance inside the combat channel. The channel name,
   `ITW_CLASH_PlayerJobTypes` and the stored subscription array are unchanged,

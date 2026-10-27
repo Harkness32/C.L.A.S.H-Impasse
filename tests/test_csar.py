@@ -384,7 +384,7 @@ def test_the_tick_is_called_csar_and_nothing_behind_it_is_renamed():
     """The user's call: rename the job on player-facing text only. One opt-in
     covers casualty evacuation and crew recovery."""
     menu = mission("ITW_CLASH_PlayerEmploymentMenu.sqf")
-    assert '["MEDEVAC","Accept CSAR Missions"]' in menu
+    assert '["MEDEVAC","Accept Combat Search and Rescue Missions"]' in menu
     assert "Accept MEDEVAC Missions" not in menu
     # Both kinds on the channel read as CSAR to the player.
     for name in [

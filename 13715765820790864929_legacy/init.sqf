@@ -700,6 +700,14 @@ if (isServer) then {
         } else {
             diag_log "CLASH BOOT | csar-missing | downed crews keep the cleanup lifecycle";
         };
+        // Players first for a withdrawing squad's lift, on the CSAR channel.
+        // It wraps CASEVAC's and ground MEDEVAC's gates, so it loads after
+        // them and waits on them itself.
+        if (fileExists "ITW_CLASH_PlayerSquadEvac.sqf") then {
+            [] execVM "ITW_CLASH_PlayerSquadEvac.sqf";
+        } else {
+            diag_log "CLASH BOOT | squad-evac-missing | withdrawing squads stay with AI CASEVAC";
+        };
     } else {
         diag_log "CLASH BOOT | casevac-missing | walking withdrawal remains active";
     };

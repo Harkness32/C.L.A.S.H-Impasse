@@ -4,7 +4,7 @@ if (missionNamespace getVariable [
 ]) exitWith {true};
 
 ITW_CLASH_PlayerEmploymentMenuStarted = true;
-ITW_CLASH_PlayerEmploymentMenuVersion = 2;
+ITW_CLASH_PlayerEmploymentMenuVersion = 3;
 ITW_CLASH_PlayerEmploymentJobTypes = [
     "COMBAT","TRANSPORT","MEDEVAC","LOGISTICS","ARTILLERY"
 ];
@@ -165,10 +165,11 @@ ITW_CLASH_PlayerEmployment_fnc_OpenMenu = {
             "1","1"
         ],
         [
-            // Presented as CSAR: one tick covers casualty evacuation and the
-            // recovery of a downed crew. The channel is still MEDEVAC
-            // everywhere behind the menu, so no subscription is migrated.
-            ["MEDEVAC","Accept CSAR Missions"] call
+            // Presented as Combat Search and Rescue: one tick covers casualty
+            // evacuation, a withdrawing squad's extraction and the recovery
+            // of a downed crew. The channel is still MEDEVAC everywhere
+            // behind the menu, so no subscription is migrated.
+            ["MEDEVAC","Accept Combat Search and Rescue Missions"] call
                 ITW_CLASH_PlayerEmployment_fnc_Label,
             [4],"",-5,
             [["expression","['MEDEVAC'] call ITW_CLASH_PlayerEmployment_fnc_ToggleSubscription"]],
