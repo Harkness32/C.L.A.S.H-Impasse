@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandDispatchStarted",false]
 
 ITW_CLASH_PlayerDemandDispatchStarted = true;
 ITW_CLASH_PlayerDemandDispatchReady = false;
-ITW_CLASH_PlayerDemandDispatchVersion = 2;
+ITW_CLASH_PlayerDemandDispatchVersion = 3;
 ITW_CLASH_PlayerDemands = createHashMap;
 ITW_CLASH_PlayerDemandNextId = 0;
 ITW_CLASH_PlayerDemandPoll = 1;
@@ -621,7 +621,7 @@ ITW_CLASH_PlayerDemand_fnc_StartMedevacExecution = {
             if ((_resolved getOrDefault ["status",""]) != "RESOLVED") then {continue};
             private _home = +(_resolved get "position");
             if (_taskId isNotEqualTo "") then {
-                [_taskId,[_home,true]] call BIS_fnc_taskSetDestination;
+                [_taskId,_home] call BIS_fnc_taskSetDestination;
             };
             if (_vehicle distance2D _home > ITW_CLASH_PlayerDemandMedevacHomeRadius) then {continue};
             if !([_vehicle] call ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer) then {continue};

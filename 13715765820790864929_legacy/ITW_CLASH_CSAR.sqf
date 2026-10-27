@@ -33,7 +33,7 @@ if (missionNamespace getVariable ["ITW_CLASH_CSARStarted",false]) exitWith {true
 */
 
 ITW_CLASH_CSARStarted = true;
-ITW_CLASH_CSARVersion = 1;
+ITW_CLASH_CSARVersion = 2;
 ITW_CLASH_CSARReady = false;
 ITW_CLASH_CSARPoll = missionNamespace getVariable ["ITW_CLASH_CSARPoll",5];
 // The employment channel a player ticks for this work. MEDEVAC carries both
@@ -500,7 +500,7 @@ ITW_CLASH_CSAR_fnc_RunDelivery = {
         if ((_resolved getOrDefault ["status",""]) != "RESOLVED") then {continue};
         private _home = +(_resolved get "position");
         if (_taskId isNotEqualTo "") then {
-            [_taskId,[_home,true]] call BIS_fnc_taskSetDestination;
+            [_taskId,_home] call BIS_fnc_taskSetDestination;
         };
         if (_vehicle distance2D _home > ITW_CLASH_PlayerDemandMedevacHomeRadius) then {continue};
         if !([_vehicle] call ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer) then {continue};

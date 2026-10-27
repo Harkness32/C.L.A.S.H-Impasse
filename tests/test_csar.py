@@ -264,7 +264,7 @@ def test_no_deadline_anywhere_else():
 
 def test_the_boot_line_says_what_it_will_not_do():
     source = csar()
-    assert "ITW_CLASH_CSARVersion = 1;" in source
+    assert "ITW_CLASH_CSARVersion = 2;" in source
     for claim in [
         "writesWithdrawals=false",
         "aiDispatch=false",
@@ -407,7 +407,7 @@ def test_finished_demands_leave_the_table():
     the 1 Hz loop walks every key, so terminal rows cannot accumulate for a
     whole campaign any more."""
     dispatch = mission("ITW_CLASH_PlayerDemandDispatch.sqf")
-    assert "ITW_CLASH_PlayerDemandDispatchVersion = 2;" in dispatch
+    assert "ITW_CLASH_PlayerDemandDispatchVersion = 3;" in dispatch
     assert "ITW_CLASH_PlayerDemandRetention" in dispatch
     assert "ITW_CLASH_PlayerDemands deleteAt _x;" in dispatch
     assert "prunesTerminalDemands=true" in dispatch

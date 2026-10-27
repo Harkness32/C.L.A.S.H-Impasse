@@ -48,7 +48,7 @@ EVAC = code_text(RAW)
 
 
 def test_boot_and_load_order():
-    assert "ITW_CLASH_PlayerSquadEvacVersion = 1;" in RAW
+    assert "ITW_CLASH_PlayerSquadEvacVersion = 2;" in RAW
     assert "CLASH BOOT | squad-evac-ready |" in RAW
     init = raw("init.sqf")
     # After CASEVAC, ground MEDEVAC and CSAR, inside CASEVAC's own block.

@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerSquadEvacStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerSquadEvacStarted = true;
-ITW_CLASH_PlayerSquadEvacVersion = 1;
+ITW_CLASH_PlayerSquadEvacVersion = 2;
 ITW_CLASH_PlayerSquadEvacReady = false;
 
 /*
@@ -184,7 +184,7 @@ ITW_CLASH_PlayerSquadEvac_fnc_HoldAtLz = {
     _demand set ["smokeAt",-1];
     ITW_CLASH_PlayerDemands set [_demandId,_demand];
     private _taskId = _demand getOrDefault ["taskId",""];
-    if (_taskId isNotEqualTo "") then {[_taskId,[_lz,true]] call BIS_fnc_taskSetDestination};
+    if (_taskId isNotEqualTo "") then {[_taskId,_lz] call BIS_fnc_taskSetDestination};
     [_why,[
         _demandId,[_squad] call ITW_CLASH_fnc_GroupId,{alive _x} count units _squad,_lz
     ]] call ITW_CLASH_PlayerSquadEvac_fnc_Log;
@@ -365,7 +365,7 @@ ITW_CLASH_PlayerSquadEvac_fnc_Prepare = {
             if (_taskId isNotEqualTo "" && {time >= (_demand getOrDefault ["taskMovedAt",0])}) then {
                 _demand set ["taskMovedAt",time + 10];
                 ITW_CLASH_PlayerDemands set [_demandId,_demand];
-                [_taskId,[getPosATL _leader,true]] call BIS_fnc_taskSetDestination;
+                [_taskId,getPosATL _leader] call BIS_fnc_taskSetDestination;
             };
         };
         false
@@ -495,7 +495,7 @@ ITW_CLASH_PlayerSquadEvac_fnc_RunDelivery = {
         };
 
         if (_taskId isNotEqualTo "" && {_rally isNotEqualTo []}) then {
-            [_taskId,[_rally,true]] call BIS_fnc_taskSetDestination;
+            [_taskId,_rally] call BIS_fnc_taskSetDestination;
         };
         private _grounded = [_vehicle] call ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer;
 

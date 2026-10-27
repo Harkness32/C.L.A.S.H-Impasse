@@ -254,7 +254,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Pickup = {
     _job set ["loadedAt",time];
     private _taskId = _job getOrDefault ["taskId",""];
     if (_taskId isNotEqualTo "") then {
-        [_taskId,[_job getOrDefault ["destination",[]],true]] call BIS_fnc_taskSetDestination;
+        [_taskId,_job getOrDefault ["destination",[]]] call BIS_fnc_taskSetDestination;
     };
     ["loaded",[_jobId,groupId _squad,typeOf _vehicle,count _men]] call
         ITW_CLASH_PlayerTaskRequestTransport_fnc_Log;
