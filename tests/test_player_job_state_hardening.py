@@ -48,10 +48,9 @@ def test_combat_subscription_controls_native_tactical_pools() -> None:
 
     assert "ITW_CLASH_PlayerTasks_fnc_SyncCombatAdmission" in hardening
     assert '[_group,"COMBAT"] call' in hardening
-    assert "RydHQ_NoRecon" in hardening
-    assert "RydHQ_CargoOnly" in hardening
-    assert "ITW_CLASH_PlayerCombatGateOwnsNoRecon" in hardening
-    assert "ITW_CLASH_PlayerCombatGateOwnsCargoOnly" in hardening
+    assert '["NoRecon","ITW_CLASH_PlayerCombatGateOwnsNoRecon",true]' in hardening
+    assert '["CargoOnly","ITW_CLASH_PlayerCombatGateOwnsCargoOnly",!_combat]' in hardening
+    assert '["NoDef","ITW_CLASH_PlayerCombatGateOwnsNoDef",!_combat]' in hardening
 
     # 2026-10-27: player groups never get HAL recon, combat or not; the seam
     # refuses them all (tests/test_player_never_gets_hal_recon.py).

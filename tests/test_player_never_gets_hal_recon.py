@@ -56,14 +56,9 @@ def test_the_native_recon_seam_refuses_every_player_group():
 
 def test_every_player_group_is_in_no_recon_combat_or_not():
     gate = body_of(GATE, "ITW_CLASH_PlayerTasks_fnc_SyncCombatAdmission")
-    add = gate.index("if !(_group in _noRecon) then {")
-    branch = gate.index("if (_combat) then {")
-    # The NoRecon entry is made before, and outside, the combat branch.
-    assert add < branch
-    combat_branch = gate[branch:gate.index("} else {", branch)]
-    assert "_noRecon" not in combat_branch
-    # CargoOnly still follows the tick.
-    assert "_cargoOnly = _cargoOnly - [_group];" in combat_branch
+    # NoRecon is always on; CargoOnly and NoDef follow the combat tick.
+    assert '["NoRecon","ITW_CLASH_PlayerCombatGateOwnsNoRecon",true]' in gate
+    assert '["CargoOnly","ITW_CLASH_PlayerCombatGateOwnsCargoOnly",!_combat]' in gate
 
 
 def test_the_exclusion_survives_halts_sitrep_rewrite():
@@ -71,10 +66,14 @@ def test_the_exclusion_survives_halts_sitrep_rewrite():
     sitrep = (HAL / "HQSitRepB.sqf").read_text(encoding="utf-8", errors="replace")
     assert '_HQ setVariable ["RydHQ_NoRecon",RydHQB_NoRecon];' in sitrep
     gate = body_of(GATE, "ITW_CLASH_PlayerTasks_fnc_SyncCombatAdmission")
-    assert "_hq isEqualTo ITW_CLASH_BLUFORHQ" in gate
-    assert 'missionNamespace getVariable ["RydHQB_NoRecon",[]]' in gate
-    assert "_global pushBackUnique _group;" in gate
-    assert "RydHQB_NoRecon = _global;" in gate
+    # CommanderParity writes the commander's array and the global together.
+    assert "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership" in gate
+    parity = code_text((MISSION / "ITW_CLASH_CommanderParity.sqf").read_text(encoding="utf-8"))
+    setter = body_of(parity, "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership")
+    assert "_hq setVariable [_hqName,_hqList];" in setter
+    assert "missionNamespace setVariable [_globalName,_global];" in setter
+    prefix = body_of(parity, "ITW_CLASH_CommanderParity_fnc_GlobalPrefixForSide")
+    assert '{"RydHQB_"}' in prefix
 
 
 def test_no_recon_also_removes_players_from_hals_fallback_recon_pool():

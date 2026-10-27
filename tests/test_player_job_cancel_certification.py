@@ -176,7 +176,7 @@ def test_player_air_transport_rtb_covers_abort_delivery_landing_and_timeout():
 def test_leader_cancel_gate_survives_native_action_binder_failure():
     hardening = source("ITW_CLASH_PlayerTaskStateHardening.sqf")
 
-    assert 'ITW_CLASH_PlayerTaskStateHardeningVersion = 4;' in hardening
+    assert 'ITW_CLASH_PlayerTaskStateHardeningVersion = 5;' in hardening
     assert 'ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate' in hardening
     assert 'scriptName "ITW_CLASH_PlayerTaskStateLeaderGate"' in hardening
     assert '"leaderGateRetained"' in hardening

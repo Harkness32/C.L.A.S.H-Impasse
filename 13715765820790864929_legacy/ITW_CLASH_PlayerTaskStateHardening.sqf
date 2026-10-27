@@ -8,7 +8,7 @@ ITW_CLASH_PlayerTaskStateHardeningReady = false;
 ITW_CLASH_PlayerTaskStateLeaderGateReady = false;
 ITW_CLASH_PlayerTaskStateCancelReady = false;
 ITW_CLASH_PlayerTaskStateArtilleryGuardReady = false;
-ITW_CLASH_PlayerTaskStateHardeningVersion = 4;
+ITW_CLASH_PlayerTaskStateHardeningVersion = 5;
 
 ITW_CLASH_PlayerTaskState_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -173,40 +173,48 @@ ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate = {
         private _combat = [_group,"COMBAT"] call
             ITW_CLASH_PlayerTasks_fnc_IsSubscribed;
 
-        private _noRecon = +(_hq getVariable ["RydHQ_NoRecon",[]]);
-        private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-        private _ownedCargoOnly = _group getVariable [
-            "ITW_CLASH_PlayerCombatGateOwnsCargoOnly",false
-        ];
+        // HQSitRepB rewrites the commander's exclusion lists from the RydHQB_*
+        // globals every cycle; written to the commander only, an exclusion
+        // lasted one cycle. CommanderParity writes both names.
+        private _set = {
+            params ["_suffix","_on"];
+            if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+                [_group,[_suffix],_on] call
+                    ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+            } else {
+                private _name = "RydHQ_" + _suffix;
+                private _list = +(_hq getVariable [_name,[]]);
+                if (_on) then {_list pushBackUnique _group} else {_list = _list - [_group]};
+                _hq setVariable [_name,_list];
+            };
+        };
 
         // v4 (Hark, 2026-10-27): a player group is never in HAL's recon pool,
         // combat or not. Combat employment means attack tasks; recon was being
-        // handed to combat players. Only CargoOnly still follows the tick.
-        if !(_group in _noRecon) then {
-            _noRecon pushBack _group;
-            _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsNoRecon",true];
-        };
-        if (_combat) then {
-            if (_ownedCargoOnly) then {
-                _cargoOnly = _cargoOnly - [_group];
-                _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsCargoOnly",nil];
+        // handed to combat players.
+        // v5 (Hark, 2026-10-27): a player helicopter crew got "Defend Position"
+        // after a transport run. HQOrdersDef adds RydHQ_NCCargoG back into the
+        // defend pool after excluding CargoOnly, so only NoDef keeps a
+        // transport crew out. Without the combat tick, a player group is in
+        // both CargoOnly and NoDef.
+        {
+            _x params ["_suffix","_flag","_on"];
+            private _member = _group in (_hq getVariable ["RydHQ_" + _suffix,[]]);
+            private _owned = _group getVariable [_flag,false];
+            if (_on) then {
+                if (!_member) then {_group setVariable [_flag,true]};
+                if (!_member || {_owned}) then {[_suffix,true] call _set};
+            } else {
+                if (_owned) then {
+                    [_suffix,false] call _set;
+                    _group setVariable [_flag,nil];
+                };
             };
-        } else {
-            if !(_group in _cargoOnly) then {
-                _cargoOnly pushBack _group;
-                _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsCargoOnly",true];
-            };
-        };
-
-        _hq setVariable ["RydHQ_NoRecon",_noRecon];
-        _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
-        // HQSitRepB rewrites the commander's NoRecon from this global every
-        // cycle; written to the commander only, the exclusion lasted one cycle.
-        if (!isNil "ITW_CLASH_BLUFORHQ" && {_hq isEqualTo ITW_CLASH_BLUFORHQ}) then {
-            private _global = +(missionNamespace getVariable ["RydHQB_NoRecon",[]]);
-            _global pushBackUnique _group;
-            RydHQB_NoRecon = _global;
-        };
+        } forEach [
+            ["NoRecon","ITW_CLASH_PlayerCombatGateOwnsNoRecon",true],
+            ["CargoOnly","ITW_CLASH_PlayerCombatGateOwnsCargoOnly",!_combat],
+            ["NoDef","ITW_CLASH_PlayerCombatGateOwnsNoDef",!_combat]
+        ];
         true
     };
 

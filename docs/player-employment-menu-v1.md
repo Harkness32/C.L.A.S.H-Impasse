@@ -63,8 +63,17 @@ A player who wants recon work requests it (the RECON task request).
   cycle; written to the commander only, the exclusion lasted one cycle, which
   is why recon reached combat players "sometimes".
 - A group with COMBAT disabled is also excluded from HAL's attack and reserve
-  pools through a C.L.A.S.H.-owned `RydHQ_CargoOnly` entry. C.L.A.S.H. only
-  removes exclusions it previously added.
+  pools through a C.L.A.S.H.-owned `RydHQ_CargoOnly` entry, and from HAL's
+  defend pool through a `RydHQ_NoDef` entry. CargoOnly alone does not keep a
+  transport crew out of defense: `HQOrdersDef.sqf` adds `RydHQ_NCCargoG` back
+  into the defend pool after the CargoOnly exclusion, and only NoDef is
+  subtracted after that. A player helicopter crew was handed "Defend Position"
+  (a SENTRY waypoint) once its transport contract ended, the moment the
+  contract's own NoDef entry lapsed (2026-10-27).
+- All three exclusions go through `CommanderParity_fnc_SetConstraintMembership`,
+  which writes the commander's array and the `RydHQB_*` global together, so
+  the SitRep rewrite keeps them. C.L.A.S.H. only removes exclusions it
+  previously added; ticking COMBAT removes its CargoOnly and NoDef entries.
 - The native GoRecon/GoDefRecon seam refuses every player group as the
   guarantee: HAL's Busy reservation is released and the recon never starts.
 
