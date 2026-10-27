@@ -33,7 +33,7 @@ if (missionNamespace getVariable ["ITW_CLASH_CSARStarted",false]) exitWith {true
 */
 
 ITW_CLASH_CSARStarted = true;
-ITW_CLASH_CSARVersion = 2;
+ITW_CLASH_CSARVersion = 3;
 ITW_CLASH_CSARReady = false;
 ITW_CLASH_CSARPoll = missionNamespace getVariable ["ITW_CLASH_CSARPoll",5];
 // The employment channel a player ticks for this work. MEDEVAC carries both
@@ -48,10 +48,15 @@ ITW_CLASH_CSARChannel = "MEDEVAC";
     the casualty rules: a downed pilot is unhurt, and every medical test in the
     dispatcher asks whether a man is a severe casualty.
 
-    Pickup and delivery distances are the dispatcher's own, read at use time, so
-    a rescue lands where a casualty run lands.
+    The delivery distance is the dispatcher's own, read at use time, so a
+    rescue lands home where a casualty run lands. Pickup is the squad evac's
+    (v3): a casualty is carried aboard where it lies, a downed crew walks
+    over and climbs in.
 */
 ITW_CLASH_CSARKind = "CSAR_CREW";
+// The squad evac's pickup distance: survivors walk to a carrier grounded
+// within GatherRadius and climb in.
+ITW_CLASH_CSARGatherRadius = missionNamespace getVariable ["ITW_CLASH_CSARGatherRadius",300];
 /*
     A claim that never becomes offerable is handed back rather than held for the
     rest of the mission, so unresolved crews cannot accumulate.
@@ -408,8 +413,8 @@ ITW_CLASH_CSAR_fnc_Survivors = {
 
     The medical path cannot be reused as it stands: its evacuee selection, its
     validity test and its delivery all ask ITW_CLASH_PlayerDemand_fnc_
-    IsSevereCasualty, and a rescued pilot is unhurt. Everything else - grounded
-    vehicle, capacity, pickup radius, assisted load - is the dispatcher's.
+    IsSevereCasualty, and a rescued pilot is unhurt. The grounded vehicle, the
+    capacity test and the walk-in boarding are the dispatcher's.
 */
 ITW_CLASH_CSAR_fnc_StartExecution = {
     params ["_demandId"];
@@ -419,24 +424,41 @@ ITW_CLASH_CSAR_fnc_StartExecution = {
     if (isNull _group) exitWith {false};
 
     private _vehicle = [_group] call ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle;
-    if (isNull _vehicle || {
-        !([_vehicle] call ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity)
-    }) exitWith {false};
-    if !([_vehicle] call ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer) exitWith {false};
-
+    private _crew = _demand getOrDefault ["targetGroup",grpNull];
+    if (isNull _crew) exitWith {false};
+    // On foot or already in this carrier; a man in any other vehicle is not ours.
+    private _men = units _crew select {
+        alive _x && {vehicle _x == _x || {vehicle _x == _vehicle}}
+    };
     private _survivors = [_demand] call ITW_CLASH_CSAR_fnc_Survivors;
-    if (_survivors isEqualTo []) exitWith {false};
-    if ((_vehicle emptyPositions "cargo") < count _survivors) exitWith {false};
-    if ((_survivors findIf {
-        _x distance2D _vehicle > ITW_CLASH_PlayerDemandMedevacPickupRadius
-    }) >= 0) exitWith {false};
-
-    {
-        unassignVehicle _x;
-        _x assignAsCargo _vehicle;
-        _x moveInCargo _vehicle;
-    } forEach _survivors;
-    if ((_survivors findIf {vehicle _x != _vehicle}) >= 0) exitWith {false};
+    /*
+        v3 (Hark, 2026-10-27): "polaris crew do not want to get in". v2 loaded
+        only when every survivor already stood inside the dispatcher's 35m
+        casualty radius and never told them to move, then put them straight
+        into their seats. A carrier grounded within GatherRadius now has them
+        walk over and climb in, the way AI CASEVAC boards its survivors.
+    */
+    private _ready = !isNull _vehicle
+        && {[_vehicle] call ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity}
+        && {[_vehicle] call ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer}
+        && {_men isNotEqualTo []}
+        && {(_vehicle emptyPositions "cargo") >= count _survivors}
+        && {(_men findIf {_x distance2D _vehicle <= ITW_CLASH_CSARGatherRadius}) >= 0};
+    if (!_ready) exitWith {
+        if (_demand getOrDefault ["boarding",false]) then {
+            _demand set ["boarding",false];
+            [_survivors,_demand getOrDefault ["boardingVehicle",objNull],_demand] call
+                ITW_CLASH_PlayerDemand_fnc_CancelBoarding;
+            ITW_CLASH_PlayerDemands set [_demandId,_demand];
+        };
+        false
+    };
+    _demand set ["boarding",true];
+    _demand set ["boardingVehicle",_vehicle];
+    private _aboard = [_men,_vehicle,_demand] call ITW_CLASH_PlayerDemand_fnc_BoardOnFoot;
+    ITW_CLASH_PlayerDemands set [_demandId,_demand];
+    if (!_aboard) exitWith {false};
+    _survivors = _men select {alive _x};
 
     _demand set ["state","EXECUTING"];
     _demand set ["stateAt",time];
@@ -707,11 +729,12 @@ ITW_CLASH_CSAR_fnc_Tick = {
 
     ITW_CLASH_CSARReady = true;
     diag_log format [
-        "CLASH BOOT | csar-ready | version=%1 poll=%2 channel=%3 claimCeiling=%4 playerSideOnly=true writesWithdrawals=false aiDispatch=false publishesMission=true missionDeadline=none",
+        "CLASH BOOT | csar-ready | version=%1 poll=%2 channel=%3 claimCeiling=%4 playerSideOnly=true writesWithdrawals=false aiDispatch=false publishesMission=true missionDeadline=none gather=%5 boardOnFoot=true",
         ITW_CLASH_CSARVersion,
         ITW_CLASH_CSARPoll,
         ITW_CLASH_CSARChannel,
-        ITW_CLASH_CSARClaimCeiling
+        ITW_CLASH_CSARClaimCeiling,
+        ITW_CLASH_CSARGatherRadius
     ];
 
     while {isNil "ITW_GameOver" || {!ITW_GameOver}} do {

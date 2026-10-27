@@ -48,7 +48,7 @@ EVAC = code_text(RAW)
 
 
 def test_boot_and_load_order():
-    assert "ITW_CLASH_PlayerSquadEvacVersion = 2;" in RAW
+    assert "ITW_CLASH_PlayerSquadEvacVersion = 3;" in RAW
     assert "CLASH BOOT | squad-evac-ready |" in RAW
     init = raw("init.sqf")
     # After CASEVAC, ground MEDEVAC and CSAR, inside CASEVAC's own block.
@@ -138,17 +138,20 @@ def test_abort_model():
     assert abort_clearance(700) == 150
 
 
-def test_pickup_gathers_to_a_grounded_carrier_and_loads_at_once():
+def test_pickup_walks_them_to_a_grounded_carrier_and_in():
     prepare = body_of(EVAC, "ITW_CLASH_PlayerSquadEvac_fnc_Prepare")
     ready = prepare.index("private _ready =")
     assert "ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer" in prepare[ready:ready + 400]
     assert "<= ITW_CLASH_PlayerSquadEvacGatherRadius" in prepare[ready:ready + 400]
-    # A carrier that lifts before loading sends them back to the landing zone.
-    assert '"carrier-left-back-to-lz"' in prepare
-    load = prepare.index("_x moveInCargo _vehicle;")
-    assert prepare.index("> ITW_CLASH_PlayerSquadEvacLoadRadius") < load
-    assert prepare.index('(_vehicle emptyPositions "cargo") < count _survivors') < load
-    assert prepare.index('_squad setVariable ["ITW_CLASH_CASEVAC_State","player-rtb"];') > load
+    # A carrier that lifts before loading sends them back to the landing zone,
+    # and the men outside stop chasing it.
+    left = prepare.index('"carrier-left-back-to-lz"')
+    assert prepare.rindex("ITW_CLASH_PlayerDemand_fnc_CancelBoarding", 0, left) > ready
+    board = prepare.index("[_survivors,_vehicle,_demand] call ITW_CLASH_PlayerDemand_fnc_BoardOnFoot")
+    assert prepare.index('(_vehicle emptyPositions "cargo") < count _outside') < board
+    assert prepare.index('_squad setVariable ["ITW_CLASH_CASEVAC_State","player-rtb"];') > board
+    assert "moveInCargo" not in prepare
+    assert "ITW_CLASH_PlayerSquadEvacLoadRadius" not in EVAC
 
 
 def test_smoke_on_the_held_landing_zone_within_casevacs_distance():

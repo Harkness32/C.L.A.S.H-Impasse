@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestTransportStarted",
 
 ITW_CLASH_PlayerTaskRequestTransportStarted = true;
 ITW_CLASH_PlayerTaskRequestTransportReady = false;
-ITW_CLASH_PlayerTaskRequestTransportVersion = 2;
+ITW_CLASH_PlayerTaskRequestTransportVersion = 3;
 ITW_CLASH_PlayerTaskRequestTransportSerial = 0;
 
 /*
@@ -39,9 +39,9 @@ ITW_CLASH_PlayerTaskRequestTransportSerial = 0;
     CargoChosen, AssignedCargo), an anchor, a withdrawal, special forces, any
     other recovery, and a squad that would not fit in the pilot's seats.
 
-    The job: land within GatherRadius of them; they walk to you and board
-    together inside LoadRadius; drop them on the ground within DropRadius of
-    their destination. A pickup nobody makes in PickupTimeout hands the squad
+    The job: land within GatherRadius of them; they walk to you and climb
+    in, as AI CASEVAC's survivors do; drop them on the ground within
+    DropRadius of their destination. A pickup nobody makes in PickupTimeout hands the squad
     back to HAL.
 */
 
@@ -49,10 +49,8 @@ ITW_CLASH_PlayerLiftBaseRadius = missionNamespace getVariable ["ITW_CLASH_Player
 ITW_CLASH_PlayerLiftMinDistance = missionNamespace getVariable ["ITW_CLASH_PlayerLiftMinDistance",2000];
 ITW_CLASH_PlayerLiftDropRadius = missionNamespace getVariable ["ITW_CLASH_PlayerLiftDropRadius",1500];
 ITW_CLASH_PlayerLiftGatherRadius = missionNamespace getVariable ["ITW_CLASH_PlayerLiftGatherRadius",300];
-ITW_CLASH_PlayerLiftLoadRadius = missionNamespace getVariable ["ITW_CLASH_PlayerLiftLoadRadius",60];
 ITW_CLASH_PlayerLiftPickupTimeout = missionNamespace getVariable ["ITW_CLASH_PlayerLiftPickupTimeout",600];
 ITW_CLASH_PlayerLiftPoll = 1;
-ITW_CLASH_PlayerLiftGatherOrderInterval = 5;
 
 ITW_CLASH_PlayerTaskRequestTransport_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -221,8 +219,8 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Finish = {
 
 /*
     PICKUP: the squad holds where it is. A carrier grounded within
-    GatherRadius brings them walking to it; everyone inside LoadRadius goes
-    aboard together. Returns true once they are aboard.
+    GatherRadius brings them walking to it and they climb in. Returns true
+    once they are aboard.
 */
 ITW_CLASH_PlayerTaskRequestTransport_fnc_Pickup = {
     params ["_jobId","_job","_group","_squad"];
@@ -241,36 +239,27 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Pickup = {
     if (!_ready) exitWith {
         if (_job getOrDefault ["gathering",false]) then {
             _job set ["gathering",false];
-            {doStop _x} forEach (units _squad select {alive _x});
+            [units _squad,_job getOrDefault ["boardingVehicle",objNull],_job] call
+                ITW_CLASH_PlayerDemand_fnc_CancelBoarding;
         };
         false
     };
     _job set ["gathering",true];
 
     private _men = units _squad select {alive _x};
-    private _far = _men select {(_x distance2D _vehicle) > ITW_CLASH_PlayerLiftLoadRadius};
-    if (_far isNotEqualTo []) exitWith {
-        if (time >= (_job getOrDefault ["gatherOrderAt",0])) then {
-            _job set ["gatherOrderAt",time + ITW_CLASH_PlayerLiftGatherOrderInterval];
-            {_x doMove (getPosATL _vehicle)} forEach _far;
-        };
-        false
-    };
-    if ((_vehicle emptyPositions "cargo") < count _men) exitWith {
+    private _outside = _men select {vehicle _x != _vehicle};
+    if ((_vehicle emptyPositions "cargo") < count _outside) exitWith {
         if !(_job getOrDefault ["seatsSaid",false]) then {
             _job set ["seatsSaid",true];
-            ["too-few-seats",[_jobId,typeOf _vehicle,_vehicle emptyPositions "cargo",count _men]] call
+            ["too-few-seats",[_jobId,typeOf _vehicle,_vehicle emptyPositions "cargo",count _outside]] call
                 ITW_CLASH_PlayerTaskRequestTransport_fnc_Log;
         };
         false
     };
 
-    {
-        unassignVehicle _x;
-        _x assignAsCargo _vehicle;
-        _x moveInCargo _vehicle;
-    } forEach _men;
-    if ((_men findIf {vehicle _x != _vehicle}) >= 0) exitWith {false};
+    // v3 (Hark, 2026-10-27): they walk over and climb in, as for AI CASEVAC.
+    _job set ["boardingVehicle",_vehicle];
+    if !([_men,_vehicle,_job] call ITW_CLASH_PlayerDemand_fnc_BoardOnFoot) exitWith {false};
 
     _job set ["phase","CARRY"];
     _job set ["carrier",_vehicle];
@@ -518,13 +507,13 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
     ITW_CLASH_PlayerTaskRequestTransportReady = true;
 
     diag_log format [
-        "CLASH BOOT | player-task-request-transport-ready | version=%1 realSquadsOnly=true spawnsNothing=true baseRadius=%2 minDistance=%3 dropRadius=%4 gather=%5 load=%6 pickupTimeout=%7 halQueuedLiftsSkipped=true offHALForRide=true orderedSquadsOnly=true dropZoneMarked=true",
+        "CLASH BOOT | player-task-request-transport-ready | version=%1 realSquadsOnly=true spawnsNothing=true baseRadius=%2 minDistance=%3 dropRadius=%4 gather=%5 boardTimeout=%6 pickupTimeout=%7 halQueuedLiftsSkipped=true offHALForRide=true orderedSquadsOnly=true dropZoneMarked=true",
         ITW_CLASH_PlayerTaskRequestTransportVersion,
         ITW_CLASH_PlayerLiftBaseRadius,
         ITW_CLASH_PlayerLiftMinDistance,
         ITW_CLASH_PlayerLiftDropRadius,
         ITW_CLASH_PlayerLiftGatherRadius,
-        ITW_CLASH_PlayerLiftLoadRadius,
+        ITW_CLASH_PlayerBoardTimeout,
         ITW_CLASH_PlayerLiftPickupTimeout
     ];
 };

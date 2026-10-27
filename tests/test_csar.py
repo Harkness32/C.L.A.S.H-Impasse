@@ -264,7 +264,7 @@ def test_no_deadline_anywhere_else():
 
 def test_the_boot_line_says_what_it_will_not_do():
     source = csar()
-    assert "ITW_CLASH_CSARVersion = 2;" in source
+    assert "ITW_CLASH_CSARVersion = 3;" in source
     for claim in [
         "writesWithdrawals=false",
         "aiDispatch=false",
@@ -331,13 +331,32 @@ def test_a_rescued_pilot_is_not_asked_to_be_a_casualty():
         "ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle",
         "ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity",
         "ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer",
-        "ITW_CLASH_PlayerDemandMedevacPickupRadius",
         'emptyPositions "cargo"',
     ]:
         assert reused in execution, reused
-    # One definition of the distances: the dispatcher's.
-    assert "ITW_CLASH_CSARPickupRadius" not in source
+    # The delivery distance is the dispatcher's.
     assert "ITW_CLASH_CSARHomeRadius" not in source
+
+
+def test_survivors_walk_to_a_grounded_carrier_and_board_together():
+    """2026-10-27, Hark: "polaris crew do not want to get in". v2 loaded only
+    when every survivor already stood inside the dispatcher's 35m casualty
+    radius and never told them to move."""
+    source = csar()
+    execution = code_only(function_body(source, "ITW_CLASH_CSAR_fnc_StartExecution"))
+    assert "ITW_CLASH_PlayerDemandMedevacPickupRadius" not in execution
+    gather = execution.index("_x distance2D _vehicle <= ITW_CLASH_CSARGatherRadius")
+    board = execution.index("[_men,_vehicle,_demand] call ITW_CLASH_PlayerDemand_fnc_BoardOnFoot")
+    executing = execution.index('_demand set ["state","EXECUTING"];')
+    assert gather < board < executing
+    assert "moveInCargo" not in execution
+    # Seats are checked against the men still outside.
+    assert '(_vehicle emptyPositions "cargo") >= count _survivors' in execution
+    # A carrier that leaves mid-boarding releases the men outside.
+    not_ready = execution[execution.index("if (!_ready) exitWith {"):board]
+    assert "ITW_CLASH_PlayerDemand_fnc_CancelBoarding" in not_ready
+    # The squad evac's gather distance.
+    assert 'getVariable ["ITW_CLASH_CSARGatherRadius",300]' in source
 
 
 def test_the_run_home_resolves_the_base_every_pass_and_ends_only_on_events():
@@ -407,7 +426,7 @@ def test_finished_demands_leave_the_table():
     the 1 Hz loop walks every key, so terminal rows cannot accumulate for a
     whole campaign any more."""
     dispatch = mission("ITW_CLASH_PlayerDemandDispatch.sqf")
-    assert "ITW_CLASH_PlayerDemandDispatchVersion = 3;" in dispatch
+    assert "ITW_CLASH_PlayerDemandDispatchVersion = 4;" in dispatch
     assert "ITW_CLASH_PlayerDemandRetention" in dispatch
     assert "ITW_CLASH_PlayerDemands deleteAt _x;" in dispatch
     assert "prunesTerminalDemands=true" in dispatch

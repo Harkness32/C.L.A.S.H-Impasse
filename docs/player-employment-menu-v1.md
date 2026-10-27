@@ -19,7 +19,11 @@ changes vehicles.
 - The MEDEVAC channel is **presented as Combat Search and Rescue** ("Accept
   Combat Search and Rescue Missions"). It carries three demand kinds:
   `MEDEVAC_SEVERE`, the casualty extraction it always carried; `CSAR_CREW`,
-  the recovery of a crew that survived its vehicle; and `MEDEVAC_SQUAD`
+  the recovery of a crew that survived its vehicle (the survivors walk to a
+  carrier grounded within 300 m and climb in, as AI CASEVAC's survivors do;
+  until v3 of `ITW_CLASH_CSAR.sqf` they had to be standing within 35 m
+  already, were never told to move, and were put straight into their
+  seats); and `MEDEVAC_SQUAD`
   (2026-10-27, `ITW_CLASH_PlayerSquadEvac.sqf`), the extraction of one of our
   AI squads that is withdrawing combat-ineffective. That last one is players
   first, with the squad behaving exactly as it does for an AI pilot: it

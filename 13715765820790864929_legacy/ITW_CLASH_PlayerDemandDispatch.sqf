@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandDispatchStarted",false]
 
 ITW_CLASH_PlayerDemandDispatchStarted = true;
 ITW_CLASH_PlayerDemandDispatchReady = false;
-ITW_CLASH_PlayerDemandDispatchVersion = 3;
+ITW_CLASH_PlayerDemandDispatchVersion = 4;
 ITW_CLASH_PlayerDemands = createHashMap;
 ITW_CLASH_PlayerDemandNextId = 0;
 ITW_CLASH_PlayerDemandPoll = 1;
@@ -542,6 +542,70 @@ ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer = {
         isTouchingGround _vehicle || {(getPosATL _vehicle)#2 < 2.5}
     };
     true
+};
+
+/*
+    Walk able men aboard, the way AI CASEVAC boards its survivors: each is
+    given a cargo seat and ordered in, again every BoardOrderInterval, until
+    all are inside.
+
+    Hark, 2026-10-27: "lets have them physically walk in and board, like
+    medevac". Before this a downed crew, a squad evac and a requested lift were
+    moved straight into their seats.
+
+    Called every pass while the carrier waits; returns true once every living
+    man is in. Anyone still outside after BoardTimeout with the whole group
+    inside BoardCloseRadius is put in, so one AI that cannot find the door does
+    not hold the pilot on the ground. A severe casualty is not asked to walk:
+    MEDEVAC_SEVERE keeps its assisted load.
+*/
+ITW_CLASH_PlayerBoardOrderInterval = 5;
+ITW_CLASH_PlayerBoardCloseRadius = missionNamespace getVariable ["ITW_CLASH_PlayerBoardCloseRadius",20];
+ITW_CLASH_PlayerBoardTimeout = missionNamespace getVariable ["ITW_CLASH_PlayerBoardTimeout",30];
+
+ITW_CLASH_PlayerDemand_fnc_BoardOnFoot = {
+    params ["_men","_vehicle","_job"];
+    private _outside = _men select {alive _x && {vehicle _x != _vehicle}};
+    if (_outside isEqualTo []) exitWith {true};
+    {
+        if !((assignedVehicle _x) isEqualTo _vehicle) then {
+            unassignVehicle _x;
+            _x assignAsCargo _vehicle;
+        };
+    } forEach _outside;
+    if (time >= (_job getOrDefault ["boardOrderAt",0])) then {
+        _job set ["boardOrderAt",time + ITW_CLASH_PlayerBoardOrderInterval];
+        _outside allowGetIn true;
+        _outside orderGetIn true;
+    };
+
+    if ((_outside findIf {_x distance2D _vehicle > ITW_CLASH_PlayerBoardCloseRadius}) >= 0) exitWith {
+        _job set ["boardCloseSince",-1];
+        false
+    };
+    private _since = _job getOrDefault ["boardCloseSince",-1];
+    if (_since < 0) exitWith {
+        _job set ["boardCloseSince",time];
+        false
+    };
+    if (time - _since < ITW_CLASH_PlayerBoardTimeout) exitWith {false};
+    {_x moveInCargo _vehicle} forEach _outside;
+    (_men findIf {alive _x && {vehicle _x != _vehicle}}) < 0
+};
+
+// The carrier left before they were all in: the ones outside stop chasing it.
+ITW_CLASH_PlayerDemand_fnc_CancelBoarding = {
+    params ["_men","_vehicle","_job"];
+    private _outside = _men select {alive _x && {vehicle _x == _x}};
+    if (_outside isNotEqualTo []) then {
+        _outside orderGetIn false;
+        {
+            if ((assignedVehicle _x) isEqualTo _vehicle) then {unassignVehicle _x};
+            doStop _x;
+        } forEach _outside;
+    };
+    _job set ["boardOrderAt",0];
+    _job set ["boardCloseSince",-1];
 };
 
 ITW_CLASH_PlayerDemand_fnc_StartMedevacExecution = {

@@ -44,7 +44,7 @@ def test_the_slot_the_bootstrap_expected_is_filled_and_registered():
     assert '["TRANSPORT","ITW_CLASH_PlayerTaskRequestTransport.sqf"]' in raw("ITW_CLASH_PlayerTaskRequestBootstrap.sqf")
     assert '"TRANSPORT"' in raw("ITW_CLASH_PlayerTaskRequests.sqf")
     assert '["TRANSPORT",ITW_CLASH_PlayerTaskRequestTransport_fnc_Request] call' in CODE
-    assert "ITW_CLASH_PlayerTaskRequestTransportVersion = 2;" in RAW
+    assert "ITW_CLASH_PlayerTaskRequestTransportVersion = 3;" in RAW
     assert "CLASH BOOT | player-task-request-transport-ready |" in RAW
     assert "spawnsNothing=true" in RAW
 
@@ -138,15 +138,18 @@ def test_the_squad_is_off_hal_for_the_ride_and_back_on_the_drop():
     assert "call ITW_CLASH_DualHAL_fnc_SyncIncluded" in release
 
 
-def test_pickup_gathers_to_a_grounded_carrier_and_loads_at_once():
+def test_pickup_walks_them_to_a_grounded_carrier_and_in():
     pickup = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_Pickup")
     ready = pickup.index("private _ready =")
     assert "ITW_CLASH_PlayerDemand_fnc_IsGroundedForTransfer" in pickup[ready:ready + 400]
     assert "<= ITW_CLASH_PlayerLiftGatherRadius" in pickup[ready:ready + 400]
-    load = pickup.index("_x moveInCargo _vehicle;")
-    assert pickup.index("> ITW_CLASH_PlayerLiftLoadRadius") < load
-    assert pickup.index('(_vehicle emptyPositions "cargo") < count _men') < load
-    assert pickup.index('_job set ["phase","CARRY"];') > load
+    not_ready = pickup[pickup.index("if (!_ready) exitWith {"):pickup.index('_job set ["gathering",true];')]
+    assert "ITW_CLASH_PlayerDemand_fnc_CancelBoarding" in not_ready
+    board = pickup.index("[_men,_vehicle,_job] call ITW_CLASH_PlayerDemand_fnc_BoardOnFoot")
+    assert pickup.index('(_vehicle emptyPositions "cargo") < count _outside') < board
+    assert pickup.index('_job set ["phase","CARRY"];') > board
+    assert "moveInCargo" not in pickup
+    assert "ITW_CLASH_PlayerLiftLoadRadius" not in CODE
 
 
 def test_the_job_ends_on_the_ground_near_the_destination():

@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerSquadEvacStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerSquadEvacStarted = true;
-ITW_CLASH_PlayerSquadEvacVersion = 2;
+ITW_CLASH_PlayerSquadEvacVersion = 3;
 ITW_CLASH_PlayerSquadEvacReady = false;
 
 /*
@@ -37,7 +37,7 @@ ITW_CLASH_PlayerSquadEvacReady = false;
         carrier is committed within 800 m - and the squad moves on; it calls
         again from the next safe spot, still for the same player.
       - PICKUP: the carrier is grounded within GatherRadius; the squad walks
-        to it and everyone inside LoadRadius goes aboard at once.
+        to it and climbs in, as AI CASEVAC's survivors do.
       - EXECUTING: flying them to their rally point, where the mission's own
         withdrawal audit absorbs them and queues the rebuild, exactly as for
         an AI CASEVAC: no second credit path.
@@ -58,9 +58,6 @@ ITW_CLASH_PlayerSquadEvacKind = "MEDEVAC_SQUAD";
 ITW_CLASH_PlayerSquadEvacMarker = "ITW_CLASH_PlayerSquadEvacReservation";
 // A grounded carrier this close to the squad leader starts the pickup.
 ITW_CLASH_PlayerSquadEvacGatherRadius = missionNamespace getVariable ["ITW_CLASH_PlayerSquadEvacGatherRadius",300];
-// Every survivor this close to the carrier goes aboard together.
-ITW_CLASH_PlayerSquadEvacLoadRadius = missionNamespace getVariable ["ITW_CLASH_PlayerSquadEvacLoadRadius",60];
-ITW_CLASH_PlayerSquadEvacGatherOrderInterval = 5;
 // Delivered: within the withdrawal's arrival radius plus this, metres.
 ITW_CLASH_PlayerSquadEvacDeliverySlack = missionNamespace getVariable ["ITW_CLASH_PlayerSquadEvacDeliverySlack",150];
 // Grounded at the rally point this long without being absorbed: unload them.
@@ -378,6 +375,9 @@ ITW_CLASH_PlayerSquadEvac_fnc_Prepare = {
     if (!_ready) exitWith {
         // The carrier lifted before they were aboard: back to the landing zone.
         if (_state isEqualTo "player-pickup") then {
+            [units _squad,_demand getOrDefault ["boardingVehicle",objNull],_demand] call
+                ITW_CLASH_PlayerDemand_fnc_CancelBoarding;
+            ITW_CLASH_PlayerDemands set [_demandId,_demand];
             _lz = _demand getOrDefault ["lzHeld",[]];
             if (_lz isNotEqualTo []) then {
                 [_demandId,_lz,"carrier-left-back-to-lz"] call ITW_CLASH_PlayerSquadEvac_fnc_HoldAtLz;
@@ -406,32 +406,24 @@ ITW_CLASH_PlayerSquadEvac_fnc_Prepare = {
 
     private _survivors = units _squad select {alive _x};
     if (_survivors isEqualTo []) exitWith {false};
-    private _far = _survivors select {(_x distance2D _vehicle) > ITW_CLASH_PlayerSquadEvacLoadRadius};
-    if (_far isNotEqualTo []) exitWith {
-        if (time >= (_demand getOrDefault ["gatherOrderAt",0])) then {
-            _demand set ["gatherOrderAt",time + ITW_CLASH_PlayerSquadEvacGatherOrderInterval];
-            ITW_CLASH_PlayerDemands set [_demandId,_demand];
-            {_x doMove (getPosATL _vehicle)} forEach _far;
-        };
-        false
-    };
-    if ((_vehicle emptyPositions "cargo") < count _survivors) exitWith {
+    private _outside = _survivors select {vehicle _x != _vehicle};
+    if ((_vehicle emptyPositions "cargo") < count _outside) exitWith {
         if !(_demand getOrDefault ["seatsSaid",false]) then {
             _demand set ["seatsSaid",true];
             ITW_CLASH_PlayerDemands set [_demandId,_demand];
             ["too-few-seats",[
-                _demandId,typeOf _vehicle,_vehicle emptyPositions "cargo",count _survivors
+                _demandId,typeOf _vehicle,_vehicle emptyPositions "cargo",count _outside
             ]] call ITW_CLASH_PlayerSquadEvac_fnc_Log;
         };
         false
     };
 
-    {
-        unassignVehicle _x;
-        _x assignAsCargo _vehicle;
-        _x moveInCargo _vehicle;
-    } forEach _survivors;
-    if ((_survivors findIf {vehicle _x != _vehicle}) >= 0) exitWith {false};
+    // v3 (Hark, 2026-10-27): they walk over and climb in, as for AI CASEVAC,
+    // instead of being put in their seats once all were within 60m.
+    _demand set ["boardingVehicle",_vehicle];
+    private _aboard = [_survivors,_vehicle,_demand] call ITW_CLASH_PlayerDemand_fnc_BoardOnFoot;
+    ITW_CLASH_PlayerDemands set [_demandId,_demand];
+    if (!_aboard) exitWith {false};
 
     _squad setVariable ["ITW_CLASH_CASEVAC_State","player-rtb"];
     [_squad] call ITW_CLASH_PlayerSquadEvac_fnc_ClearPad;
@@ -701,13 +693,13 @@ ITW_CLASH_PlayerSquadEvac_fnc_Tick = {
 
     ITW_CLASH_PlayerSquadEvacReady = true;
     diag_log format [
-        "CLASH BOOT | squad-evac-ready | version=%1 enabled=%2 channel=%3 kind=%4 gather=%5 load=%6 radioCheck=casevac-eligibility holdsAtLz=true contactAbort=%7/%8 commitAt=%9 groundGateBound=%10 hardeningLayers=%11 markerAtReserve=%12 smokeAt=%13m smokeRepop=%14s playerSideOnly=true",
+        "CLASH BOOT | squad-evac-ready | version=%1 enabled=%2 channel=%3 kind=%4 gather=%5 boardOnFoot=true boardTimeout=%6 radioCheck=casevac-eligibility holdsAtLz=true contactAbort=%7/%8 commitAt=%9 groundGateBound=%10 hardeningLayers=%11 markerAtReserve=%12 smokeAt=%13m smokeRepop=%14s playerSideOnly=true",
         ITW_CLASH_PlayerSquadEvacVersion,
         ITW_CLASH_PlayerSquadEvacEnabled,
         ITW_CLASH_PlayerSquadEvacChannel,
         ITW_CLASH_PlayerSquadEvacKind,
         ITW_CLASH_PlayerSquadEvacGatherRadius,
-        ITW_CLASH_PlayerSquadEvacLoadRadius,
+        ITW_CLASH_PlayerBoardTimeout,
         ITW_CLASH_CASEVAC_InboundAbortClearance,
         ITW_CLASH_CASEVAC_CommittedAbortClearance,
         ITW_CLASH_CASEVAC_CommitDistance,
