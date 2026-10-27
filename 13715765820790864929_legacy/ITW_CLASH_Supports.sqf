@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 9;
+ITW_CLASH_SupportsVersion = 10;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -131,6 +131,15 @@ ITW_CLASH_SupportsReady = false;
     attackers a flag at half-mast has about four minutes left, a bare one about
     two and a half, and a wave needs two to four to land.
 
+    v10 (Hark, 2026-10-27): the JTAC (ITW_CLASH_SupportsJTAC.sqf) decides on
+    its own and admits through here. Its picks bring their own lane (JTAC), a
+    FREE wallet that holds and costs nothing, and the team that called it; the
+    pre-run check asks that team again whether it still sees the target
+    (NO_SIGHT). Nothing COLOSSUS does reads or starts the JTAC's clock.
+    Danger close (Hark, same day): the bomb and guided passes share one margin,
+    DangerMarginPrecision (150 m, players included); a JTAC's call has its own
+    (DangerMarginJTAC, 150 m); the carpet keeps 300 m and 500 m from a player.
+
     Every number below is a placeholder for calibration.
 */
 
@@ -211,11 +220,16 @@ ITW_CLASH_SupportsFootprintGuided = missionNamespace getVariable ["ITW_CLASH_Sup
 // For the flavors that acquire on site it gates only what they would drop on
 // the report itself; their own acquisition is not a guess.
 ITW_CLASH_SupportsUncertaintyLimit = missionNamespace getVariable ["ITW_CLASH_SupportsUncertaintyLimit",300];
+// The carpet's margins (v10), and the fallback for a check that names no flavor.
 ITW_CLASH_SupportsDangerMargin = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMargin",300];
 ITW_CLASH_SupportsDangerMarginPlayer = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginPlayer",500];
-// v6: one precision missile, not a stick of bombs.
-ITW_CLASH_SupportsDangerMarginGuided = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginGuided",100];
-ITW_CLASH_SupportsDangerMarginGuidedPlayer = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginGuidedPlayer",200];
+// v10 (Hark, 2026-10-27): the bomb pass and the guided pass, one margin, players
+// included. Was 300 m (500 m from a player) for the bomb and 100 m (200 m) for
+// the guided pass; the carpet keeps the wide line above.
+ITW_CLASH_SupportsDangerMarginPrecision = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginPrecision",150];
+// v10 (Hark, 2026-10-27): a JTAC's call, any flavor, any friendly, players
+// included. A controller with eyes on is the reason a strike may come closer.
+ITW_CLASH_SupportsDangerMarginJTAC = missionNamespace getVariable ["ITW_CLASH_SupportsDangerMarginJTAC",150];
 // Friendly aircraft above this are not in the footprint's way.
 ITW_CLASH_SupportsDangerAirHeight = missionNamespace getVariable ["ITW_CLASH_SupportsDangerAirHeight",300];
 ITW_CLASH_SupportsCorridorPenalty = missionNamespace getVariable ["ITW_CLASH_SupportsCorridorPenalty",0.5];
@@ -398,7 +412,7 @@ ITW_CLASH_SupportsDenials = [
     "BELOW_FLOOR","ETB_ANSWERING","DANGER_CLOSE","AIR_DENIED","OBJECTIVE_FROZEN",
     "DZ_UNASSESSED","NO_HEADROOM","TARGET_GONE","NO_EXECUTOR","SPAWN_FAILED",
     "CONSOLIDATING","NO_DZ","NO_SQUADS","NOT_CLUSTERED","UAV_KILLBOX",
-    "NO_VEHICLE_FIT","DEFEND_PHASE","REFUSED","ADMISSION"
+    "NO_VEHICLE_FIT","DEFEND_PHASE","REFUSED","ADMISSION","NO_SIGHT"
 ];
 
 ITW_CLASH_SupportsLedgers = createHashMap;
@@ -489,12 +503,14 @@ ITW_CLASH_Supports_fnc_WalletOf = {
 };
 
 // v7: where a wallet's money sits in the ledger. BITE is the bite-back pot,
-// counted in waves; TEST is a console test's, which never runs out.
+// counted in waves; TEST is a console test's, which never runs out. v10: FREE
+// is the JTAC's, which holds nothing and is never charged.
 ITW_CLASH_Supports_fnc_WalletKey = {
     params ["_wallet"];
     switch (_wallet) do {
         case "DROP": {"dropCash"};
         case "BITE": {"biteCash"};
+        case "FREE": {"freeCash"};
         default {"cash"};
     }
 };
@@ -510,6 +526,7 @@ ITW_CLASH_Supports_fnc_WalletCap = {
     switch (_wallet) do {
         case "DROP": {call ITW_CLASH_Supports_fnc_DropCap};
         case "BITE": {ITW_CLASH_SupportsBiteBackCap};
+        case "FREE": {0};
         case "TEST": {1e10};
         default {call ITW_CLASH_Supports_fnc_Cap};
     }
@@ -563,7 +580,8 @@ ITW_CLASH_Supports_fnc_Ledger = {
             ["biteCash",ITW_CLASH_SupportsBiteBackCap],
             ["accruedAt",time],
             ["lanes",createHashMapFromArray [
-                ["RECON",""],["COMMIT",""],["DROP",""],["VEHICLE",""],["BITE_DROP",""],["BITE_VEHICLE",""]
+                ["RECON",""],["COMMIT",""],["DROP",""],["VEHICLE",""],["BITE_DROP",""],["BITE_VEHICLE",""],
+                ["JTAC",""]
             ]],
             ["reconBlockedUntil",0],
             ["cooldowns",createHashMap],
@@ -571,7 +589,9 @@ ITW_CLASH_Supports_fnc_Ledger = {
             // v7, bite-back: objective -> [flag ours, phase] at the last look;
             // what it last said per objective, so a held wave is one line.
             ["bitePhases",createHashMap],
-            ["biteSaid",createHashMap]
+            ["biteSaid",createHashMap],
+            // v10, JTAC: what it last said it was held by, so it is one line.
+            ["jtacSaid",""]
         ];
         ITW_CLASH_SupportsLedgers set [_key,_ledger];
         ["ledger-opened",[
@@ -1066,19 +1086,20 @@ ITW_CLASH_Supports_fnc_Friendlies = {
 };
 
 // v6: the margin past the footprint, by flavor and by whether it is a player.
+// v10: a JTAC's call has one margin of its own; the bomb and guided passes
+// share one; only the carpet (or a check naming no flavor) keeps the wide line.
 ITW_CLASH_Supports_fnc_DangerMargin = {
-    params [["_flavor",""],["_player",false]];
-    if (_flavor isEqualTo "GUIDED") exitWith {
-        if (_player) then {ITW_CLASH_SupportsDangerMarginGuidedPlayer} else {ITW_CLASH_SupportsDangerMarginGuided}
-    };
+    params [["_flavor",""],["_player",false],["_jtac",false]];
+    if (_jtac) exitWith {ITW_CLASH_SupportsDangerMarginJTAC};
+    if (_flavor in ["BOMB","GUIDED"]) exitWith {ITW_CLASH_SupportsDangerMarginPrecision};
     if (_player) then {ITW_CLASH_SupportsDangerMarginPlayer} else {ITW_CLASH_SupportsDangerMargin}
 };
 
 ITW_CLASH_Supports_fnc_DangerClose = {
-    params ["_friendlies","_aim","_footprint",["_flavor",""]];
+    params ["_friendlies","_aim","_footprint",["_flavor",""],["_jtac",false]];
     (_friendlies findIf {
         _x params ["_position","_player"];
-        (_position distance2D _aim) <= (_footprint + ([_flavor,_player] call ITW_CLASH_Supports_fnc_DangerMargin))
+        (_position distance2D _aim) <= (_footprint + ([_flavor,_player,_jtac] call ITW_CLASH_Supports_fnc_DangerMargin))
     }) >= 0
 };
 
@@ -1087,12 +1108,12 @@ ITW_CLASH_Supports_fnc_DangerClose = {
     inside its own line. [distance, player, line] or [] when none is inside.
 */
 ITW_CLASH_Supports_fnc_DangerWhy = {
-    params ["_friendlies","_aim","_footprint",["_flavor",""]];
+    params ["_friendlies","_aim","_footprint",["_flavor",""],["_jtac",false]];
     private _worst = [];
     private _worstDepth = 0;
     {
         _x params ["_position","_player"];
-        private _line = _footprint + ([_flavor,_player] call ITW_CLASH_Supports_fnc_DangerMargin);
+        private _line = _footprint + ([_flavor,_player,_jtac] call ITW_CLASH_Supports_fnc_DangerMargin);
         private _distance = _position distance2D _aim;
         private _depth = _line - _distance;
         if (_depth >= 0 && {_worst isEqualTo [] || {_depth > _worstDepth}}) then {
@@ -2205,6 +2226,7 @@ ITW_CLASH_Supports_fnc_Admit = {
         ["assets",[]],["groups",[]],["delivered",false],["detail",""],
         ["test",_pick getOrDefault ["test",false]],
         ["wave",_pick getOrDefault ["wave",""]],
+        ["controller",_pick getOrDefault ["controller",grpNull]],
         ["dryRun",ITW_CLASH_SupportsDryRun && {!(_pick getOrDefault ["test",false])}]
     ];
     (([_side] call ITW_CLASH_Supports_fnc_Ledger) get "supports") set [_id,_support];
@@ -2260,12 +2282,21 @@ ITW_CLASH_Supports_fnc_PreRun = {
         if (!_acquires && {_r > ITW_CLASH_SupportsUncertaintyLimit}) exitWith {
             _support set ["denied","TOO_UNCERTAIN"]
         };
+        // v10: a JTAC's call needs the team's eyes still on it.
+        if (
+            !isNull (_support getOrDefault ["controller",grpNull])
+            && {!isNil "ITW_CLASH_SupportsJTAC_fnc_StillSees"}
+            && {!([_support] call ITW_CLASH_SupportsJTAC_fnc_StillSees)}
+        ) exitWith {
+            _support set ["denied","NO_SIGHT"]
+        };
         private _footprint = [_support get "flavor","footprint",50] call ITW_CLASH_Supports_fnc_RowNumber;
         private _friendlies = [_side] call ITW_CLASH_Supports_fnc_Friendlies;
-        if ([_friendlies,_aim,_footprint,_support get "flavor"] call ITW_CLASH_Supports_fnc_DangerClose) exitWith {
+        private _jtac = !isNull (_support getOrDefault ["controller",grpNull]);
+        if ([_friendlies,_aim,_footprint,_support get "flavor",_jtac] call ITW_CLASH_Supports_fnc_DangerClose) exitWith {
             ["danger-close",[
                 _support get "sign",_support get "flavor",_support get "id","pre-run",
-                [_friendlies,_aim,_footprint,_support get "flavor"] call ITW_CLASH_Supports_fnc_DangerWhy
+                [_friendlies,_aim,_footprint,_support get "flavor",_jtac] call ITW_CLASH_Supports_fnc_DangerWhy
             ]] call ITW_CLASH_Supports_fnc_Log;
             _support set ["denied","DANGER_CLOSE"]
         };
@@ -2615,7 +2646,10 @@ ITW_CLASH_Supports_fnc_LedgerLog = {
             _lanes getOrDefault ["VEHICLE",""],
             (round ((_ledger getOrDefault ["biteCash",0]) * 100)) / 100,
             _lanes getOrDefault ["BITE_DROP",""],
-            _lanes getOrDefault ["BITE_VEHICLE",""]
+            _lanes getOrDefault ["BITE_VEHICLE",""],
+            // v10: the JTAC's lane and the seconds left on its clock.
+            _lanes getOrDefault ["JTAC",""],
+            round ((((_ledger get "cooldowns") getOrDefault ["jtac",0]) - time) max 0)
         ]] call ITW_CLASH_Supports_fnc_Log;
     } forEach _this;
 };
@@ -2647,7 +2681,7 @@ ITW_CLASH_SupportsAirborneMinSquadCore = missionNamespace getVariable ["ITW_CLAS
 
 ITW_CLASH_SupportsReady = true;
 diag_log format [
-    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true dropWallet=%35/min dropCap=%36 dropCadence=%37/%38/%39min carrier=%40 carrierFirst=preferred planeTroop=%46 deliveryTiers=car,apc,tank canBeTransported=true biteBack=%41 biteBackPot=%42wave/%43min biteBackCooldown=%44s biteBackSquads=%45 lanes=RECON,COMMIT,DROP,VEHICLE,BITE_DROP,BITE_VEHICLE picks=strike,drop,vehicle delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true jetSpawn=%47m projectionJet=%48",
+    "CLASH BOOT | supports-ready | version=%1 enabled=%2 dryRun=%3 uav=%4 bomb=%5 guided=%6 carpet=%7 airborneHeli=%8 airbornePlane=%9 vehicleDrop=%10 income=%11/min cap=%12 floor=%13 acquireFloor=%22 carpetMinContacts=%23 acquireOnSite=%24 cadence=%25/%26/%27min saveScale=%28 bombSpawn=%29m uavKillbox=%30s/%31m/%32s uncertaintyLimit=%14 danger=%15/%16 dangerPrecision=%33 dangerJTAC=%34 dangerLogged=true dropWallet=%35/min dropCap=%36 dropCadence=%37/%38/%39min carrier=%40 carrierFirst=preferred planeTroop=%46 deliveryTiers=car,apc,tank canBeTransported=true biteBack=%41 biteBackPot=%42wave/%43min biteBackCooldown=%44s biteBackSquads=%45 lanes=RECON,COMMIT,DROP,VEHICLE,BITE_DROP,BITE_VEHICLE,JTAC picks=strike,drop,vehicle delay=%17-%18 influence=%19m edge=%20 threatProximity=%21m colossusProposesOnly=true refundUnlessDeliveredOrLost=true refundCappedAtCeiling=true fullRunIn=true uavFixedWingFirst=true jetSpawn=%47m projectionJet=%48",
     ITW_CLASH_SupportsVersion,
     ITW_CLASH_SupportsEnabled,
     ITW_CLASH_SupportsDryRun,
@@ -2680,8 +2714,8 @@ diag_log format [
     ITW_CLASH_SupportsUAVKillboxSeconds,
     ITW_CLASH_SupportsUAVKillboxRadius,
     ITW_CLASH_SupportsUAVKillboxDuration,
-    ITW_CLASH_SupportsDangerMarginGuided,
-    ITW_CLASH_SupportsDangerMarginGuidedPlayer,
+    ITW_CLASH_SupportsDangerMarginPrecision,
+    ITW_CLASH_SupportsDangerMarginJTAC,
     (round ((call ITW_CLASH_Supports_fnc_DropIncomeRate) * 100)) / 100,
     round (call ITW_CLASH_Supports_fnc_DropCap),
     ITW_CLASH_SupportsAirborneHeliCadence,

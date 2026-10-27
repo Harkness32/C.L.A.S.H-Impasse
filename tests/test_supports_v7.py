@@ -65,7 +65,7 @@ def row(flavor: str) -> str:
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 9;" in raw("ITW_CLASH_Supports.sqf")
+    assert "ITW_CLASH_SupportsVersion = 10;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsAirborneVersion = 3;" in raw("ITW_CLASH_SupportsAirborne.sqf")
     assert "ITW_CLASH_SupportsDebugVersion = 2;" in raw("ITW_CLASH_SupportsDebug.sqf")
     # v6 (2026-10-17) moved the C-RAM with the rear base; v5's detection is unchanged.

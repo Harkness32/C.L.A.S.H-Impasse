@@ -479,6 +479,34 @@ split between the parts that go; a part the side cannot fly stays home and costs
 nothing, and the refund rules are the drops' own. Headroom is checked for the
 whole wave.
 
+### 6.9 JTAC (v10)
+
+Hark, 2026-10-27: COLOSSUS is the supreme commander; a JTAC is a special forces
+team calling a strike on what it sees itself. The third decider beside
+COLOSSUS's picks and bite-back, in its own file (`ITW_CLASH_SupportsJTAC.sqf`),
+polling every 10 s per side:
+
+- bomb and guided only; it never generates or directs forces;
+- one call per side every 10 minutes (the ledger's `jtac` cooldown), started on
+  admission and read before any work;
+- its own lane (`JTAC`), the `FREE` wallet, no objective: no COLOSSUS cooldown
+  is read or started, and nor is the per-objective one;
+- a controller is a team on `RydHQ_SpecForG`, on foot, not withdrawing, settled
+  60 s; it must itself have seen a member of the cluster within 30 s, within
+  2 km, with a line of sight; the pre-run check asks again (`NO_SIGHT`);
+- the strike pipeline's own gates (class weights, `NO_CONTACT`, the acquiring
+  floor, `ETB_ANSWERING`, `DANGER_CLOSE`, `AIR_DENIED`), and the best option
+  wins outright by class weight × worth × corridor;
+- danger close at one margin of its own, 150 m past the footprint for every
+  flavor and every friendly, players included
+  (`ITW_CLASH_SupportsDangerMarginJTAC`), at the call, the pre-run check and
+  every check in the executor.
+
+Logs: `supports-jtac-call` (the call, the team and its range, the cluster) and
+`supports-jtac-held` (when it could not call, counted by reason, said on
+change). The design and what a run should answer are in
+`docs/CLASH_SOFEmployment_Model.md` §5 and §6.
+
 ## 7. Admission and commitment
 
 ### 7.1 Hard gates
@@ -489,7 +517,7 @@ whole wave.
 | Knowledge | The flavor's statuses, rechecked at admission | `NO_CONTACT`, `TOO_UNCERTAIN` |
 | Objective | Plan objective under PUSH, or a held point under pressure. Not capture-frozen (`ITW_CLASH_fnc_ObjectiveFrozen`). Any other objective is simply not a candidate | `CONSOLIDATING`, `OBJECTIVE_FROZEN` |
 | Value | Cluster worth at least 2; the bomb and guided passes 1.5 (`ITW_CLASH_SupportsValueFloorAcquire`; v4 the bomb, v5 the guided pass too: a lone vehicle, a lone tank or two riflemen, and a static once its gunner is tracked too; never one rifleman). Carpet also needs three contacts or more | `BELOW_FLOOR`, `NOT_CLUSTERED` |
-| Danger close | Footprint plus 300 m clear of every living friendly: on foot, in vehicles, in aircraft below 300 m, under canopy. 500 m for players. The guided pass, one precision missile, 100 m and 200 m (v6). Each denial logs the friendly that caused it (`supports-danger-close`) | `DANGER_CLOSE` |
+| Danger close | Footprint plus a margin clear of every living friendly: on foot, in vehicles, in aircraft below 300 m, under canopy. The bomb and guided passes 150 m, players included (v10; were 300/500 and 100/200); the carpet 300 m, 500 m for players; a JTAC's call 150 m. Each denial logs the friendly that caused it (`supports-danger-close`) | `DANGER_CLOSE` |
 | Corridor | UAV and helicopters use the default fighter rule (`HARD_KILL`); jets use `ANY_AA_MISSILE`. `AIR_DENIED` denies | `AIR_DENIED` |
 | ETB overlap | Target not already tasked to a busy ETB responder of the side (`ITW_CLASH_Supports_fnc_ETBAnswering` reads `ITW_CLASH_ThreatCoverageTarget` on the commander's groups) | `ETB_ANSWERING` |
 | Lane | Recon lane: one UAV. Commitment lane: one strike or drop in flight | `LANE_BUSY` |
@@ -1120,7 +1148,7 @@ All placeholders.
 | Carpet minimum contacts | 3 |
 | Footprints | Bomb pass 50 m, carpet 60 m |
 | Hard uncertainty limit | 300 m |
-| Danger close margin | 300 m, 500 m for players; the guided pass 100 m and 200 m |
+| Danger close margin | bomb and guided 150 m, players included (v10); carpet 300 m, 500 m for players; JTAC 150 m |
 | Corridor HOT or CONTESTED multiplier | 0.5 |
 | Holding discount | 0.75 |
 | Setup delay | 45 to 120 s |

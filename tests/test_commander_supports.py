@@ -122,7 +122,7 @@ def test_every_support_is_live_by_default():
     # v3 (Hark, 2026-10-16): unlock all of them. Shadow mode stays one
     # variable away, and each flavor keeps its own switch. v4 keeps that.
     core = code("ITW_CLASH_Supports.sqf")
-    assert "ITW_CLASH_SupportsVersion = 9;" in core
+    assert "ITW_CLASH_SupportsVersion = 10;" in core
     assert '["ITW_CLASH_SupportsDryRun",false]' in core
     for flavor in ["UAV", "Bomb", "Guided", "Carpet", "AirborneHeli", "AirbornePlane", "VehicleDrop"]:
         assert f'["ITW_CLASH_Supports{flavor}Enabled",true]' in core, flavor

@@ -4,8 +4,9 @@
 > employ. This document says why that happened, what to give them instead, and
 > in what order to build it.
 
-Status: proposal. Nothing here is implemented except the raid threshold in
-§2.3, which shipped as `ITW_CLASH_HALNativeSFFix.sqf` v6.
+Status: proposal, partly built. Shipped: the raid threshold in §2.3
+(`ITW_CLASH_HALNativeSFFix.sqf` v6) and the JTAC in §5 and §6.1
+(`ITW_CLASH_SupportsJTAC.sqf` v1, supports v10).
 
 ---
 
@@ -309,51 +310,56 @@ cone is empty until it displaces. COLOSSUS never runs out of targets.
 justified exactly as far as the sight gate is strict, so the two must be written
 and reviewed together.
 
-### 5.2 One call per side every 15 minutes
+### 5.2 Its own clock, its own lane (decided 2026-10-27)
 
-Four calls per hour per side, about six in a 90-minute session. For comparison,
-bomb and guided cost 10 minutes of income and carpet 20, and the main bank
-mostly funds strikes since SAVE was softened in v5 — so the commander already
-sustains roughly a strike every 10–15 minutes. A JTAC at 15 minutes therefore
-**roughly doubles** a side's air tempo, with the added half being the observed,
-precise half.
+Hark: COLOSSUS is the supreme commander and calls supports from the whole
+picture; a JTAC is a team on the ground calling what it sees. **A split, not one
+pool.** The JTAC is strike only (bomb and guided), never generates or directs
+forces, and runs on its own clock: **one call per side every 10 minutes**,
+shared by every team of that side. COLOSSUS keeps its own pacing (per-flavor
+cooldowns and the wallets), untouched.
 
-At this cadence extra JTAC teams buy **coverage, not throughput**: they make it
-likelier that something worth the one call is in view when the window opens.
-That is acceptable because a team that cannot call is still working — its
-contacts are what let the commander's own paid strikes find anything.
+- **Its own lane (`JTAC`).** A JTAC call never waits on a COLOSSUS strike and
+  never blocks one. The cost is that two jets can be over one area at once.
+- **No COLOSSUS cooldowns either way.** It neither reads nor starts the flavor
+  cooldowns, and a JTAC call has no objective, so the 180 s per-objective
+  cooldown is not started: a JTAC call never locks COLOSSUS off a point.
+- **Free.** A `FREE` wallet that holds and costs nothing.
 
-### 5.3 The pool chooses
+At this cadence extra teams buy **coverage, not throughput**: they make it
+likelier that something worth the one call is in view when the clock opens. A
+team that cannot call is still working; its contacts are what let the
+commander's own strikes find anything.
 
-JTAC calls enter `fnc_Assess`'s single weighted pool like everything else. With
-one slot every fifteen minutes, teams implicitly compete on target quality: a
-team watching a battery beats a team watching a parked truck. No new selection
-logic, and siting pays off twice.
+### 5.3 The best option wins
 
-### 5.4 Limits kept, and one rejected
+Each poll the JTAC looks at every cluster a settled team can see and takes the
+best option outright, by class weight × the cluster's worth × the corridor.
+With one call in ten minutes, teams compete on target quality: a team watching
+a battery beats a team watching a parked truck.
 
-Kept:
+### 5.4 Limits kept
 
-- **The `COMMIT` lane.** `LANE_BUSY` is simultaneity, not frequency. Two strikes
-  converging on one cone is a correctness problem — deconfliction, two jets in
-  one AA envelope, a second pass at a cluster the first one killed.
 - **`fighterRule` (`ANY_AA_MISSILE`).** The jet will not enter a live missile
-  envelope whoever called it. This keeps the AA-hunt role (§4.4) meaningful
-  instead of obsoleted.
-- **The target gates.** `BELOW_FLOOR` (worth 1.5 for acquiring flavors, 2
-  otherwise), `NO_CONTACT` (bomb needs OBSERVED or FIXED) and `NOT_CLUSTERED`
-  (carpet needs 3 contacts) are target tests, not money tests. Free calls still
-  cannot bomb one rifleman, and each refusal logs its reason.
-- **A settling period** before a team's first call, mirroring CASEVAC's 60 s
-  minimum withdrawal, so a team cannot crest a ridge and call immediately.
-- **Billing on airframe loss.** Calling is free; losing the jet is charged to the
-  main bank. Under the money model "lost with the aircraft is spent", and
-  without this the uncap removes the only consequence for calling into AA.
+  envelope whoever called it. This keeps the AA-hunt role (§4.4) meaningful.
+- **The target gates.** `BELOW_FLOOR` (worth 1.5, the acquiring floor),
+  `NO_CONTACT` (bomb needs OBSERVED or FIXED) and `ETB_ANSWERING`. Free calls still cannot bomb one
+  rifleman, and each refusal is counted in `supports-jtac-held`.
+- **A settling period.** A team must hold its ground (within 50 m) for 60 s
+  before it can call, so it cannot crest a ridge and call at once.
+- **Danger close at 150 m (decided 2026-10-27).** A controller with eyes on is
+  the reason a strike may come closer: a JTAC's call has one margin past the
+  footprint, `ITW_CLASH_SupportsDangerMarginJTAC` (150 m), for every flavor and
+  every friendly, players included, at every check from the call to the last
+  release check. The same day COLOSSUS's bomb and guided passes moved to one
+  150 m margin too (`ITW_CLASH_SupportsDangerMarginPrecision`); only the carpet
+  keeps 300 m (500 m from a player). A bomb may now land 200 m from a player.
+- **Eyes at launch.** Before the jet spawns, the core asks the calling team again
+  whether it still sees the target; if not, the call is revoked (`NO_SIGHT`).
 
-Rejected:
-
-- **An objective cooldown.** Considered and declined: let the front be the
-  front. If the fighting concentrates, the strikes should concentrate with it.
+Not yet built: **billing on airframe loss** (calling is free; losing the jet
+should be charged to the main bank, or the uncap removes the only consequence
+for calling into AA), and the **terminal-control reveal** while the jet runs in.
 
 ### 5.5 The invariant that holds the balance up
 
@@ -376,64 +382,46 @@ dominate freshness in the weighting rather than touching the floors.
 
 ## 6. Execution
 
-### 6.1 JTAC
+### 6.1 JTAC (built: `ITW_CLASH_SupportsJTAC.sqf` v1, supports v10)
 
-**It is a registry row, not a special case.** Add `JTAC_BOMB` and `JTAC_GUIDED`
-to `ITW_CLASH_SupportsRegistry`: same `routine: STRIKE`, same `lane: COMMIT`,
-same `fighterRule`, same footprint; no `wallet`; `cooldown` keyed to the side so
-§5.2 lives in one place. The row describes the support, which is the contract a
-review can hold the file to.
+**Its own routine, like bite-back.** A poll every 10 s per side, outside
+COLOSSUS's 60 s assessment. When the side's JTAC clock and lane are free, it
+clusters every contact within range of a settled controller, keeps the
+clusters a controller can see, runs the strike pipeline's own gates on each
+(bomb, guided), and admits the best through `Supports_fnc_Admit` with its own
+lane (`JTAC`), the `FREE` wallet and the calling team. The strike itself is the
+existing executor: the jet acquires on site as every bomb and guided pass does.
 
-Do **not** give a JTAC pick its own lane:
+**Controllers** are groups on HAL's own `RydHQ_SpecForG` list (the recon
+bridge adds C.L.A.S.H.'s SOF to it), with a living leader on foot, not
+withdrawing, settled for 60 s.
 
-```sqf
-case (!_ownLane && {[_ledger,"flavor:" + _flavor] call ..._fnc_OnCooldown}): {_denied = "COOLDOWN"};
-```
+**The sight test**, cheapest first:
 
-An own-lane pick skips the cooldown test. That is the test-wave path, and using
-it would remove both limiters at once.
+1. the reported position within 2000 m of the controller's leader
+2. the team's **own** sighting of a member, no older than 30 s: its own men's
+   `targetKnowledge`, never the commander's or another group's report, and a
+   revealed-but-unseen target does not count
+3. `terrainIntersectASL`, then `lineIntersectsSurfaces` (VIEW), from the leader's
+   eyes to where the team saw it
 
-**The sight test goes in the gates, not in pool construction.** Admission
-re-runs the gates before reserving the lane, so putting it there gives "the
-controller still has eyes at call time" for free — a team can lose sight or die
-between proposal and launch.
+A cluster no team sees reports how close any came: `out-of-range`, `not-seen`
+or `no-los`.
 
-Order it cheap to expensive, the way the CSAR gate is ordered:
+Not yet: a lifecycle reservation so HAL cannot retask a controller mid-call
+(today a team that leaves revokes at `NO_SIGHT`), the reveal from the poll, and
+airframe billing.
 
-1. `distance2D` within the controller's reach (~1500–2000 m; the sibling
-   constant `ITW_CLASH_HeliAttackRetargetRadius` is 1500)
-2. the controller's **own** `knowsAbout` on a cluster member — never the
-   commander's knowledge
-3. `lineIntersectsSurfaces` from the controller's eye position
+### 6.2 What a run should answer
 
-Step 3 is the only expensive call and it is O(controllers × clusters) per
-assessment, so the first two filters are what make it affordable.
-
-**The reveal runs from the SOF module's own poll**, not from inside the strike
-executor: knowledge decays, so one reveal at spawn is not enough, and keeping it
-outside leaves the executor untouched. Reuse `ThreatCoverage_fnc_Brief`'s
-level 2.
-
-**Controller registry**: a group flag plus a side-keyed roll, the same shape as
-`ITW_CLASH_CrewRemnantQuarantined`, with a lifecycle reservation so HAL does not
-retask a controller mid-call.
-
-### 6.2 Build order, and what each step answers
-
-1. **Controller registry, siting primitive and sight test — telemetry only.**
-   No calls. Log, per assessment, which clusters each controller can and cannot
-   see and why: `out-of-range`, `not-known`, `no-los`. If the eyes are wrong,
-   everything downstream is noise that will be misread.
-2. **Registry rows in, `ITW_CLASH_SupportsDryRun` on.** The pool makes real
-   picks and nothing flies. Does a JTAC pick ever win against the paid flavors,
-   and on the targets you would want?
-3. **Live, no reveal.** The existing strike telemetry says whether the pass
-   connects.
-4. **Add the reveal and compare.** This is the A/B that answers whether terminal
-   control does anything — the question `HeliAttack` needed two runs to settle.
-5. **Billing on airframe loss.** Last; it only matters once calls are routine.
-
-Each row has a `switch`, so every stage can ship dark.
+1. `supports-jtac-held`: when the clock is open and nothing is called, why. If
+   `not-seen` and `no-los` dominate, teams are not where the enemy is — the
+   siting question (§4.1) comes before anything else.
+2. `supports-jtac-call`: how often a side calls, from how far, at what. Does the
+   best option look like what you would have called?
+3. The existing strike outcomes for JTAC ids (lane `JTAC` in `admission`):
+   does the pass connect, and how many revoke at `NO_SIGHT`?
+4. Then the reveal A/B and airframe billing.
 
 ### 6.3 Adjacent tracks, deliberately separate
 
@@ -473,26 +461,26 @@ Each row has a `switch`, so every stage can ship dark.
 
 ## 7. Verification
 
-**Static**, in the house style, each assertion mutation-checked:
+**Static**, in the house style (`tests/test_supports_jtac.py` for the JTAC):
 
-- the sight test is evaluated in the admission gates, not only in pool
-  construction
-- a JTAC pick never carries its own lane
-- JTAC rows have no wallet and share `COMMIT`
+- the clock is read before any work and started only on admission
+- a JTAC pick carries its own lane, the `FREE` wallet and no objective, and
+  reads no COLOSSUS gate or cooldown
+- the sight test is the team's own `targetKnowledge`, cheapest first, and is
+  asked again before the jet spawns (`NO_SIGHT`)
 - the target floors are still exclusions, not weights
-- the reveal is called only from the SOF module, and only for contacts the
-  controller itself knows
-- nothing in the SOF module assigns or watches a target
+- nothing in the JTAC assigns, watches or reveals a target
 
-**Live.** The denial histogram is the tuning instrument: every refusal already
-logs its reason, so after one run you count them rather than guessing.
+**Live.** The `supports-jtac-held` counts are the tuning instrument: every
+refusal is counted by reason, so after one run you count them rather than
+guessing.
 
 | dominant reason | what it means |
 | --- | --- |
-| `LANE_BUSY` | teams are competing; the side cadence is not the binding limit |
-| `COOLDOWN` | the 15-minute cadence is binding, as designed |
-| `BELOW_FLOOR` | the controllers are watching the wrong ground — a siting problem |
-| `NO_CONTACT` | the sight test is passing things the crew cannot see |
+| `not-seen`, `no-los` | teams are not where the enemy is: a siting problem (§4.1) |
+| `out-of-range` | the enemy is beyond 2 km of any settled team |
+| `BELOW_FLOOR` | teams see only lone riflemen |
+| `DANGER_CLOSE` | teams are too close to what they see, or our own troops are in it |
 
 Plus, per post: shots fired and kills, so a post that never fires is diagnosed
 rather than mourned.
@@ -510,5 +498,5 @@ rather than mourned.
    the RPT for which actually fires.
 3. **Reveal-on-call**, §6.3.
 4. **Does the SOF cap count a bought team?** §6.3.
-5. **Danger-close reduction** with a controller on station — permission, and how
-   much.
+5. ~~**Danger-close reduction** with a controller on station.~~ Decided
+   2026-10-27: 150 m past the footprint for every JTAC call (§5.4).

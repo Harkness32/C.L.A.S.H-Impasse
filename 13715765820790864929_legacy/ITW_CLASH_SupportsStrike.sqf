@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Supports_fnc_SpawnAircraft") exitWith {
 };
 
 ITW_CLASH_SupportsStrikeStarted = true;
-ITW_CLASH_SupportsStrikeVersion = 6;
+ITW_CLASH_SupportsStrikeVersion = 7;
 ITW_CLASH_SupportsStrikeReady = false;
 
 /*
@@ -80,6 +80,14 @@ ITW_CLASH_SupportsStrikeReady = false;
         off passed 460 m from the Cheetah it was meant to bomb and was lost.
       - Every break-off is logged with its geometry: how far out, how far off
         the line, the line and the track, and how many missiles came at it.
+
+    v7 (Hark, 2026-10-27): a JTAC's pass (one with a calling team) holds every
+    danger-close check, from the bomb's own acquisition to the last release
+    check, to the JTAC's single margin (ITW_CLASH_SupportsDangerMarginJTAC,
+    150 m) instead of the flavor's. Every check now names its flavor, so a
+    carpet pass keeps the carpet's wide line while a bomb pass has the bomb's
+    (the shared 150 m since supports v10); they used to name none and both got
+    the wide one.
 */
 
 ITW_CLASH_SupportsStrikeBombClass = missionNamespace getVariable ["ITW_CLASH_SupportsStrikeBombClass","Bo_Mk82"];
@@ -515,7 +523,7 @@ ITW_CLASH_SupportsStrike_fnc_BombFix = {
     Returns [object or objNull, fix, class, candidates looked at].
 */
 ITW_CLASH_SupportsStrike_fnc_BombScan = {
-    params ["_veh","_hq","_report","_radius","_since","_wanted","_friendlies","_footprint"];
+    params ["_veh","_hq","_report","_radius","_since","_wanted","_friendlies","_footprint",["_jtac",false]];
     private _pool = [];
     {
         _x params [["_object",objNull],"",["_relationship",""]];
@@ -536,7 +544,7 @@ ITW_CLASH_SupportsStrike_fnc_BombScan = {
         private _fix = [_veh,_object,_since] call ITW_CLASH_SupportsStrike_fnc_BombFix;
         if (_fix isEqualTo []) then {continue};
         if (((_fix#0) distance2D _report) > _radius) then {continue};
-        if ([_friendlies,_fix#0,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) then {continue};
+        if ([_friendlies,_fix#0,_footprint,"BOMB",_jtac] call ITW_CLASH_Supports_fnc_DangerClose) then {continue};
         if ([_hq,[_object]] call ITW_CLASH_Supports_fnc_ETBAnswering) then {continue};
         // The bomb's own table, read at rest for anything with wheels or
         // tracks; infantry as moving, so a vehicle or a static outranks it.
@@ -598,6 +606,7 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
     private _pattern = [_flavor] call ITW_CLASH_SupportsStrike_fnc_Pattern;
     private _first = (_pattern#0)#0;
     private _footprint = [_flavor,"footprint",50] call ITW_CLASH_Supports_fnc_RowNumber;
+    private _jtac = !isNull (_support getOrDefault ["controller",grpNull]);
     private _lined = false;
     private _armed = false;
     private _entities = [];
@@ -672,7 +681,7 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
                 case (_alive == 0): {_result = ["BREAKOFF","TARGET_GONE"]};
                 // A pass that looks for itself does not need the report tight yet.
                 case (!_acquire && {_r > ITW_CLASH_SupportsUncertaintyLimit}): {_result = ["BREAKOFF","TOO_UNCERTAIN"]};
-                case ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint] call ITW_CLASH_Supports_fnc_DangerClose): {
+                case ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint,_flavor,_jtac] call ITW_CLASH_Supports_fnc_DangerClose): {
                     _result = ["BREAKOFF","DANGER_CLOSE"];
                 };
                 default {
@@ -704,7 +713,7 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
                 _looks = _looks + 1;
                 ([
                     _veh,_hq,_report,_scanRadius,_since,_wanted,
-                    [_side] call ITW_CLASH_Supports_fnc_Friendlies,_footprint
+                    [_side] call ITW_CLASH_Supports_fnc_Friendlies,_footprint,_jtac
                 ] call ITW_CLASH_SupportsStrike_fnc_BombScan) params ["_found","_fix","_class","_pool"];
                 _seen = _seen max _pool;
                 if (!isNull _found) then {
@@ -764,7 +773,7 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
                     // The acquired target, where the jet has it now, led to impact.
                     private _fix = _fixes select ((count _fixes) - 1);
                     ([_veh,_fix,_fixes#0,_targetClass,_along] call ITW_CLASH_SupportsStrike_fnc_BombAim) params ["_now","_shift","_speed"];
-                    if ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) exitWith {
+                    if ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint,_flavor,_jtac] call ITW_CLASH_Supports_fnc_DangerClose) exitWith {
                         _result = ["BREAKOFF","DANGER_CLOSE"];
                     };
                     ["release-check",[
@@ -792,7 +801,7 @@ ITW_CLASH_SupportsStrike_fnc_UnguidedPass = {
                     switch (true) do {
                         case (_alive == 0): {_result = ["BREAKOFF","TARGET_GONE"]};
                         case (_r > ITW_CLASH_SupportsUncertaintyLimit): {_result = ["BREAKOFF","TOO_UNCERTAIN"]};
-                        case ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint] call ITW_CLASH_Supports_fnc_DangerClose): {
+                        case ([[_side] call ITW_CLASH_Supports_fnc_Friendlies,_now,_footprint,_flavor,_jtac] call ITW_CLASH_Supports_fnc_DangerClose): {
                             _result = ["BREAKOFF","DANGER_CLOSE"];
                         };
                         default {
@@ -898,6 +907,7 @@ ITW_CLASH_SupportsStrike_fnc_GuidedPass = {
     params ["_support","_veh","_group","_heading"];
     private _side = _support get "side";
     private _hq = _support get "hq";
+    private _jtac = !isNull (_support getOrDefault ["controller",grpNull]);
     private _report = +(_support get "aim");
     private _scanRadius = ((_support getOrDefault ["uncertainty",0]) max ITW_CLASH_SupportsStrikeScanMin)
         min ITW_CLASH_SupportsStrikeScanCap;
@@ -940,7 +950,7 @@ ITW_CLASH_SupportsStrike_fnc_GuidedPass = {
             && {_x isKindOf "LandVehicle"}
             && {(_x distance2D _report) <= _scanRadius}
             && {([_veh,_x,_ammo] call ITW_CLASH_SupportsStrike_fnc_Envelope) isEqualTo ""}
-            && {!([_friendlies,getPosATL _x,_footprint,"GUIDED"] call ITW_CLASH_Supports_fnc_DangerClose)}
+            && {!([_friendlies,getPosATL _x,_footprint,"GUIDED",_jtac] call ITW_CLASH_Supports_fnc_DangerClose)}
             && {!([_hq,[_x]] call ITW_CLASH_Supports_fnc_ETBAnswering)}
         };
         _seen = _seen max (count _pool);

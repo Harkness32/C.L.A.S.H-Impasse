@@ -54,51 +54,58 @@ def function_body(source: str, name: str) -> str:
 
 
 def margin(flavor: str, player: bool) -> int:
-    if flavor == "GUIDED":
-        return 200 if player else 100
+    # v10 (2026-10-27): bomb and guided share 150 m, players included; the
+    # carpet, and a check naming no flavor, keep the wide line.
+    if flavor in ("BOMB", "GUIDED"):
+        return 150
     return 500 if player else 300
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 9;" in raw("ITW_CLASH_Supports.sqf")
+    assert "ITW_CLASH_SupportsVersion = 10;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsUAVVersion = 4;" in raw("ITW_CLASH_SupportsUAV.sqf")
     assert "ITW_CLASH_KnowledgeVersion = 6;" in raw("ITW_CLASH_Knowledge.sqf")
 
 
-def test_guided_margins_are_tighter_and_bombs_keep_theirs():
+def test_precision_passes_share_one_margin_and_carpet_keeps_the_wide_line():
     source = raw("ITW_CLASH_Supports.sqf")
-    assert 'ITW_CLASH_SupportsDangerMarginGuided",100]' in source
-    assert 'ITW_CLASH_SupportsDangerMarginGuidedPlayer",200]' in source
+    assert 'ITW_CLASH_SupportsDangerMarginPrecision",150]' in source
+    assert "ITW_CLASH_SupportsDangerMarginGuided" not in source
     assert 'ITW_CLASH_SupportsDangerMargin",300]' in source
     assert 'ITW_CLASH_SupportsDangerMarginPlayer",500]' in source
     body = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_DangerMargin")
-    assert 'if (_flavor isEqualTo "GUIDED") exitWith {' in body
-    assert ("if (_player) then {ITW_CLASH_SupportsDangerMarginGuidedPlayer} "
-            "else {ITW_CLASH_SupportsDangerMarginGuided}") in body
+    assert 'if (_flavor in ["BOMB","GUIDED"]) exitWith {ITW_CLASH_SupportsDangerMarginPrecision};' in body
     assert ("if (_player) then {ITW_CLASH_SupportsDangerMarginPlayer} "
             "else {ITW_CLASH_SupportsDangerMargin}") in body
 
 
 def test_danger_close_takes_the_flavor_and_defaults_to_the_wide_line():
     body = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_DangerClose")
-    assert 'params ["_friendlies","_aim","_footprint",["_flavor",""]];' in body
-    assert "(_footprint + ([_flavor,_player] call ITW_CLASH_Supports_fnc_DangerMargin))" in body
-    # Footprint 50 for both: the lines a friendly must stay outside.
-    assert 50 + margin("GUIDED", False) == 150 and 50 + margin("GUIDED", True) == 250
-    assert 50 + margin("BOMB", False) == 350 and 50 + margin("BOMB", True) == 550
+    # v10: a JTAC's call passes one more flag; the flavor rules are unchanged.
+    assert 'params ["_friendlies","_aim","_footprint",["_flavor",""],["_jtac",false]];' in body
+    assert "(_footprint + ([_flavor,_player,_jtac] call ITW_CLASH_Supports_fnc_DangerMargin))" in body
+    # Footprint 50 for bomb and guided, 60 for carpet: the lines a friendly
+    # must stay outside.
+    assert 50 + margin("GUIDED", False) == 200 and 50 + margin("GUIDED", True) == 200
+    assert 50 + margin("BOMB", False) == 200 and 50 + margin("BOMB", True) == 200
+    assert 60 + margin("CARPET", False) == 360 and 60 + margin("CARPET", True) == 560
     assert 50 + margin("", False) == 350
 
 
-def test_every_guided_check_passes_its_flavor_and_bombs_pass_none():
+def test_every_check_names_its_flavor():
     core = code("ITW_CLASH_Supports.sqf")
     assert "[_context get \"friendlies\",_aim,_footprint,_flavor] call ITW_CLASH_Supports_fnc_DangerClose" in core
-    assert "[_friendlies,_aim,_footprint,_support get \"flavor\"] call ITW_CLASH_Supports_fnc_DangerClose" in core
+    assert "[_friendlies,_aim,_footprint,_support get \"flavor\",_jtac] call ITW_CLASH_Supports_fnc_DangerClose" in core
     strike = code("ITW_CLASH_SupportsStrike.sqf")
-    assert '{!([_friendlies,getPosATL _x,_footprint,"GUIDED"] call ITW_CLASH_Supports_fnc_DangerClose)}' in strike
-    # The bomb pass's own checks are unchanged: no flavor, the wide line.
-    bomb_calls = re.findall(r"\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\] call ITW_CLASH_Supports_fnc_DangerClose", strike)
-    assert len(bomb_calls) == 5
-    assert sum('"GUIDED"' in call for call in bomb_calls) == 1
+    assert '{!([_friendlies,getPosATL _x,_footprint,"GUIDED",_jtac] call ITW_CLASH_Supports_fnc_DangerClose)}' in strike
+    # v10: the unguided pass names its flavor (bomb or carpet) and the bomb's
+    # own acquisition names BOMB, so a carpet keeps its wide line; no check in
+    # the executor falls back to the unflavored one any more.
+    calls = re.findall(r"\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\] call ITW_CLASH_Supports_fnc_DangerClose", strike)
+    assert len(calls) == 5
+    assert sum('"GUIDED",_jtac]' in call for call in calls) == 1
+    assert sum('"BOMB",_jtac]' in call for call in calls) == 1
+    assert sum("_footprint,_flavor,_jtac]" in call for call in calls) == 3
 
 
 def danger_why(friendlies, aim, footprint, flavor):
@@ -114,15 +121,17 @@ def danger_why(friendlies, aim, footprint, flavor):
 
 def test_danger_why_names_the_friendly_deepest_inside_its_line():
     body = function_body(code("ITW_CLASH_Supports.sqf"), "ITW_CLASH_Supports_fnc_DangerWhy")
-    assert "private _line = _footprint + ([_flavor,_player] call ITW_CLASH_Supports_fnc_DangerMargin);" in body
+    assert "private _line = _footprint + ([_flavor,_player,_jtac] call ITW_CLASH_Supports_fnc_DangerMargin);" in body
     assert "if (_depth >= 0 && {_worst isEqualTo [] || {_depth > _worstDepth}}) then {" in body
     assert "_worst = [round _distance,_player,round _line];" in body
-    # The player 400 m away is deeper inside his 550 m line than an AI 300 m
-    # away is inside its 350 m line; the guided line lets both through.
+    # Under a carpet the player 400 m away is deeper inside his 560 m line
+    # than an AI 300 m away is inside its 360 m line; the bomb's and the
+    # guided pass's 200 m line lets both through.
     friendlies = [((400, 0), True), ((0, 300), False)]
-    assert danger_why(friendlies, (0, 0), 50, "BOMB") == [400, True, 550]
+    assert danger_why(friendlies, (0, 0), 60, "CARPET") == [400, True, 560]
+    assert danger_why(friendlies, (0, 0), 50, "BOMB") == []
     assert danger_why(friendlies, (0, 0), 50, "GUIDED") == []
-    assert danger_why([((0, 120), False)], (0, 0), 50, "GUIDED") == [120, False, 150]
+    assert danger_why([((0, 120), False)], (0, 0), 50, "GUIDED") == [120, False, 200]
 
 
 def test_both_danger_close_denials_are_logged_with_the_friendly():
@@ -137,11 +146,11 @@ def test_both_danger_close_denials_are_logged_with_the_friendly():
     assert '"DANGER_CLOSE"' in raw("ITW_CLASH_Supports.sqf")
 
 
-def test_supports_boot_line_reports_the_guided_margins():
+def test_supports_boot_line_reports_the_margins():
     source = raw("ITW_CLASH_Supports.sqf")
-    assert "danger=%15/%16 dangerGuided=%33/%34 dangerLogged=true" in source
+    assert "danger=%15/%16 dangerPrecision=%33 dangerJTAC=%34 dangerLogged=true" in source
     tail = source[source.index("CLASH BOOT | supports-ready"):]
-    assert "ITW_CLASH_SupportsDangerMarginGuided,\n    ITW_CLASH_SupportsDangerMarginGuidedPlayer," in tail
+    assert tail.index("ITW_CLASH_SupportsDangerMarginPrecision,") < tail.index("ITW_CLASH_SupportsDangerMarginJTAC,")
 
 
 # --------------------------------------------------------- UAV footprint

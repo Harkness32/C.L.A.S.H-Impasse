@@ -141,7 +141,7 @@ def test_the_scan_takes_only_acquired_targets_clear_of_our_people():
     for needle in (
         "if (_fix isEqualTo []) then {continue};",
         "if (((_fix#0) distance2D _report) > _radius) then {continue};",
-        "if ([_friendlies,_fix#0,_footprint] call ITW_CLASH_Supports_fnc_DangerClose) then {continue};",
+        "if ([_friendlies,_fix#0,_footprint,\"BOMB\",_jtac] call ITW_CLASH_Supports_fnc_DangerClose) then {continue};",
         "if ([_hq,[_object]] call ITW_CLASH_Supports_fnc_ETBAnswering) then {continue};",
         'if (_class in ["","AIR"]) then {continue};',
     ):

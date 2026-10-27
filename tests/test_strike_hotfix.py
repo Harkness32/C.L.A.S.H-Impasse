@@ -105,7 +105,7 @@ def test_which_jets_can_fly_it_is_said_once_per_class():
     assert '["guided-class",[_class,_guided,' in body
     assert body.index("ITW_CLASH_SupportsStrikeGuidedClasses get _class") < body.index('"guided-class"')
     raw = (MISSION / "ITW_CLASH_SupportsStrike.sqf").read_text(encoding="utf-8")
-    assert "ITW_CLASH_SupportsStrikeVersion = 6;" in raw
+    assert "ITW_CLASH_SupportsStrikeVersion = 7;" in raw
     assert "guidedNeedsMotor=true" in raw
 
 
