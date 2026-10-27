@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestsStarted",false]) 
 
 ITW_CLASH_PlayerTaskRequestsStarted = true;
 ITW_CLASH_PlayerTaskRequestsReady = false;
-ITW_CLASH_PlayerTaskRequestsVersion = 3;
+ITW_CLASH_PlayerTaskRequestsVersion = 4;
 ITW_CLASH_PlayerTaskRequestAdapters = createHashMap;
 ITW_CLASH_PlayerTaskRequestTypes = [
     "STRIKE_SOFT","STRIKE_LIGHT_ARMOR","STRIKE_HEAVY_ARMOR",
@@ -166,6 +166,12 @@ ITW_CLASH_PlayerTaskRequests_fnc_FailMatchedJob = {
     }) exitWith {
         [_jobId,"FAILED",_reason] call
             ITW_CLASH_PlayerArtillery_fnc_FinishJob
+    };
+    if (_requestType == "TRANSPORT" && {
+        !isNil "ITW_CLASH_PlayerTaskRequestTransport_fnc_Finish"
+    }) exitWith {
+        [_jobId,"FAILED",_reason] call
+            ITW_CLASH_PlayerTaskRequestTransport_fnc_Finish
     };
 
     ["death-fail-unhandled",[_jobId,_requestType,_reason]] call

@@ -274,6 +274,17 @@ Decided 2026-10-27 (Hark), built in `ITW_CLASH_PlayerDemandReservationHardening.
 
 This covers every job the demand dispatcher hands out: the CSAR channel (`MEDEVAC_SEVERE`, `CSAR_CREW`, `MEDEVAC_SQUAD`) and ammunition logistics, including the native HAL handoffs. Transport and artillery are not chosen here: player groups sit in HAL's own pools (`RydHQ_Included`) and HAL's native transport and fire-mission executors choose the carrier or battery themselves. Logs: `player-dispatch-turn` (channel, group, round size, ready) and `player-dispatch-round-reset`.
 
+## Requested transport: lifting a real squad to the front
+
+Decided 2026-10-27 (Hark), built in `ITW_CLASH_PlayerTaskRequestTransport.sqf` v1, the adapter the task-request bootstrap already expected. A transport pilot can ask for work the way a strike player can, instead of only waiting for HAL to want a lift. Nothing is spawned: a generated squad would be free reinforcements outside Impasse's manpower cap and tickets.
+
+- The pilot must be in a vehicle with passenger seats (`NO_CAPABILITY` otherwise).
+- The request takes the real squad nearest the pilot that is one of ours, AI, infantry on foot, within `PlayerLiftBaseRadius` (600 m) of a friendly base, and at least `PlayerLiftMinDistance` (2 km) from its destination, and fits the seats. Its destination is HAL's last waypoint for it, or COLOSSUS's plan objective for a squad HAL has not tasked. Skipped: anything HAL already queued for a lift of its own (`CargoCheckPending`, `CargoChosen`, `AssignedCargo`), anchors, withdrawals, special forces and any other lifecycle reservation. No squad: `NO_TASK`.
+- For the ride the squad carries `ITW_CLASH_PlayerLift`. It reads as lifecycle-reserved, so the BLUFOR layer drops it from HAL's `Included` list exactly as it drops a boarded CASEVAC squad, and its running HAL task ends through HAL's own `Break` flag. HAL's attack, capture and recon scripts run their own get-in and unload flow as soon as a squad leader is assigned a vehicle, so loading a squad that HAL still owned would have two executors steering it.
+- Pickup: the squad holds; a carrier grounded within 300 m brings it walking over; everyone inside 60 m boards together. Ten minutes with no pickup hands the squad back.
+- Drop: on the ground within `PlayerLiftDropRadius` (1.5 km) of the destination. The mark clears, HAL takes the squad back and tasks it from where it stands, and until then it keeps moving toward its destination. The job completes with a `TRANSPORT` reward authorization.
+- A cancel in the air waits for the ground; a lost carrier, a wiped squad, or a squad that starts withdrawing ends the job and hands the squad back.
+
 ## Assignment and preparation UX
 
 Assignments state the mission before the player has the equipment required to execute it.
