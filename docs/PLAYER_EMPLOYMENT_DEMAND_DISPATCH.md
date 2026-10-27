@@ -259,6 +259,21 @@ Default bounce policy:
 
 This preserves the never-evaporates invariant without letting a request ping-pong forever between uninterested or inactive players.
 
+## Which group gets the job: a shuffle bag per channel
+
+Decided 2026-10-27 (Hark), built in `ITW_CLASH_PlayerDemandReservationHardening.sqf` v2. Before it, `FindDispatchGroup` took the first eligible group in `ITW_CLASH_PlayerTaskGroups`, which is sign-up order, so the group that ticked a job type first won every job whenever it was free.
+
+- Each channel keeps the groups that have had a turn this round (`ITW_CLASH_PlayerDispatchServed`).
+- Eligible is unchanged: subscribed, no active job of any kind, no authority hold, not on this demand's decline cooldown.
+- A job goes to a random eligible group that has not had a turn this round. With `ITW_CLASH_PlayerDispatchReadyFirst` (default on) a group already in a vehicle that can do the channel's work is chosen first: passenger seats for CSAR and transport, a sling-capable helicopter for logistics, an artillery piece for artillery.
+- When every eligible group has had a turn, the round starts again.
+- A busy group is not eligible, so it keeps its turn and is picked first once free.
+- The turn is taken when the job is reserved: a cancel or a lapsed reservation was the turn, otherwise passing would win the next pick.
+- A group that unticks the channel leaves the round; a group that ticks in mid-round is due at once.
+- One round per channel: everyone takes turns at CSAR, not merely at "a job".
+
+This covers every job the demand dispatcher hands out: the CSAR channel (`MEDEVAC_SEVERE`, `CSAR_CREW`, `MEDEVAC_SQUAD`) and ammunition logistics, including the native HAL handoffs. Transport and artillery are not chosen here: player groups sit in HAL's own pools (`RydHQ_Included`) and HAL's native transport and fire-mission executors choose the carrier or battery themselves. Logs: `player-dispatch-turn` (channel, group, round size, ready) and `player-dispatch-round-reset`.
+
 ## Assignment and preparation UX
 
 Assignments state the mission before the player has the equipment required to execute it.

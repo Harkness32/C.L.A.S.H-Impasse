@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandReservationHardeningSta
 
 ITW_CLASH_PlayerDemandReservationHardeningStarted = true;
 ITW_CLASH_PlayerDemandReservationHardeningReady = false;
-ITW_CLASH_PlayerDemandReservationHardeningVersion = 1;
+ITW_CLASH_PlayerDemandReservationHardeningVersion = 2;
 
 ITW_CLASH_PlayerDemandLivenessWindow = missionNamespace getVariable [
     "ITW_CLASH_PlayerDemandLivenessWindow",600
@@ -22,6 +22,86 @@ ITW_CLASH_PlayerDemandBounceLimit = missionNamespace getVariable [
 ITW_CLASH_PlayerDemandAIFallbackWindow = missionNamespace getVariable [
     "ITW_CLASH_PlayerDemandAIFallbackWindow",120
 ];
+
+/*
+    v2 (Hark, 2026-10-27): who gets a commander-assigned job is a shuffle bag
+    per channel, not the first group in sign-up order. Until then the group
+    that ticked a job type first won every job whenever it was free.
+
+      - Each channel keeps the groups that have had a turn this round.
+      - A job goes to a group that has not, chosen at random; a group already
+        in a vehicle that can do the work is chosen first (ReadyFirst).
+      - When every eligible group has had a turn, the round starts again.
+      - A busy group is not eligible, so it keeps its turn for when it is free.
+      - The turn is taken when the job is reserved: a cancel or a lapsed
+        reservation was the group's turn, or passing would win the next pick.
+      - A group that unticks the channel leaves the round; a group that ticks
+        in mid-round has not had a turn, so it is due at once.
+    Per channel because the jobs are not equal: everyone takes turns at CSAR,
+    not merely at "a job".
+*/
+ITW_CLASH_PlayerDispatchReadyFirst = missionNamespace getVariable [
+    "ITW_CLASH_PlayerDispatchReadyFirst",true
+];
+// channel -> groups that have had their turn this round
+if (isNil "ITW_CLASH_PlayerDispatchServed") then {ITW_CLASH_PlayerDispatchServed = createHashMap};
+
+// Already in a vehicle that can do this channel's work.
+ITW_CLASH_PlayerDemandReservation_fnc_Ready = {
+    params ["_group","_channel"];
+    if (isNull _group) exitWith {false};
+    switch (_channel) do {
+        case "MEDEVAC";
+        case "TRANSPORT": {
+            private _vehicle = [_group] call ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle;
+            !isNull _vehicle && {[_vehicle] call ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity}
+        };
+        case "LOGISTICS": {
+            !isNull ([_group] call ITW_CLASH_PlayerTasks_fnc_GetSlingVehicle)
+        };
+        case "ARTILLERY": {
+            private _vehicle = [_group] call ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle;
+            !isNull _vehicle && {[_vehicle] call ITW_CLASH_PlayerTasks_fnc_HasArtilleryCapability}
+        };
+        default {false};
+    }
+};
+
+// One group from the eligible list, by the round's rules. Picking does not
+// take the turn; reserving does.
+ITW_CLASH_PlayerDemandReservation_fnc_Pick = {
+    params ["_channel","_eligible"];
+    if (_eligible isEqualTo []) exitWith {grpNull};
+    private _served = (ITW_CLASH_PlayerDispatchServed getOrDefault [_channel,[]]) select {
+        !isNull _x && {[_x,_channel] call ITW_CLASH_PlayerTasks_fnc_IsSubscribed}
+    };
+    private _due = _eligible select {!(_x in _served)};
+    if (_due isEqualTo []) then {
+        ["player-dispatch-round-reset",[_channel,count _served,count _eligible]] call
+            ITW_CLASH_PlayerDemand_fnc_Log;
+        _served = [];
+        _due = +_eligible;
+    };
+    ITW_CLASH_PlayerDispatchServed set [_channel,_served];
+    if (ITW_CLASH_PlayerDispatchReadyFirst) then {
+        private _ready = _due select {[_x,_channel] call ITW_CLASH_PlayerDemandReservation_fnc_Ready};
+        if (_ready isNotEqualTo []) then {_due = _ready};
+    };
+    selectRandom _due
+};
+
+ITW_CLASH_PlayerDemandReservation_fnc_TakeTurn = {
+    params ["_group","_channel"];
+    if (isNull _group || {_channel isEqualTo ""}) exitWith {false};
+    private _served = ITW_CLASH_PlayerDispatchServed getOrDefault [_channel,[]];
+    _served pushBackUnique _group;
+    ITW_CLASH_PlayerDispatchServed set [_channel,_served];
+    ["player-dispatch-turn",[
+        _channel,[_group] call ITW_CLASH_PlayerDemand_fnc_GroupId,count _served,
+        [_group,_channel] call ITW_CLASH_PlayerDemandReservation_fnc_Ready
+    ]] call ITW_CLASH_PlayerDemand_fnc_Log;
+    true
+};
 
 ITW_CLASH_PlayerDemandReservation_fnc_GroupKey = {
     params ["_group"];
@@ -253,6 +333,8 @@ ITW_CLASH_PlayerDemandReservation_fnc_RecordProgress = {
 
         private _ok = _this call ITW_CLASH_PlayerDemandReservation_fnc_ReserveBase;
         if (!_ok) exitWith {false};
+        [_group,_demand getOrDefault ["channel",""]] call
+            ITW_CLASH_PlayerDemandReservation_fnc_TakeTurn;
         _demand = [_demandId] call ITW_CLASH_PlayerDemand_fnc_Get;
         _demand set ["declineCooldowns",_cooldowns];
         _demand set ["lastProgressAt",time];
@@ -275,16 +357,12 @@ ITW_CLASH_PlayerDemandReservation_fnc_RecordProgress = {
         private _channel = _demand getOrDefault ["channel",""];
         private _cooldowns = _demand getOrDefault ["declineCooldowns",createHashMap];
         if !(_cooldowns isEqualType createHashMap) then {_cooldowns = createHashMap};
-        private _found = grpNull;
-        {
-            if (isNull _x) then {continue};
-            private _groupKey = [_x] call ITW_CLASH_PlayerDemandReservation_fnc_GroupKey;
-            if (time < (_cooldowns getOrDefault [_groupKey,0])) then {continue};
-            if ([_x,_channel] call ITW_CLASH_PlayerTasks_fnc_CanAcceptJob) exitWith {
-                _found = _x;
-            };
-        } forEach +ITW_CLASH_PlayerTaskGroups;
-        _found
+        private _eligible = (+ITW_CLASH_PlayerTaskGroups) select {
+            !isNull _x
+            && {time >= (_cooldowns getOrDefault [[_x] call ITW_CLASH_PlayerDemandReservation_fnc_GroupKey,0])}
+            && {[_x,_channel] call ITW_CLASH_PlayerTasks_fnc_CanAcceptJob}
+        };
+        [_channel,_eligible] call ITW_CLASH_PlayerDemandReservation_fnc_Pick
     };
 
     ITW_CLASH_PlayerDemandReservation_fnc_ReleaseBase =
@@ -486,13 +564,14 @@ ITW_CLASH_PlayerDemandReservation_fnc_RecordProgress = {
 
     ITW_CLASH_PlayerDemandReservationHardeningReady = true;
     diag_log format [
-        "CLASH BOOT | player-demand-reservation-hardening-ready | version=%1 markers=true continuousAssert=%2 liveness=%3 declineCooldown=%4 bounceLimit=%5 aiFallback=%6 ammoExclusion=call-scoped medExclusion=call-scoped sitrepArraysNotAuthority=true",
+        "CLASH BOOT | player-demand-reservation-hardening-ready | version=%1 markers=true continuousAssert=%2 liveness=%3 declineCooldown=%4 bounceLimit=%5 aiFallback=%6 ammoExclusion=call-scoped medExclusion=call-scoped sitrepArraysNotAuthority=true dispatch=shuffle-bag-per-channel readyFirst=%7 turnTakenOnReserve=true",
         ITW_CLASH_PlayerDemandReservationHardeningVersion,
         ITW_CLASH_PlayerDemandPoll,
         ITW_CLASH_PlayerDemandLivenessWindow,
         ITW_CLASH_PlayerDemandDeclineCooldown,
         ITW_CLASH_PlayerDemandBounceLimit,
-        ITW_CLASH_PlayerDemandAIFallbackWindow
+        ITW_CLASH_PlayerDemandAIFallbackWindow,
+        ITW_CLASH_PlayerDispatchReadyFirst
     ];
 };
 
