@@ -165,7 +165,9 @@ if (isServer && {
         private _weapons = +weapons _veh;
         private _turrets = allTurrets [_veh,true];
         _turrets pushBack [];
-        {_weapons append (weaponsTurret [_veh,_x])} forEach _turrets;
+        // weaponsTurret is binary: vehicle weaponsTurret turretPath. Written
+        // as a unary call it failed to compile, and the whole overlay with it.
+        {_weapons append (_veh weaponsTurret _x)} forEach _turrets;
         _weapons = _weapons arrayIntersect _weapons;
 
         private _best = 0;

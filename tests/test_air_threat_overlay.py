@@ -89,3 +89,23 @@ def test_ace_toggle_and_map_markers_are_client_local_only():
     assert 'setMarkerAlphaLocal' in source
     assert "createMarker [" not in source
     assert "setMarkerPos " not in source
+
+
+def test_weapons_turret_is_called_as_the_binary_command_it_is():
+    """2026-10-27 RPT: 'weaponsTurret [_veh,_x]' is not valid SQF (the command
+    is `vehicle weaponsTurret turretPath`), so the file failed to compile with
+    "Missing )" and neither the client nor the server half ever loaded."""
+    source = OVERLAY.read_text(encoding="utf-8")
+    assert "{_weapons append (_veh weaponsTurret _x)} forEach _turrets;" in source
+    assert "weaponsTurret [" not in source
+
+
+def test_no_clash_file_calls_weapons_turret_as_unary():
+    import re
+    for path in MISSION.glob("ITW_CLASH_*.sqf"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in re.finditer(r"weaponsTurret", text):
+            before = text[max(0, match.start() - 40):match.start()].rstrip()
+            # A left operand must precede it: a vehicle expression, not an
+            # opening bracket, operator or statement start.
+            assert before and before[-1] not in "([{,;=", (path.name, text[match.start() - 40:match.end() + 20])
