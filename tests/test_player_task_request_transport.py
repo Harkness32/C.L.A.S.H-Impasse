@@ -1,4 +1,4 @@
-"""Request Transport: lift a real squad to the front (adapter v1).
+"""Request Transport: lift a real squad along its own orders (adapter v2).
 
 2026-10-27, Hark: a transport pilot can ask for work the way a strike player
 can. The request finds a real AI squad of ours on foot at or near a base with a
@@ -44,7 +44,7 @@ def test_the_slot_the_bootstrap_expected_is_filled_and_registered():
     assert '["TRANSPORT","ITW_CLASH_PlayerTaskRequestTransport.sqf"]' in raw("ITW_CLASH_PlayerTaskRequestBootstrap.sqf")
     assert '"TRANSPORT"' in raw("ITW_CLASH_PlayerTaskRequests.sqf")
     assert '["TRANSPORT",ITW_CLASH_PlayerTaskRequestTransport_fnc_Request] call' in CODE
-    assert "ITW_CLASH_PlayerTaskRequestTransportVersion = 1;" in RAW
+    assert "ITW_CLASH_PlayerTaskRequestTransportVersion = 2;" in RAW
     assert "CLASH BOOT | player-task-request-transport-ready |" in RAW
     assert "spawnsNothing=true" in RAW
 
@@ -79,15 +79,41 @@ def test_candidates_are_real_squads_waiting_at_a_base():
     assert "{_x#4},\"ASCEND\"] call BIS_fnc_sortBy" in body
 
 
-def test_destination_is_hals_own_intent_or_the_colossus_plan():
+def test_destination_is_the_squads_own_unfinished_orders():
     body = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_Destination")
     assert "waypointPosition [_squad,_count - 1]" in body
-    assert '"hal-waypoint"' in body
-    assert '"ITW_CLASH_ColossusPlans"' in body
-    assert '"colossus-plan"' in body
+    # A squad with no orders, or orders it has finished, is HAL's reserve.
+    assert "if (_count == 0 || {currentWaypoint _squad >= _count}) exitWith {[[],\"\"]};" in body
+    assert '"fob-air-defence"' in body
+    assert '"orders"' in body
+    # v1 guessed COLOSSUS's plan objective for an orderless squad.
+    assert "ColossusPlans" not in CODE
+    assert "colossus-plan" not in CODE
     # No exitWith hidden in a then block (the CLASH scope trap).
     for block in re.findall(r"then \{([^{}]*)\}", body):
         assert "exitWith" not in block, block
+
+
+def test_the_task_says_where_the_orders_lead():
+    text = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_DestinationText")
+    assert "for air defence" in text
+    assert "_x#ITW_OBJ_HIDDEN" in text
+    assert "ITW_OBJ_NAME" in text
+    assert "ITW_OWNER_FRIENDLY" in text
+    request = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_Request")
+    assert "[_destination,_source] call ITW_CLASH_PlayerTaskRequestTransport_fnc_DestinationText" in request
+    assert "the front" not in CODE
+
+
+def test_the_drop_zone_is_marked_from_assignment_and_cleared_at_the_end():
+    request = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_Request")
+    assert "createMarker [_zone,_destination];" in request
+    assert '_zone setMarkerShape "ELLIPSE";' in request
+    assert "_zone setMarkerSize [ITW_CLASH_PlayerLiftDropRadius,ITW_CLASH_PlayerLiftDropRadius];" in request
+    assert "createMarker [_drop,_destination];" in request
+    assert request.index('_job set ["markers",[_zone,_drop]];') < request.index("call BIS_fnc_taskCreate")
+    finish = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_Finish")
+    assert '{deleteMarker _x} forEach (_job getOrDefault ["markers",[]]);' in finish
 
 
 def test_the_squad_is_off_hal_for_the_ride_and_back_on_the_drop():
@@ -149,4 +175,4 @@ def test_reward_seam_and_router_hooks():
 def test_no_capability_and_no_task_answers():
     request = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_Request")
     assert '"NO_CAPABILITY","Get in a vehicle with passenger seats' in request
-    assert '"NO_TASK",format ["No squad is waiting at a base' in request
+    assert '"NO_TASK",format ["No squad with orders is at a base' in request

@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestTransportStarted",
 
 ITW_CLASH_PlayerTaskRequestTransportStarted = true;
 ITW_CLASH_PlayerTaskRequestTransportReady = false;
-ITW_CLASH_PlayerTaskRequestTransportVersion = 1;
+ITW_CLASH_PlayerTaskRequestTransportVersion = 2;
 ITW_CLASH_PlayerTaskRequestTransportSerial = 0;
 
 /*
@@ -19,8 +19,11 @@ ITW_CLASH_PlayerTaskRequestTransportSerial = 0;
     its destination. Nothing is created; the commander's own push simply
     arrives sooner.
 
-    The squad's destination is where HAL is sending it (its last waypoint),
-    or, for a squad HAL has not tasked yet, COLOSSUS's plan objective.
+    The squad's destination is where its orders already send it (its last
+    waypoint, not yet reached). A squad with no orders is HAL's reserve and is
+    left alone (v2, Hark: "are we just snatching up a team held in reserve?");
+    v1 guessed COLOSSUS's plan objective for one. The task says where the
+    orders lead, and the drop zone is on the map from the moment of assignment.
 
     HAL is kept out of the way rather than fought. HAL's own attack, capture
     and recon scripts watch a squad leader's assigned vehicle and run their
@@ -60,19 +63,39 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Log = {
     };
 };
 
-// Where the squad is going, and why we think so: [position, source] or [[],""].
+// Where the squad's orders send it: [position, source] or [[],""] when it has
+// no order it has not finished yet.
 ITW_CLASH_PlayerTaskRequestTransport_fnc_Destination = {
     params ["_squad"];
     private _count = count waypoints _squad;
-    private _wp = if (_count > 0) then {waypointPosition [_squad,_count - 1]} else {[]};
-    if (_count > 0 && {_wp isNotEqualTo []} && {_wp isNotEqualTo [0,0,0]}) exitWith {[+_wp,"hal-waypoint"]};
-    if (_count > 0) exitWith {[[],""]};
-    private _plan = (missionNamespace getVariable ["ITW_CLASH_ColossusPlans",createHashMap]) getOrDefault [
-        toUpperANSI str (side _squad),createHashMap
-    ];
-    private _index = _plan getOrDefault ["objective",-1];
-    if (isNil "ITW_Objectives" || {_index < 0} || {_index >= count ITW_Objectives}) exitWith {[[],""]};
-    [+(ITW_Objectives#_index#ITW_OBJ_POS),"colossus-plan"]
+    if (_count == 0 || {currentWaypoint _squad >= _count}) exitWith {[[],""]};
+    private _wp = waypointPosition [_squad,_count - 1];
+    if (_wp isEqualTo [] || {_wp isEqualTo [0,0,0]}) exitWith {[[],""]};
+    if ((_squad getVariable ["ITW_CLASH_FOBAirDefence",""]) isNotEqualTo "") exitWith {[+_wp,"fob-air-defence"]};
+    [+_wp,"orders"]
+};
+
+// What the pilot is told about the destination.
+ITW_CLASH_PlayerTaskRequestTransport_fnc_DestinationText = {
+    params ["_destination","_source"];
+    private _grid = mapGridPosition _destination;
+    if (_source == "fob-air-defence") exitWith {
+        format ["Command has posted them to the FOB at grid %1 for air defence",_grid]
+    };
+    private _objective = [];
+    private _best = 1e10;
+    if (!isNil "ITW_Objectives") then {
+        {
+            if (_x#ITW_OBJ_HIDDEN) then {continue};
+            private _d = _destination distance2D (_x#ITW_OBJ_POS);
+            if (_d < _best && {_d <= (_x#ITW_OBJ_SIZE) + 500}) then {_best = _d; _objective = _x};
+        } forEach ITW_Objectives;
+    };
+    if (_objective isEqualTo []) exitWith {format ["Their orders take them to grid %1",_grid]};
+    if ((_objective#ITW_OBJ_OWNER) == ITW_OWNER_FRIENDLY) exitWith {
+        format ["Their orders take them to reinforce %1 (grid %2)",_objective#ITW_OBJ_NAME,_grid]
+    };
+    format ["Their orders take them into the fight for %1 (grid %2)",_objective#ITW_OBJ_NAME,_grid]
 };
 
 /*
@@ -161,6 +184,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Finish = {
     private _squad = _job getOrDefault ["targetGroup",grpNull];
     private _taskId = _job getOrDefault ["taskId",""];
     [_jobId,_state,_outcome] call ITW_CLASH_PlayerTasks_fnc_SetJobState;
+    {deleteMarker _x} forEach (_job getOrDefault ["markers",[]]);
 
     [_squad,_jobId,_job getOrDefault ["destination",[]],"terminal-" + _state] call
         ITW_CLASH_PlayerTaskRequestTransport_fnc_ReleaseSquad;
@@ -341,7 +365,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
     private _seats = _vehicle emptyPositions "cargo";
     private _candidates = [_hq,_seats,getPosATL _vehicle] call ITW_CLASH_PlayerTaskRequestTransport_fnc_Candidates;
     if (_candidates isEqualTo []) exitWith {
-        ["NO_TASK",format ["No squad is waiting at a base for a lift to the front that fits your %1 seats.",_seats]] call
+        ["NO_TASK",format ["No squad with orders is at a base needing a lift that fits your %1 seats.",_seats]] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
     (_candidates#0) params ["_squad","_destination","_source","_far"];
@@ -398,17 +422,33 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
         [_group,"requested-transport-assigned"] call ITW_CLASH_PlayerTasks_fnc_SyncEmploymentState;
     };
 
+    // The drop zone is on the map from the start; the task marker moves to it
+    // once they are aboard.
+    private _zone = "ITW_CLASH_LiftZone_" + _jobId;
+    createMarker [_zone,_destination];
+    _zone setMarkerShape "ELLIPSE";
+    _zone setMarkerSize [ITW_CLASH_PlayerLiftDropRadius,ITW_CLASH_PlayerLiftDropRadius];
+    _zone setMarkerBrush "Border";
+    _zone setMarkerColor "ColorWEST";
+    private _drop = "ITW_CLASH_LiftDrop_" + _jobId;
+    createMarker [_drop,_destination];
+    _drop setMarkerType "hd_end";
+    _drop setMarkerColor "ColorWEST";
+    _drop setMarkerText format ["%1 drop zone",groupId _squad];
+    _job set ["markers",[_zone,_drop]];
+
     [
         units _group select {isPlayer _x},
         _taskId,
         [
             format [
-                "%1 (%2 men) is at %3 heading for the front, %4 km away. Land within %5 m of them; they board when you are down. Drop them on the ground within %6 km of the marked destination.",
+                "%1 (%2 men) is at grid %3. %4, %5 km away. Land within %6 m of them; they board when you are down. Put them on the ground inside the circled drop zone, %7 km around where they are going.",
                 groupId _squad,_count,mapGridPosition _pickup,
+                [_destination,_source] call ITW_CLASH_PlayerTaskRequestTransport_fnc_DestinationText,
                 (round (_far / 100)) / 10,ITW_CLASH_PlayerLiftGatherRadius,
                 (round (ITW_CLASH_PlayerLiftDropRadius / 100)) / 10
             ],
-            "HAL Transport: Lift to the Front",
+            format ["Lift %1",groupId _squad],
             ""
         ],
         _pickup,
@@ -422,7 +462,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
     ["assigned",[_jobId,groupId _group,groupId _squad,_count,round _far,_source,typeOf _vehicle]] call
         ITW_CLASH_PlayerTaskRequestTransport_fnc_Log;
     [_jobId] spawn ITW_CLASH_PlayerTaskRequestTransport_fnc_Monitor;
-    ["MATCHED",format ["HAL transport task assigned: lift %1 toward the front.",groupId _squad],_jobId] call
+    ["MATCHED",format ["Transport task assigned: lift %1. The drop zone is marked on your map.",groupId _squad],_jobId] call
         ITW_CLASH_PlayerTaskRequests_fnc_Result
 };
 
@@ -478,7 +518,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
     ITW_CLASH_PlayerTaskRequestTransportReady = true;
 
     diag_log format [
-        "CLASH BOOT | player-task-request-transport-ready | version=%1 realSquadsOnly=true spawnsNothing=true baseRadius=%2 minDistance=%3 dropRadius=%4 gather=%5 load=%6 pickupTimeout=%7 halQueuedLiftsSkipped=true offHALForRide=true",
+        "CLASH BOOT | player-task-request-transport-ready | version=%1 realSquadsOnly=true spawnsNothing=true baseRadius=%2 minDistance=%3 dropRadius=%4 gather=%5 load=%6 pickupTimeout=%7 halQueuedLiftsSkipped=true offHALForRide=true orderedSquadsOnly=true dropZoneMarked=true",
         ITW_CLASH_PlayerTaskRequestTransportVersion,
         ITW_CLASH_PlayerLiftBaseRadius,
         ITW_CLASH_PlayerLiftMinDistance,
