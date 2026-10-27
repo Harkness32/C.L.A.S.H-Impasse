@@ -60,7 +60,7 @@ def margin(flavor: str, player: bool) -> int:
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 8;" in raw("ITW_CLASH_Supports.sqf")
+    assert "ITW_CLASH_SupportsVersion = 9;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsUAVVersion = 4;" in raw("ITW_CLASH_SupportsUAV.sqf")
     assert "ITW_CLASH_KnowledgeVersion = 6;" in raw("ITW_CLASH_Knowledge.sqf")
 

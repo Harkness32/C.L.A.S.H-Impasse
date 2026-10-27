@@ -65,7 +65,7 @@ def row(flavor: str) -> str:
 
 
 def test_versions():
-    assert "ITW_CLASH_SupportsVersion = 8;" in raw("ITW_CLASH_Supports.sqf")
+    assert "ITW_CLASH_SupportsVersion = 9;" in raw("ITW_CLASH_Supports.sqf")
     assert "ITW_CLASH_SupportsAirborneVersion = 3;" in raw("ITW_CLASH_SupportsAirborne.sqf")
     assert "ITW_CLASH_SupportsDebugVersion = 2;" in raw("ITW_CLASH_SupportsDebug.sqf")
     # v6 (2026-10-17) moved the C-RAM with the rear base; v5's detection is unchanged.
@@ -261,48 +261,43 @@ def test_the_vehicle_is_handed_to_hal_once_it_is_down():
 # --------------------------------------------------------------- bite-back
 
 
-def bite_why(ours, phase, was, urgency, floor=0.9):
-    """The decision table in ITW_CLASH_Supports_fnc_BiteBackWhy."""
+def bite_why(ours, phase, was, floor=0.5):
+    """The decision table in ITW_CLASH_Supports_fnc_BiteBackWhy (v9)."""
     was_ours = was is not None and was[0]
     if not ours:
-        flag = "enemy-flag-up"
-    elif was_ours and phase < was[1] - 0.001:
-        flag = "flag-falling"
-    elif phase < floor and (not was_ours or phase <= was[1] + 0.001):
-        flag = "flag-down"
-    else:
-        flag = ""
-    if flag:
-        return flag
-    if urgency >= 3:
-        return "unanchored"
-    if urgency >= 2.5:
-        return "outnumbered"
-    return ""
+        return "enemy-flag-up", 5 + phase
+    if phase < floor and (not was_ours or phase <= was[1] + 0.001):
+        return "flag-down", 5 - phase
+    return "", 0
 
 
-def test_bite_back_wakes_on_the_flag_or_the_defenders():
+def test_bite_back_wakes_only_when_the_point_is_going():
     body = function_body(CORE, "ITW_CLASH_Supports_fnc_BiteBackWhy")
     assert 'case (!_ours): {"enemy-flag-up"};' in body
-    assert 'case (_wasOurs && {_phase < ((_was#1) - 0.001)}): {"flag-falling"};' in body
     assert ('case (_phase < ITW_CLASH_SupportsBiteBackFlagFloor && {!_wasOurs || {_phase <= ((_was#1) + 0.001)}}): '
             '{"flag-down"};') in body
-    assert 'case (_urgency >= 3): {"unanchored"};' in body
-    assert 'case (_urgency >= 2.5): {"outnumbered"};' in body
-    # A held point at full flag and comfortably defended: nothing.
-    assert bite_why(True, 1.0, (True, 1.0), 1.5) == ""
+    assert 'case "enemy-flag-up": {5 + _phase};' in body
+    assert 'case "flag-down": {5 - _phase};' in body
+    # Pressure with the flag up is COLOSSUS's now, and a first dip is not a reason.
+    for gone in ["flag-falling", "unanchored", "outnumbered", "_urgency"]:
+        assert gone not in body, gone
+    # A held point at full flag: nothing, however hard it is pressed.
+    assert bite_why(True, 1.0, (True, 1.0))[0] == ""
+    # Coming down but still above half-mast: not yet.
+    assert bite_why(True, 0.6, (True, 1.0))[0] == ""
+    # Below half-mast and falling, stuck, or first seen there.
+    assert bite_why(True, 0.45, (True, 0.6))[0] == "flag-down"
+    assert bite_why(True, 0.4, (True, 0.4))[0] == "flag-down"
+    assert bite_why(True, 0.4, None)[0] == "flag-down"
+    # Below half-mast but rising: we are taking it back.
+    assert bite_why(True, 0.4, (True, 0.3))[0] == ""
     # The enemy's flag going up on a point still counted as ours.
-    assert bite_why(False, 0.3, (True, 0.1), 0) == "enemy-flag-up"
-    # Ours coming down, from any height.
-    assert bite_why(True, 0.95, (True, 1.0), 0) == "flag-falling"
-    # First look already low; or stuck low and not recovering.
-    assert bite_why(True, 0.6, None, 0) == "flag-down"
-    assert bite_why(True, 0.6, (True, 0.6), 0) == "flag-down"
-    # Low but rising (we are taking it back): only the defenders can wake it.
-    assert bite_why(True, 0.6, (True, 0.4), 0) == ""
-    assert bite_why(True, 0.6, (True, 0.4), 2.5) == "outnumbered"
-    # Flag fine, nobody of ours on a point under pressure.
-    assert bite_why(True, 1.0, (True, 1.0), 3) == "unanchored"
+    assert bite_why(False, 0.3, (True, 0.1))[0] == "enemy-flag-up"
+    # Nearest to falling first: any enemy flag outranks any of ours, a higher
+    # enemy flag outranks a lower one, a lower flag of ours a higher one.
+    assert bite_why(False, 0.0, (True, 0.0))[1] >= bite_why(True, 0.0, None)[1]
+    assert bite_why(False, 0.8, None)[1] > bite_why(False, 0.2, None)[1]
+    assert bite_why(True, 0.1, None)[1] > bite_why(True, 0.4, None)[1]
 
 
 def test_the_flag_is_what_players_see():
@@ -346,7 +341,7 @@ def test_a_wave_is_a_helicopter_drop_and_a_vehicle_paid_by_the_pot():
     source = raw("ITW_CLASH_Supports.sqf")
     for tunable in ['ITW_CLASH_SupportsBiteBackCap",1]', 'ITW_CLASH_SupportsBiteBackRefill",20]',
                     'ITW_CLASH_SupportsBiteBackCooldown",1200]', 'ITW_CLASH_SupportsBiteBackSquads",2]',
-                    'ITW_CLASH_SupportsBiteBackFlagFloor",0.9]']:
+                    'ITW_CLASH_SupportsBiteBackFlagFloor",0.5]']:
         assert tunable in source, tunable
 
 

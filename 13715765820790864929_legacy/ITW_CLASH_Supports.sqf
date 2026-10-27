@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_Knowledge_fnc_Contacts") exitWith {
 };
 
 ITW_CLASH_SupportsStarted = true;
-ITW_CLASH_SupportsVersion = 8;
+ITW_CLASH_SupportsVersion = 9;
 ITW_CLASH_SupportsReady = false;
 
 /*
@@ -121,6 +121,16 @@ ITW_CLASH_SupportsReady = false;
         count; FlavorGate skips lane, relaunch, cooldown and funds. Danger
         close is asked as always (Hark: 2A). The live path is unchanged.
 
+    v9 (Hark, 2026-10-27): bite-back is the reflex, COLOSSUS is the judgment.
+    A wave goes only when the point is actually going: our flag below half-mast
+    and not recovering, or the enemy's flag rising on a point still counted as
+    ours. Pressure on a point whose flag is still up - nobody anchoring it,
+    defenders outnumbered - is COLOSSUS's to answer through its HOLD picks, so
+    the unanchored and outnumbered reasons and the first-dip flag-falling
+    reason are gone. Half-mast, not the flag's bottom: against fifteen or more
+    attackers a flag at half-mast has about four minutes left, a bare one about
+    two and a half, and a wave needs two to four to land.
+
     Every number below is a placeholder for calibration.
 */
 
@@ -229,11 +239,13 @@ ITW_CLASH_SupportsVehicleDropCrew = missionNamespace getVariable ["ITW_CLASH_Sup
     coming down even on the first look. A wave goes out after a short
     scramble (DelayMin to DelayMax s) with Squads squads by helicopter and
     one vehicle.
+
+    v9: FlagFloor is the trigger, not a first-look shortcut. It was 0.9.
 */
 ITW_CLASH_SupportsBiteBackCap = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackCap",1];
 ITW_CLASH_SupportsBiteBackRefill = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackRefill",20];
 ITW_CLASH_SupportsBiteBackCooldown = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackCooldown",1200];
-ITW_CLASH_SupportsBiteBackFlagFloor = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackFlagFloor",0.9];
+ITW_CLASH_SupportsBiteBackFlagFloor = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackFlagFloor",0.5];
 ITW_CLASH_SupportsBiteBackDelayMin = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackDelayMin",15];
 ITW_CLASH_SupportsBiteBackDelayMax = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackDelayMax",45];
 ITW_CLASH_SupportsBiteBackSquads = missionNamespace getVariable ["ITW_CLASH_SupportsBiteBackSquads",2];
@@ -1670,13 +1682,12 @@ ITW_CLASH_Supports_fnc_FlagState = {
 
 /*
     Why a held point wants a wave now, or "". Reads its flag against the
-    last look (kept in the ledger) and its pressure from this assessment:
+    last look (kept in the ledger):
       enemy-flag-up  the enemy's flag is going up on a point we still hold
-      flag-falling   ours is lower than last time
       flag-down      ours is below FlagFloor and not rising
-      unanchored     under pressure with nobody of ours on it
-      outnumbered    under pressure, defenders below the contested ratio
-    Returns [why, rank, phase, pressure].
+    Pressure with the flag still up is COLOSSUS's (v9). The point nearest to
+    falling ranks first: a higher enemy flag, else a lower one of ours.
+    Returns [why, rank, phase, pressure]; pressure is only logged.
 */
 ITW_CLASH_Supports_fnc_BiteBackWhy = {
     params ["_context","_index","_targets"];
@@ -1687,26 +1698,17 @@ ITW_CLASH_Supports_fnc_BiteBackWhy = {
     private _was = _phases getOrDefault [_key,[]];
     _phases set [_key,[_ours,_phase]];
     private _wasOurs = _was isNotEqualTo [] && {_was#0};
-    private _flagWhy = switch (true) do {
+    private _why = switch (true) do {
         case (!_ours): {"enemy-flag-up"};
-        case (_wasOurs && {_phase < ((_was#1) - 0.001)}): {"flag-falling"};
         case (_phase < ITW_CLASH_SupportsBiteBackFlagFloor && {!_wasOurs || {_phase <= ((_was#1) + 0.001)}}): {"flag-down"};
         default {""};
     };
     private _t = _targets findIf {(_x#0) isEqualTo _index && {(_x#1) isEqualTo "HOLD"}};
-    private _urgency = if (_t < 0) then {0} else {(_targets#_t)#2};
     private _pressure = if (_t < 0) then {0} else {(_targets#_t)#4};
-    private _why = switch (true) do {
-        case (_flagWhy isNotEqualTo ""): {_flagWhy};
-        case (_urgency >= 3): {"unanchored"};
-        case (_urgency >= 2.5): {"outnumbered"};
-        default {""};
-    };
     private _rank = switch (_why) do {
-        case "enemy-flag-up": {5};
-        case "flag-falling": {4.5};
-        case "flag-down": {4};
-        default {_urgency};
+        case "enemy-flag-up": {5 + _phase};
+        case "flag-down": {5 - _phase};
+        default {0};
     };
     [_why,_rank,_phase,_pressure]
 };

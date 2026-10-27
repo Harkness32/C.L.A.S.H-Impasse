@@ -447,15 +447,23 @@ a wave:
 
 | Why | Rule | Rank |
 |---|---|---|
-| `enemy-flag-up` | The enemy's flag is going up on a point still counted as ours (Impasse flips the flag before it flips the ownership) | 5 |
-| `flag-falling` | Our flag is lower than at the last assessment | 4.5 |
-| `flag-down` | Our flag is below 0.9 and not rising (the first look, or stuck) | 4 |
-| `unanchored` | Under pressure with none of our formations on it (urgency 3) | 3 |
-| `outnumbered` | Under pressure, defenders below the contested ratio (urgency 2.5) | 2.5 |
+| `enemy-flag-up` | The enemy's flag is going up on a point still counted as ours (Impasse flips the flag before it flips the ownership) | 5 + the enemy flag's height |
+| `flag-down` | Our flag is below half-mast (`FlagFloor`, 0.5) and not rising (falling, stuck, or the first look) | 5 − our flag's height |
 
-The flag is Impasse's own (`ITW_FlagIsPlayer`, `ITW_FlagPhase`), the bar every
-player sees on screen, so reading it is no omniscience. A rising flag below 0.9
-(the side retaking it) wakes nothing on its own.
+The point nearest to falling ranks first, and any enemy flag outranks any of
+ours. The flag is Impasse's own (`ITW_FlagIsPlayer`, `ITW_FlagPhase`), the bar
+every player sees on screen, so reading it is no omniscience. A rising flag
+(the side retaking it) wakes nothing.
+
+v9 (Hark, 2026-10-27): bite-back is the reflex and COLOSSUS the judgment. Until
+v8 a wave also went for a point whose flag had merely dipped (`flag-falling`),
+or whose flag was up but which was under pressure with nobody anchoring it
+(`unanchored`) or with its defenders outnumbered (`outnumbered`). Pressure with
+the flag still up now belongs to COLOSSUS's HOLD picks, and bite-back
+answers only a point that is actually going. Half-mast rather than the bottom
+of the flag, because a wave needs two to four minutes to land: at default
+capture speed, against fifteen or more attackers, a flag at half-mast has
+about four minutes left and a bare one about two and a half.
 
 The most urgent point gets one wave, if all of these hold, else it says once
 why not (`supports-biteback-held`): the pot holds a wave; both wave lanes are
@@ -1081,9 +1089,10 @@ class goes without that flavor.
    where it lands from the point; whether the crew stays aboard while carried.
 27. v7 drop tempo: drop and vehicle pools per side per hour, and drops bought,
    now that they have their own wallet.
-28. v7 bite-back: waves per hour, by why; whether `enemy-flag-up` or
-   `flag-falling` comes first on a point being taken; how often a wave saves
-   the point; and `biteback-held` reasons.
+28. v7 bite-back: waves per hour, by why; how often a wave saves the point;
+   and `biteback-held` reasons. v9: whether a wave launched at half-mast lands
+   before the enemy flag tops out, and how often COLOSSUS's HOLD picks reach a
+   point before bite-back has to.
 29. v8: whether any `passenger-reassigned`, `passenger-out-early` or
    `touched-down` appears, and if so whose order it was (the group's waypoint
    and behaviour); `released` should show every man boarded jumping.
