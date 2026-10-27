@@ -8,7 +8,7 @@ ITW_CLASH_PlayerTaskStateHardeningReady = false;
 ITW_CLASH_PlayerTaskStateLeaderGateReady = false;
 ITW_CLASH_PlayerTaskStateCancelReady = false;
 ITW_CLASH_PlayerTaskStateArtilleryGuardReady = false;
-ITW_CLASH_PlayerTaskStateHardeningVersion = 3;
+ITW_CLASH_PlayerTaskStateHardeningVersion = 4;
 
 ITW_CLASH_PlayerTaskState_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -175,27 +175,23 @@ ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate = {
 
         private _noRecon = +(_hq getVariable ["RydHQ_NoRecon",[]]);
         private _cargoOnly = +(_hq getVariable ["RydHQ_CargoOnly",[]]);
-        private _ownedNoRecon = _group getVariable [
-            "ITW_CLASH_PlayerCombatGateOwnsNoRecon",false
-        ];
         private _ownedCargoOnly = _group getVariable [
             "ITW_CLASH_PlayerCombatGateOwnsCargoOnly",false
         ];
 
+        // v4 (Hark, 2026-10-27): a player group is never in HAL's recon pool,
+        // combat or not. Combat employment means attack tasks; recon was being
+        // handed to combat players. Only CargoOnly still follows the tick.
+        if !(_group in _noRecon) then {
+            _noRecon pushBack _group;
+            _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsNoRecon",true];
+        };
         if (_combat) then {
-            if (_ownedNoRecon) then {
-                _noRecon = _noRecon - [_group];
-                _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsNoRecon",nil];
-            };
             if (_ownedCargoOnly) then {
                 _cargoOnly = _cargoOnly - [_group];
                 _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsCargoOnly",nil];
             };
         } else {
-            if !(_group in _noRecon) then {
-                _noRecon pushBack _group;
-                _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsNoRecon",true];
-            };
             if !(_group in _cargoOnly) then {
                 _cargoOnly pushBack _group;
                 _group setVariable ["ITW_CLASH_PlayerCombatGateOwnsCargoOnly",true];
@@ -204,6 +200,13 @@ ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate = {
 
         _hq setVariable ["RydHQ_NoRecon",_noRecon];
         _hq setVariable ["RydHQ_CargoOnly",_cargoOnly];
+        // HQSitRepB rewrites the commander's NoRecon from this global every
+        // cycle; written to the commander only, the exclusion lasted one cycle.
+        if (!isNil "ITW_CLASH_BLUFORHQ" && {_hq isEqualTo ITW_CLASH_BLUFORHQ}) then {
+            private _global = +(missionNamespace getVariable ["RydHQB_NoRecon",[]]);
+            _global pushBackUnique _group;
+            RydHQB_NoRecon = _global;
+        };
         true
     };
 

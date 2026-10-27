@@ -31,8 +31,7 @@ changes vehicles.
   squad while a player holds it, and take it as before when no player can. `MEDEVAC_SEVERE` alone fired only for a man
   alive above 75% damage or unable to stand, which vanilla AI almost never
   is, so in play the channel was nearly silent. One tick accepts all three,
-  which is why rescue did not become a sixth subscription — the same reasoning
-  that kept reconnaissance inside the combat channel. The channel name,
+  which is why rescue did not become a sixth subscription. The channel name,
   `ITW_CLASH_PlayerJobTypes` and the stored subscription array are unchanged,
   so nothing is migrated and the capability seam stays passenger capacity.
 - The group leader changes group-level subscriptions because HAL assigns work
@@ -54,17 +53,20 @@ changes vehicles.
 
 ## Tactical admission
 
-Reconnaissance is a COMBAT-channel task, not a sixth subscription. A player
-group with COMBAT disabled remains eligible for its subscribed specialist jobs
-but is excluded from HAL's generic reconnaissance/attack/reserve pools through
-C.L.A.S.H.-owned `RydHQ_NoRecon` and `RydHQ_CargoOnly` entries. C.L.A.S.H. only
-removes exclusions it previously added; native HAL classifications are never
-blindly erased when COMBAT is re-enabled.
+HAL never sends a player group on reconnaissance (2026-10-27, Hark: combat
+employment means attack tasks, and combat players were being handed recon).
+A player who wants recon work requests it (the RECON task request).
 
-The native GoRecon/GoDefRecon execution seam also validates COMBAT admission as
-a defense-in-depth check. If HAL selected a player during the short interval
-before the planning exclusions synchronized, C.L.A.S.H. releases HAL's Busy
-reservation and rejects the unsolicited recon before native execution begins.
+- Every player group is in HAL's `RydHQ_NoRecon`, COMBAT ticked or not. The
+  entry is also written to the BLUFOR commander's `RydHQB_NoRecon` global,
+  because HQSitRepB rewrites the commander's array from that global every
+  cycle; written to the commander only, the exclusion lasted one cycle, which
+  is why recon reached combat players "sometimes".
+- A group with COMBAT disabled is also excluded from HAL's attack and reserve
+  pools through a C.L.A.S.H.-owned `RydHQ_CargoOnly` entry. C.L.A.S.H. only
+  removes exclusions it previously added.
+- The native GoRecon/GoDefRecon seam refuses every player group as the
+  guarantee: HAL's Busy reservation is released and the recon never starts.
 
 ## Cancellation
 
@@ -79,7 +81,7 @@ pending) telemetry before availability is recomputed.
 
 | Channel | v1 source |
 |---|---|
-| Combat | HAL tactical group tasking, including native reconnaissance |
+| Combat | HAL tactical group tasking; never native reconnaissance |
 | Transport | HAL/ITW player ferry and HAL transport classification |
 | MEDEVAC | Persistent subscription and passenger-capability seam |
 | Logistics | HAL ammo demand plus Checkbook physical sling package |

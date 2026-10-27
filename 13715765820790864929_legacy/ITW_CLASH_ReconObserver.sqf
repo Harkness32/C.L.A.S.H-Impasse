@@ -4,16 +4,16 @@ if (!isServer) exitWith {};
 if (missionNamespace getVariable ["ITW_CLASH_ReconPhase0Started",false]) exitWith {};
 
 ITW_CLASH_ReconPhase0Started = true;
-ITW_CLASH_ReconPhase0Version = 6;
+ITW_CLASH_ReconPhase0Version = 7;
 ITW_CLASH_ReconPollInterval = 2;
 ITW_CLASH_ReconActiveGroups = createHashMap;
 
 /*
     C.L.A.S.H. reconnaissance doctrine
 
-    HAL owns reconnaissance selection and execution. Recon is a COMBAT-channel
-    job for player groups; it is not a sixth employment subscription. AI groups
-    retain HAL's native broad reconnaissance behavior.
+    HAL owns reconnaissance selection and execution. AI groups retain HAL's
+    native broad reconnaissance behavior. Player groups never get HAL recon
+    (v7); a player who wants recon work requests it.
 
     C.L.A.S.H. observes native GoRecon/GoDefRecon and adds only the player
     employment admission boundary. It does not spawn reconnaissance units,
@@ -55,36 +55,19 @@ ITW_CLASH_Recon_fnc_IsPlayerGroup = {
     (units _group findIf {isPlayer _x}) >= 0
 };
 
+/*
+    v7 (Hark, 2026-10-27): HAL never sends a player group on recon. Combat
+    employment means attack tasks; combat players were being handed recon.
+    Players who want recon work ask for it (the RECON task request). The
+    name is kept: both native recon wrappers ask it.
+*/
 ITW_CLASH_Recon_fnc_PlayerCombatAllowed = {
     params ["_group"];
     if (isNull _group) exitWith {[false,"null-group"]};
     if !([_group] call ITW_CLASH_Recon_fnc_IsPlayerGroup) exitWith {
         [true,"ai-native"]
     };
-
-    if (!isNil "ITW_CLASH_PlayerTasks_fnc_CanAcceptJob") exitWith {
-        if ([_group,"COMBAT",true] call
-            ITW_CLASH_PlayerTasks_fnc_CanAcceptJob
-        ) then {
-            [true,"combat-subscribed"]
-        } else {
-            [false,"combat-channel-disabled-or-held"]
-        }
-    };
-
-    if (!isNil "ITW_CLASH_PlayerTasks_fnc_IsSubscribed") exitWith {
-        if ([_group,"COMBAT"] call
-            ITW_CLASH_PlayerTasks_fnc_IsSubscribed
-        ) then {
-            [true,"combat-subscribed-fallback"]
-        } else {
-            [false,"combat-channel-disabled"]
-        }
-    };
-
-    // Player employment support exists on the tested branch. If its admission
-    // API is unavailable, do not silently hand a player an unsolicited recon.
-    [false,"player-employment-admission-unavailable"]
+    [false,"player-groups-never-get-hal-recon"]
 };
 
 ITW_CLASH_Recon_fnc_RejectPlayerMission = {
@@ -394,7 +377,7 @@ ITW_CLASH_Recon_fnc_EndMission = {
     };
 
     diag_log format [
-        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerCombatAdmission=true observerOnlyAI=true commanderAware=true symmetricCommanderFallback=true spawning=false requisition=false reveal=false",
+        "CLASH BOOT | recon-observer-ready | version=%1 nativeBroadRecon=true playerRecon=never observerOnlyAI=true commanderAware=true symmetricCommanderFallback=true spawning=false requisition=false reveal=false",
         ITW_CLASH_ReconPhase0Version
     ];
 };

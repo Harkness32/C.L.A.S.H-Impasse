@@ -93,4 +93,4 @@ def test_ai_recon_squads_are_not_benched_when_their_recon_ends():
     assert end[guard:sync].startswith('if (_jobId isNotEqualTo "" && {')
     # the job ID only exists for a player group's recon
     assert 'if ([_group] call ITW_CLASH_Recon_fnc_IsPlayerGroup) then {' in source
-    assert "ITW_CLASH_ReconPhase0Version = 6;" in source
+    assert "ITW_CLASH_ReconPhase0Version = 7;" in source
