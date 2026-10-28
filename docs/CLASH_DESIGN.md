@@ -261,7 +261,7 @@ stop reserving backline aa vehicles since we got the CRAM fix built, if hal
 wants aa he should make that move now"): HAL now files a Cheetah as light
 armour and employs it as it does any other, and the rear bases are the C-RAM's.
 
-**`RearBaseCRAM`** (v6) puts one C-RAM at each side's rear base, outside HAL
+**`RearBaseCRAM`** (v7) puts one C-RAM at each side's rear base, outside HAL
 and unbilled, to make one thing true: *an enemy aircraft circling a rear base
 should not be what makes that commander buy a fighter.* Counter-air coverage
 already counts it at weight 1.0 inside a 3 km umbrella, so the demand does not
@@ -281,6 +281,12 @@ base each time a caller actually puts something there (`_spawning`, ledger
 gets a piece, and a piece at a base nothing has spawned at for 600 s is stood
 down (never in front of a player). `REAR_AIR` now walks the land chain too, so
 aircraft and armour share that base.
+
+v7 drops the guess before the first spawn. With nothing in the ledger, v6 asked
+the graph with no reference and put BLUFOR's first piece at base 3 while its
+rear echelon only ever spawned at base 0 (2026-10-27, "CRAM's are spawning in
+inactive bases"). A piece now goes up only where the rear echelon has actually
+spawned.
 
 **`FOBAirDefence`** walks an idle AA squad to a FOB and then hands it to HAL's
 garrison routine. It used to yield when overwatch held a mobile SPAA on that
@@ -592,7 +598,7 @@ its own, usually because a parent loads and reports it.
 |---|---|---|---|---|
 | `AirPicture` | 4 | 1243 | `air-picture-ready` | The air picture: observation only. |
 | `HALThreatCoverage` | 7 | 1117 | `hal-threat-coverage-ready` | Threat coverage, on the Emerging Threats Budget. |
-| `RearBaseCRAM` | 6 | 757 | `rear-base-cram-ready` | Rear-base C-RAM. |
+| `RearBaseCRAM` | 7 | 757 | `rear-base-cram-ready` | Rear-base C-RAM. |
 | `FOBAirDefence` | 2 | 291 | `fob-air-defence-ready` | AA teams garrison FOBs. |
 | `HotDrop` | 5 | 637 | `hot-drop-ready` | HotDrop: the troop-insertion profile. |
 | `HALParadrop` | 1 | 143 | `hal-paradrop-ready` | _no in-source header_ |

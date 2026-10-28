@@ -8,7 +8,7 @@ if (isNil "ITW_CLASH_AirPicture_fnc_ClassProfile") exitWith {
 };
 
 ITW_CLASH_RearBaseCRAMStarted = true;
-ITW_CLASH_RearBaseCRAMVersion = 6;
+ITW_CLASH_RearBaseCRAMVersion = 7;
 ITW_CLASH_RearBaseCRAMReady = false;
 
 /*
@@ -75,6 +75,15 @@ ITW_CLASH_RearBaseCRAMReady = false;
     stood down (not while a player is within StandDownClear of it). Until the
     first rear-echelon spawn, the graph's own answer is used, as before. A
     destroyed piece is replaced where it stood, if its base is still in use.
+
+    v7 (Hark, 2026-10-27: "CRAM's are spawning in inactive bases"): the
+    graph's answer before the first spawn was a guess with no reference, and
+    a wrong one. BLUFOR's first piece went up at base 3 while its rear
+    echelon only ever spawned at base 0, and stood in a base nothing used for
+    19 minutes before it was stood down. ITW builds only the player bases it
+    needs near the front; the rest are an empty field with a map frame. A
+    piece now goes up only once the side's rear echelon has spawned
+    somewhere, and only there.
 */
 
 ITW_CLASH_RearBaseCRAMEnabled = missionNamespace getVariable ["ITW_CLASH_RearBaseCRAMEnabled",true];
@@ -330,16 +339,14 @@ ITW_CLASH_RearBaseCRAM_fnc_SelectClass = {
     Before anything has, the graph's own answer, asked without noting a use
     (this is a question, not a spawn). -1 when there is neither.
 */
+// The base this side's rear echelon last spawned at; -1 before the first.
 ITW_CLASH_RearBaseCRAM_fnc_CurrentBase = {
     params ["_side"];
     private _uses = if (isNil "ITW_CLASH_Generation_fnc_RearUses") then {[]} else {
         [_side] call ITW_CLASH_Generation_fnc_RearUses
     };
-    if (_uses isNotEqualTo []) exitWith {(_uses#0)#0};
-    if (isNil "ITW_CLASH_Generation_fnc_Resolve") exitWith {-1};
-    private _generation = [_side,"SPAA","REAR",[]] call ITW_CLASH_Generation_fnc_Resolve;
-    if ((_generation getOrDefault ["status",""]) isNotEqualTo "RESOLVED") exitWith {-1};
-    _generation getOrDefault ["rearBase",-1]
+    if (_uses isEqualTo []) exitWith {-1};
+    (_uses#0)#0
 };
 
 // v6. When this side's rear echelon last spawned at this base; -1 never.
@@ -743,7 +750,7 @@ ITW_CLASH_RearBaseCRAM_fnc_Follow = {
 
 ITW_CLASH_RearBaseCRAMReady = true;
 diag_log format [
-    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=%6 autonomousCrewJoined=true halRegistered=false impasseBilled=false vehDefStamped=false gunnerOnly=true maxRecrews=%5 crewLossRecrews=true replaceAtOriginalPosition=true followsRearBase=spawn-ledger idle=%7 maxPerSide=%8 standDownClear=%9",
+    "CLASH BOOT | rear-base-cram-ready | version=%1 respawn=%2 offset=%3 poll=%4 classSource=%6 autonomousCrewJoined=true halRegistered=false impasseBilled=false vehDefStamped=false gunnerOnly=true maxRecrews=%5 crewLossRecrews=true replaceAtOriginalPosition=true followsRearBase=spawn-ledger-only idle=%7 maxPerSide=%8 standDownClear=%9",
     ITW_CLASH_RearBaseCRAMVersion,
     ITW_CLASH_RearBaseCRAMRespawn,
     ITW_CLASH_RearBaseCRAMOffset,

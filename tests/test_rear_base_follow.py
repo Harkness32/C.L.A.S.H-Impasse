@@ -97,7 +97,7 @@ def test_callers_that_only_ask_do_not():
     assert '[_side,"SUPPORT_AIR","REAR_AIR",_aim] call ITW_CLASH_Generation_fnc_Resolve' in code("ITW_CLASH_Supports.sqf")
     assert '_side,"ANTI_ARMOR_CAS","REAR_AIR",getPosATL _threat\n            ] call' in code("ITW_CLASH_HALThreatCoverage.sqf")
     current = function_body(code(CRAM), "ITW_CLASH_RearBaseCRAM_fnc_CurrentBase")
-    assert '[_side,"SPAA","REAR",[]] call ITW_CLASH_Generation_fnc_Resolve' in current
+    assert "ITW_CLASH_Generation_fnc_Resolve" not in current
 
 
 # ------------------------------------------------- 3. the C-RAM follows it
@@ -105,9 +105,13 @@ def test_callers_that_only_ask_do_not():
 def test_the_current_rear_base_is_where_the_rear_echelon_last_spawned():
     body = function_body(code(CRAM), "ITW_CLASH_RearBaseCRAM_fnc_CurrentBase")
     assert "ITW_CLASH_Generation_fnc_RearUses" in body
-    assert "if (_uses isNotEqualTo []) exitWith {(_uses#0)#0};" in body
-    # Only before the first spawn does the graph's own answer stand in.
-    assert body.index("RearUses") < body.index("ITW_CLASH_Generation_fnc_Resolve")
+    # v7 (2026-10-27, "CRAM's are spawning in inactive bases"): no guess
+    # before the first spawn. The graph's unreferenced answer put BLUFOR's
+    # first piece at base 3 while its rear echelon only ever used base 0.
+    assert "if (_uses isEqualTo []) exitWith {-1};" in body
+    assert "(_uses#0)#0" in body
+    follow = function_body(code(CRAM), "ITW_CLASH_RearBaseCRAM_fnc_Follow")
+    assert "if (_current < 0 || {_current in _placed}) exitWith {false};" in follow
 
 
 def test_an_old_base_stays_in_use_until_idle():
@@ -166,8 +170,8 @@ def test_it_is_placed_in_the_base_it_follows():
 
 def test_boot_line_and_loud_debug_name_the_new_behaviour():
     raw = text(CRAM)
-    assert "ITW_CLASH_RearBaseCRAMVersion = 6;" in raw
-    assert "followsRearBase=spawn-ledger idle=%7 maxPerSide=%8 standDownClear=%9" in raw
+    assert "ITW_CLASH_RearBaseCRAMVersion = 7;" in raw
+    assert "followsRearBase=spawn-ledger-only idle=%7 maxPerSide=%8 standDownClear=%9" in raw
     loud = text("ITW_CLASH_LoudDebug.sqf")
     assert 'case "rear-cram|followed":' in loud
     assert 'case "rear-cram|stood-down":' in loud
