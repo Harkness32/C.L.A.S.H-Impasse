@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ServiceLifecycleStarted",false]) exitWith {true};
 ITW_CLASH_ServiceLifecycleStarted = true;
-ITW_CLASH_ServiceLifecycleVersion = 4;
+ITW_CLASH_ServiceLifecycleVersion = 5;
 ITW_CLASH_ServiceLifecycleReady = false;
 ITW_CLASH_ServicePool = [];
 ITW_CLASH_ServiceSerial = 0;
@@ -155,6 +155,10 @@ ITW_CLASH_Service_fnc_RemoveHALOwnership = {
             "RydHQ_AirG","RydHQ_DefRes","RydHQ_AmmoSupportG","RydHQ_AmmoDrop",
             "RydHQ_FuelSupportG","RydHQ_RepSupportG"
         ];
+        // HAL resets AmmoDrop from its global every situation report.
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,["AmmoDrop"],false] call ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        };
         private _support = +(_hq getVariable ["RydHQ_Support",[]]);
         _hq setVariable ["RydHQ_Support",_support - (units _group)];
     };

@@ -502,6 +502,19 @@ visibly slingloaded package, detach and stage at takeover for `RYD_AmmoDrop`,
 dry AI vehicles able to use the same air-ammo doctrine, crew sensors live and
 `Busy` as the HAL retask lock.
 
+None of it flies unless HAL counts the helicopter as an ammo-drop carrier.
+HAL's situation report resets the commander's `RydHQ_AmmoDrop` from the side's
+global (`RydHQB_AmmoDrop` for BLUFOR, `RydHQ_AmmoDrop` for the enemy) every
+cycle, and until 2026-10-28 CLASH wrote only the commander. A bought or
+reactivated ammo helicopter was a carrier for one cycle: after it, HAL's
+dispatch, Resupply's crate drop and Thunder Run never picked it, and the
+capacity check bought another (Hark: "I don't see them flown anymore"). In the
+saved runs since 10-17, 3 of 23 ammo deliveries went by helicopter, none after
+10-18, and Thunder Run never started. Every add
+and removal now goes through `CommanderParity_fnc_SetConstraintMembership`
+(ForceGeneration v5, PlayerTaskSupport v4, ServiceLifecycle v5,
+CrewRemnantCleanup v4).
+
 **`Service*`** (`Authority`, `Lifecycle`, `Stability`, `CapacityPolicy`,
 `ExecutionGuards`, `HomeResolver`) govern service-vehicle enrollment and leases.
 Two constraints worth knowing: a live lease is *"identity/accounting metadata
@@ -586,7 +599,7 @@ its own, usually because a parent loads and reports it.
 | `DualHALCheckbookHardening` | 5 | 230 | `dual-hal-checkbook-hardening-ready` | Commander B is a real HAL HQ but also an invisible compatibility object. |
 | `CheckbookAPI` | 2 | 277 | `checkbook-api-ready` | Checkbook V2 is the single state boundary between HAL intent and Impasse resources. |
 | `EmergingThreatsBudget` | 1 | 786 | `etb-ready` | The Emerging Threats Budget. |
-| `ForceGeneration` | 4 | 1203 | `force-generation-ready` | Resolve the same ITW base graph for either side: active objective -> side attack-source FOB -> upstream rear FOB. |
+| `ForceGeneration` | 5 | 1209 | `force-generation-ready` | Resolve the same ITW base graph for either side: active objective -> side attack-source FOB -> upstream rear FOB. |
 | `VehicleEchelonPolicy` | 2 | 224 | `vehicle-echelon-policy-ready` | _no in-source header_ |
 | `SeaGenerationGuard` | 3 | 247 | `sea-generation-guard-ready` | _no in-source header_ |
 | `FrontRouting` | 1 | 445 | `front-routing-ready` | Front Routing Phase 0 This is the commander-facing operational FOB selector for both sides. |
@@ -652,7 +665,7 @@ its own, usually because a parent loads and reports it.
 | `GroundMEDEVAC_VehiclePolicy` | 3 | 328 | `ground-medevac-vehicle-policy-ready` | Ground MEDEVAC vehicle policy C.L.A.S.H. |
 | `EvacBoardingFix` | 1 | 427 | `evac-boarding-fix-ready` | _no in-source header_ |
 | `RemnantEvac` | – | 12 | `–` | _no in-source header_ |
-| `CrewRemnantCleanup` | 1 | 158 | `crew-remnant-cleanup-ready` | _no in-source header_ |
+| `CrewRemnantCleanup` | 4 | 288 | `crew-remnant-cleanup-ready` | _no in-source header_ |
 | `ReconstitutionDispatchFix` | 6 | 333 | `reconstitution-dispatch-fix-ready` | _no in-source header_ |
 | `ReconstitutionTransitFix` | 5 | 373 | `reconstitution-transit-fix-ready` | _no in-source header_ |
 | `ThunderRun` | 4 | 441 | `thunder-run-enhancements-core-not-ready` | Enhancement layer over the proven Thunder Run core. |
@@ -662,7 +675,7 @@ its own, usually because a parent loads and reports it.
 | `LogisticsGuard` | 4 | 319 | `logistics-guard-ready` | _no in-source header_ |
 | `AmmoDispatch` | 1 | 113 | `ammo-dispatch-ready` | Call-site provenance is explicit. |
 | `ServiceAuthority` | 3 | 241 | `service-authority-ready` | _no in-source header_ |
-| `ServiceLifecycle` | 4 | 414 | `service-lifecycle-ready` | Field transport enrollment is installed by ServiceAuthority after the DualHAL handoff. |
+| `ServiceLifecycle` | 5 | 496 | `service-lifecycle-ready` | Field transport enrollment is installed by ServiceAuthority after the DualHAL handoff. |
 | `ServiceStability` | 5 | 336 | `service-stability-ready` | Compatibility shim for callers from older service-authority revisions. |
 | `ServiceCapacityPolicy` | 1 | 189 | `service-capacity-policy-ready` | _no in-source header_ |
 | `ServiceExecutionGuards` | 1 | 167 | `service-execution-guards-ready` | _no in-source header_ |
@@ -680,7 +693,7 @@ its own, usually because a parent loads and reports it.
 | `PlayerTaskRequestStrikeClassifierV2` | 2 | 249 | `strike-classifier-v2-ready` | _no in-source header_ |
 | `PlayerTaskRequestArtillery` | 3 | 417 | `player-task-request-artillery-ready` | _no in-source header_ |
 | `PlayerTaskClient` | – | 260 | `–` | _no in-source header_ |
-| `PlayerTaskSupport` | 3 | 1187 | `player-task-support-ready` | _no in-source header_ |
+| `PlayerTaskSupport` | 4 | 1194 | `player-task-support-ready` | _no in-source header_ |
 | `PlayerTaskStateHardening` | 6 | 484 | `player-task-state-admission-ready` | _no in-source header_ |
 | `PlayerDemandDispatch` | 5 | 1034 | `player-demand-dispatch-ready` | _no in-source header_ |
 | `PlayerDemandNativeInterceptors` | 11 | 408 | `player-demand-native-interceptors-ready` | _no in-source header_ |

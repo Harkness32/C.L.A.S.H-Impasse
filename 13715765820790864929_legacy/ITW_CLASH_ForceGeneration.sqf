@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ForceGenerationReady",false]) exitWith {true};
 
-ITW_CLASH_ForceGenerationVersion = 4;
+ITW_CLASH_ForceGenerationVersion = 5;
 ITW_CLASH_ArtilleryMinimumPerSide = missionNamespace getVariable [
     "ITW_CLASH_ArtilleryMinimumPerSide",1
 ];
@@ -453,6 +453,12 @@ ITW_CLASH_Generation_fnc_RegisterAsset = {
                 private _drops = +(_hq getVariable ["RydHQ_AmmoDrop",[]]);
                 _drops pushBackUnique _group;
                 _hq setVariable ["RydHQ_AmmoDrop",_drops];
+                // v5: HAL resets RydHQ_AmmoDrop from its global every
+                // situation report, so a commander-only entry lasted one cycle
+                // and the helicopter was never picked for a sling.
+                if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+                    [_group,["AmmoDrop"],true] call ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+                };
                 private _air = +(_hq getVariable ["RydHQ_AirG",[]]);
                 _air pushBackUnique _group;
                 _hq setVariable ["RydHQ_AirG",_air];
@@ -1197,7 +1203,7 @@ ITW_CLASH_Generation_fnc_ETBCheapestPrice = {
 
 ITW_CLASH_ForceGenerationReady = true;
 diag_log format [
-    "CLASH BOOT | force-generation-ready | version=%1 resolver=symmetric-itw-graph rearAirChain=land forwardAirChain=air rearUseLedger=spawning-callers etbSpawn=current-rear-fob artillery=interstitial logistics=rear ticketing=itw-surrogate bothSides=true halTacticalAuthority=true etbProviders=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA etbVehDefStamped=false",
+    "CLASH BOOT | force-generation-ready | version=%1 resolver=symmetric-itw-graph rearAirChain=land forwardAirChain=air rearUseLedger=spawning-callers etbSpawn=current-rear-fob ammoDropGlobal=true artillery=interstitial logistics=rear ticketing=itw-surrogate bothSides=true halTacticalAuthority=true etbProviders=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA etbVehDefStamped=false",
     ITW_CLASH_ForceGenerationVersion
 ];
 true

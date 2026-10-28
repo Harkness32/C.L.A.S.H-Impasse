@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskSupportStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerTaskSupportStarted = true;
-ITW_CLASH_PlayerTaskSupportVersion = 3;
+ITW_CLASH_PlayerTaskSupportVersion = 4;
 ITW_CLASH_PlayerTaskSupportReady = false;
 ITW_CLASH_DisableNativeHC = true;
 ITW_CLASH_PlayerTaskGroups = [];
@@ -450,6 +450,10 @@ ITW_CLASH_PlayerTasks_fnc_SyncLogisticsRole = {
         _drops = _drops - [_group];
     };
     _hq setVariable ["RydHQ_AmmoDrop",_drops];
+    // HAL resets RydHQ_AmmoDrop from its global every situation report.
+    if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+        [_group,["AmmoDrop"],_eligible] call ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+    };
     _group setVariable ["ITW_CLASH_PlayerLogisticsAir",_eligible,true];
 
     if (_eligible != _previous) then {
@@ -1173,6 +1177,9 @@ ITW_CLASH_PlayerTasks_fnc_CancelGroupJob = {
                 if (!isNull _hq) then {
                     private _drops = +(_hq getVariable ["RydHQ_AmmoDrop",[]]);
                     _hq setVariable ["RydHQ_AmmoDrop",_drops - [_x]];
+                    if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+                        [_x,["AmmoDrop"],false] call ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+                    };
                 };
                 ITW_CLASH_PlayerTaskGroups =
                     ITW_CLASH_PlayerTaskGroups - [_x];

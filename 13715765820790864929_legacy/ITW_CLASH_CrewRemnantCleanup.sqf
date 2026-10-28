@@ -1,7 +1,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_CrewRemnantCleanupStarted",false]) exitWith {true};
 ITW_CLASH_CrewRemnantCleanupStarted = true;
-ITW_CLASH_CrewRemnantCleanupVersion = 3;
+ITW_CLASH_CrewRemnantCleanupVersion = 4;
 ITW_CLASH_CrewRemnantGrace = missionNamespace getVariable [
     "ITW_CLASH_CrewRemnantGrace",20
 ];
@@ -70,6 +70,10 @@ ITW_CLASH_CrewRemnant_fnc_RemoveHAL = {
             "RydHQ_AirG","RydHQ_DefRes","RydHQ_AmmoSupportG","RydHQ_AmmoDrop",
             "RydHQ_FuelSupportG","RydHQ_RepSupportG"
         ];
+        // HAL resets AmmoDrop from its global every situation report.
+        if (!isNil "ITW_CLASH_CommanderParity_fnc_SetConstraintMembership") then {
+            [_group,["AmmoDrop"],false] call ITW_CLASH_CommanderParity_fnc_SetConstraintMembership;
+        };
     };
     if (!isNil "ITW_CLASH_DualHALBLUFORGroups") then {
         ITW_CLASH_DualHALBLUFORGroups =

@@ -72,7 +72,7 @@ def test_virtual_transport_reactivation_chooses_best_capacity_fit_not_first_pool
 
 def test_service_storage_is_any_friendly_base_area_not_exact_home_point():
     service = mission("ITW_CLASH_ServiceLifecycle.sqf")
-    assert "ITW_CLASH_ServiceLifecycleVersion = 4;" in service
+    assert "ITW_CLASH_ServiceLifecycleVersion = 5;" in service
     assert "ITW_CLASH_Service_fnc_StorageZone" in service
     assert "ITW_CLASH_ServiceHome_fnc_FriendlyBaseIndices" in service
     assert "nearest-friendly-base-zone" in service

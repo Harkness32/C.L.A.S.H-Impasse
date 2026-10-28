@@ -360,7 +360,7 @@ def test_orphan_vehicle_crew_is_quarantined_then_cleaned_without_touching_infant
     cleanup = mission("ITW_CLASH_CrewRemnantCleanup.sqf")
     init = mission("init.sqf")
 
-    assert "ITW_CLASH_CrewRemnantCleanupVersion = 3;" in cleanup
+    assert "ITW_CLASH_CrewRemnantCleanupVersion = 4;" in cleanup
     assert '"ITW_CLASH_VehicleCrewGroup",false' in cleanup
     assert '"ITW_CLASH_VehicleCrewUnit",false' in cleanup
     assert "ITW_CLASH_CrewRemnantMaxSurvivors" in cleanup

@@ -114,7 +114,7 @@ def test_an_etb_asset_stages_where_the_rear_echelon_last_spawned():
     assert uses < base < staged < threat
     # A plane still needs an owned airport, ahead of all of it.
     assert etb.index("AIRPORT_REQUIRED") < uses
-    assert "ITW_CLASH_ForceGenerationVersion = 4;" in code(GEN)
+    assert "ITW_CLASH_ForceGenerationVersion = 5;" in code(GEN)
     assert "etbSpawn=current-rear-fob" in code(GEN)
 
 

@@ -208,7 +208,7 @@ def test_the_quarantine_line_says_what_is_wrong_with_the_vehicle():
 
 def test_the_boot_line_says_the_fix_is_loaded():
     source = cleanup()
-    assert "ITW_CLASH_CrewRemnantCleanupVersion = 3;" in source
+    assert "ITW_CLASH_CrewRemnantCleanupVersion = 4;" in source
     assert "walksQuarantined=true" in source
     assert "dropsStaleWithdrawal=true" in source
 
