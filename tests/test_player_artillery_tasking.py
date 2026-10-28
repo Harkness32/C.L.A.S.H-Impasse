@@ -39,7 +39,7 @@ def test_garage_asset_provenance_is_public() -> None:
     before(
         text,
         '"ITW_CLASH_PlayerArtyDeploymentState","DEPLOYED",true',
-        'systemChat "C.L.A.S.H. artillery deployed',
+        'systemChat "C.L.A.S.H.: Artillery deployed',
     )
 
 

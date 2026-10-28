@@ -672,18 +672,18 @@ its own, usually because a parent loads and reports it.
 
 | module | v | lines | ready flag | what it does (its own words) |
 |---|---|---|---|---|
-| `PlayerTaskRequests` | 3 | 398 | `player-task-request-router-ready` | _no in-source header_ |
+| `PlayerTaskRequests` | 5 | 404 | `player-task-request-router-ready` | _no in-source header_ |
 | `PlayerTaskRequestBootstrap` | 3 | 64 | `player-task-request-bootstrap-ready` | _no in-source header_ |
-| `PlayerTaskRequestMenu` | 2 | 208 | `player-task-request-menu-ready` | _no in-source header_ |
-| `PlayerTaskRequestRecon` | 1 | 475 | `player-task-request-recon-ready` | How long a contact must be absent from HAL's knowledge before it counts as lost. |
-| `PlayerTaskRequestStrike` | 3 | 473 | `player-task-request-strike-ready` | _no in-source header_ |
+| `PlayerTaskRequestMenu` | 3 | 198 | `player-task-request-menu-ready` | _no in-source header_ |
+| `PlayerTaskRequestRecon` | 2 | 480 | `player-task-request-recon-ready` | How long a contact must be absent from HAL's knowledge before it counts as lost. |
+| `PlayerTaskRequestStrike` | 4 | 473 | `player-task-request-strike-ready` | _no in-source header_ |
 | `PlayerTaskRequestStrikeClassifierV2` | 2 | 249 | `strike-classifier-v2-ready` | _no in-source header_ |
-| `PlayerTaskRequestArtillery` | 2 | 417 | `player-task-request-artillery-ready` | _no in-source header_ |
+| `PlayerTaskRequestArtillery` | 3 | 417 | `player-task-request-artillery-ready` | _no in-source header_ |
 | `PlayerTaskClient` | – | 260 | `–` | _no in-source header_ |
-| `PlayerTaskSupport` | 2 | 1185 | `player-task-support-ready` | _no in-source header_ |
-| `PlayerTaskStateHardening` | 3 | 473 | `player-task-state-admission-ready` | _no in-source header_ |
-| `PlayerDemandDispatch` | 1 | 944 | `player-demand-dispatch-ready` | _no in-source header_ |
-| `PlayerDemandNativeInterceptors` | 10 | 408 | `player-demand-native-interceptors-ready` | _no in-source header_ |
+| `PlayerTaskSupport` | 3 | 1187 | `player-task-support-ready` | _no in-source header_ |
+| `PlayerTaskStateHardening` | 6 | 484 | `player-task-state-admission-ready` | _no in-source header_ |
+| `PlayerDemandDispatch` | 5 | 1034 | `player-demand-dispatch-ready` | _no in-source header_ |
+| `PlayerDemandNativeInterceptors` | 11 | 408 | `player-demand-native-interceptors-ready` | _no in-source header_ |
 | `PlayerDemandReservationHardening` | 1 | 499 | `player-demand-reservation-hardening-ready` | _no in-source header_ |
 | `PlayerDemandExecutionHardening` | 1 | 113 | `player-demand-execution-hardening-ready` | _no in-source header_ |
 | `PlayerDemandAmmoValidityHardening` | 2 | 102 | `player-demand-ammo-validity-hardening-ready` | _no in-source header_ |
@@ -691,9 +691,9 @@ its own, usually because a parent loads and reports it.
 | `PlayerTransportNativeBridge` | 7 | 516 | `player-transport-native-bridge-ready` | HAL_SCargo is a complete transport executor, not merely a carrier selector: it reserves the carrier, moves it to pickup, assigns cargo seats, waits for embarkation, owns the transport… |
 | `PlayerTransportRTB` | 3 | 322 | `player-transport-rtb-ready` | _no in-source header_ |
 | `PlayerCarrierHome` | 3 | 164 | `player-carrier-home-ready` | _no in-source header_ |
-| `PlayerEmploymentMenu` | 2 | 290 | `player-employment-menu-ready` | _no in-source header_ |
-| `PlayerGarageDeployment` | 3 | 382 | `player-garage-artillery-ready` | _no in-source header_ |
-| `PlayerArtilleryTasks` | 1 | 635 | `player-artillery-tasks-ready` | _no in-source header_ |
+| `PlayerEmploymentMenu` | 4 | 291 | `player-employment-menu-ready` | _no in-source header_ |
+| `PlayerGarageDeployment` | 4 | 386 | `player-garage-artillery-ready` | _no in-source header_ |
+| `PlayerArtilleryTasks` | 2 | 635 | `player-artillery-tasks-ready` | _no in-source header_ |
 | `PlayerArtillerySideMarker` | 1 | 147 | `player-artillery-side-marker-ready` | _no in-source header_ |
 | `CommanderParity` | 2 | 818 | `commander-parity-ready` | C.L.A.S.H. |
 | `HALTransportAudio` | 2 | 154 | `hal-transport-audio-ready` | _no in-source header_ |

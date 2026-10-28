@@ -48,7 +48,7 @@ EVAC = code_text(RAW)
 
 
 def test_boot_and_load_order():
-    assert "ITW_CLASH_PlayerSquadEvacVersion = 3;" in RAW
+    assert "ITW_CLASH_PlayerSquadEvacVersion = 4;" in RAW
     assert "CLASH BOOT | squad-evac-ready |" in RAW
     init = raw("init.sqf")
     # After CASEVAC, ground MEDEVAC and CSAR, inside CASEVAC's own block.
@@ -59,7 +59,7 @@ def test_boot_and_load_order():
 def test_one_tick_called_combat_search_and_rescue():
     menu = raw("ITW_CLASH_PlayerEmploymentMenu.sqf")
     assert '["MEDEVAC","Accept Combat Search and Rescue Missions"]' in menu
-    assert "ITW_CLASH_PlayerEmploymentMenuVersion = 3;" in menu
+    assert "ITW_CLASH_PlayerEmploymentMenuVersion = 4;" in menu
     # The squad extraction rides the same channel: no new subscription.
     assert 'ITW_CLASH_PlayerSquadEvacChannel = "MEDEVAC";' in EVAC
     assert '"CSAR: Squad Extraction"' in EVAC

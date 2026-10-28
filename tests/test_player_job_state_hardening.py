@@ -87,7 +87,7 @@ def test_employment_menu_uses_generic_active_job_state() -> None:
     menu = source("ITW_CLASH_PlayerEmploymentMenu.sqf")
 
     assert "ITW_CLASH_PlayerHasActiveHALJob" in menu
-    assert "[ACTIVE] Cancel Current HAL Job" in menu
+    assert "[ACTIVE] Cancel Current Job" in menu
     assert '"ITW_CLASH_PlayerTasks_fnc_CancelRemote",2' in menu
 
 

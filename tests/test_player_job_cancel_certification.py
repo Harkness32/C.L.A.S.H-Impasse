@@ -176,7 +176,7 @@ def test_player_air_transport_rtb_covers_abort_delivery_landing_and_timeout():
 def test_leader_cancel_gate_survives_native_action_binder_failure():
     hardening = source("ITW_CLASH_PlayerTaskStateHardening.sqf")
 
-    assert 'ITW_CLASH_PlayerTaskStateHardeningVersion = 5;' in hardening
+    assert 'ITW_CLASH_PlayerTaskStateHardeningVersion = 6;' in hardening
     assert 'ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate' in hardening
     assert 'scriptName "ITW_CLASH_PlayerTaskStateLeaderGate"' in hardening
     assert '"leaderGateRetained"' in hardening
@@ -189,7 +189,7 @@ def test_leader_cancel_gate_survives_native_action_binder_failure():
     assert "ITW_CLASH_PlayerTasks_fnc_CancelRemote = {" in gate
     assert "ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid" in gate
     assert "[_player,true] call" in gate
-    assert "Only the group leader can cancel HAL employment." in gate
+    assert "Only the group leader can cancel the current job." in gate
     assert "NativeAction1" not in gate
 
 

@@ -58,7 +58,7 @@ the data is missing.
   `description.ext`, added with `[unit, class] call BIS_fnc_addCommMenuItem`),
   and an ACE self action when ACE is loaded. All three live on the unit, so
   they are installed once per unit the player becomes, respawns included
-  (`ITW_CLASH_Store_fnc_InstallEntryPoints`, as the HAL Employment menu does).
+  (`ITW_CLASH_Store_fnc_InstallEntryPoints`, as the Job Channels menu does).
   The first test (2026-10-17) found the Communication menu entry called as
   `[class, [text, code]]`, which logged "Type String, expected Object" and
   added nothing, and the entry points added to the first body only.

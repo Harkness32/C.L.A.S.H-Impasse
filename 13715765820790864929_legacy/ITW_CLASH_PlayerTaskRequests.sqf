@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestsStarted",false]) 
 
 ITW_CLASH_PlayerTaskRequestsStarted = true;
 ITW_CLASH_PlayerTaskRequestsReady = false;
-ITW_CLASH_PlayerTaskRequestsVersion = 4;
+ITW_CLASH_PlayerTaskRequestsVersion = 5;
 ITW_CLASH_PlayerTaskRequestAdapters = createHashMap;
 ITW_CLASH_PlayerTaskRequestTypes = [
     "STRIKE_SOFT","STRIKE_LIGHT_ARMOR","STRIKE_HEAVY_ARMOR",
@@ -37,7 +37,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_SendResponse = {
 
     [
         _result getOrDefault ["status","REJECTED"],
-        _result getOrDefault ["message","HAL task request rejected."],
+        _result getOrDefault ["message","Request rejected."],
         _result getOrDefault ["jobId",""]
     ] remoteExecCall [
         "ITW_CLASH_PlayerTaskRequestMenu_fnc_ReceiveResponse",owner _player
@@ -231,7 +231,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_AdapterUnavailable = {
     params ["_group","_hq","_requestType"];
     [
         "UNAVAILABLE",
-        format ["%1 task requests are not source-certified on this build yet.",_requestType]
+        format ["%1 requests are not available yet.",_requestType]
     ] call ITW_CLASH_PlayerTaskRequests_fnc_Result
 };
 
@@ -250,7 +250,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     private _result = createHashMap;
 
     if !(_requestType in ITW_CLASH_PlayerTaskRequestTypes) exitWith {
-        _result = ["REJECTED","Unknown HAL task request type."] call
+        _result = ["REJECTED","Unknown request."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result;
         [_player,_result] call ITW_CLASH_PlayerTaskRequests_fnc_SendResponse;
         false
@@ -264,14 +264,14 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     ]] call ITW_CLASH_PlayerTaskRequests_fnc_Log;
 
     if (isNil "ITW_PlayerSide" || {side _group != ITW_PlayerSide}) exitWith {
-        _result = ["REJECTED","Unable. Group is outside the player HAL command."] call
+        _result = ["REJECTED","Unable. Your group is not under friendly command."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result;
         [_player,_result] call ITW_CLASH_PlayerTaskRequests_fnc_SendResponse;
         false
     };
 
     if (_group getVariable ["ITW_CLASH_AuthorityHold",false]) exitWith {
-        _result = ["AUTHORITY_HOLD","Unable. Group is not available for HAL tasking."] call
+        _result = ["AUTHORITY_HOLD","Unable. Your group is not available for tasking."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result;
         [_player,_result] call ITW_CLASH_PlayerTaskRequests_fnc_SendResponse;
         ["response",[_requestType,"AUTHORITY_HOLD",groupId _group]] call
@@ -289,7 +289,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     if (diag_tickTime < _claimUntil) exitWith {
         _result = [
             "BUSY",
-            "Unable. HAL is already assigning a task to your group."
+            "Unable. A task is already being assigned to your group."
         ] call ITW_CLASH_PlayerTaskRequests_fnc_Result;
         [_player,_result] call ITW_CLASH_PlayerTaskRequests_fnc_SendResponse;
         ["response",[_requestType,"CLAIM_IN_FLIGHT",groupId _group]] call
@@ -298,7 +298,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     };
 
     if ([_group] call ITW_CLASH_PlayerTaskRequests_fnc_HasActiveJob) exitWith {
-        _result = ["BUSY","Unable. Your group already has an active HAL task."] call
+        _result = ["BUSY","Unable. Your group already has an active task."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result;
         [_player,_result] call ITW_CLASH_PlayerTaskRequests_fnc_SendResponse;
         ["response",[_requestType,"BUSY",groupId _group]] call
@@ -310,7 +310,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
         [_group] call ITW_CLASH_fnc_GetCommanderForGroup
     } else {grpNull};
     if (isNull _hq) exitWith {
-        _result = ["NO_TASK","No HAL commander is currently available for your group."] call
+        _result = ["NO_TASK","Negative. No commander is available for your group."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result;
         [_player,_result] call ITW_CLASH_PlayerTaskRequests_fnc_SendResponse;
         false
@@ -331,7 +331,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     _group setVariable ["ITW_CLASH_PlayerTaskRequestClaimUntil",nil];
 
     if !(_result isEqualType createHashMap) then {
-        _result = ["REJECTED","HAL task adapter returned an invalid response."] call
+        _result = ["REJECTED","Request failed. Try again."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result;
     };
 
@@ -340,7 +340,7 @@ ITW_CLASH_PlayerTaskRequests_fnc_HandleRemote = {
     if (_status == "MATCHED" && {_jobId isEqualTo ""}) then {
         _result = [
             "REJECTED",
-            "HAL task adapter matched work without a valid job identifier."
+            "Request failed. Try again."
         ] call ITW_CLASH_PlayerTaskRequests_fnc_Result;
         _status = "REJECTED";
     };

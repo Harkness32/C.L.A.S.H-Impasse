@@ -83,7 +83,7 @@ A player who wants recon work requests it (the RECON task request).
 
 ## Cancellation
 
-The employment menu's Cancel Current HAL Job command is group-leader authority
+The employment menu's Cancel Current Job command is group-leader authority
 and is validated again on the server. Specialist C.L.A.S.H. jobs retain their
 own cancellation flags, while native HAL jobs are canceled through HAL's own
 stored `Action1ct` denial function. Cancellation is idempotent: no active job

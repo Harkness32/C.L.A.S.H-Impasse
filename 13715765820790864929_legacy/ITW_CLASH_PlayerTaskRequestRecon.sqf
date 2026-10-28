@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestReconStarted",fals
 
 ITW_CLASH_PlayerTaskRequestReconStarted = true;
 ITW_CLASH_PlayerTaskRequestReconReady = false;
-ITW_CLASH_PlayerTaskRequestReconVersion = 1;
+ITW_CLASH_PlayerTaskRequestReconVersion = 2;
 ITW_CLASH_PlayerTaskRequestReconSerial = 0;
 ITW_CLASH_PlayerReconContactHistory = createHashMap;
 ITW_CLASH_PlayerReconHistoryPoll = missionNamespace getVariable [
@@ -323,13 +323,13 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_Request = {
     params ["_group","_hq","_requestType"];
     private _record = [_hq] call ITW_CLASH_PlayerTaskRequestRecon_fnc_SelectRecord;
     if (count _record == 0) exitWith {
-        ["NO_TASK","HAL has no mature lost contact requiring reacquisition."] call
+        ["NO_TASK","Negative. No lost contacts to reacquire."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
     private _targetGroup = _record getOrDefault ["targetGroup",grpNull];
     if (isNull _targetGroup) exitWith {
-        ["NO_TASK","HAL lost-contact record became invalid."] call
+        ["NO_TASK","Negative. That contact report is no longer valid."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
@@ -340,7 +340,7 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_Request = {
         ITW_CLASH_PlayerTaskRequestReconSerial
     ];
     if ((_targetGroup getVariable ["ITW_CLASH_PlayerReconReservation",""]) isNotEqualTo "") exitWith {
-        ["NO_TASK","HAL lost contact was assigned to another recon element."] call
+        ["NO_TASK","Negative. That contact was just assigned to another team."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
     _targetGroup setVariable ["ITW_CLASH_PlayerReconReservation",_jobId];
@@ -349,7 +349,7 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_Request = {
     if (count _lastKnownPos < 2) exitWith {
         [_targetGroup,_jobId,"missing-last-known-position"] call
             ITW_CLASH_PlayerTaskRequestRecon_fnc_ReleaseReservation;
-        ["NO_TASK","HAL has no usable last-known position for that contact."] call
+        ["NO_TASK","Negative. No usable last known position for that contact."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
     private _taskId = "ITW_" + _jobId;
@@ -389,15 +389,20 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_Request = {
     };
 
     private _players = units _group select {isPlayer _x};
+    private _type = _record getOrDefault ["lastKnownType",""];
+    private _contact = if (_type isKindOf "Man") then {"enemy infantry"} else {
+        private _name = getText (configFile >> "CfgVehicles" >> _type >> "displayName");
+        if (_name isEqualTo "") then {"an enemy contact"} else {"an enemy " + _name}
+    };
     [
         _players,
         _taskId,
         [
             format [
-                "HAL lost contact with %1. Search the marked last-known area and positively reacquire the formation. Destruction is not required. The marker is the last legitimate HAL position and will not track the target.",
-                _record getOrDefault ["lastKnownType","enemy contact"]
+                "Contact lost with %1. Last known position is marked; it will not update. Search the area and regain eyes on them. Engagement is not necessary.",
+                _contact
             ],
-            "HAL Recon: Reacquire Contact",
+            "Recon: Reacquire Contact",
             ""
         ],
         _lastKnownPos,
@@ -413,7 +418,7 @@ ITW_CLASH_PlayerTaskRequestRecon_fnc_Request = {
         _record getOrDefault ["lostAt",-1]
     ]] call ITW_CLASH_PlayerTaskRequestRecon_fnc_Log;
     [_jobId] spawn ITW_CLASH_PlayerTaskRequestRecon_fnc_Monitor;
-    ["MATCHED","HAL recon task assigned: reacquire the lost contact.",_jobId] call
+    ["MATCHED","Recon assigned. Last known position is marked.",_jobId] call
         ITW_CLASH_PlayerTaskRequests_fnc_Result
 };
 

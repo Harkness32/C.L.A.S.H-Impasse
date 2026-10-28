@@ -43,17 +43,17 @@ def test_request_menu_is_separate_and_exposes_locked_revision_one_shape():
     employment = _text("ITW_CLASH_PlayerEmploymentMenu.sqf")
     local_init = _text("initPlayerLocal.sqf")
 
-    assert "Request HAL Task" in menu
+    assert "Request Task" in menu
     assert "Soft Targets" in menu
-    assert "Light Armor" in menu
-    assert "Heavy Armor" in menu
+    assert "Light Armour" in menu
+    assert "Heavy Armour" in menu
     assert "Recon" in menu
     assert "Artillery" in menu
     assert "Transport" in menu
     assert "LOGISTICS" not in menu
     assert "SEEK" not in menu.upper()
     assert "ITW_CLASH_PlayerTaskRequestMenu.sqf" in local_init
-    assert "Request HAL Task" not in employment
+    assert "Request Task" not in employment
 
 
 def test_strike_menu_uses_native_commanding_menu_submenu_link():

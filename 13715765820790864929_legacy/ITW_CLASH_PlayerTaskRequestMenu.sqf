@@ -2,7 +2,7 @@ if (!hasInterface) exitWith {true};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestMenuStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerTaskRequestMenuStarted = true;
-ITW_CLASH_PlayerTaskRequestMenuVersion = 2;
+ITW_CLASH_PlayerTaskRequestMenuVersion = 3;
 
 ITW_CLASH_PlayerTaskRequestMenu_fnc_ReceiveResponse = {
     params ["_status","_message",["_jobId",""]];
@@ -12,17 +12,7 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_ReceiveResponse = {
     ) exitWith {false};
     if !(_status isEqualType "" && {_message isEqualType ""}) exitWith {false};
 
-    private _prefix = switch (_status) do {
-        case "MATCHED": {"TASK ASSIGNED"};
-        case "NO_CAPABILITY": {"NO CAPABILITY"};
-        case "NO_TASK": {"NO TASK"};
-        case "BUSY": {"BUSY"};
-        case "AUTHORITY_HOLD": {"UNAVAILABLE"};
-        case "COOLDOWN": {"WAIT"};
-        case "UNAVAILABLE": {"UNAVAILABLE"};
-        default {"REQUEST"};
-    };
-    systemChat format ["C.L.A.S.H. HAL %1: %2",_prefix,_message];
+    systemChat format ["C.L.A.S.H.: %1",_message];
     true
 };
 
@@ -30,11 +20,11 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_Request = {
     params ["_requestType"];
     if !(_requestType isEqualType "") exitWith {false};
     if (player != leader group player) exitWith {
-        systemChat "C.L.A.S.H. HAL Request: only the group leader can request a task.";
+        systemChat "C.L.A.S.H.: Only the group leader can request tasks.";
         false
     };
     if !(missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestsReady",false]) exitWith {
-        systemChat "C.L.A.S.H. HAL Request: task request router is not ready.";
+        systemChat "C.L.A.S.H.: Task requests are not ready yet.";
         false
     };
 
@@ -52,7 +42,7 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_Request = {
 // and let the command-menu engine own the transition instead.
 ITW_CLASH_PlayerTaskRequestMenu_fnc_BuildStrike = {
     ITW_CLASH_PlayerTaskRequestStrikeMenu = [
-        ["HAL REQUEST - STRIKE",false],
+        ["STRIKE",false],
         [
             "Soft Targets",
             [2],"",-5,
@@ -60,13 +50,13 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_BuildStrike = {
             "1","1"
         ],
         [
-            "Light Armor",
+            "Light Armour",
             [3],"",-5,
             [["expression","['STRIKE_LIGHT_ARMOR'] call ITW_CLASH_PlayerTaskRequestMenu_fnc_Request"]],
             "1","1"
         ],
         [
-            "Heavy Armor",
+            "Heavy Armour",
             [4],"",-5,
             [["expression","['STRIKE_HEAVY_ARMOR'] call ITW_CLASH_PlayerTaskRequestMenu_fnc_Request"]],
             "1","1"
@@ -98,7 +88,7 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenMenu = {
     call ITW_CLASH_PlayerTaskRequestMenu_fnc_BuildStrike;
 
     ITW_CLASH_PlayerTaskRequestMenu = [
-        ["C.L.A.S.H. HAL - REQUEST TASK",false],
+        ["C.L.A.S.H. REQUEST TASK",false],
         [
             "Strike >",
             [2],"#USER:ITW_CLASH_PlayerTaskRequestStrikeMenu",-5,
@@ -124,7 +114,7 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenMenu = {
             "1","1"
         ],
         [
-            if (_active) then {"[ACTIVE] Cancel Current HAL Job"} else {"Cancel Current HAL Job"},
+            if (_active) then {"[ACTIVE] Cancel Current Job"} else {"Cancel Current Job"},
             [6],"",-5,
             [["expression","[] call ITW_CLASH_PlayerEmployment_fnc_CancelCurrentJob"]],
             "1","1"
@@ -146,7 +136,7 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_Install = {
     if (_unit getVariable ["ITW_CLASH_PlayerTaskRequestEntryInstalled",false]) exitWith {true};
 
     private _actionId = _unit addAction [
-        "<t color='#FFD36A'>[C.L.A.S.H.] Request HAL Task</t>",
+        "<t color='#FFD36A'>[C.L.A.S.H.] Request Task</t>",
         {[] call ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenMenu},
         nil,
         -4.1,
@@ -170,7 +160,7 @@ ITW_CLASH_PlayerTaskRequestMenu_fnc_Install = {
     ) then {
         private _aceAction = [
             "ITW_CLASH_HALTaskRequest",
-            "Request HAL Task",
+            "Request Task",
             "",
             {[] call ITW_CLASH_PlayerTaskRequestMenu_fnc_OpenMenu},
             {true},

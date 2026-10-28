@@ -54,7 +54,7 @@ def test_player_sling_dispatch_still_uses_clash_job_executor_not_native_movement
     job_start = text.index('ITW_CLASH_PlayerTasks_fnc_PlayerAmmoJob = {')
     job_stop = text.index('ITW_CLASH_PlayerTasks_fnc_CancelGroupJob = {', job_start)
     job = text[job_start:job_stop]
-    assert '"HAL Logistics: Ammunition Sling"' in job
+    assert '"Logistics: Ammunition Sling"' in job
     assert '[_taskId,"SUCCEEDED",true] call BIS_fnc_taskSetState;' in job
     assert 'RYD_WPadd' not in job
     assert 'addWaypoint' not in job

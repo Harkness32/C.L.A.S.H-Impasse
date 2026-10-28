@@ -8,7 +8,7 @@ ITW_CLASH_PlayerTaskStateHardeningReady = false;
 ITW_CLASH_PlayerTaskStateLeaderGateReady = false;
 ITW_CLASH_PlayerTaskStateCancelReady = false;
 ITW_CLASH_PlayerTaskStateArtilleryGuardReady = false;
-ITW_CLASH_PlayerTaskStateHardeningVersion = 5;
+ITW_CLASH_PlayerTaskStateHardeningVersion = 6;
 
 ITW_CLASH_PlayerTaskState_fnc_Log = {
     params ["_event",["_payload",[]]];
@@ -39,7 +39,7 @@ ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate = {
             if ([_player,false] call
                 ITW_CLASH_PlayerTasks_fnc_RemotePlayerValid
             ) then {
-                [_player,false,"Only the group leader can cancel HAL employment."] call
+                [_player,false,"Only the group leader can cancel the current job."] call
                     ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
             };
             false
@@ -48,9 +48,9 @@ ITW_CLASH_PlayerTaskState_fnc_InstallLeaderCancelGate = {
         private _success = [_player] call
             ITW_CLASH_PlayerTasks_fnc_CancelGroupJob;
         [_player,_success,if (_success) then {
-            "HAL job cancellation requested."
+            "Cancelling the current job."
         } else {
-            "No active HAL job to cancel."
+            "No active job to cancel."
         }] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
         _success
     };

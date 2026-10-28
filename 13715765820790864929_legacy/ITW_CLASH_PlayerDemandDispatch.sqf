@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandDispatchStarted",false]
 
 ITW_CLASH_PlayerDemandDispatchStarted = true;
 ITW_CLASH_PlayerDemandDispatchReady = false;
-ITW_CLASH_PlayerDemandDispatchVersion = 4;
+ITW_CLASH_PlayerDemandDispatchVersion = 5;
 ITW_CLASH_PlayerDemands = createHashMap;
 ITW_CLASH_PlayerDemandNextId = 0;
 ITW_CLASH_PlayerDemandPoll = 1;
@@ -268,12 +268,12 @@ ITW_CLASH_PlayerDemand_fnc_CreateTask = {
     if (_players isEqualTo []) exitWith {""};
 
     private _taskId = format ["ITW_%1",_demandId];
-    private _title = _demand getOrDefault ["title","HAL Employment"];
+    private _title = _demand getOrDefault ["title","Job"];
     private _requirement = _demand getOrDefault ["requirement",""];
     private _description = _demand getOrDefault ["description",""];
     private _full = if (_requirement isEqualTo "") then {_description} else {
-        _description + "\n\nPREPARATION: " + _requirement +
-        "\n\nAcquire what you need to execute the mission, or use Cancel Current HAL Job to release it."
+        _description + "<br/><br/>Requires: " + _requirement +
+        "<br/>Get one, or use Cancel Current Job to pass."
     };
     private _destination = +(_demand getOrDefault ["destination",[]]);
     private _target = _demand getOrDefault ["target",objNull];
@@ -775,9 +775,9 @@ ITW_CLASH_PlayerDemand_fnc_OnAmmoDemand = {
         private _name = [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId;
         [
             "LOGISTICS","LOGISTICS_AMMO",_key,_hq,_target,
-            "HAL Logistics: Ammunition Delivery",
-            format ["HAL reports %1 requires ammunition support. Deliver an ammunition package to the marked recipient.",_name],
-            "Acquire a sling-capable helicopter that can lift the ammunition package.",
+            "Logistics: Ammunition",
+            format ["%1 is short of ammunition. Recipient is marked. Deliver an ammunition package to them.",_name],
+            "A helicopter that can sling the ammunition package.",
             getPosATL _target
         ] call ITW_CLASH_PlayerDemand_fnc_Publish;
     } forEach _targets;
@@ -807,9 +807,9 @@ ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand = {
         private _name = [_targetGroup] call ITW_CLASH_PlayerDemand_fnc_GroupId;
         [
             "MEDEVAC","MEDEVAC_SEVERE",_key,_hq,_casualty,
-            "CSAR: Casualty Extraction",
-            format ["HAL reports severe casualties in %1. Reach the casualty position, evacuate the surviving severe casualties, and return them to a live friendly base.",_name],
-            "Acquire any living movable vehicle with sufficient passenger capacity for the evacuees.",
+            "CSAR: Casualties",
+            format ["%1 has severe casualties. Location is marked. Load the wounded and bring them back to a friendly base.",_name],
+            "Any working vehicle with seats for every casualty.",
             getPosATL _casualty
         ] call ITW_CLASH_PlayerDemand_fnc_Publish;
     } forEach _severe;

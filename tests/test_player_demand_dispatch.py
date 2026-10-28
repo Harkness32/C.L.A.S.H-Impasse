@@ -304,7 +304,7 @@ def test_ammo_assignment_can_prepare_without_sling_asset_then_uses_existing_exec
         'ITW_CLASH_PlayerDemand_fnc_OnMedicalDemand = {'
     )
     assert '"LOGISTICS","LOGISTICS_AMMO"' in publish
-    assert 'Acquire a sling-capable helicopter' in publish
+    assert 'A helicopter that can sling the ammunition package.' in publish
     assert 'GetSlingVehicle' not in publish
 
     execute = _block(
@@ -327,7 +327,7 @@ def test_severe_medevac_assignment_is_vehicle_independent_and_execution_is_physi
         '[] spawn {'
     )
     assert '"MEDEVAC","MEDEVAC_SEVERE"' in publish
-    assert 'Acquire any living movable vehicle with sufficient passenger capacity' in publish
+    assert 'Any working vehicle with seats for every casualty.' in publish
     assert 'GetEmploymentVehicle' not in publish
     assert 'HasPassengerCapacity' not in publish
 
@@ -421,7 +421,7 @@ def test_native_ammo_execution_preserves_scheduled_context():
         "ITW_CLASH_PlayerDemandNative_fnc_GoMedSuppBase", 1
     )[0]
 
-    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 10;" in text
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 11;" in text
     assert "ITW_CLASH_PlayerDemandNative_fnc_GoAmmoSuppBase" in wrapper
     assert "isNil {" not in wrapper
     assert 'if (isNil "_nativeResult") exitWith {};' in wrapper

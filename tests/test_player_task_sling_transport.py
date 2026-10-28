@@ -144,7 +144,7 @@ def test_native_hal_employment_actions_remain_visible_in_vehicles() -> None:
 
 def test_player_artillery_deployment_is_vehicle_sized_and_fail_closed() -> None:
     text = source("ITW_CLASH_PlayerGarageDeployment.sqf")
-    assert "ITW_CLASH_PlayerGarageDeploymentVersion = 3;" in text
+    assert "ITW_CLASH_PlayerGarageDeploymentVersion = 4;" in text
     assert "ITW_CLASH_PlayerGarage_fnc_FindSafeDestination" in text
     assert "boundingBoxReal _vehicle" in text
     assert "BIS_fnc_findSafePos" in text

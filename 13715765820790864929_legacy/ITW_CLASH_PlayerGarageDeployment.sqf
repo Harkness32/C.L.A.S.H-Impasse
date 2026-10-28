@@ -1,6 +1,6 @@
 if (missionNamespace getVariable ["ITW_CLASH_PlayerGarageModuleLoaded",false]) exitWith {true};
 ITW_CLASH_PlayerGarageModuleLoaded = true;
-ITW_CLASH_PlayerGarageDeploymentVersion = 3;
+ITW_CLASH_PlayerGarageDeploymentVersion = 4;
 
 ITW_CLASH_PlayerGarage_fnc_IsArtilleryClass = {
     params ["_class",["_side",sideUnknown]];
@@ -26,7 +26,7 @@ ITW_CLASH_PlayerGarage_fnc_ClientPending = {
         ITW_CLASH_PlayerGarage_fnc_IsArtilleryClass
     ) exitWith {false};
 
-    systemChat "C.L.A.S.H. artillery pending deployment; enter the driver seat to move it to a cleared artillery zone.";
+    systemChat "C.L.A.S.H.: Artillery waiting to deploy. Get in the driver's seat to move it to a clear firing area.";
     diag_log format [
         "CLASH GARAGE | player-artillery-actual-asset-received | player=%1 class=%2 netId=%3",
         profileName,_class,netId _vehicle
@@ -45,7 +45,11 @@ ITW_CLASH_PlayerGarage_fnc_ClientResult = {
 
     if (_status != "APPROVED" || {_position isEqualTo []}) exitWith {
         _vehicle setVariable ["ITW_CLASH_PlayerArtyDeployRequestSent",false];
-        systemChat format ["C.L.A.S.H. artillery deployment deferred: %1",_reason];
+        systemChat ("C.L.A.S.H.: Artillery not deployed. " + (createHashMapFromArray [
+            ["driver-seat-required","Get in the driver's seat and try again."],
+            ["no-clear-vehicle-sized-deployment-slot","No clear spot to set it up. Try again."],
+            ["request-throttled","Wait a moment and try again."]
+        ] getOrDefault [_reason,"Try again in a moment."]));
         diag_log format [
             "CLASH GARAGE | player-artillery-deployment-deferred | player=%1 class=%2 netId=%3 reason=%4",
             profileName,_class,netId _vehicle,_reason
@@ -55,12 +59,12 @@ ITW_CLASH_PlayerGarage_fnc_ClientResult = {
 
     if (vehicle player != _vehicle || {driver _vehicle != player}) exitWith {
         _vehicle setVariable ["ITW_CLASH_PlayerArtyDeployRequestSent",false];
-        systemChat "C.L.A.S.H. artillery deployment cancelled: occupy the driver seat and try again.";
+        systemChat "C.L.A.S.H.: Artillery deployment cancelled. Get in the driver's seat and try again.";
         false
     };
     if (!local _vehicle) exitWith {
         _vehicle setVariable ["ITW_CLASH_PlayerArtyDeployRequestSent",false];
-        systemChat "C.L.A.S.H. artillery deployment deferred: vehicle locality has not transferred.";
+        systemChat "C.L.A.S.H.: Artillery not deployed yet. Try again in a moment.";
         diag_log format [
             "CLASH GARAGE | player-artillery-deployment-deferred | player=%1 class=%2 netId=%3 reason=vehicle-not-local",
             profileName,_class,netId _vehicle
@@ -92,7 +96,7 @@ ITW_CLASH_PlayerGarage_fnc_ClientResult = {
     _vehicle setVariable [
         "ITW_CLASH_PlayerGarageOwnerUID",getPlayerUID player,true
     ];
-    systemChat "C.L.A.S.H. artillery deployed between the rear and forward generation nodes.";
+    systemChat "C.L.A.S.H.: Artillery deployed between the rear and forward bases.";
     diag_log format [
         "CLASH GARAGE | player-artillery-client-deployed | player=%1 class=%2 netId=%3 requested=%4 actual=%5 protection=2s",
         profileName,_class,netId _vehicle,_destination,getPosATL _vehicle
@@ -344,7 +348,7 @@ if (hasInterface) then {
                 "ITW_CLASH_PlayerArtyPending",false
             ]) exitWith {};
             if (toLowerANSI _role != "driver") exitWith {
-                systemChat "C.L.A.S.H. artillery pending deployment: enter the driver seat.";
+                systemChat "C.L.A.S.H.: Artillery waiting to deploy. Get in the driver's seat.";
             };
             if (_vehicle getVariable [
                 "ITW_CLASH_PlayerArtyDeployRequestSent",false

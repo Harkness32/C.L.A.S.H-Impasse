@@ -296,15 +296,50 @@ Assignments state the mission before the player has the equipment required to ex
 
 Example:
 
-**HAL Logistics: Ammunition Delivery**
+**Logistics: Ammunition**
 
-- Pickup: rear support node / marked ammunition package
-- Recipient: designated HAL formation
-- Requirement: acquire a sling-capable helicopter capable of lifting the package
+> Alpha 1-2 is short of ammunition. Recipient is marked. Deliver an
+> ammunition package to them.
+>
+> Requires: A helicopter that can sling the ammunition package.
+> Get one, or use Cancel Current Job to pass.
 
 A player standing at base can learn that the work exists, buy or retrieve a suitable aircraft, and perform it. If the player has no interest in doing so, they cancel the job.
 
 The task may expose a preparation status such as `ACQUIRE CAPABILITY` until its execution predicate becomes true. Failure to possess the capability is not itself mission failure.
+
+### Player text voice (2026-10-28)
+
+Hark: "Can we homogenise some of the text amongst all the job descriptions and
+player facing stuff? alot of it has a bunch of different tones", with the model
+line "Location is marked. Destroy the contact, crew liquidation is not
+necessary. Friendlies near the target may engage."
+
+Every job task, request reply and menu speaks that way:
+
+- **Terse and in-world.** Short declaratives and orders: what it is, that the
+  location is marked, what to do, what does not count. No internals: no
+  HAL, ETB, nodes, adapters, certification or locality.
+- **The commander is never named.** A task states the situation; it does not
+  say who reported it.
+- **Titles are `Category: Thing`**: `Strike: Heavy Armour`,
+  `Recon: Reacquire Contact`, `Artillery: Fire Mission`, `CSAR: Downed Crew`,
+  `CSAR: Casualties`, `CSAR: Squad Extraction`, `Logistics: Ammunition`,
+  `Transport: Lift <squad>`.
+- **Replies open with the answer**: `Negative.` (nothing to give),
+  `Unable.` (you can't take it as you are), or the assignment itself
+  (`Strike assigned: Heavy Armour. Location is marked.`). Chat carries one
+  prefix, `C.L.A.S.H.: `.
+- **Requirements are noun phrases** (`Any working vehicle with seats for every
+  survivor.`), shown under `Requires:`.
+- **British spelling** (armour, defence, authorised).
+- **Line breaks in task text are `<br/>`.** SQF strings have no escapes; a
+  `\n` reached the player as a literal backslash-n.
+- Classnames never reach a player: a recon contact or a logistics recipient
+  without a group is named by its display name.
+
+The store keeps its own UI voice. Menu names drop HAL: `[C.L.A.S.H.] Job
+Channels`, `[C.L.A.S.H.] Request Task`, `Cancel Current Job`.
 
 ## Channel implementation plan
 

@@ -264,7 +264,7 @@ def test_no_deadline_anywhere_else():
 
 def test_the_boot_line_says_what_it_will_not_do():
     source = csar()
-    assert "ITW_CLASH_CSARVersion = 3;" in source
+    assert "ITW_CLASH_CSARVersion = 4;" in source
     for claim in [
         "writesWithdrawals=false",
         "aiDispatch=false",
@@ -284,7 +284,7 @@ def test_the_mission_rides_the_channel_the_player_ticked():
     assert "ITW_CLASH_CSARKind" in body
     assert "ITW_CLASH_PlayerDemand_fnc_Publish" in body
     assert "ITW_CLASH_CSAR_fnc_SourceKey" in body
-    assert '"CSAR: Downed Crew Recovery"' in body
+    assert '"CSAR: Downed Crew"' in body
     # Published from the hold, not from the escape.
     body = code_only(tick())
     assert body.index('case "HOLDING"') < body.index("call ITW_CLASH_CSAR_fnc_Publish")
@@ -411,13 +411,15 @@ def test_the_tick_is_called_csar_and_nothing_behind_it_is_renamed():
         "ITW_CLASH_PlayerDemandNativeInterceptors.sqf",
     ]:
         source = mission(name)
-        assert '"CSAR: Casualty Extraction"' in source, name
+        assert '"CSAR: Casualties"' in source, name
         assert "HAL MEDEVAC" not in source, name
 
     # Behind the menu nothing moved, so no subscription is migrated.
     support = mission("ITW_CLASH_PlayerTaskSupport.sqf")
     assert '"COMBAT","TRANSPORT","MEDEVAC","LOGISTICS","ARTILLERY"' in support
-    assert "CSAR" not in support
+    # The chat line names the channel CSAR; the stored id stays MEDEVAC.
+    assert support.count("CSAR") == 1
+    assert '["MEDEVAC","CSAR"]' in support
     assert '"MEDEVAC_SEVERE"' in mission("ITW_CLASH_PlayerDemandDispatch.sqf")
 
 
@@ -426,7 +428,7 @@ def test_finished_demands_leave_the_table():
     the 1 Hz loop walks every key, so terminal rows cannot accumulate for a
     whole campaign any more."""
     dispatch = mission("ITW_CLASH_PlayerDemandDispatch.sqf")
-    assert "ITW_CLASH_PlayerDemandDispatchVersion = 4;" in dispatch
+    assert "ITW_CLASH_PlayerDemandDispatchVersion = 5;" in dispatch
     assert "ITW_CLASH_PlayerDemandRetention" in dispatch
     assert "ITW_CLASH_PlayerDemands deleteAt _x;" in dispatch
     assert "prunesTerminalDemands=true" in dispatch

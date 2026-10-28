@@ -40,7 +40,7 @@ def test_strike_reservation_is_player_job_only_and_does_not_block_hal_combat():
 
     assert "ITW_CLASH_PlayerStrikeReservation" in text
     assert "ITW_CLASH_PlayerStrikeJobId" in text
-    assert "other friendly forces may engage the same enemy" in text
+    assert "Friendlies near the target may engage." in text
     for forbidden in (
         'setVariable ["RydHQ_NoAttack"',
         'setVariable ["RydHQ_NoRecon"',
@@ -149,7 +149,7 @@ def test_recon_task_uses_frozen_last_known_marker_and_authorizes_reward_only_on_
     text = _text("ITW_CLASH_PlayerTaskRequestRecon.sqf")
 
     assert '["lastKnownPosition",+_lastKnownPos]' in text
-    assert "The marker is the last legitimate HAL position and will not track the target." in text
+    assert "Last known position is marked; it will not update." in text
     assert '"PLAYER_TASK_REWARD_AUTHORIZED"' in text
     assert '["rewardClass","RECON"]' in text
     assert "setMarkerPos" not in text
@@ -170,7 +170,7 @@ def test_armor_strike_completion_counts_combat_vehicles_not_dismounted_crew():
     assert "count _vehicles" in threat
     assert "} else {" in threat
     assert "{alive _x} count units _targetGroup" in threat
-    assert "Dismounted surviving crews are not part of the armor STRIKE objective." in text
+    assert "crew liquidation is not necessary." in text
 
 
 def test_strike_task_presentation_uses_destroy_labels_and_last_known_tracking_language():
@@ -181,12 +181,12 @@ def test_strike_task_presentation_uses_destroy_labels_and_last_known_tracking_la
         "ITW_CLASH_PlayerTaskRequestStrike_fnc_ReleaseReservation = {",
     )
 
-    assert '"Destroy Squad"' in presentation
-    assert '"Destroy Soft Target"' in presentation
-    assert '"Destroy Light Armor"' in presentation
-    assert '"Destroy Heavy Armor"' in presentation
-    assert "latest known position" in presentation
-    assert "Dismounted surviving crews are not part of the armor STRIKE objective." in presentation
+    assert '"Strike: Squad"' in presentation
+    assert '"Strike: Soft Target"' in presentation
+    assert '"Strike: Light Armour"' in presentation
+    assert '"Strike: Heavy Armour"' in presentation
+    assert "Location is marked and follows the latest report." in presentation
+    assert presentation.count("crew liquidation is not necessary.") == 2
 
     task_create = _block(
         text,

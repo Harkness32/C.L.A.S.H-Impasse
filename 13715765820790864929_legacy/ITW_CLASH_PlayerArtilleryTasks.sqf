@@ -6,7 +6,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerArtilleryTasksStarted",false]
 
 ITW_CLASH_PlayerArtilleryTasksStarted = true;
 ITW_CLASH_PlayerArtilleryTasksReady = false;
-ITW_CLASH_PlayerArtilleryTasksVersion = 1;
+ITW_CLASH_PlayerArtilleryTasksVersion = 2;
 ITW_CLASH_PlayerArtillerySerial = 0;
 ITW_CLASH_PlayerArtilleryMissionRadius = missionNamespace getVariable [
     "ITW_CLASH_PlayerArtilleryMissionRadius",200
@@ -217,11 +217,11 @@ ITW_CLASH_PlayerArtillery_fnc_NewJob = {
         _taskId,
         [
             format [
-                "HAL fire mission. Deliver %1 HE rounds into the marked %2 meter target area. HAL selected the target; you choose the firing position. Danger-close fire is not authorized.",
+                "Fire mission. Target area is marked, %2 m radius. Deliver %1 HE rounds into it. Firing position is your call. Danger-close fire is not authorised.",
                 _authorizedRounds,
                 ITW_CLASH_PlayerArtilleryMissionRadius
             ],
-            "HAL Artillery: Fire Mission",
+            "Artillery: Fire Mission",
             ""
         ],
         _targetPosition,

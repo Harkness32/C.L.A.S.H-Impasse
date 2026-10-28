@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerSquadEvacStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerSquadEvacStarted = true;
-ITW_CLASH_PlayerSquadEvacVersion = 3;
+ITW_CLASH_PlayerSquadEvacVersion = 4;
 ITW_CLASH_PlayerSquadEvacReady = false;
 
 /*
@@ -126,10 +126,10 @@ ITW_CLASH_PlayerSquadEvac_fnc_Publish = {
         _leader,
         "CSAR: Squad Extraction",
         format [
-            "%1 has broken contact with %2 men and is holding for pickup. Fly to the marked landing zone; they pop smoke when you are close. Take every survivor aboard and fly them to the rally point, where they rebuild.",
+            "%1 has broken contact with %2 men and is holding for pickup. Landing zone is marked; they pop smoke when you are close. Take every survivor aboard and fly them to the rally point, where they rebuild.",
             _name,_count
         ],
-        format ["Acquire any living movable vehicle with at least %1 passenger seats.",_count],
+        format ["Any working vehicle with at least %1 seats.",_count],
         +_lz
     ] call ITW_CLASH_PlayerDemand_fnc_Publish;
     if (_demandId isEqualTo "") exitWith {""};

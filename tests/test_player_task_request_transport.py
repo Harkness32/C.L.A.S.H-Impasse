@@ -44,7 +44,7 @@ def test_the_slot_the_bootstrap_expected_is_filled_and_registered():
     assert '["TRANSPORT","ITW_CLASH_PlayerTaskRequestTransport.sqf"]' in raw("ITW_CLASH_PlayerTaskRequestBootstrap.sqf")
     assert '"TRANSPORT"' in raw("ITW_CLASH_PlayerTaskRequests.sqf")
     assert '["TRANSPORT",ITW_CLASH_PlayerTaskRequestTransport_fnc_Request] call' in CODE
-    assert "ITW_CLASH_PlayerTaskRequestTransportVersion = 3;" in RAW
+    assert "ITW_CLASH_PlayerTaskRequestTransportVersion = 4;" in RAW
     assert "CLASH BOOT | player-task-request-transport-ready |" in RAW
     assert "spawnsNothing=true" in RAW
 
@@ -169,7 +169,7 @@ def test_reward_seam_and_router_hooks():
     assert '["rewardClass","TRANSPORT"]' in finish
     assert '"PLAYER_TASK_REWARD_AUTHORIZED"' in finish
     router = raw("ITW_CLASH_PlayerTaskRequests.sqf")
-    assert "ITW_CLASH_PlayerTaskRequestsVersion = 4;" in router
+    assert "ITW_CLASH_PlayerTaskRequestsVersion = 5;" in router
     assert 'if (_requestType == "TRANSPORT" && {' in router
     assert "ITW_CLASH_PlayerTaskRequestTransport_fnc_Finish" in router
     assert 'private _liftJob = _group getVariable ["ITW_CLASH_PlayerLiftJobId",""];' in CODE
@@ -177,5 +177,5 @@ def test_reward_seam_and_router_hooks():
 
 def test_no_capability_and_no_task_answers():
     request = body_of(CODE, "ITW_CLASH_PlayerTaskRequestTransport_fnc_Request")
-    assert '"NO_CAPABILITY","Get in a vehicle with passenger seats' in request
-    assert '"NO_TASK",format ["No squad with orders is at a base' in request
+    assert '"NO_CAPABILITY","Unable. Get in a vehicle with passenger seats' in request
+    assert '"NO_TASK",format ["Negative. No squad with orders needs a lift' in request

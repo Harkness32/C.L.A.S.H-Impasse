@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestTransportStarted",
 
 ITW_CLASH_PlayerTaskRequestTransportStarted = true;
 ITW_CLASH_PlayerTaskRequestTransportReady = false;
-ITW_CLASH_PlayerTaskRequestTransportVersion = 3;
+ITW_CLASH_PlayerTaskRequestTransportVersion = 4;
 ITW_CLASH_PlayerTaskRequestTransportSerial = 0;
 
 /*
@@ -78,7 +78,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_DestinationText = {
     params ["_destination","_source"];
     private _grid = mapGridPosition _destination;
     if (_source == "fob-air-defence") exitWith {
-        format ["Command has posted them to the FOB at grid %1 for air defence",_grid]
+        format ["They are posted to the FOB at grid %1 for air defence",_grid]
     };
     private _objective = [];
     private _best = 1e10;
@@ -348,13 +348,13 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
     params ["_group","_hq","_requestType"];
     private _vehicle = [_group] call ITW_CLASH_PlayerTasks_fnc_GetEmploymentVehicle;
     if (isNull _vehicle || {!([_vehicle] call ITW_CLASH_PlayerTasks_fnc_HasPassengerCapacity)}) exitWith {
-        ["NO_CAPABILITY","Get in a vehicle with passenger seats, then request a transport task."] call
+        ["NO_CAPABILITY","Unable. Get in a vehicle with passenger seats first."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
     private _seats = _vehicle emptyPositions "cargo";
     private _candidates = [_hq,_seats,getPosATL _vehicle] call ITW_CLASH_PlayerTaskRequestTransport_fnc_Candidates;
     if (_candidates isEqualTo []) exitWith {
-        ["NO_TASK",format ["No squad with orders is at a base needing a lift that fits your %1 seats.",_seats]] call
+        ["NO_TASK",format ["Negative. No squad with orders needs a lift that fits your %1 seats.",_seats]] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
     (_candidates#0) params ["_squad","_destination","_source","_far"];
@@ -364,7 +364,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
         "CLASH-LIFT-%1-%2",round (diag_tickTime * 1000),ITW_CLASH_PlayerTaskRequestTransportSerial
     ];
     if ((_squad getVariable ["ITW_CLASH_PlayerLift",""]) isNotEqualTo "") exitWith {
-        ["NO_TASK","That squad was just taken by another pilot. Request again."] call
+        ["NO_TASK","Negative. That squad was just assigned to another pilot. Request again."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
     // Off HAL for the ride: reserved, out of Included, its running task ended.
@@ -431,13 +431,13 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
         _taskId,
         [
             format [
-                "%1 (%2 men) is at grid %3. %4, %5 km away. Land within %6 m of them; they board when you are down. Put them on the ground inside the circled drop zone, %7 km around where they are going.",
+                "%1 (%2 men) is at grid %3. %4, %5 km away. Land within %6 m of them; they walk over and board. Drop zone is marked, %7 km around their destination; set them down inside it.",
                 groupId _squad,_count,mapGridPosition _pickup,
                 [_destination,_source] call ITW_CLASH_PlayerTaskRequestTransport_fnc_DestinationText,
                 (round (_far / 100)) / 10,ITW_CLASH_PlayerLiftGatherRadius,
                 (round (ITW_CLASH_PlayerLiftDropRadius / 100)) / 10
             ],
-            format ["Lift %1",groupId _squad],
+            format ["Transport: Lift %1",groupId _squad],
             ""
         ],
         _pickup,
@@ -451,7 +451,7 @@ ITW_CLASH_PlayerTaskRequestTransport_fnc_Request = {
     ["assigned",[_jobId,groupId _group,groupId _squad,_count,round _far,_source,typeOf _vehicle]] call
         ITW_CLASH_PlayerTaskRequestTransport_fnc_Log;
     [_jobId] spawn ITW_CLASH_PlayerTaskRequestTransport_fnc_Monitor;
-    ["MATCHED",format ["Transport task assigned: lift %1. The drop zone is marked on your map.",groupId _squad],_jobId] call
+    ["MATCHED",format ["Lift assigned: %1. Pickup and drop zone are marked.",groupId _squad],_jobId] call
         ITW_CLASH_PlayerTaskRequests_fnc_Result
 };
 

@@ -976,7 +976,7 @@ class CfgCommunicationMenu
 {
     class ITW_CLASH_HALEmployment
     {
-        text = "C.L.A.S.H. HAL Employment";
+        text = "C.L.A.S.H. Job Channels";
         submenu = "";
         expression = "[] call ITW_CLASH_PlayerEmployment_fnc_OpenMenu";
         icon = "";

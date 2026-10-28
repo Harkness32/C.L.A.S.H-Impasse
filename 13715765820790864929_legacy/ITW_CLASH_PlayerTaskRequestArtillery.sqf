@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskRequestArtilleryStarted",
 
 ITW_CLASH_PlayerTaskRequestArtilleryStarted = true;
 ITW_CLASH_PlayerTaskRequestArtilleryReady = false;
-ITW_CLASH_PlayerTaskRequestArtilleryVersion = 2;
+ITW_CLASH_PlayerTaskRequestArtilleryVersion = 3;
 ITW_CLASH_PlayerTaskRequestArtillerySerial = 0;
 
 // The map presentation and the backend mission-credit envelope are separate
@@ -240,7 +240,7 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
     if (isNull _vehicle) exitWith {
         [
             "NO_CAPABILITY",
-            "Unable. Deploy a player-gunned artillery asset outside the rear sanctuary before requesting a fire mission."
+            "Unable. Deploy your artillery outside the rear base sanctuary first."
         ] call ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
@@ -251,13 +251,13 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
     ] call ITW_CLASH_PlayerTaskRequestArtillery_fnc_FilterKnownTargets;
 
     if (_knownEnemies isEqualTo []) exitWith {
-        ["NO_TASK","No suitable HAL-known fire mission is available."] call
+        ["NO_TASK","Negative. No fire missions available."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
     private _target = [_knownEnemies] call RYD_CFF_TGT;
     if (isNull _target) exitWith {
-        ["NO_TASK","No suitable HAL-known fire mission is available."] call
+        ["NO_TASK","Negative. No fire missions available."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
@@ -272,7 +272,7 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
     if !([_target,_token] call
         ITW_CLASH_PlayerTaskRequestArtillery_fnc_ReserveTarget
     ) exitWith {
-        ["NO_TASK","HAL target was taken by another fire mission."] call
+        ["NO_TASK","Negative. That target was just assigned to another battery."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
@@ -293,7 +293,7 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
     ) exitWith {
         [group _target,_token,"no-compatible-fire-solution"] call
             ITW_CLASH_PlayerTaskRequestArtillery_fnc_ReleaseReservation;
-        ["NO_TASK","HAL has no compatible fire solution for your current gun and ammunition."] call
+        ["NO_TASK","Negative. Your gun and ammunition have no solution on that target."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
@@ -301,7 +301,7 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
     if (_magazines isEqualTo []) exitWith {
         [group _target,_token,"no-authorized-magazines"] call
             ITW_CLASH_PlayerTaskRequestArtillery_fnc_ReleaseReservation;
-        ["NO_TASK","HAL has no compatible HE ammunition authorization for this target."] call
+        ["NO_TASK","Negative. No HE rounds authorised for that target."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
@@ -320,7 +320,7 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
     if (_jobId isEqualTo "") exitWith {
         [group _target,_token,"job-create-failed"] call
             ITW_CLASH_PlayerTaskRequestArtillery_fnc_ReleaseReservation;
-        ["NO_TASK","HAL could not establish the requested fire mission."] call
+        ["NO_TASK","Negative. The fire mission could not be set up."] call
             ITW_CLASH_PlayerTaskRequests_fnc_Result
     };
 
@@ -354,7 +354,7 @@ ITW_CLASH_PlayerTaskRequestArtillery_fnc_Request = {
     [
         "MATCHED",
         format [
-            "HAL fire mission assigned. %1 HE rounds authorized. Aim inside the red %2 m radius; impacts out to %3 m count for mission validation.",
+            "Fire mission assigned. %1 HE rounds authorised. Aim inside the red %2 m circle; impacts out to %3 m count.",
             _authorized,
             ITW_CLASH_PlayerArtilleryAimRadius,
             ITW_CLASH_PlayerArtilleryImpactAcceptanceRadius

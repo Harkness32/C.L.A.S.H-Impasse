@@ -77,7 +77,7 @@ def test_open_player_ammo_demand_uses_real_native_execution_not_supported_bookke
     )[0]
     assert "ITW_CLASH_NativeAmmoExecution" in publish
 
-    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 10;" in intercept
+    assert "ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 11;" in intercept
     assert "native-ai-execution-started" in intercept
     assert "native-ai-execution-ended" in intercept
     assert 'setVariable ["ITW_CLASH_NativeAmmoExecution",nil]' in intercept

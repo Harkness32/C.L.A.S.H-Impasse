@@ -33,7 +33,7 @@ if (missionNamespace getVariable ["ITW_CLASH_CSARStarted",false]) exitWith {true
 */
 
 ITW_CLASH_CSARStarted = true;
-ITW_CLASH_CSARVersion = 3;
+ITW_CLASH_CSARVersion = 4;
 ITW_CLASH_CSARReady = false;
 ITW_CLASH_CSARPoll = missionNamespace getVariable ["ITW_CLASH_CSARPoll",5];
 // The employment channel a player ticks for this work. MEDEVAC carries both
@@ -362,12 +362,12 @@ ITW_CLASH_CSAR_fnc_Publish = {
         [_group] call ITW_CLASH_CSAR_fnc_SourceKey,
         _hq,
         _leader,
-        "CSAR: Downed Crew Recovery",
+        "CSAR: Downed Crew",
         format [
-            "The crew of a %1 is on foot and clear of the wreck. Reach the marked position, load every survivor, and return them to a live friendly base.",
+            "Downed %1 crew, on foot and clear of the wreck. Location is marked. Land near them; they walk over and board. Bring every survivor back to a friendly base.",
             _display
         ],
-        "Acquire any living movable vehicle with enough passenger capacity for the survivors.",
+        "Any working vehicle with seats for every survivor.",
         +(_entry get "lz")
     ] call ITW_CLASH_PlayerDemand_fnc_Publish;
     if (_demandId isEqualTo "") exitWith {""};

@@ -4,7 +4,7 @@ if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_PlayerTaskSupportStarted",false]) exitWith {true};
 
 ITW_CLASH_PlayerTaskSupportStarted = true;
-ITW_CLASH_PlayerTaskSupportVersion = 2;
+ITW_CLASH_PlayerTaskSupportVersion = 3;
 ITW_CLASH_PlayerTaskSupportReady = false;
 ITW_CLASH_DisableNativeHC = true;
 ITW_CLASH_PlayerTaskGroups = [];
@@ -306,7 +306,7 @@ ITW_CLASH_PlayerTasks_fnc_SetSubscriptionRemote = {
         ) then {
             [
                 _player,false,
-                "Only the group leader can change HAL employment."
+                "Only the group leader can change job channels."
             ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
         };
         false
@@ -320,12 +320,14 @@ ITW_CLASH_PlayerTasks_fnc_SetSubscriptionRemote = {
         _success,
         if (_success) then {
             format [
-                "HAL employment updated: %1 %2.",
-                toUpperANSI _jobType,
-                if (_enabled) then {"enabled"} else {"disabled"}
+                if (_enabled) then {"Now accepting %1 missions."} else {"No longer accepting %1 missions."},
+                createHashMapFromArray [
+                    ["COMBAT","Combat"],["TRANSPORT","Transport"],["MEDEVAC","CSAR"],
+                    ["LOGISTICS","Logistics"],["ARTILLERY","Artillery"]
+                ] getOrDefault [toUpperANSI _jobType,toUpperANSI _jobType]
             ]
         } else {
-            "HAL employment update rejected."
+            "Channel change rejected."
         }
     ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
     _success
@@ -341,7 +343,7 @@ ITW_CLASH_PlayerTasks_fnc_SetAllSubscriptionsRemote = {
         ) then {
             [
                 _player,false,
-                "Only the group leader can change HAL employment."
+                "Only the group leader can change job channels."
             ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
         };
         false
@@ -357,9 +359,9 @@ ITW_CLASH_PlayerTasks_fnc_SetAllSubscriptionsRemote = {
         _player,
         _success,
         if (_enabled) then {
-            "All HAL employment channels enabled."
+            "Now accepting all missions."
         } else {
-            "All HAL employment channels disabled."
+            "No longer accepting any missions."
         }
     ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
     _success
@@ -375,9 +377,9 @@ ITW_CLASH_PlayerTasks_fnc_SetOptInRemote = {
     [
         _player,_success,
         if (_enabled) then {
-            "All HAL employment channels enabled."
+            "Now accepting all missions."
         } else {
-            "All HAL employment channels disabled."
+            "No longer accepting any missions."
         }
     ] call ITW_CLASH_PlayerTasks_fnc_SendEmploymentState;
     _success
@@ -877,7 +879,7 @@ ITW_CLASH_PlayerTasks_fnc_PlayerAmmoJob = {
         effectiveCommander _target
     };
     private _targetName = if (isNull _targetUnit) then {
-        typeOf _target
+        getText (configOf _target >> "displayName")
     } else {
         groupId (group _targetUnit)
     };
@@ -886,11 +888,11 @@ ITW_CLASH_PlayerTasks_fnc_PlayerAmmoJob = {
         _taskId,
         [
             format [
-                "Sling-load the ammunition package at the rear logistics node and deliver it within %1 meters of %2.",
+                "Ammunition for %2. The package is marked at the rear base. Sling it and set it down within %1 m of them.",
                 ITW_CLASH_PlayerAmmoDeliveryRadius,
                 _targetName
             ],
-            "HAL Logistics: Ammunition Sling",
+            "Logistics: Ammunition Sling",
             ""
         ],
         _box,

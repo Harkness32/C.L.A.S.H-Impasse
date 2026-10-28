@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerDemandNativeInterceptorsStart
 
 ITW_CLASH_PlayerDemandNativeInterceptorsStarted = true;
 ITW_CLASH_PlayerDemandNativeInterceptorsReady = false;
-ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 10;
+ITW_CLASH_PlayerDemandNativeInterceptorsVersion = 11;
 
 // Load execution ownership first, then reservation/liveness policy, then the
 // ammo-validity correction required by call-scoped ExReAmmo filtering. Each
@@ -40,9 +40,9 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeAmmo = {
     private _demandId = [
         "LOGISTICS","LOGISTICS_AMMO","LOGISTICS_AMMO|" + str _targetGroup,
         _hq,_target,
-        "HAL Logistics: Ammunition Delivery",
-        format ["HAL reports %1 requires ammunition support. Deliver an ammunition package to the marked recipient.",_name],
-        "Acquire a sling-capable helicopter that can lift the ammunition package.",
+        "Logistics: Ammunition",
+        format ["%1 is short of ammunition. Recipient is marked. Deliver an ammunition package to them.",_name],
+        "A helicopter that can sling the ammunition package.",
         getPosATL _target
     ] call ITW_CLASH_PlayerDemand_fnc_Publish;
     if (_demandId isEqualTo "") exitWith {false};
@@ -96,9 +96,9 @@ ITW_CLASH_PlayerDemandNative_fnc_TakeMedevac = {
     private _demandId = [
         "MEDEVAC","MEDEVAC_SEVERE","MEDEVAC_SEVERE|" + str _targetGroup,
         _hq,_casualty,
-        "CSAR: Casualty Extraction",
-        format ["HAL reports severe casualties in %1. Reach the casualty position, evacuate the surviving severe casualties, and return them to a live friendly base.",_name],
-        "Acquire any living movable vehicle with sufficient passenger capacity for the evacuees.",
+        "CSAR: Casualties",
+        format ["%1 has severe casualties. Location is marked. Load the wounded and bring them back to a friendly base.",_name],
+        "Any working vehicle with seats for every casualty.",
         getPosATL _casualty
     ] call ITW_CLASH_PlayerDemand_fnc_Publish;
     if (_demandId isEqualTo "") exitWith {false};

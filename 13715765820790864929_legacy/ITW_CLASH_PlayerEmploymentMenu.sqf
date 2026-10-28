@@ -4,7 +4,7 @@ if (missionNamespace getVariable [
 ]) exitWith {true};
 
 ITW_CLASH_PlayerEmploymentMenuStarted = true;
-ITW_CLASH_PlayerEmploymentMenuVersion = 3;
+ITW_CLASH_PlayerEmploymentMenuVersion = 4;
 ITW_CLASH_PlayerEmploymentJobTypes = [
     "COMBAT","TRANSPORT","MEDEVAC","LOGISTICS","ARTILLERY"
 ];
@@ -41,7 +41,7 @@ ITW_CLASH_PlayerEmployment_fnc_ReceiveState = {
     };
     if (_message isEqualType "" && {_message isNotEqualTo ""}) then {
         systemChat format [
-            "C.L.A.S.H. HAL Employment: %1",_message
+            "C.L.A.S.H.: %1",_message
         ];
     };
     _success
@@ -56,8 +56,7 @@ ITW_CLASH_PlayerEmployment_fnc_ToggleSubscription = {
     };
     if (player != leader group player) exitWith {
         systemChat (
-            "C.L.A.S.H. HAL Employment: only the group leader "
-            + "can change the group's job channels."
+            "C.L.A.S.H.: Only the group leader can change job channels."
         );
         false
     };
@@ -75,8 +74,7 @@ ITW_CLASH_PlayerEmployment_fnc_ToggleSubscription = {
 ITW_CLASH_PlayerEmployment_fnc_ToggleAll = {
     if (player != leader group player) exitWith {
         systemChat (
-            "C.L.A.S.H. HAL Employment: only the group leader "
-            + "can change the group's job channels."
+            "C.L.A.S.H.: Only the group leader can change job channels."
         );
         false
     };
@@ -98,8 +96,7 @@ ITW_CLASH_PlayerEmployment_fnc_ToggleAll = {
 ITW_CLASH_PlayerEmployment_fnc_CancelCurrentJob = {
     if (player != leader group player) exitWith {
         systemChat (
-            "C.L.A.S.H. HAL Employment: only the group leader "
-            + "can cancel the group's current job."
+            "C.L.A.S.H.: Only the group leader can cancel the current job."
         );
         false
     };
@@ -143,13 +140,13 @@ ITW_CLASH_PlayerEmployment_fnc_OpenMenu = {
         || {_ammoJob isNotEqualTo ""}
         || {_artilleryJob isNotEqualTo ""};
     private _jobStatus = if (_activeJob) then {
-        "[ACTIVE] Cancel Current HAL Job"
+        "[ACTIVE] Cancel Current Job"
     } else {
-        "Cancel Current HAL Job"
+        "Cancel Current Job"
     };
 
     ITW_CLASH_PlayerEmploymentMenu = [
-        ["C.L.A.S.H. HAL Employment",false],
+        ["C.L.A.S.H. JOB CHANNELS",false],
         [
             ["COMBAT","Accept Combat Missions"] call
                 ITW_CLASH_PlayerEmployment_fnc_Label,
@@ -191,9 +188,9 @@ ITW_CLASH_PlayerEmployment_fnc_OpenMenu = {
         ],
         [
             if (_allEnabled) then {
-                "Disable All Job Types"
+                "Decline All Missions"
             } else {
-                "Enable All Job Types"
+                "Accept All Missions"
             },
             [7],"",-5,
             [["expression","[] call ITW_CLASH_PlayerEmployment_fnc_ToggleAll"]],
@@ -224,7 +221,7 @@ ITW_CLASH_PlayerEmployment_fnc_Install = {
     ]) exitWith {true};
 
     private _actionId = _unit addAction [
-        "<t color='#9FD8FF'>[C.L.A.S.H.] HAL Employment</t>",
+        "<t color='#9FD8FF'>[C.L.A.S.H.] Job Channels</t>",
         {[] call ITW_CLASH_PlayerEmployment_fnc_OpenMenu},
         nil,
         -4,
@@ -252,7 +249,7 @@ ITW_CLASH_PlayerEmployment_fnc_Install = {
     ) then {
         private _aceAction = [
             "ITW_CLASH_HALEmployment",
-            "C.L.A.S.H. HAL Employment",
+            "C.L.A.S.H. Job Channels",
             "",
             {[] call ITW_CLASH_PlayerEmployment_fnc_OpenMenu},
             {true},
