@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (missionNamespace getVariable ["ITW_CLASH_ForceGenerationReady",false]) exitWith {true};
 
-ITW_CLASH_ForceGenerationVersion = 3;
+ITW_CLASH_ForceGenerationVersion = 4;
 ITW_CLASH_ArtilleryMinimumPerSide = missionNamespace getVariable [
     "ITW_CLASH_ArtilleryMinimumPerSide",1
 ];
@@ -881,6 +881,16 @@ ITW_CLASH_Generation_fnc_ETBCandidates = {
     the rear FOB and drives. Planes must come from an owned airport, which is
     what CLASH's air profile alone would have got wrong - it spawns at the rear
     base like everything else.
+
+    v4 (Hark, 2026-10-28: "its just weird having the mass majority of our
+    force gen at the rear and then boom, etb jumps to the front"): the rear
+    FOB was the one on the chain nearest the threat. Each active objective has
+    its own chain, so a threat in the north put GUER's anti-armour at the
+    airport (base 24), 4-5 km from the fight, while its artillery and armour
+    all came out of base 40. HAL then sent the AFV south anyway. An ETB asset
+    now stages where the side's rear echelon last spawned, and the threat
+    chain is only the answer before anything has. It never writes the ledger,
+    so a one-off purchase never moves the rear or the C-RAM with it.
 */
 ITW_CLASH_Generation_fnc_ETBSpawnPoint = {
     params ["_side","_capability","_class",["_reference",[]]];
@@ -894,8 +904,13 @@ ITW_CLASH_Generation_fnc_ETBSpawnPoint = {
         if (count _position < 3) then {_position pushBack 0};
         ["airport","",_position]
     };
+    private _uses = [_side] call ITW_CLASH_Generation_fnc_RearUses;
+    private _rear = if (_uses isEqualTo []) then {[]} else {
+        [(_uses#0)#0,false] call ITW_CLASH_Generation_fnc_BaseSpawn
+    };
+    if (_rear isNotEqualTo []) exitWith {["rear-base","",_rear]};
     private _generation = [
-        _side,_capability,"REAR",_reference,true
+        _side,_capability,"REAR",_reference
     ] call ITW_CLASH_Generation_fnc_Resolve;
     if ((_generation getOrDefault ["status",""]) isNotEqualTo "RESOLVED") exitWith {
         ["","NO_CANDIDATE",[]]
@@ -1182,7 +1197,7 @@ ITW_CLASH_Generation_fnc_ETBCheapestPrice = {
 
 ITW_CLASH_ForceGenerationReady = true;
 diag_log format [
-    "CLASH BOOT | force-generation-ready | version=%1 resolver=symmetric-itw-graph rearAirChain=land forwardAirChain=air rearUseLedger=spawning-callers artillery=interstitial logistics=rear ticketing=itw-surrogate bothSides=true halTacticalAuthority=true etbProviders=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA etbVehDefStamped=false",
+    "CLASH BOOT | force-generation-ready | version=%1 resolver=symmetric-itw-graph rearAirChain=land forwardAirChain=air rearUseLedger=spawning-callers etbSpawn=current-rear-fob artillery=interstitial logistics=rear ticketing=itw-surrogate bothSides=true halTacticalAuthority=true etbProviders=GROUND_ANTI_ARMOR,ANTI_ARMOR_CAS,CAP_AIRCRAFT,SPAA etbVehDefStamped=false",
     ITW_CLASH_ForceGenerationVersion
 ];
 true

@@ -84,7 +84,6 @@ def test_the_ledger_is_written_only_for_a_spawning_rear_answer():
 def test_every_caller_that_puts_something_at_the_rear_says_so():
     gen = code(GEN)
     assert "_side,_capability,_profile,_reference,true\n    ] call ITW_CLASH_Generation_fnc_Resolve;" in function_body(gen, "ITW_CLASH_Generation_fnc_Provider")
-    assert '_side,_capability,"REAR",_reference,true' in function_body(gen, "ITW_CLASH_Generation_fnc_ETBSpawnPoint")
     assert "_side,_capability,_profile,_reference,true" in code("ITW_CLASH_ServiceStability.sqf")
     field = function_body(code("ITW_CLASH_DualHALCheckbook.sqf"), "ITW_CLASH_DualHAL_fnc_GetFieldVehicleSpawn")
     assert 'if (_air) then {"REAR_AIR"} else {"REAR"},\n            getPosATL _veh,\n            true' in field
@@ -98,6 +97,25 @@ def test_callers_that_only_ask_do_not():
     assert '_side,"ANTI_ARMOR_CAS","REAR_AIR",getPosATL _threat\n            ] call' in code("ITW_CLASH_HALThreatCoverage.sqf")
     current = function_body(code(CRAM), "ITW_CLASH_RearBaseCRAM_fnc_CurrentBase")
     assert "ITW_CLASH_Generation_fnc_Resolve" not in current
+    # 2026-10-28: an ETB purchase is a one-off, not the rear echelon.
+    etb = function_body(code(GEN), "ITW_CLASH_Generation_fnc_ETBSpawnPoint")
+    assert '_side,_capability,"REAR",_reference\n    ] call ITW_CLASH_Generation_fnc_Resolve;' in etb
+    assert "NoteRearUse" not in etb
+
+
+def test_an_etb_asset_stages_where_the_rear_echelon_last_spawned():
+    # Hark, 2026-10-28: "its just weird having the mass majority of our force
+    # gen at the rear and then boom, etb jumps to the front".
+    etb = function_body(code(GEN), "ITW_CLASH_Generation_fnc_ETBSpawnPoint")
+    uses = etb.index("[_side] call ITW_CLASH_Generation_fnc_RearUses;")
+    base = etb.index("[(_uses#0)#0,false] call ITW_CLASH_Generation_fnc_BaseSpawn")
+    staged = etb.index('if (_rear isNotEqualTo []) exitWith {["rear-base","",_rear]};')
+    threat = etb.index("ITW_CLASH_Generation_fnc_Resolve")
+    assert uses < base < staged < threat
+    # A plane still needs an owned airport, ahead of all of it.
+    assert etb.index("AIRPORT_REQUIRED") < uses
+    assert "ITW_CLASH_ForceGenerationVersion = 4;" in code(GEN)
+    assert "etbSpawn=current-rear-fob" in code(GEN)
 
 
 # ------------------------------------------------- 3. the C-RAM follows it

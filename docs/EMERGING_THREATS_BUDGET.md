@@ -536,10 +536,11 @@ at its attack source.
 - **A rear-use ledger.** `Resolve` takes a fifth argument, `_spawning`. A
   caller that puts something at the rear base it gets back passes `true`, and
   a `REAR`/`REAR_AIR` answer is noted in `ITW_CLASH_GenerationRearUse` (side
-  -> base -> time). The spawning callers: the Checkbook provider, the ETB spawn
-  point, service reactivation, the rear-echelon field hand-off, the ammo
+  -> base -> time). The spawning callers: the Checkbook provider, service
+  reactivation, the rear-echelon field hand-off, the ammo
   package. Callers that only ask never write: the C-RAM, the garrison sweep, the
-  CAS corridor check, a support aircraft's bearing.
+  CAS corridor check, a support aircraft's bearing, and an ETB purchase (see
+  below).
 - **The C-RAM follows it** (v6). The side's current rear base is the newest
   base in the ledger (the graph's own answer only before the first spawn). No
   piece there: one goes up (`rear-cram-placed`, then `rear-cram-followed` when
@@ -568,8 +569,26 @@ at its attack source.
     480 s).
   - The preflight manifest and the loud debugger drop the module.
 
+### ETB assets stage at the current rear (2026-10-28)
+
+Hark: "its just weird having the mass majority of our force gen at the rear
+and then boom, etb jumps to the front." Every active objective has its own
+chain, and `ETBSpawnPoint` resolved with the threat as reference, so it took
+the rear FOB on the chain nearest the threat. In the 2026-10-27 run a northern
+threat put GUER's anti-armour AFV at the airport (base 24), 4-5 km from
+objective 14, while all of GUER's artillery and armour came out of base 40;
+HAL then sent the AFV south. The C-RAM followed that one spawn to the airport.
+
+ForceGeneration v4: an ETB ground or helicopter asset stages at the base the
+side's rear echelon last spawned at (`RearUses`, newest first). The threat
+chain is used only before anything has spawned. The ETB never writes the
+ledger, so a purchase never moves the rear, and the C-RAM never follows one.
+A plane still needs an owned airport.
+
 ### Tradeoffs
 
+- An ETB asset bought against a threat near a far chain drives the whole way
+  from the side's rear. That is the intent: the rear echelon is one place.
 - HAL has no SPAA doctrine. It files a Cheetah as light armour and sends it
   with attacks against infantry, cars, artillery and statics, never toward an
   aircraft. Its gun still fires at aircraft that come into range, and counter-
