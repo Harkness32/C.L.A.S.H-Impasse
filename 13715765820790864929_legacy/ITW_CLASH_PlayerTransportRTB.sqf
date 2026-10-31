@@ -5,7 +5,7 @@ if (missionNamespace getVariable ["ITW_CLASH_PlayerTransportRTBStarted",false]) 
 
 ITW_CLASH_PlayerTransportRTBStarted = true;
 ITW_CLASH_PlayerTransportRTBReady = false;
-ITW_CLASH_PlayerTransportRTBVersion = 3;
+ITW_CLASH_PlayerTransportRTBVersion = 4;
 ITW_CLASH_PlayerTransportRTBCaptureGrace = missionNamespace getVariable [
     "ITW_CLASH_PlayerTransportRTBCaptureGrace",180
 ];
@@ -61,12 +61,46 @@ ITW_CLASH_PlayerTransportRTB_fnc_IsHumanAirCarrier = {
     && {(units _carrierGroup findIf {isPlayer _x}) >= 0}
 };
 
+/*
+    v4: HACAddedTasks holds task ids, not Task objects. taskDescription on an
+    id is a type error, and the first one killed this watcher the moment a
+    player's group was given a lift (every run since 2026-10-27 16:37, line 78),
+    so no RTB task was ever closed. These take either.
+*/
+ITW_CLASH_PlayerTransportRTB_fnc_TaskText = {
+    params ["_task"];
+    private _text = if (_task isEqualType "") then {
+        [_task] call BIS_fnc_taskDescription
+    } else {
+        taskDescription _task
+    };
+    if !(_text isEqualType [] && {count _text >= 2}) exitWith {["",""]};
+    [_text#0,_text#1] apply {
+        private _line = if (_x isEqualType []) then {_x param [0,""]} else {_x};
+        if (_line isEqualType "") then {toLowerANSI _line} else {""}
+    }
+};
+
+ITW_CLASH_PlayerTransportRTB_fnc_TaskStateOf = {
+    params ["_task"];
+    toUpperANSI (if (_task isEqualType "") then {[_task] call BIS_fnc_taskState} else {taskState _task})
+};
+
+ITW_CLASH_PlayerTransportRTB_fnc_TaskDestinationOf = {
+    params ["_task"];
+    if !(_task isEqualType "") exitWith {taskDestination _task};
+    private _destination = [_task] call BIS_fnc_taskDestination;
+    if (_destination isEqualType objNull) exitWith {getPosATL _destination};
+    if (_destination isEqualType [] && {(_destination param [0,0]) isEqualType objNull}) exitWith {
+        getPosATL (_destination#0)
+    };
+    _destination
+};
+
 ITW_CLASH_PlayerTransportRTB_fnc_TaskShape = {
     params ["_task"];
     if (_task isEqualTo taskNull) exitWith {"UNKNOWN"};
-    private _description = taskDescription _task;
-    if !(_description isEqualType [] && {count _description >= 2}) exitWith {"UNKNOWN"};
-    private _title = toLowerANSI (_description#1);
+    private _title = ([_task] call ITW_CLASH_PlayerTransportRTB_fnc_TaskText)#1;
     if (_title == "abort pick up, rtb") exitWith {"ABORT"};
     if (_title == "return to base") exitWith {"DELIVERY"};
     "UNKNOWN"
@@ -75,9 +109,7 @@ ITW_CLASH_PlayerTransportRTB_fnc_TaskShape = {
 ITW_CLASH_PlayerTransportRTB_fnc_IsNativeRTBTask = {
     params ["_task"];
     if (_task isEqualTo taskNull) exitWith {false};
-    private _description = taskDescription _task;
-    if !(_description isEqualType [] && {count _description >= 2}) exitWith {false};
-    private _body = toLowerANSI (_description#0);
+    private _body = ([_task] call ITW_CLASH_PlayerTransportRTB_fnc_TaskText)#0;
     private _shape = [_task] call ITW_CLASH_PlayerTransportRTB_fnc_TaskShape;
     _shape in ["ABORT","DELIVERY"] || {_body == "return to departure base."}
 };
@@ -196,15 +228,15 @@ ITW_CLASH_PlayerTransportRTB_fnc_LandedStopped = {
 
                 private _index = _tasks findIf {
                     [_x] call ITW_CLASH_PlayerTransportRTB_fnc_IsNativeRTBTask
-                    && {toUpperANSI (taskState _x) in ["ASSIGNED","CREATED"]}
+                    && {([_x] call ITW_CLASH_PlayerTransportRTB_fnc_TaskStateOf) in ["ASSIGNED","CREATED"]}
                     && {[
-                        taskDestination _x
+                        [_x] call ITW_CLASH_PlayerTransportRTB_fnc_TaskDestinationOf
                     ] call ITW_CLASH_PlayerTransportRTB_fnc_TaskDestinationValid}
                 };
                 if (_index < 0) then {continue};
 
                 _trackedTask = _tasks#_index;
-                private _destination = +(taskDestination _trackedTask);
+                private _destination = +([_trackedTask] call ITW_CLASH_PlayerTransportRTB_fnc_TaskDestinationOf);
                 private _shape = [_trackedTask] call
                     ITW_CLASH_PlayerTransportRTB_fnc_TaskShape;
                 _group setVariable [
@@ -226,7 +258,7 @@ ITW_CLASH_PlayerTransportRTB_fnc_LandedStopped = {
             };
 
             if (_trackedTask isEqualTo taskNull) then {continue};
-            if !(toUpperANSI (taskState _trackedTask) in ["ASSIGNED","CREATED"]) then {
+            if !(([_trackedTask] call ITW_CLASH_PlayerTransportRTB_fnc_TaskStateOf) in ["ASSIGNED","CREATED"]) then {
                 _group setVariable ["ITW_CLASH_PlayerTransportRTBTask",nil];
                 _group setVariable ["ITW_CLASH_PlayerTransportRTBDestination",nil];
                 _group setVariable ["ITW_CLASH_PlayerTransportRTBStoppedSeconds",nil];

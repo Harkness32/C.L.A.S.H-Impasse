@@ -3,7 +3,7 @@
 if (!isServer) exitWith {false};
 if (isNil "ITW_AllyLoadIntoVehManager" || {isNil "ITW_AllyLoadGrpIntoVeh"}) exitWith {false};
 
-ITW_CLASH_PlayerTransportNativeBridgeVersion = 7;
+ITW_CLASH_PlayerTransportNativeBridgeVersion = 8;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadIntoVehManager = ITW_AllyLoadIntoVehManager;
 ITW_CLASH_PlayerTransport_fnc_NativeLoadGrpIntoVeh = ITW_AllyLoadGrpIntoVeh;
 
@@ -333,9 +333,34 @@ ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract = {
     true
 };
 
+/*
+    The squad a carrier came for is gone.
+
+    Once the squad is seated on paper, SCargo's wait checks the carrier and
+    CargoM and never the squad again (SCargo.sqf:520), and the order file that
+    clears CargoM can no longer find the carrier through a dead squad. So the
+    carrier waited on its 600 s standstill timer with the Pick Up task open
+    (2026-10-31 16:29, Alpha 2-6 wiped out as the pilot arrived). CargoM false
+    is SCargo's own exit: it sends the carrier home and replaces the task.
+*/
+ITW_CLASH_PlayerTransport_fnc_ReleaseCarrier = {
+    params ["_carrier","_name"];
+    private _carrierGroup = group assignedDriver _carrier;
+    if (isNull _carrierGroup) then {_carrierGroup = group driver _carrier};
+    if (isNull _carrierGroup) exitWith {false};
+    _carrierGroup setVariable ["CargoM" + str _carrierGroup,false];
+    private _pilot = currentPilot _carrier;
+    if (!isNull _pilot && {isPlayer _pilot}) then {
+        (format ["C.L.A.S.H.: Pickup cancelled. %1 is gone.",_name]) remoteExecCall ["systemChat",_pilot];
+    };
+    ["hal-carrier-released",[_name,typeOf _carrier]] call ITW_CLASH_PlayerTransport_fnc_Log;
+    true
+};
+
 ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
     params ["_group","_contractId"];
     if (isNull _group || {_contractId isEqualTo ""}) exitWith {};
+    private _name = groupId _group;
 
     private _pendingKey = "CargoCheckPending" + str _group;
     private _assignedKey = "AssignedCargo" + str _group;
@@ -459,6 +484,9 @@ ITW_CLASH_PlayerTransport_fnc_MonitorObservedHALContract = {
         };
     };
 
+    if (_reason isEqualTo "cargo-group-lost" && {alive _lastCarrier}) then {
+        [_lastCarrier,_name] call ITW_CLASH_PlayerTransport_fnc_ReleaseCarrier;
+    };
     if (_reason isNotEqualTo "contract-replaced") then {
         [_group,_contractId,_reason] call
             ITW_CLASH_PlayerTransport_fnc_EndObservedHALContract;

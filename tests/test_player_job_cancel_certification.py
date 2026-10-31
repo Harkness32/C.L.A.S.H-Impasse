@@ -28,7 +28,7 @@ def test_seaguard_is_projection_only_and_cannot_clobber_service_home():
 def test_embarked_hal_contract_defers_unlock_until_physical_unlink():
     bridge = source("ITW_CLASH_PlayerTransportNativeBridge.sqf")
 
-    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 7;' in bridge
+    assert 'ITW_CLASH_PlayerTransportNativeBridgeVersion = 8;' in bridge
     assert 'ITW_CLASH_PlayerTransport_fnc_CargoAboardCarrier' in bridge
     assert 'alive _x && {vehicle _x == _carrier}' in bridge
     assert '"hal-contract-end-deferred-embarked"' in bridge
@@ -127,13 +127,13 @@ def test_player_air_transport_rtb_covers_abort_delivery_landing_and_timeout():
     home = source("ITW_CLASH_PlayerCarrierHome.sqf")
     logistics = source("ITW_CLASH_HALLogistics.sqf")
 
-    assert 'ITW_CLASH_PlayerTransportRTBVersion = 3;' in rtb
+    assert 'ITW_CLASH_PlayerTransportRTBVersion = 4;' in rtb
     assert '"ITW_CLASH_PlayerTransportRTBRadius",350' in rtb
     assert '"ITW_CLASH_PlayerTransportRTBStopTimeout",120' in rtb
     assert 'if (_title == "abort pick up, rtb") exitWith {"ABORT"};' in rtb
     assert 'if (_title == "return to base") exitWith {"DELIVERY"};' in rtb
     assert '"HACAddedTasks"' in rtb
-    assert 'taskDestination _trackedTask' in rtb
+    assert '[_trackedTask] call ITW_CLASH_PlayerTransportRTB_fnc_TaskDestinationOf' in rtb
     assert '((getPosATL _carrier)#2) < 1' in rtb
     assert 'abs speed _carrier < 0.5' in rtb
     assert 'ITW_CLASH_PlayerTransportRTB_fnc_CargoUnlinked' in rtb

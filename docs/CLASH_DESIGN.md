@@ -703,8 +703,8 @@ its own, usually because a parent loads and reports it.
 | `PlayerDemandExecutionHardening` | 1 | 113 | `player-demand-execution-hardening-ready` | _no in-source header_ |
 | `PlayerDemandAmmoValidityHardening` | 2 | 102 | `player-demand-ammo-validity-hardening-ready` | _no in-source header_ |
 | `PlayerTransportAuthority` | 4 | 292 | `player-transport-authority-ready` | _no in-source header_ |
-| `PlayerTransportNativeBridge` | 7 | 516 | `player-transport-native-bridge-ready` | HAL_SCargo is a complete transport executor, not merely a carrier selector: it reserves the carrier, moves it to pickup, assigns cargo seats, waits for embarkation, owns the transport… |
-| `PlayerTransportRTB` | 3 | 322 | `player-transport-rtb-ready` | _no in-source header_ |
+| `PlayerTransportNativeBridge` | 8 | 611 | `player-transport-native-bridge-ready` | HAL_SCargo is a complete transport executor, not merely a carrier selector: it reserves the carrier, moves it to pickup, assigns cargo seats, waits for embarkation, owns the transport… |
+| `PlayerTransportRTB` | 4 | 354 | `player-transport-rtb-ready` | _no in-source header_ |
 | `PlayerCarrierHome` | 3 | 164 | `player-carrier-home-ready` | _no in-source header_ |
 | `PlayerEmploymentMenu` | 4 | 291 | `player-employment-menu-ready` | _no in-source header_ |
 | `PlayerGarageDeployment` | 4 | 386 | `player-garage-artillery-ready` | _no in-source header_ |
