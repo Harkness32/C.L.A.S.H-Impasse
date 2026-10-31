@@ -600,6 +600,8 @@ its own, usually because a parent loads and reports it.
 | `CheckbookAPI` | 2 | 277 | `checkbook-api-ready` | Checkbook V2 is the single state boundary between HAL intent and Impasse resources. |
 | `EmergingThreatsBudget` | 1 | 786 | `etb-ready` | The Emerging Threats Budget. |
 | `ForceGeneration` | 5 | 1209 | `force-generation-ready` | Resolve the same ITW base graph for either side: active objective -> side attack-source FOB -> upstream rear FOB. |
+| `Austerity` | 2 | 209 | `austerity-ready` | Each player's cash, paid for finished jobs and kills. See `docs/AUSTERITY_HUD.md`. |
+| `AusterityClient` | 2 | 188 | none | The reward HUD: money tab and + popups. Draws what the server sends. |
 | `VehicleEchelonPolicy` | 2 | 224 | `vehicle-echelon-policy-ready` | _no in-source header_ |
 | `SeaGenerationGuard` | 3 | 247 | `sea-generation-guard-ready` | _no in-source header_ |
 | `FrontRouting` | 1 | 445 | `front-routing-ready` | Front Routing Phase 0 This is the commander-facing operational FOB selector for both sides. |

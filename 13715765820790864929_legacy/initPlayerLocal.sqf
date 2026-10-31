@@ -20,6 +20,10 @@ if (fileExists "ITW_CLASH_PlayerGarageDeployment.sqf") then {
     [] execVM "ITW_CLASH_PlayerGarageDeployment.sqf";
 };
 
+if (fileExists "ITW_CLASH_AusterityClient.sqf") then {
+    [] execVM "ITW_CLASH_AusterityClient.sqf";
+};
+
 if (fileExists "ITW_CLASH_StoreClient.sqf") then {
     [] execVM "ITW_CLASH_StoreClient.sqf";
 };

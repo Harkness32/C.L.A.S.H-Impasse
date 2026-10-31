@@ -391,6 +391,15 @@ if (isServer) then {
                 _playerTasksLoaded = call compile preprocessFileLineNumbers
                     "ITW_CLASH_PlayerTaskSupport.sqf";
             };
+            // The money behind the reward HUD. It reads finished jobs and kills
+            // and never changes whether a job succeeded.
+            if (_playerTasksLoaded isEqualTo true && {
+                fileExists "ITW_CLASH_Austerity.sqf"
+            }) then {
+                call compile preprocessFileLineNumbers "ITW_CLASH_Austerity.sqf";
+            } else {
+                diag_log "CLASH AUSTERITY | server layer unavailable; core tasking continues";
+            };
             private _ammoDispatchLoaded = false;
             if (_playerTasksLoaded isEqualTo true && {
                 fileExists "ITW_CLASH_AmmoDispatch.sqf"

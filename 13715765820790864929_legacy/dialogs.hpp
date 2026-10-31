@@ -198,6 +198,11 @@ import ScrollBar;
 #define ITW_GUI_TEXT_Y0     (ITW_GUI_FLAG_Y0 + ITW_GUI_FLAG_HEIGHT - ITW_GUI_TEXT_H/3)
 #define ITW_GUI_TEXT_Y1     (ITW_GUI_FLAG_Y1 + ITW_GUI_FLAG_HEIGHT - ITW_GUI_TEXT_H/3) 
 
+#define ITW_CLASH_HUD_W (safezoneW * 0.194)
+#define ITW_CLASH_HUD_H (safezoneH * 0.071)
+#define ITW_CLASH_HUD_X (safezoneX + safezoneW - ITW_CLASH_HUD_W - (safezoneW * 0.0175))
+#define ITW_CLASH_HUD_Y (safezoneY + safezoneH - ITW_CLASH_HUD_H - (safezoneH * 0.031))
+
 class RscTitles
 {
     class RscItwFlagStatus
@@ -661,7 +666,114 @@ class RscTitles
             };
         };
     };
+
+    // C.L.A.S.H. reward HUD: the money tab, bottom right.
+    // ITW_CLASH_AusterityClient.sqf; design on the CLASH Reward HUD canvas.
+    class ITW_CLASH_RewardHud
+    {
+        idd = -1;
+        duration = 1e+011;
+        fadeIn = 0;
+        fadeOut = 0;
+        movingEnable = 0;
+        enableSimulation = 1;
+
+        onLoad = "uiNamespace setVariable ['ITW_CLASH_RewardHudDisplay', _this select 0]; [ITW_CLASH_AusterityClientCash] call ITW_CLASH_AusterityClient_fnc_SetBalance;";
+        onUnload = "uiNamespace setVariable ['ITW_CLASH_RewardHudDisplay', displayNull];";
+
+        class Controls
+        {
+            class Panel: RscText
+            {
+                idc = 95510;
+                text = "";
+                x = ITW_CLASH_HUD_X;
+                y = ITW_CLASH_HUD_Y;
+                w = ITW_CLASH_HUD_W;
+                h = ITW_CLASH_HUD_H;
+                colorBackground[] = {0.05,0.06,0.07,0.82};
+            };
+            class Rule: RscText
+            {
+                idc = 95511;
+                text = "";
+                x = ITW_CLASH_HUD_X;
+                y = ITW_CLASH_HUD_Y;
+                w = ITW_CLASH_HUD_W;
+                h = safezoneH * 0.0025;
+                colorBackground[] = {0.79,0.56,0.18,1};
+            };
+            class CashLabel: RscText
+            {
+                idc = 95512;
+                text = "CASH";
+                style = 0;
+                font = "PuristaSemiBold";
+                x = ITW_CLASH_HUD_X + (safezoneW * 0.008);
+                y = ITW_CLASH_HUD_Y;
+                w = safezoneW * 0.05;
+                h = ITW_CLASH_HUD_H;
+                sizeEx = "0.019 * safeZoneH";
+                colorText[] = {0.85,0.84,0.8,1};
+                colorBackground[] = {0,0,0,0};
+            };
+            class CashValue: RscText
+            {
+                idc = 95513;
+                text = "$0";
+                style = 1;
+                font = "EtelkaMonospaceProBold";
+                x = ITW_CLASH_HUD_X + (safezoneW * 0.05);
+                y = ITW_CLASH_HUD_Y;
+                w = ITW_CLASH_HUD_W - (safezoneW * 0.058);
+                h = ITW_CLASH_HUD_H;
+                sizeEx = "0.04 * safeZoneH";
+                colorText[] = {0.96,0.84,0.34,1};
+                colorBackground[] = {0,0,0,0};
+            };
+            class CashDelta: RscText
+            {
+                idc = 95514;
+                text = "";
+                style = 1;
+                font = "EtelkaMonospaceProBold";
+                shadow = 1;
+                x = ITW_CLASH_HUD_X;
+                y = ITW_CLASH_HUD_Y - (safezoneH * 0.032);
+                w = ITW_CLASH_HUD_W - (safezoneW * 0.008);
+                h = safezoneH * 0.03;
+                sizeEx = "0.022 * safeZoneH";
+                colorText[] = {1,1,1,1};
+                colorBackground[] = {0,0,0,0};
+            };
+        };
+    };
 };
+
+// One + reward; ctrlCreate'd over the reward HUD. Sized in percent of the
+// screen height: <t size='2.9'> is 2.9% of it.
+class ITW_CLASH_RewardPopup
+{
+    idc = -1;
+    type = 13;
+    style = 0;
+    x = 0;
+    y = 0;
+    w = 0;
+    h = 0;
+    text = "";
+    size = "0.01 * safeZoneH";
+    shadow = 1;
+    colorBackground[] = {0,0,0,0};
+    class Attributes
+    {
+        font = "PuristaSemiBold";
+        color = "#ffffff";
+        align = "center";
+        shadow = 1;
+    };
+};
+
     
 #define ITW_GUI_ASMT_WIDTH  (GUI_GRID_W * 14)
 #define ITW_GUI_ASMT_HEIGHT (GUI_GRID_H * 20)
